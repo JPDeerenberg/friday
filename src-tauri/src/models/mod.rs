@@ -1,0 +1,10 @@
+pub mod account;
+pub mod assignments;
+pub mod calendar;
+pub mod grades;
+pub mod messages;
+pub mod schoolyears;
+pub mod leermiddelen;
+pub mod activities;
+pub mod bronnen;
+pub mod studiewijzers;

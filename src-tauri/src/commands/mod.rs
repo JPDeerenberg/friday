@@ -1,0 +1,9 @@
+pub mod auth;
+pub mod calendar;
+pub mod grades;
+pub mod messages;
+pub mod assignments;
+pub mod leermiddelen;
+pub mod activities;
+pub mod bronnen;
+pub mod studiewijzers;

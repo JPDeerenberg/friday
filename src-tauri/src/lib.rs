@@ -1,0 +1,70 @@
+mod auth;
+mod client;
+mod commands;
+mod models;
+
+use client::{MagisterClient, SharedClient};
+use std::sync::Arc;
+use tokio::sync::Mutex;
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+    let client: SharedClient = Arc::new(Mutex::new(MagisterClient::new()));
+
+    tauri::Builder::default()
+        .plugin(tauri_plugin_opener::init())
+        .manage(client)
+        .invoke_handler(tauri::generate_handler![
+            // Auth
+            commands::auth::start_login_flow,
+            commands::auth::handle_auth_callback,
+            commands::auth::is_authenticated,
+            commands::auth::get_account,
+            commands::auth::get_person_id,
+            commands::auth::get_profile_picture,
+            commands::auth::logout,
+            commands::auth::restore_session,
+            commands::auth::get_profile_info,
+            commands::auth::get_profile_addresses,
+            commands::auth::get_career_info,
+            // Calendar
+            commands::calendar::get_calendar_events,
+            commands::calendar::get_absences,
+            commands::calendar::get_calendar_event,
+            commands::calendar::create_calendar_event,
+            commands::calendar::update_calendar_event,
+            commands::calendar::delete_calendar_event,
+            // Grades
+            commands::grades::get_schoolyears,
+            commands::grades::get_grades,
+            commands::grades::get_grade_extra_info,
+            commands::grades::get_bulk_grade_extra_info,
+            // Messages
+            commands::messages::get_message_folders,
+            commands::messages::get_messages,
+            commands::messages::get_message_detail,
+            commands::messages::send_message,
+            commands::messages::mark_messages_as_read,
+            commands::messages::move_messages_to_folder,
+            commands::messages::delete_messages,
+            commands::messages::search_contacts,
+            // Assignments
+            commands::assignments::get_assignments,
+            commands::assignments::get_assignment_detail,
+            commands::assignments::hand_in_assignment,
+            // Leermiddelen
+            commands::leermiddelen::get_leermiddelen,
+            // Activities
+            commands::activities::get_activities,
+            commands::activities::get_activity_elements,
+            // Bronnen
+            commands::bronnen::get_bronnen,
+            commands::bronnen::get_external_bron_sources,
+            // Studiewijzers
+            commands::studiewijzers::get_studiewijzers,
+            commands::studiewijzers::get_studiewijzer_detail,
+            commands::studiewijzers::get_studiewijzer_onderdeel_detail,
+        ])
+        .run(tauri::generate_context!())
+        .expect("error while running tauri application");
+}
