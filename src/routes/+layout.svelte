@@ -1,12 +1,67 @@
 <script lang="ts">
   import '../app.css';
   import { onMount } from 'svelte';
+  import { listen } from '@tauri-apps/api/event';
   import { isLoggedIn, personId, accountInfo, profilePicture, currentPage } from '$lib/stores';
-  import { restoreSession, getAccount, getPersonId, getProfilePicture } from '$lib/api';
+  import { restoreSession, getAccount, getPersonId, getProfilePicture, handleAuthCallback } from '$lib/api';
 
   let { children } = $props();
   let loading = $state(true);
   let sidebarCollapsed = $state(false);
+
+  async function handleLogin(account: any) {
+    accountInfo.set(account);
+    const pid = await getPersonId();
+    personId.set(pid);
+    isLoggedIn.set(true);
+    try {
+      const pic = await getProfilePicture(pid);
+      profilePicture.set(pic);
+    } catch (_) {}
+  }
+
+  onMount(async () => {
+    const unlistenCallback = await listen('auth-callback', async (event) => {
+      const url = event.payload as string;
+      try {
+        const account = await handleAuthCallback(url);
+        await handleLogin(account);
+      } catch (e) {
+        console.error('Auth callback error:', e);
+      }
+    });
+
+    const unlistenSuccess = await listen('auth-success', async (event) => {
+      await handleLogin(event.payload);
+    });
+
+    const unlistenError = await listen('auth-error', (event) => {
+      console.error('Auth error:', event.payload);
+    });
+
+    try {
+      const restored = await restoreSession();
+      if (restored) {
+        const account = await getAccount();
+        const pid = await getPersonId();
+        accountInfo.set(account);
+        personId.set(pid);
+        isLoggedIn.set(true);
+
+        try {
+          const pic = await getProfilePicture(pid);
+          profilePicture.set(pic);
+        } catch (_) {}
+      }
+    } catch (_) {}
+    loading = false;
+
+    return () => {
+      unlistenCallback();
+      unlistenSuccess();
+      unlistenError();
+    };
+  });
 
   const navGroups = [
     {
@@ -40,25 +95,6 @@
       ]
     }
   ];
-
-  onMount(async () => {
-    try {
-      const restored = await restoreSession();
-      if (restored) {
-        const account = await getAccount();
-        const pid = await getPersonId();
-        accountInfo.set(account);
-        personId.set(pid);
-        isLoggedIn.set(true);
-
-        try {
-          const pic = await getProfilePicture(pid);
-          profilePicture.set(pic);
-        } catch (_) {}
-      }
-    } catch (_) {}
-    loading = false;
-  });
 
   function navigate(page: string) {
     currentPage.set(page);

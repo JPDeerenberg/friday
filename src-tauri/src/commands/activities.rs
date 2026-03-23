@@ -1,5 +1,7 @@
 use crate::client::SharedClient;
-use crate::models::activities::{Activity, ActivitiesResponse, ActivityElement, ActivityElementsResponse};
+use crate::models::activities::{
+    ActivitiesResponse, Activity, ActivityElement, ActivityElementsResponse,
+};
 use tauri::State;
 
 #[tauri::command]
@@ -23,7 +25,10 @@ pub async fn get_activity_elements(
 ) -> Result<Vec<ActivityElement>, String> {
     let mut client = client.lock().await;
     // The activity elements link looks like "personen/{personId}/activiteiten/{id}/onderdelen"
-    let url = format!("personen/{}/activiteiten/{}/onderdelen", person_id, activity_id);
+    let url = format!(
+        "personen/{}/activiteiten/{}/onderdelen",
+        person_id, activity_id
+    );
     let response = client.get(&url).await.map_err(|e| e.to_string())?;
     let elements: ActivityElementsResponse = serde_json::from_value(response)
         .map_err(|e| format!("Failed to parse activity elements: {}", e))?;

@@ -12,7 +12,24 @@ pub fn run() {
     let client: SharedClient = Arc::new(Mutex::new(MagisterClient::new()));
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_opener::init())
+        .setup(|app| {
+            #[cfg(mobile)]
+            {
+                use tauri::{Emitter, Manager};
+                use tauri_plugin_deep_link::DeepLinkExt;
+                let app_handle = app.handle().clone();
+                app.deep_link().on_open_url(move |event| {
+                    for url in event.urls() {
+                        if url.scheme() == "m6loapp" {
+                            app_handle.emit("auth-callback", url.as_str()).ok();
+                        }
+                    }
+                });
+            }
+            Ok(())
+        })
         .manage(client)
         .invoke_handler(tauri::generate_handler![
             // Auth
@@ -39,6 +56,7 @@ pub fn run() {
             commands::grades::get_grades,
             commands::grades::get_grade_extra_info,
             commands::grades::get_bulk_grade_extra_info,
+            commands::grades::get_recent_grades,
             // Messages
             commands::messages::get_message_folders,
             commands::messages::get_messages,
@@ -52,6 +70,7 @@ pub fn run() {
             commands::assignments::get_assignments,
             commands::assignments::get_assignment_detail,
             commands::assignments::hand_in_assignment,
+            commands::assignments::upload_assignment_attachment,
             // Leermiddelen
             commands::leermiddelen::get_leermiddelen,
             // Activities
@@ -65,6 +84,7 @@ pub fn run() {
             commands::studiewijzers::get_studiewijzer_detail,
             commands::studiewijzers::get_studiewijzer_onderdeel_detail,
         ])
+        .plugin(tauri_plugin_dialog::init())
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

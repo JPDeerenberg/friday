@@ -100,6 +100,10 @@ export async function getBulkGradeExtraInfo(personId: number, schoolyearId: numb
     return await invoke('get_bulk_grade_extra_info', { personId, schoolyearId, kolomIds });
 }
 
+export async function getRecentGrades(personId: number, top?: number): Promise<any[]> {
+    return await invoke('get_recent_grades', { personId, top });
+}
+
 // === Messages ===
 export async function getMessageFolders(): Promise<any[]> {
   return invoke('get_message_folders');
@@ -155,6 +159,10 @@ export async function getAssignmentDetail(selfUrl: string): Promise<any> {
 
 export async function handInAssignment(selfUrl: string, opdrachtId: number, versionJson: string): Promise<void> {
   return invoke('hand_in_assignment', { selfUrl, opdrachtId, versionJson });
+}
+
+export async function uploadAssignmentAttachment(filePath: string): Promise<[number, string]> {
+  return invoke('upload_assignment_attachment', { filePath });
 }
 
 // === Leermiddelen ===

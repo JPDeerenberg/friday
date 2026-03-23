@@ -1,7 +1,7 @@
-use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
 use crate::auth::AuthFlow;
 use crate::client::{MagisterClient, SharedClient, TokenSet};
 use crate::models::account::ApiAccount;
+use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
 
 /// Start a new auth flow by opening a webview window.
 #[tauri::command]
@@ -16,58 +16,67 @@ pub async fn start_login_flow(
     let url = auth.generate_login_url(tenant.as_deref(), username.as_deref());
     c.auth_flow = Some(auth);
 
-    // Close existing login window if any
-    if let Some(window) = app.get_webview_window("magister-login") {
-        window.close().ok();
+    #[cfg(desktop)]
+    {
+        // Close existing login window if any
+        if let Some(window) = app.get_webview_window("magister-login") {
+            let _ = window.close();
+        }
+
+        let client_clone = client.inner().clone();
+        let app_clone = app.clone();
+
+        // Create a new webview window for login
+        let mut builder = WebviewWindowBuilder::new(
+            &app,
+            "magister-login",
+            WebviewUrl::External(url.parse().unwrap()),
+        )
+        .title("Magister Login")
+        .inner_size(500.0, 700.0)
+        .resizable(false)
+        .center();
+
+        // Intercept m6loapp:// redirects
+        builder = builder.on_navigation(move |url: &url::Url| {
+            let url_str = url.as_str();
+            if url_str.starts_with("m6loapp://") {
+                let client_arc = client_clone.clone();
+                let app_handle = app_clone.clone();
+                let redirect_url = url_str.to_string();
+
+                // Spawn async task to handle the callback
+                tauri::async_runtime::spawn(async move {
+                    match handle_auth_callback_internal(client_arc, app_handle.clone(), redirect_url).await
+                    {
+                        Ok(account) => {
+                            app_handle.emit("auth-success", account).ok();
+                        }
+                        Err(e) => {
+                            app_handle.emit("auth-error", e).ok();
+                        }
+                    }
+                    // Close the login window
+                    if let Some(window) = app_handle.get_webview_window("magister-login") {
+                        let _ = window.close();
+                    }
+                });
+                // Cancel navigation since we are intercepting it
+                return false;
+            }
+            true
+        });
+
+        builder
+            .build()
+            .map_err(|e| format!("Failed to build login window: {}", e))?;
     }
 
-    let client_clone = client.inner().clone();
-    let app_clone = app.clone();
-
-    // Create a new webview window for login
-    let mut builder = WebviewWindowBuilder::new(
-        &app,
-        "magister-login",
-        WebviewUrl::External(url.parse().unwrap()),
-    )
-    .title("Magister Login")
-    .inner_size(500.0, 700.0)
-    .resizable(false)
-    .center();
-
-    // Intercept m6loapp:// redirects
-    builder = builder.on_navigation(move |url| {
-        let url_str = url.as_str();
-        if url_str.starts_with("m6loapp://") {
-            let client_arc = client_clone.clone();
-            let app_handle = app_clone.clone();
-            let redirect_url = url_str.to_string();
-
-            // Spawn async task to handle the callback
-            tauri::async_runtime::spawn(async move {
-                match handle_auth_callback_internal(client_arc, app_handle.clone(), redirect_url).await
-                {
-                    Ok(account) => {
-                        app_handle.emit("auth-success", account).ok();
-                    }
-                    Err(e) => {
-                        app_handle.emit("auth-error", e).ok();
-                    }
-                }
-                // Close the login window
-                if let Some(window) = app_handle.get_webview_window("magister-login") {
-                    window.close().ok();
-                }
-            });
-            // Cancel navigation since we are intercepting it
-            return false;
-        }
-        true
-    });
-
-    builder
-        .build()
-        .map_err(|e| format!("Failed to build login window: {}", e))?;
+    #[cfg(mobile)]
+    {
+        use tauri_plugin_opener::OpenerExt;
+        app.opener().open_url(url, None::<&str>).map_err(|e| e.to_string())?;
+    }
 
     Ok(())
 }
@@ -80,10 +89,7 @@ async fn handle_auth_callback_internal(
 ) -> Result<ApiAccount, String> {
     let mut c = client_arc.lock().await;
 
-    let auth = c
-        .auth_flow
-        .take()
-        .ok_or("No auth flow in progress")?;
+    let auth = c.auth_flow.take().ok_or("No auth flow in progress")?;
 
     // Exchange code for tokens
     let token_resp = auth
@@ -101,7 +107,10 @@ async fn handle_auth_callback_internal(
     c.token_set = Some(token_set);
 
     // Fetch account info
-    let account_data = c.get("account?noCache=0").await.map_err(|e| e.to_string())?;
+    let account_data = c
+        .get("account?noCache=0")
+        .await
+        .map_err(|e| e.to_string())?;
     let account: ApiAccount = serde_json::from_value(account_data).map_err(|e| e.to_string())?;
 
     // Store person ID and UUID
@@ -136,7 +145,10 @@ pub async fn is_authenticated(client: State<'_, SharedClient>) -> Result<bool, S
 #[tauri::command]
 pub async fn get_account(client: State<'_, SharedClient>) -> Result<ApiAccount, String> {
     let mut c = client.lock().await;
-    let data = c.get("account?noCache=0").await.map_err(|e| e.to_string())?;
+    let data = c
+        .get("account?noCache=0")
+        .await
+        .map_err(|e| e.to_string())?;
     serde_json::from_value(data).map_err(|e| e.to_string())
 }
 
@@ -148,9 +160,17 @@ pub async fn get_profile_info(
 ) -> Result<crate::models::account::ProfileInfo, String> {
     let mut client = client.lock().await;
     let url = format!("personen/{}/profiel", person_id);
-    let response = client.get(&url).await.map_err(|e| e.to_string())?;
-    let info: crate::models::account::ProfileInfo = serde_json::from_value(response)
-        .map_err(|e| format!("Failed to parse profile info: {}", e))?;
+    println!("Fetching profile info: {}", url);
+    let response = client.get(&url).await.map_err(|e| {
+        println!("Error fetching profile info: {}", e);
+        e.to_string()
+    })?;
+    println!("Profile Info response: {}", response);
+    let info: crate::models::account::ProfileInfo = serde_json::from_value(response.clone())
+        .map_err(|e| {
+            println!("Failed to parse profile info: {}", e);
+            format!("Failed to parse profile info: {}", e)
+        })?;
     Ok(info)
 }
 
@@ -161,7 +181,11 @@ pub async fn get_profile_addresses(
 ) -> Result<Vec<crate::models::account::ProfileAddress>, String> {
     let mut client = client.lock().await;
     let url = format!("personen/{}/adressen", person_id);
-    let response = client.get(&url).await.map_err(|e| e.to_string())?;
+    println!("Fetching profile addresses: {}", url);
+    let response = client.get(&url).await.map_err(|e| {
+        println!("Error fetching addresses: {}", e);
+        e.to_string()
+    })?;
     let res: crate::models::account::ProfileAddressResponse = serde_json::from_value(response)
         .map_err(|e| format!("Failed to parse addresses: {}", e))?;
     Ok(res.items)
@@ -174,9 +198,17 @@ pub async fn get_career_info(
 ) -> Result<crate::models::account::ProfileCareer, String> {
     let mut client = client.lock().await;
     let url = format!("personen/{}/opleidinggegevensprofiel", person_id);
-    let response = client.get(&url).await.map_err(|e| e.to_string())?;
-    let career: crate::models::account::ProfileCareer = serde_json::from_value(response)
-        .map_err(|e| format!("Failed to parse career info: {}", e))?;
+    println!("Fetching career info: {}", url);
+    let response = client.get(&url).await.map_err(|e| {
+        println!("Error fetching career info: {}", e);
+        e.to_string()
+    })?;
+    println!("Career Info response: {}", response);
+    let career: crate::models::account::ProfileCareer = serde_json::from_value(response.clone())
+        .map_err(|e| {
+            println!("Failed to parse career info: {}", e);
+            format!("Failed to parse career info: {}", e)
+        })?;
     Ok(career)
 }
 
@@ -196,22 +228,28 @@ pub async fn get_profile_picture(
     person_id: i64,
 ) -> Result<Option<String>, String> {
     let mut c = client.lock().await;
-    match c.get_bytes(&format!("leerlingen/{person_id}/foto")).await {
+    let url = format!("leerlingen/{person_id}/foto");
+    println!("Fetching profile picture: {}", url);
+    match c.get_bytes(&url).await {
         Ok(Some(bytes)) => {
             use base64::{engine::general_purpose::STANDARD, Engine};
+            println!("Got profile picture bytes: {}", bytes.len());
             Ok(Some(STANDARD.encode(bytes)))
         }
-        Ok(None) => Ok(None),
-        Err(e) => Err(e.to_string()),
+        Ok(None) => {
+            println!("No profile picture found");
+            Ok(None)
+        }
+        Err(e) => {
+            println!("Warning: Failed to fetch profile picture: {}", e);
+            Ok(None) // Return None instead of Err to avoid breaking Promise.all
+        }
     }
 }
 
 /// Logout — clear tokens.
 #[tauri::command]
-pub async fn logout(
-    client: State<'_, SharedClient>,
-    app: tauri::AppHandle,
-) -> Result<(), String> {
+pub async fn logout(client: State<'_, SharedClient>, app: tauri::AppHandle) -> Result<(), String> {
     let mut c = client.lock().await;
     c.token_set = None;
     c.auth_flow = None;

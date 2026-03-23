@@ -55,7 +55,9 @@ impl AuthFlow {
         );
 
         if let Some(tenant) = tenant {
-            url.push_str(&format!("&acr_values=tenant:{tenant}&prompt=select_account"));
+            url.push_str(&format!(
+                "&acr_values=tenant:{tenant}&prompt=select_account"
+            ));
             if let Some(username) = username {
                 url.push_str(&format!("&login_hint={username}"));
             }

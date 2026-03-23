@@ -111,9 +111,38 @@ pub struct AssignmentVersion {
     #[serde(rename = "Links")]
     pub links: Option<Vec<AssignmentLink>>,
     #[serde(rename = "LeerlingBijlagen")]
-    pub leerling_bijlagen: Option<Vec<serde_json::Value>>,
+    pub leerling_bijlagen: Option<Vec<AssignmentAttachment>>,
     #[serde(rename = "FeedbackBijlagen")]
-    pub feedback_bijlagen: Option<Vec<serde_json::Value>>,
+    pub feedback_bijlagen: Option<Vec<AssignmentAttachment>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AssignmentAttachment {
+    #[serde(rename = "Id")]
+    pub id: i64,
+    #[serde(rename = "Naam")]
+    pub naam: String,
+    #[serde(rename = "ContentType")]
+    pub content_type: String,
+    #[serde(rename = "Datum")]
+    pub datum: Option<String>,
+    #[serde(rename = "Grootte")]
+    pub grootte: i64,
+    #[serde(rename = "Url")]
+    pub url: Option<String>,
+    #[serde(rename = "UniqueId")]
+    pub unique_id: Option<String>,
+    #[serde(rename = "BronSoort")]
+    pub bron_soort: i32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UploadedFile {
+    pub id: i64,
+    #[serde(rename = "storageId")]
+    pub storage_id: String,
+    pub uri: String,
+    pub method: String,
 }
 
 /// Wrapper for the assignments response

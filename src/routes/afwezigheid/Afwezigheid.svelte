@@ -1,12 +1,15 @@
 <script lang="ts">
   import { personId } from '$lib/stores';
-  import { getAbsences, formatDate } from '$lib/api';
+  import { getAbsences, formatDate, getSchoolyears } from '$lib/api';
   import { onMount } from 'svelte';
+  import { fade, fly, slide } from 'svelte/transition';
 
   let absences = $state<any[]>([]);
+  let schoolyears = $state<any[]>([]);
+  let selectedYearId = $state<number | null>(null);
   let loading = $state(true);
+  let initialLoading = $state(true);
   
-  // Default to current school year range or last 3 months
   let van = $state('');
   let tot = $state('');
 
@@ -14,97 +17,240 @@
     const pid = $personId;
     if (!pid) return;
     
-    const now = new Date();
-    const threeMonthsAgo = new Date();
-    threeMonthsAgo.setMonth(now.getMonth() - 3);
-    
-    van = formatDate(threeMonthsAgo);
-    tot = formatDate(now);
-    
-    await loadAbsences();
+    try {
+      schoolyears = await getSchoolyears(pid as number);
+      // Sort schoolyears desc
+      schoolyears.sort((a, b) => new Date(b.begin).getTime() - new Date(a.begin).getTime());
+      
+      if (schoolyears.length > 0) {
+        const currentYear = schoolyears[0];
+        selectedYearId = currentYear.id;
+        van = currentYear.begin.split('T')[0];
+        tot = currentYear.einde.split('T')[0];
+      } else {
+        const now = new Date();
+        const oneYearAgo = new Date();
+        oneYearAgo.setFullYear(now.getFullYear() - 1);
+        van = formatDate(oneYearAgo);
+        tot = formatDate(now);
+      }
+      
+      await loadAbsences();
+    } catch (e) {
+      console.error('Error in onMount:', e);
+    } finally {
+      initialLoading = false;
+    }
   });
 
   async function loadAbsences() {
+    if (!$personId) return;
     loading = true;
     try {
-      absences = await getAbsences($personId as number, van, tot);
-      // Sort by date desc
-      absences.sort((a, b) => new Date(b.Start).getTime() - new Date(a.Start).getTime());
+      const raw = await getAbsences($personId as number, van, tot);
+      absences = raw.sort((a, b) => {
+        const dateA = a.Start ? new Date(a.Start).getTime() : 0;
+        const dateB = b.Start ? new Date(b.Start).getTime() : 0;
+        return dateB - dateA;
+      });
     } catch (e) {
       console.error('Error loading absences:', e);
+    } finally {
+      loading = false;
     }
-    loading = false;
   }
 
-  function getAbsenceType(code: string) {
-    if (code === 'L') return { label: 'Te Laat', color: 'text-yellow-400 bg-yellow-400/10' };
-    if (code === 'S' || code === 'Z') return { label: 'Ziek', color: 'text-red-400 bg-red-400/10' };
-    if (code === 'V') return { label: 'Verwijderd', color: 'text-orange-400 bg-orange-400/10' };
-    return { label: 'Afwezig', color: 'text-blue-400 bg-blue-400/10' };
+  function handleYearChange(e: Event) {
+    const id = parseInt((e.target as HTMLSelectElement).value);
+    const year = schoolyears.find(y => y.id === id);
+    if (year) {
+      selectedYearId = id;
+      van = year.begin.split('T')[0];
+      tot = year.einde.split('T')[0];
+      loadAbsences();
+    }
+  }
+
+  function getAbsenceType(typeId: number, code: string) {
+    if (typeId === 2 || code === 'L') return { label: 'Te Laat', color: 'text-yellow-400 bg-yellow-400/10 border-yellow-400/20', icon: '⏰' };
+    if (typeId === 3 || code === 'S' || code === 'Z') return { label: 'Ziek', color: 'text-red-400 bg-red-400/10 border-red-400/20', icon: '🤒' };
+    if (typeId === 4 || code === 'V') return { label: 'Verwijderd', color: 'text-orange-400 bg-orange-400/10 border-orange-400/20', icon: '🚪' };
+    if (typeId === 7) return { label: 'Boeken', color: 'text-primary-400 bg-primary-400/10 border-primary-400/20', icon: '📚' };
+    if (typeId === 8) return { label: 'Huiswerk', color: 'text-purple-400 bg-purple-400/10 border-purple-400/20', icon: '📓' };
+    return { label: 'Afwezig', color: 'text-blue-400 bg-blue-400/10 border-blue-400/20', icon: '👤' };
+  }
+
+  const stats = $derived(() => {
+    const total = absences.length;
+    const unexcused = absences.filter(a => !a.Geoorloofd).length;
+    const late = absences.filter(a => a.Verantwoordingtype === 2 || a.Code === 'L').length;
+    const sick = absences.filter(a => a.Verantwoordingtype === 3).length;
+    return { total, unexcused, late, sick };
+  });
+
+  function getSubjectName(absence: any) {
+    if (absence.Afspraak && absence.Afspraak.Vakken && absence.Afspraak.Vakken.length > 0) {
+      return absence.Afspraak.Vakken[0].Naam || absence.Afspraak.Vakken[0].naam;
+    }
+    return null;
   }
 </script>
 
-<div class="p-6 max-w-4xl mx-auto">
-  <div class="flex items-center justify-between mb-8">
-    <div>
-      <h1 class="text-3xl font-bold text-gray-100">Afwezigheid</h1>
-      <p class="text-gray-500 mt-1">Overzicht van je absenties en te laat meldingen</p>
+<div class="h-screen flex flex-col overflow-hidden bg-surface-950">
+  <!-- Top Header -->
+  <header class="h-16 shrink-0 border-b border-surface-800/50 flex items-center justify-between px-6 bg-surface-900/50 backdrop-blur-xl z-10">
+    <div class="flex items-center gap-3">
+      <div class="w-8 h-8 rounded-lg bg-red-500/20 flex items-center justify-center text-red-400 text-sm shadow-[0_0_15px_rgba(239,68,68,0.1)]">
+        🚫
+      </div>
+      <h1 class="text-lg font-bold text-gray-100 italic tracking-tight">Afwezigheid</h1>
     </div>
-  </div>
 
-  <div class="glass p-4 mb-6 flex flex-wrap items-center gap-4 rounded-2xl">
-    <div class="flex flex-col">
-      <span class="text-[10px] font-bold text-gray-500 uppercase ml-1 mb-1">Van</span>
-      <input type="date" bind:value={van} onchange={loadAbsences} class="bg-surface-800 border border-surface-700 rounded-xl px-3 py-1.5 text-sm text-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-500/50" />
-    </div>
-    <div class="flex flex-col">
-      <span class="text-[10px] font-bold text-gray-500 uppercase ml-1 mb-1">Tot</span>
-      <input type="date" bind:value={tot} onchange={loadAbsences} class="bg-surface-800 border border-surface-700 rounded-xl px-3 py-1.5 text-sm text-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-500/50" />
-    </div>
-  </div>
-
-  {#if loading}
-    <div class="flex items-center justify-center py-20">
-      <div class="w-10 h-10 border-4 border-primary-500 border-t-transparent rounded-full animate-spin"></div>
-    </div>
-  {:else if absences.length === 0}
-    <div class="glass rounded-3xl p-12 text-center">
-      <div class="w-16 h-16 bg-surface-800 rounded-2xl flex items-center justify-center mx-auto mb-4 text-3xl">🎉</div>
-      <p class="text-gray-300 font-medium">Lekker bezig! Geen absenties gevonden in deze periode.</p>
-    </div>
-  {:else}
-    <div class="space-y-3">
-      {#each absences as absence}
-        {@const type = getAbsenceType(absence.Code)}
-        <div class="glass p-4 rounded-2xl border border-surface-700/30 flex items-center gap-4 hover:border-surface-600/50 transition-colors">
-          <div class="w-12 h-12 rounded-xl flex flex-col items-center justify-center bg-surface-800/50 shrink-0">
-            <span class="text-[10px] font-bold text-gray-500 uppercase leading-none">{new Date(absence.Start).toLocaleString('nl-NL', { month: 'short' })}</span>
-            <span class="text-lg font-bold text-gray-200">{new Date(absence.Start).getDate()}</span>
-          </div>
-          
-          <div class="flex-1 min-w-0">
-            <div class="flex items-center gap-2 mb-0.5">
-              <span class="px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider {type.color}">
-                {type.label}
-              </span>
-              {#if !absence.Geoorloofd}
-                 <span class="px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider text-red-400 bg-red-400/10">
-                   Ongeoorloofd
-                 </span>
-              {/if}
-              <span class="text-xs text-gray-500">{new Date(absence.Start).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' })}</span>
-            </div>
-            <h3 class="text-sm font-medium text-gray-200 truncate">{absence.Omschrijving || 'Geen omschrijving'}</h3>
-          </div>
-          
-          {#if absence.Lesuur}
-            <div class="text-right shrink-0">
-              <span class="text-[10px] font-bold text-gray-500 uppercase block">Lesuur</span>
-              <span class="text-sm font-bold text-gray-200">{absence.Lesuur}e</span>
-            </div>
-          {/if}
+    <div class="flex items-center gap-4">
+      <!-- Schoolyear Selector -->
+      {#if schoolyears.length > 0}
+        <div class="relative group">
+          <select 
+            bind:value={selectedYearId} 
+            onchange={handleYearChange}
+            class="appearance-none bg-surface-800/50 border border-surface-700/50 rounded-xl px-4 py-1.5 pr-8 text-xs font-bold text-gray-300 focus:outline-none focus:ring-2 focus:ring-primary-500/30 cursor-pointer hover:bg-surface-700/50 transition-colors"
+          >
+            {#each schoolyears as year}
+              <option value={year.id}>{year.groep.code} ({year.studie.code})</option>
+            {/each}
+          </select>
+          <div class="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-500 text-[10px]">▼</div>
         </div>
-      {/each}
+      {/if}
+
+      <div class="flex items-center gap-2 bg-surface-800/30 rounded-2xl p-1 border border-surface-700/30">
+        <div class="flex items-center gap-2 px-3 py-1">
+          <span class="text-[9px] font-black text-gray-500 uppercase tracking-widest">Van</span>
+          <input type="date" bind:value={van} onchange={loadAbsences} class="bg-transparent border-none text-[11px] font-bold text-gray-300 focus:ring-0 cursor-pointer p-0" />
+        </div>
+        <div class="w-px h-3 bg-surface-700"></div>
+        <div class="flex items-center gap-2 px-3 py-1">
+          <span class="text-[9px] font-black text-gray-500 uppercase tracking-widest">Tot</span>
+          <input type="date" bind:value={tot} onchange={loadAbsences} class="bg-transparent border-none text-[11px] font-bold text-gray-300 focus:ring-0 cursor-pointer p-0" />
+        </div>
+      </div>
     </div>
-  {/if}
+  </header>
+
+  <main class="flex-1 overflow-y-auto custom-scrollbar bg-[radial-gradient(circle_at_top_right,rgba(59,130,246,0.03),transparent_40%)]">
+    <div class="max-w-5xl mx-auto p-8 space-y-8">
+      
+      <!-- Statistics Tiles -->
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {#each [
+          { label: 'Totaal', value: stats().total, icon: '📊', color: 'text-gray-400' },
+          { label: 'Ongeoorloofd', value: stats().unexcused, icon: '⚠️', color: stats().unexcused > 0 ? 'text-red-400' : 'text-gray-400' },
+          { label: 'Te laat', value: stats().late, icon: '⏰', color: 'text-yellow-400' },
+          { label: 'Ziek', value: stats().sick, icon: '🤒', color: 'text-blue-400' },
+        ] as stat}
+          <div in:fly={{ y: 20, delay: 100 }} class="glass p-5 rounded-[2rem] border-surface-800/50 flex flex-col items-center text-center group transition-all hover:scale-[1.02] hover:bg-surface-800/40 shadow-xl">
+            <span class="text-3xl mb-3 drop-shadow-md">{stat.icon}</span>
+            <span class="text-3xl font-black text-white group-hover:text-primary-400 transition-colors uppercase tabular-nums tracking-tighter">{stat.value}</span>
+            <span class="text-[10px] font-black uppercase tracking-widest mt-1.5 {stat.color} opacity-80">{stat.label}</span>
+          </div>
+        {/each}
+      </div>
+
+      {#if loading && initialLoading}
+        <div class="flex flex-col items-center justify-center py-20 gap-4">
+          <div class="w-12 h-12 border-4 border-primary-500/20 border-t-primary-500 rounded-full animate-spin"></div>
+          <p class="text-[10px] font-black text-gray-500 uppercase tracking-[0.3em] animate-pulse">Laden...</p>
+        </div>
+      {:else if absences.length === 0}
+        <div in:fade class="glass rounded-[2.5rem] p-20 text-center space-y-6 border-emerald-500/10 bg-emerald-500/[0.03] shadow-2xl">
+          <div class="w-24 h-24 bg-emerald-500/10 rounded-full flex items-center justify-center mx-auto text-5xl shadow-[0_0_50px_rgba(16,185,129,0.15)] ring-1 ring-emerald-500/20">
+            ✨
+          </div>
+          <div class="space-y-2">
+            <h3 class="text-2xl font-black text-white italic tracking-tight">Geen absenties!</h3>
+            <p class="text-gray-400 font-medium max-w-sm mx-auto leading-relaxed">Je record is vlekkeloos voor de geselecteerde periode. Houd dit vol!</p>
+          </div>
+        </div>
+      {:else}
+        <div class="space-y-6">
+          <div class="flex items-center gap-4 px-2">
+            <span class="text-[10px] font-black text-gray-500 uppercase tracking-[0.2em] whitespace-nowrap">Absentieshistorie</span>
+            <div class="h-px w-full bg-gradient-to-r from-surface-800 to-transparent"></div>
+          </div>
+
+          <div class="grid grid-cols-1 gap-4">
+            {#each absences as absence, i}
+              {@const type = getAbsenceType(absence.Verantwoordingtype, absence.Code)}
+              {@const subject = getSubjectName(absence)}
+              <div 
+                in:fly={{ y: 15, delay: i * 30 }}
+                class="glass p-5 rounded-[2rem] border-surface-800/20 hover:border-primary-500/20 hover:bg-surface-800/40 transition-all flex items-center gap-6 group shadow-lg"
+              >
+                <!-- Date stamp -->
+                <div class="w-16 h-16 rounded-2xl bg-surface-900/80 flex flex-col items-center justify-center border border-surface-700/50 shrink-0 group-hover:scale-105 transition-transform shadow-inner">
+                  <span class="text-[10px] font-black text-gray-500 uppercase leading-none mb-1">{absence.Start ? new Date(absence.Start).toLocaleString('nl-NL', { month: 'short' }) : '??'}</span>
+                  <span class="text-2xl font-black text-white tracking-tighter tabular-nums">{absence.Start ? new Date(absence.Start).getDate() : '?'}</span>
+                </div>
+                
+                <div class="flex-1 min-w-0">
+                  <div class="flex items-center gap-2 mb-2 flex-wrap">
+                    <span class="px-3 py-1 rounded-xl text-[9px] font-black uppercase tracking-widest border transition-colors {type.color}">
+                      <span class="mr-1">{type.icon}</span> {type.label}
+                    </span>
+                    {#if !absence.Geoorloofd}
+                       <span class="px-3 py-1 rounded-xl text-[9px] font-black uppercase tracking-widest bg-red-500/10 text-red-400 border border-red-500/20 shadow-[0_0_10px_rgba(239,68,68,0.1)]">
+                         Ongeoorloofd
+                       </span>
+                    {/if}
+                    <span class="text-[10px] font-bold text-gray-500 ml-1">
+                      {absence.Start ? new Date(absence.Start).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' }) : ''}
+                    </span>
+                  </div>
+                  <div class="flex items-baseline gap-2">
+                    <h3 class="text-base font-bold text-gray-100 truncate group-hover:text-white transition-colors">
+                      {absence.Omschrijving || 'Geen omschrijving'}
+                    </h3>
+                    {#if subject}
+                      <span class="text-[10px] font-bold text-primary-500 uppercase tracking-widest bg-primary-500/5 px-2 py-0.5 rounded-full border border-primary-500/10">
+                        {subject}
+                      </span>
+                    {/if}
+                  </div>
+                </div>
+                
+                <div class="hidden sm:flex flex-col items-end gap-2 shrink-0">
+                   {#if absence.Lesuur}
+                    <div class="bg-surface-900/60 px-4 py-2 rounded-2xl border border-surface-700/50 group-hover:border-primary-500/20 group-hover:bg-primary-500/[0.02] transition-all shadow-inner">
+                      <span class="text-[9px] font-black text-gray-500 uppercase block tracking-tighter leading-none mb-1 text-right">Lesuur</span>
+                      <span class="text-base font-black text-primary-400 uppercase italic tracking-tighter leading-none">{absence.Lesuur}e</span>
+                    </div>
+                  {/if}
+                </div>
+              </div>
+            {/each}
+          </div>
+        </div>
+      {/if}
+    </div>
+  </main>
 </div>
+
+<style>
+  .glass {
+    background: rgba(30, 41, 59, 0.4);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+  }
+
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 4px;
+  }
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+  }
+</style>

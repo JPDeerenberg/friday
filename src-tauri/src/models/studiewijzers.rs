@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use super::bronnen::Bron;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Studiewijzer {

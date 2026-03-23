@@ -126,7 +126,10 @@ impl MagisterClient {
         let resp = self
             .http
             .get(&url)
-            .header("Authorization", format!("Bearer {}", token_set.access_token))
+            .header(
+                "Authorization",
+                format!("Bearer {}", token_set.access_token),
+            )
             .header("Content-Type", "application/json")
             .header("Accept", "application/json")
             .send()
@@ -144,7 +147,10 @@ impl MagisterClient {
                 let resp = self
                     .http
                     .get(&url)
-                    .header("Authorization", format!("Bearer {}", token_set.access_token))
+                    .header(
+                        "Authorization",
+                        format!("Bearer {}", token_set.access_token),
+                    )
                     .header("Content-Type", "application/json")
                     .header("Accept", "application/json")
                     .send()
@@ -183,7 +189,10 @@ impl MagisterClient {
         let resp = self
             .http
             .get(&url)
-            .header("Authorization", format!("Bearer {}", token_set.access_token))
+            .header(
+                "Authorization",
+                format!("Bearer {}", token_set.access_token),
+            )
             .send()
             .await
             .map_err(|e| ClientError::RequestFailed(e.to_string()))?;
@@ -220,7 +229,10 @@ impl MagisterClient {
         let resp = self
             .http
             .post(&url)
-            .header("Authorization", format!("Bearer {}", token_set.access_token))
+            .header(
+                "Authorization",
+                format!("Bearer {}", token_set.access_token),
+            )
             .header("Content-Type", "application/json")
             .header("Accept", "application/json")
             .json(body)
@@ -244,11 +256,7 @@ impl MagisterClient {
     }
 
     /// Make an authenticated PUT request.
-    pub async fn put(
-        &mut self,
-        path: &str,
-        body: &serde_json::Value,
-    ) -> Result<(), ClientError> {
+    pub async fn put(&mut self, path: &str, body: &serde_json::Value) -> Result<(), ClientError> {
         self.ensure_valid_token().await?;
         let token_set = self.token_set.as_ref().unwrap();
         let url = format!("{}/{}", token_set.api_endpoint.trim_end_matches('/'), path);
@@ -256,7 +264,10 @@ impl MagisterClient {
         let resp = self
             .http
             .put(&url)
-            .header("Authorization", format!("Bearer {}", token_set.access_token))
+            .header(
+                "Authorization",
+                format!("Bearer {}", token_set.access_token),
+            )
             .header("Content-Type", "application/json")
             .json(body)
             .send()
@@ -286,7 +297,10 @@ impl MagisterClient {
         let token_set = self.token_set.as_ref().unwrap();
         let url = format!("{}/{}", token_set.api_endpoint.trim_end_matches('/'), path);
 
-        let mut rb = self.http.delete(&url).header("Authorization", format!("Bearer {}", token_set.access_token));
+        let mut rb = self.http.delete(&url).header(
+            "Authorization",
+            format!("Bearer {}", token_set.access_token),
+        );
 
         if !body.is_null() {
             rb = rb.header("Content-Type", "application/json").json(body);
@@ -306,11 +320,7 @@ impl MagisterClient {
     }
 
     /// Make an authenticated PATCH request.
-    pub async fn patch(
-        &mut self,
-        path: &str,
-        body: &serde_json::Value,
-    ) -> Result<(), ClientError> {
+    pub async fn patch(&mut self, path: &str, body: &serde_json::Value) -> Result<(), ClientError> {
         self.ensure_valid_token().await?;
         let token_set = self.token_set.as_ref().unwrap();
         let url = format!("{}/{}", token_set.api_endpoint.trim_end_matches('/'), path);
@@ -318,7 +328,10 @@ impl MagisterClient {
         let resp = self
             .http
             .patch(&url)
-            .header("Authorization", format!("Bearer {}", token_set.access_token))
+            .header(
+                "Authorization",
+                format!("Bearer {}", token_set.access_token),
+            )
             .header("Content-Type", "application/json")
             .json(body)
             .send()
@@ -373,8 +386,6 @@ trait AppHandlePathResolver {
 impl AppHandlePathResolver for tauri::AppHandle {
     fn path_resolver_data_dir(&self) -> Result<std::path::PathBuf, String> {
         use tauri::Manager;
-        self.path()
-            .app_data_dir()
-            .map_err(|e| e.to_string())
+        self.path().app_data_dir().map_err(|e| e.to_string())
     }
 }

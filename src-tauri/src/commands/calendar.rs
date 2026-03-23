@@ -119,12 +119,9 @@ pub async fn update_calendar_event(
     event_json: String,
 ) -> Result<(), String> {
     let mut c = client.lock().await;
-    let body: serde_json::Value =
-        serde_json::from_str(&event_json).map_err(|e| e.to_string())?;
+    let body: serde_json::Value = serde_json::from_str(&event_json).map_err(|e| e.to_string())?;
 
-    c.put(&self_url, &body)
-        .await
-        .map_err(|e| e.to_string())?;
+    c.put(&self_url, &body).await.map_err(|e| e.to_string())?;
 
     Ok(())
 }
@@ -149,8 +146,13 @@ pub async fn get_absences(
 ) -> Result<Vec<crate::models::calendar::Absence>, String> {
     let mut client = client.lock().await;
     let url = format!("personen/{}/absenties?van={}&tot={}", person_id, van, tot);
+    println!("Fetching absences from: {}", url);
     let response = client.get(&url).await.map_err(|e| e.to_string())?;
-    let res: crate::models::calendar::AbsencesResponse = serde_json::from_value(response)
-        .map_err(|e| format!("Failed to parse absences: {}", e))?;
+
+    let res: crate::models::calendar::AbsencesResponse = serde_json::from_value(response.clone())
+        .map_err(|e| {
+        println!("Failed to parse absences. Response: {:?}", response);
+        format!("Failed to parse absences: {}", e)
+    })?;
     Ok(res.items)
 }

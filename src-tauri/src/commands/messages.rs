@@ -2,8 +2,8 @@ use tauri::State;
 
 use crate::client::SharedClient;
 use crate::models::messages::{
-    AttachmentRef, Bericht, Contact, ContactRef, ContactsResponse, FoldersResponse,
-    MessagesFolder, MessagesResponse, SendMessageRequest,
+    AttachmentRef, Bericht, Contact, ContactRef, ContactsResponse, FoldersResponse, MessagesFolder,
+    MessagesResponse, SendMessageRequest,
 };
 
 /// Get all message folders.
@@ -18,8 +18,7 @@ pub async fn get_message_folders(
         .await
         .map_err(|e| e.to_string())?;
 
-    let resp: FoldersResponse =
-        serde_json::from_value(data).map_err(|e| e.to_string())?;
+    let resp: FoldersResponse = serde_json::from_value(data).map_err(|e| e.to_string())?;
 
     Ok(resp.items)
 }
@@ -46,8 +45,7 @@ pub async fn get_messages(
     let path = format!("{}?{}", link, params.join("&"));
     let data = c.get(&path).await.map_err(|e| e.to_string())?;
 
-    let resp: MessagesResponse =
-        serde_json::from_value(data).map_err(|e| e.to_string())?;
+    let resp: MessagesResponse = serde_json::from_value(data).map_err(|e| e.to_string())?;
 
     Ok(resp.items.unwrap_or_default())
 }
@@ -226,14 +224,11 @@ pub async fn search_contacts(
     let max = max_results.unwrap_or(250);
 
     let data = c
-        .get(&format!(
-            "contacten/personen?q={query}&top={max}&type=alle"
-        ))
+        .get(&format!("contacten/personen?q={query}&top={max}&type=alle"))
         .await
         .map_err(|e| e.to_string())?;
 
-    let resp: ContactsResponse =
-        serde_json::from_value(data).map_err(|e| e.to_string())?;
+    let resp: ContactsResponse = serde_json::from_value(data).map_err(|e| e.to_string())?;
 
     Ok(resp.items)
 }

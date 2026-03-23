@@ -1,10 +1,10 @@
 pub mod account;
+pub mod activities;
 pub mod assignments;
+pub mod bronnen;
 pub mod calendar;
 pub mod grades;
+pub mod leermiddelen;
 pub mod messages;
 pub mod schoolyears;
-pub mod leermiddelen;
-pub mod activities;
-pub mod bronnen;
 pub mod studiewijzers;

@@ -1,5 +1,7 @@
 use crate::client::SharedClient;
-use crate::models::bronnen::{Bron, BronnenResponse, ExternalBronSource, ExternalBronSourcesResponse};
+use crate::models::bronnen::{
+    Bron, BronnenResponse, ExternalBronSource, ExternalBronSourcesResponse,
+};
 use tauri::State;
 
 #[tauri::command]
@@ -10,8 +12,8 @@ pub async fn get_bronnen(
     let mut client = client.lock().await;
     // path should be something like "personen/{id}/bronnen?soort=0" or a link from a folder
     let response = client.get(&path).await.map_err(|e| e.to_string())?;
-    let bronnen: BronnenResponse = serde_json::from_value(response)
-        .map_err(|e| format!("Failed to parse bronnen: {}", e))?;
+    let bronnen: BronnenResponse =
+        serde_json::from_value(response).map_err(|e| format!("Failed to parse bronnen: {}", e))?;
     Ok(bronnen.items)
 }
 

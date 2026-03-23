@@ -14,37 +14,31 @@
     if (!pid) return;
 
     try {
-      // Today's events only
+      // Today's events
       const now = new Date();
       const today = formatDate(now);
-      const tomorrow = formatDate(new Date(now.getTime() + 86400000));
-      // Note: getCalendarEvents usually takes van/tot as YYYY-MM-DD
-      // To get ONLY today, we fetch today and filter if needed, but Magister usually returns the whole day
       const events = await getCalendarEvents(pid, today, today);
       todayEvents = events
         .filter(e => e.Status !== 4 && e.Status !== 5)
         .sort((a, b) => a.Start.localeCompare(b.Start));
-
       // Grades from current schoolyear
-      const schoolyears = await getSchoolyears(pid, '2013-01-01', today);
+      const schoolyears = await getSchoolyears(pid, '2020-01-01', today);
       if (schoolyears.length > 0) {
-        const latest = schoolyears[schoolyears.length - 1];
-        if (latest.id) {
-          const fetchedGrades = await getGrades(pid, latest.id, latest.einde);
-          const top4 = fetchedGrades
-            .filter(g => g.CijferStr && g.CijferKolom.KolomSoort === 1)
-            .sort((a, b) => (b.DatumIngevoerd ?? '').localeCompare(a.DatumIngevoerd ?? ''))
-            .slice(0, 4);
-          
-          const columnIds = [...new Set(top4.map(g => g.CijferKolom.Id))];
-          if (columnIds.length > 0) {
-              const weightsMap = await getBulkGradeExtraInfo(pid, latest.id, columnIds);
-              latestGrades = top4.map(g => {
-                  const extra = weightsMap[g.CijferKolom.Id];
-                  return extra ? { ...g, Weging: extra.Weging } : g;
-              });
-          } else {
-              latestGrades = top4;
+        // Find current year by date
+        const currentYear = schoolyears.find(y => {
+          if (!y.begin || !y.einde) return false;
+          return new Date(y.begin) <= now && new Date(y.einde) >= now;
+        }) || schoolyears[schoolyears.length - 1];
+
+        if (currentYear?.id) {
+          try {
+            const fetchedGrades = await getGrades(pid, currentYear.id, currentYear.einde);
+            latestGrades = fetchedGrades
+              .filter(g => g.CijferStr && g.CijferKolom?.KolomSoort === 1)
+              .sort((a, b) => (b.DatumIngevoerd ?? '').localeCompare(a.DatumIngevoerd ?? ''))
+              .slice(0, 5);
+          } catch (e) {
+            console.error('Error loading dashboard grades:', e);
           }
         }
       }
@@ -191,41 +185,53 @@
       <div class="lg:col-span-5 space-y-6">
         
         <!-- Latest Grades Widget -->
-        <section class="glass rounded-[2rem] p-8 border border-white/5 shadow-xl">
-          <h2 class="text-xl font-bold text-gray-100 mb-6 flex items-center gap-2">
-            Laatste Cijfers 📈
-          </h2>
+        <section class="glass rounded-[3rem] p-8 border border-surface-800/50 shadow-2xl relative overflow-hidden group">
+          <div class="absolute -top-24 -right-24 w-48 h-48 bg-primary-500/10 rounded-full blur-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-1000"></div>
           
-          {#if latestGrades.length === 0}
-            <p class="text-gray-500 text-center py-10">Geen recente cijfers</p>
-          {:else}
-            <div class="space-y-4">
-              {#each latestGrades as grade}
-                <div class="flex items-center justify-between p-4 rounded-2xl bg-surface-900/50 border border-white/5 hover:bg-surface-800/50 transition-all group">
-                  <div class="flex items-center gap-4">
-                    <div class="w-10 h-10 rounded-xl bg-surface-800 flex items-center justify-center text-lg group-hover:scale-110 transition-transform">
-                      {getSubjectIcon(grade.Vak?.Omschrijving ?? '')}
-                    </div>
-                    <div>
-                      <p class="text-sm font-bold text-gray-200">{grade.Vak?.Omschrijving ?? 'Onbekend'}</p>
-                      <p class="text-[10px] text-gray-500 font-bold uppercase tracking-wider mt-0.5">{grade.CijferKolom?.KolomNaam ?? ''}</p>
-                    </div>
-                  </div>
-                  <div class="text-right">
-                    <span class="text-xl font-black {$userSettings.highlightFailing && !isVoldoende(grade) ? 'text-red-400' : 'text-accent-400'}">
-                      {grade.CijferStr}
-                    </span>
-                    {#if grade.Weging && grade.CijferKolom?.KolomSoort === 1}
-                      <p class="text-[9px] text-gray-600 font-bold mt-1 uppercase">×{grade.Weging}</p>
-                    {/if}
-                  </div>
-                </div>
-              {/each}
-            </div>
-            <button class="w-full mt-6 py-3 text-xs font-bold text-gray-500 hover:text-primary-400 transition-colors uppercase tracking-widest">
-              Alle cijfers bekijken →
+          <div class="flex items-center justify-between mb-8">
+            <h2 class="text-xl font-black text-white italic tracking-tighter">Cijfers</h2>
+            <button onclick={() => navigate('grades')} class="text-[10px] font-black uppercase tracking-widest text-primary-400 hover:text-primary-300 transition-colors bg-primary-500/5 px-3 py-1.5 rounded-full border border-primary-500/10">
+              Alles →
             </button>
-          {/if}
+          </div>
+          
+          {#each latestGrades as grade, i}
+            <div 
+              in:fly={{ x: 20, delay: 100 + (i * 100) }}
+              class="flex items-center justify-between p-4 mb-4 last:mb-0 rounded-[1.5rem] bg-surface-900/40 border border-white/5 hover:bg-surface-800/60 transition-all group/grade"
+            >
+              <div class="flex items-center gap-4">
+                <div class="w-12 h-12 rounded-2xl bg-surface-900 border border-surface-700/50 flex items-center justify-center text-xl relative group-hover/grade:scale-110 transition-transform duration-500">
+                  <div class="absolute inset-0 bg-primary-500/5 rounded-2xl blur-md opacity-0 group-hover/grade:opacity-100 transition-opacity"></div>
+                  <span class="relative z-10">{getSubjectIcon(grade.Vak?.Omschrijving ?? '')}</span>
+                </div>
+                <div class="min-w-0">
+                  <p class="text-sm font-black text-gray-100 truncate group-hover/grade:text-primary-400 transition-colors">
+                    {grade.Vak?.Omschrijving ?? 'Onbekend'}
+                  </p>
+                  <p class="text-[10px] text-gray-500 font-bold uppercase tracking-wider mt-0.5 truncate max-w-[120px]">
+                    {grade.CijferKolom?.KolomNaam ?? 'Toets'}
+                  </p>
+                </div>
+              </div>
+              
+              <div class="text-right">
+                <div class="text-2xl font-black italic tracking-tighter {$userSettings.highlightFailing && !isVoldoende(grade) ? 'text-red-500' : 'text-accent-400'} drop-shadow-sm">
+                  {grade.CijferStr}
+                </div>
+                {#if grade.Weging}
+                  <div class="text-[9px] font-black text-gray-600 uppercase tracking-widest mt-0.5">
+                    ×{grade.Weging}
+                  </div>
+                {/if}
+              </div>
+            </div>
+          {:else}
+            <div class="py-12 flex flex-col items-center justify-center text-center opacity-40">
+              <span class="text-4xl mb-3">📈</span>
+              <p class="text-sm font-bold text-gray-400 uppercase tracking-widest">Geen recente cijfers</p>
+            </div>
+          {/each}
         </section>
 
         <!-- Assignments Widget -->

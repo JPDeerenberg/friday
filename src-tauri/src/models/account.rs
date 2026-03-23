@@ -93,8 +93,8 @@ pub struct ApiChild {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProfileInfo {
     #[serde(rename = "Id")]
-    pub id: i64,
-    #[serde(rename = "Emailadres")]
+    pub id: Option<i64>,
+    #[serde(rename = "EmailAdres")]
     pub email: Option<String>,
     #[serde(rename = "Mobiel")]
     pub mobiel: Option<String>,
@@ -123,17 +123,17 @@ pub struct ProfileAddress {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProfileCareer {
     #[serde(rename = "Id")]
-    pub id: i64,
-    #[serde(rename = "Stamnummer")]
-    pub stamnummer: String,
-    #[serde(rename = "Opleiding")]
+    pub id: Option<i64>,
+    #[serde(rename = "StamNr")]
+    pub stamnummer: Option<String>,
+    #[serde(rename = "Studie")]
     pub opleiding: Option<String>,
-    #[serde(rename = "Groep")]
+    #[serde(rename = "Klas")]
     pub groep: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProfileAddressResponse {
-    #[serde(rename = "items")]
+    #[serde(rename = "Items")]
     pub items: Vec<ProfileAddress>,
 }

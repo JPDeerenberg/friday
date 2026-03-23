@@ -194,9 +194,5 @@
 </div>
 
 <style>
-  .glass {
-    background: rgba(23, 23, 23, 0.4);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
-  }
+  /* Redundant CSS removed to fix Tailwind parsing */
 </style>
