@@ -10,3 +10,17 @@ vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 Discipulus/
 magister_dump_json/
+
+# IDE & Editor
+.idea/
+.vscode/
+*.swp
+
+# Build Output & Logs
+dist/
+dist-ssr/
+coverage/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
