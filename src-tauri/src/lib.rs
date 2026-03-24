@@ -17,7 +17,7 @@ pub fn run() {
         .setup(|app| {
             #[cfg(mobile)]
             {
-                use tauri::{Emitter, Manager};
+                use tauri::Emitter;
                 use tauri_plugin_deep_link::DeepLinkExt;
                 let app_handle = app.handle().clone();
                 app.deep_link().on_open_url(move |event| {

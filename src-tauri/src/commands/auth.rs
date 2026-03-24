@@ -1,7 +1,9 @@
 use crate::auth::AuthFlow;
 use crate::client::{MagisterClient, SharedClient, TokenSet};
 use crate::models::account::ApiAccount;
-use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
+use tauri::{AppHandle, State};
+#[cfg(desktop)]
+use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 
 /// Start a new auth flow by opening a webview window.
 #[tauri::command]
