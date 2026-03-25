@@ -249,7 +249,7 @@
         </div>
       </div>
     {/if}
-  </main>
+  </div>
 </div>
 
 <style>

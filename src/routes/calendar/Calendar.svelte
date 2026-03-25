@@ -9,6 +9,9 @@
   let hideCanceled = $state(false);
   let selectedEvent = $state<any | null>(null);
 
+  // Derived state for the current day's events
+  let dayEvents = $derived(getEventsForDay(currentDate));
+
   // Edit states
   let isEditing = $state(false);
   let draftInhoud = $state('');
@@ -303,8 +306,6 @@
     {:else}
       <!-- ======= MOBILE: Single-Day View ======= -->
       <div class="md:hidden px-4 py-3 space-y-2">
-        {@const dayEvents = getEventsForDay(currentDate)}
-
         {#if dayEvents.length === 0}
           <div class="flex flex-col items-center justify-center py-16 text-center rounded-2xl bg-surface-900/40">
             <span class="text-4xl mb-3">🏖️</span>

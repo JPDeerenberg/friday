@@ -462,7 +462,7 @@
            <p class="text-gray-500 max-w-xs leading-relaxed font-medium">Kies een opdracht uit de lijst aan de linkerkant om details te bekijken of werk in te leveren.</p>
         </div>
       {/if}
-    </div>
+    </section>
   </div>
 </div>
 
