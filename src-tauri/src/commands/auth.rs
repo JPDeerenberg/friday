@@ -17,8 +17,13 @@ pub async fn start_login_flow(
     c.auth_flow = Some(auth);
 
     // Close existing login window if any
+    #[cfg(not(target_os = "android"))]
     if let Some(window) = app.get_webview_window("magister-login") {
-        let _ = window.close();
+        let _ = window.destroy();
+    }
+    #[cfg(target_os = "android")]
+    if let Some(webview) = app.get_webview("magister-login") {
+        let _ = webview.close();
     }
 
     let client_clone = client.inner().clone();
@@ -29,11 +34,16 @@ pub async fn start_login_flow(
         &app,
         "magister-login",
         WebviewUrl::External(url.parse().unwrap()),
-    )
-    .title("Magister Login")
-    .inner_size(500.0, 700.0)
-    .resizable(false)
-    .center();
+    );
+
+    #[cfg(not(target_os = "android"))]
+    {
+        builder = builder
+            .title("Magister Login")
+            .inner_size(500.0, 700.0)
+            .resizable(false)
+            .center();
+    }
 
     // Intercept m6loapp:// redirects
     builder = builder.on_navigation(move |url: &url::Url| {
@@ -55,8 +65,13 @@ pub async fn start_login_flow(
                     }
                 }
                 // Close the login window
+                #[cfg(not(target_os = "android"))]
                 if let Some(window) = app_handle.get_webview_window("magister-login") {
-                    let _ = window.close();
+                    let _ = window.destroy();
+                }
+                #[cfg(target_os = "android")]
+                if let Some(webview) = app_handle.get_webview("magister-login") {
+                    let _ = webview.close();
                 }
             });
             // Cancel navigation since we are intercepting it
