@@ -1,5 +1,6 @@
 <script lang="ts">
   import { personId } from '$lib/stores';
+  import { get } from 'svelte/store';
   import { 
     getAssignments, 
     getAssignmentDetail, 
@@ -33,7 +34,7 @@
   });
 
   async function loadAssignments() {
-    const pid = $personId;
+    const pid = get(personId);
     if (!pid) return;
 
     loadingList = true;
@@ -164,7 +165,7 @@
         }))
       };
 
-      await hand_in_assignment(selfUrl, selectedAssignment.Id, JSON.stringify(submissionBody));
+      await handInAssignment(selfUrl, selectedAssignment.Id, JSON.stringify(submissionBody));
       
       // Refresh
       await loadAssignments();
@@ -268,7 +269,7 @@
     </aside>
 
     <!-- Content Pane -->
-    <section class="flex-1 overflow-y-auto bg-surface-950 p-8 custom-scrollbar relative">
+    <section class="flex-1 overflow-y-auto bg-surface-950 p-4 md:p-8 custom-scrollbar relative">
       {#if loadingDetail}
         <div class="absolute inset-0 flex items-center justify-center bg-surface-950/50 backdrop-blur-sm z-20">
           <div class="w-10 h-10 border-4 border-primary-500 border-t-transparent rounded-full animate-spin"></div>
@@ -279,8 +280,8 @@
         <div in:fly={{ y: 20, duration: 400 }} class="max-w-4xl mx-auto space-y-8 pb-20">
           <!-- Main Details -->
           <div class="space-y-4">
-            <div class="flex items-start justify-between gap-4">
-              <div>
+            <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div class="flex-1 min-w-0">
                 <div class="flex items-center gap-3 mb-2">
                   <span class="px-2.5 py-1 rounded-md text-[10px] font-bold uppercase tracking-widest border {getStatus(selectedAssignment).color}">
                     {getStatus(selectedAssignment).label}

@@ -73,6 +73,7 @@ pub fn run() {
             commands::assignments::upload_assignment_attachment,
             // Leermiddelen
             commands::leermiddelen::get_leermiddelen,
+            commands::leermiddelen::get_leermiddel_launch_url,
             // Activities
             commands::activities::get_activities,
             commands::activities::get_activity_elements,

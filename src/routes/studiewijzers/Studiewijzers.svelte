@@ -2,6 +2,7 @@
   import { personId } from '$lib/stores';
   import { getStudiewijzers, getStudiewijzerDetail, getStudiewijzerOnderdeelDetail } from '$lib/api';
   import { onMount } from 'svelte';
+  import { get } from 'svelte/store';
   import { fade, fly, slide } from 'svelte/transition';
 
   let studiewijzers = $state<any[]>([]);
@@ -16,7 +17,7 @@
   });
 
   async function loadInitialData() {
-    const pid = $personId;
+    const pid = get(personId);
     if (!pid) return;
     loading = true;
     error = null;
@@ -37,7 +38,7 @@
     selectedOnderdeel = null;
     try {
       const isProject = sw.Links?.some((l: any) => l.Href?.includes('projecten'));
-      selectedSW.Detail = await getStudiewijzerDetail($personId as number, sw.Id, isProject);
+      selectedSW.Detail = await getStudiewijzerDetail(get(personId) as number, sw.Id, isProject);
     } catch (e) {
       console.error('Error loading sw detail:', e);
       error = 'Kon detailinformatie niet laden.';
@@ -52,7 +53,7 @@
     selectedOnderdeel = onderdeel;
     try {
       const isProject = selectedSW.Links?.some((l: any) => l.Href?.includes('projecten'));
-      selectedOnderdeel.Detail = await getStudiewijzerOnderdeelDetail($personId as number, selectedSW.Id, onderdeel.Id, isProject);
+      selectedOnderdeel.Detail = await getStudiewijzerOnderdeelDetail(get(personId) as number, selectedSW.Id, onderdeel.Id, isProject);
     } catch (e) {
       console.error('Error loading onderdeel detail:', e);
     } finally {

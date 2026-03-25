@@ -66,36 +66,36 @@
 
   // Bottom nav items (most used pages)
   const bottomNavItems = [
-    { id: 'dashboard', label: 'Home', icon: '🏠' },
-    { id: 'calendar', label: 'Agenda', icon: '📅' },
-    { id: 'grades', label: 'Cijfers', icon: '📊' },
-    { id: 'messages', label: 'Berichten', icon: '✉️' },
-    { id: 'more', label: 'Meer', icon: '☰' },
+    { id: 'dashboard', label: 'Home', icon: `<svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>` },
+    { id: 'calendar', label: 'Agenda', icon: `<svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/></svg>` },
+    { id: 'grades', label: 'Cijfers', icon: `<svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M7.105 13.123l2.895-2.123 2.895 2.123 5.105-4.123"/><path d="M3 21h18"/><path d="M3 3v18h18"/></svg>` },
+    { id: 'messages', label: 'Berichten', icon: `<svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/><rect width="20" height="14" x="2" y="5" rx="2"/></svg>` },
+    { id: 'more', label: 'Meer', icon: `<svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>` },
   ];
 
   const navGroups = [
     {
       label: 'Overzicht',
       items: [
-        { id: 'dashboard', label: 'Dashboard', icon: '🏠' },
-        { id: 'calendar', label: 'Agenda', icon: '📅' },
-        { id: 'grades', label: 'Cijfers', icon: '📊' },
+        { id: 'dashboard', label: 'Dashboard', icon: `<svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>` },
+        { id: 'calendar', label: 'Agenda', icon: `<svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/></svg>` },
+        { id: 'grades', label: 'Cijfers', icon: `<svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M7.105 13.123l2.895-2.123 2.895 2.123 5.105-4.123"/><path d="M3 21h18"/><path d="M3 3v18h18"/></svg>` },
       ]
     },
     {
       label: 'Leren',
       items: [
-        { id: 'assignments', label: 'Opdrachten', icon: '📝' },
-        { id: 'leermiddelen', label: 'Leermiddelen', icon: '📚' },
-        { id: 'studiewijzers', label: 'Studiewijzers', icon: '📖' },
+        { id: 'assignments', label: 'Opdrachten', icon: `<svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg>` },
+        { id: 'leermiddelen', label: 'Leermiddelen', icon: `<svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"/></svg>` },
+        { id: 'studiewijzers', label: 'Studiewijzers', icon: `<svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"/><path d="M8 7h6"/><path d="M8 11h8"/></svg>` },
       ]
     },
     {
       label: 'School',
       items: [
-        { id: 'afwezigheid', label: 'Afwezigheid', icon: '🏃' },
-        { id: 'activiteiten', label: 'Activiteiten', icon: '🎟️' },
-        { id: 'bronnen', label: 'Bronnen', icon: '📁' },
+        { id: 'afwezigheid', label: 'Afwezigheid', icon: `<svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" x2="12" y1="9" y2="13"/><line x1="12" x2="12.01" y1="17" y2="17"/></svg>` },
+        { id: 'activiteiten', label: 'Activiteiten', icon: `<svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2v20"/><path d="M2 12h20"/><path d="M12 12l5 5"/></svg>` },
+        { id: 'bronnen', label: 'Bronnen', icon: `<svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>` },
       ]
     },
     {
@@ -165,7 +165,7 @@
                              ? 'bg-primary-500/15 text-primary-400'
                              : 'text-gray-400 hover:bg-surface-800 hover:text-gray-200'}"
                   >
-                    <span class="text-xl shrink-0">{item.icon}</span>
+                    <span class="text-xl shrink-0">{@html item.icon}</span>
                     <span class="truncate">{item.label}</span>
                   </button>
                 {/each}
@@ -177,29 +177,30 @@
                 {#if $profilePicture}
                   <img src="data:image/jpeg;base64,{$profilePicture}" alt="Profiel" class="w-6 h-6 rounded-full object-cover shrink-0" />
                 {:else}
-                  <span class="text-xl">👤</span>
+                  <span class="text-primary-400">
+                    <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                  </span>
                 {/if}
                 <span>Profiel</span>
               </button>
               <button onclick={() => navigate('settings')} class="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-medium text-gray-400 hover:bg-surface-800 hover:text-gray-200 transition-all">
-                <span class="text-xl">⚙️</span>
+                <span class="text-primary-400">
+                  <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+                </span>
                 <span>Instellingen</span>
               </button>
             </div>
-            <!-- Quick Actions / Settings inside drawer -->
+            <!-- Settings inside drawer -->
             <div class="px-6 py-4 border-t border-surface-800/50 mt-auto">
-              <label class="flex items-center justify-between cursor-pointer group">
-                <span class="text-xs font-black text-gray-500 uppercase tracking-widest group-hover:text-gray-300 transition-colors">Toon weekend</span>
-                <div class="relative inline-flex items-center">
-                  <input
-                    type="checkbox"
-                    checked={$userSettings.showWeekend}
-                    onchange={(e) => $userSettings.showWeekend = e.target.checked}
-                    class="sr-only peer"
-                  >
-                  <div class="w-11 h-6 bg-surface-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-500/80"></div>
-                </div>
-              </label>
+              <button 
+                onclick={() => navigate('settings')} 
+                class="w-full flex items-center gap-4 px-4 py-3 rounded-2xl bg-surface-800/40 text-gray-300 hover:text-white transition-all border border-white/5 shadow-sm active:scale-95"
+              >
+                <span class="text-primary-400">
+                   <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+                </span>
+                <span class="text-xs font-black uppercase tracking-widest italic">Instellingen</span>
+              </button>
             </div>
 
             <button
@@ -241,9 +242,11 @@
                            ? 'bg-primary-500/15 text-primary-400'
                            : 'text-gray-400 hover:bg-surface-800 hover:text-gray-200'}"
                 >
-                  <span class="text-lg shrink-0 group-hover:scale-110 transition-transform">{item.icon}</span>
+                  <span class="text-lg shrink-0 group-hover:scale-110 transition-transform">
+                    {@html item.icon}
+                  </span>
                   {#if !sidebarCollapsed}
-                    <span class="truncate">{item.label}</span>
+                    <span class="truncate tracking-tight font-bold">{item.label}</span>
                   {/if}
                 </button>
               {/each}
@@ -271,15 +274,28 @@
         </button>
 
         <!-- Settings button -->
-        <button onclick={() => navigate('settings')} class="w-full flex items-center gap-3 px-5 py-3 text-sm font-medium text-gray-400 hover:bg-surface-800 hover:text-gray-200 border-t border-surface-700/50 transition-all">
-          <span class="text-lg shrink-0">⚙️</span>
+        <button onclick={() => navigate('settings')} class="w-full flex items-center gap-3 px-5 py-3 text-sm font-bold text-gray-400 hover:bg-surface-800 hover:text-gray-200 border-t border-surface-700/50 transition-all group">
+          <span class="text-lg shrink-0 text-primary-400 group-hover:rotate-45 transition-transform duration-500">
+             <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+          </span>
           {#if !sidebarCollapsed}
-            <span class="truncate">Instellingen</span>
+            <span class="truncate italic tracking-tight uppercase text-[10px] font-black">Instellingen</span>
           {/if}
         </button>
 
-        <!-- Collapse toggle -->
-        <button onclick={() => sidebarCollapsed = !sidebarCollapsed} class="p-3 text-gray-500 hover:text-gray-300 border-t border-surface-700/50 text-sm shrink-0">
+        <!-- Bottom Nav Items (Icons Only) -->
+        <div class="p-3 border-t border-surface-800/50 flex items-center justify-around bg-surface-950/50">
+          {#each bottomNavItems.slice(0, 4) as item}
+            <button 
+              onclick={() => navigate(item.id)}
+              class="p-2.5 rounded-xl transition-all {$currentPage === item.id ? 'bg-primary-500 text-white shadow-lg' : 'text-gray-500 hover:text-gray-300 hover:bg-surface-800'}"
+            >
+              {@html item.icon}
+            </button>
+          {/each}
+        </div>
+
+        <button onclick={() => sidebarCollapsed = !sidebarCollapsed} class="p-3 text-gray-500 hover:text-gray-300 border-t border-surface-800/50 text-sm shrink-0 bg-surface-950/30">
           {sidebarCollapsed ? '→' : '←'}
         </button>
       </aside>
@@ -293,37 +309,15 @@
     <!-- ====== MOBILE: Fixed bottom tab bar ====== -->
     {#if $isLoggedIn}
       <nav class="fixed md:hidden bottom-0 left-0 right-0 z-30 bg-surface-950/95 backdrop-blur-md border-t border-surface-800/50 flex items-stretch h-[60px] pb-[env(safe-area-inset-bottom)]">
-        <button
-          onclick={() => handleBottomNav('dashboard')}
-          class="flex-1 flex flex-col items-center justify-center gap-1 transition-all {isBottomActive('dashboard') ? 'text-primary-400' : 'text-gray-500'}"
-        >
-          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
-          <span class="text-[9px] font-black uppercase tracking-widest">Home</span>
-        </button>
-
-        <button
-          onclick={() => handleBottomNav('calendar')}
-          class="flex-1 flex flex-col items-center justify-center gap-1 transition-all {isBottomActive('calendar') ? 'text-primary-400' : 'text-gray-500'}"
-        >
-          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/></svg>
-          <span class="text-[9px] font-black uppercase tracking-widest">Agenda</span>
-        </button>
-
-        <button
-          onclick={() => handleBottomNav('grades')}
-          class="flex-1 flex flex-col items-center justify-center gap-1 transition-all {isBottomActive('grades') ? 'text-primary-400' : 'text-gray-500'}"
-        >
-          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M7.105 13.123l2.895-2.123 2.895 2.123 5.105-4.123"/><path d="M3 21h18"/><path d="M3 3v18h18"/></svg>
-          <span class="text-[9px] font-black uppercase tracking-widest">Cijfers</span>
-        </button>
-
-        <button
-          onclick={() => handleBottomNav('more')}
-          class="flex-1 flex flex-col items-center justify-center gap-1 transition-all {mobileSidebarOpen ? 'text-primary-400' : 'text-gray-500'}"
-        >
-          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
-          <span class="text-[9px] font-black uppercase tracking-widest">Meer</span>
-        </button>
+        {#each bottomNavItems as item}
+          <button
+            onclick={() => handleBottomNav(item.id)}
+            class="flex-1 flex flex-col items-center justify-center gap-1 transition-all {isBottomActive(item.id) ? 'text-primary-400' : 'text-gray-500'}"
+          >
+            {@html item.icon}
+            <span class="text-[9px] font-black uppercase tracking-widest">{item.label}</span>
+          </button>
+        {/each}
       </nav>
     {/if}
   </div>

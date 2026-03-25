@@ -1,7 +1,8 @@
 <script lang="ts">
   import { personId, userSettings } from '$lib/stores';
   import { getCalendarEvents, updateCalendarEvent, createCalendarEvent, formatDate, getWeekRange, infoTypeShort, infoTypeName } from '$lib/api';
-  import { onMount } from 'svelte';
+  import { onMount, getContext } from 'svelte';
+  import { get } from 'svelte/store';
 
   let events = $state<any[]>([]);
   let loading = $state(true);
@@ -197,7 +198,7 @@
     isSubmitting = true;
     try {
       await createCalendarEvent({
-        personId: $personId,
+        ['personId']: get(personId),
         start: new Date(newEventForm.start).toISOString(),
         einde: new Date(newEventForm.einde).toISOString(),
         duurtHeleDag: false,
@@ -232,32 +233,61 @@
 <div class="flex flex-col h-full bg-surface-950">
 
   <!-- ===== STICKY MOBILE HEADER ===== -->
-  <div class="md:hidden sticky top-0 z-10 bg-surface-950/95 backdrop-blur border-b border-surface-800/50 px-4 py-3 space-y-3">
-    <!-- Top row: title + add button -->
+  <div class="md:hidden sticky top-0 z-20 bg-surface-950/95 backdrop-blur border-b border-surface-800/50 px-4 py-3 space-y-4">
+    <!-- Top row: title + global actions -->
     <div class="flex items-center justify-between">
-      <h1 class="text-lg font-bold text-gray-100">Agenda</h1>
+      <div class="flex items-center gap-3">
+        <h1 class="text-xl font-black text-white italic tracking-tighter">Agenda</h1>
+        <button 
+          onclick={loadEvents} 
+          class="p-2 text-gray-500 hover:text-primary-400 transition-all hover:scale-110 active:scale-95"
+          aria-label="Vernieuwen"
+        >
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
+        </button>
+      </div>
+
       <div class="flex items-center gap-2">
-        <button onclick={goToday} class="px-3 py-1.5 rounded-lg bg-surface-800 text-gray-300 text-xs font-medium active:bg-surface-700">
+        <button onclick={goToday} class="px-3 py-1.5 rounded-xl bg-primary-500/10 text-primary-400 text-[10px] font-black uppercase tracking-widest border border-primary-500/20 active:scale-95 transition-all">
           Vandaag
         </button>
-        <button onclick={openAddModal} class="px-3 py-1.5 rounded-lg bg-primary-600 text-white text-xs font-semibold active:bg-primary-500">
-          + Afspraak
+        <button onclick={openAddModal} class="w-8 h-8 rounded-lg bg-primary-600 text-white flex items-center justify-center shadow-lg shadow-primary-500/20 active:scale-90 transition-all">
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
         </button>
       </div>
     </div>
 
-    <!-- Day navigation -->
+    <!-- Day Navigation & Chips -->
     <div class="flex items-center gap-2">
-      <button onclick={nextDay}
-        class="w-10 h-10 rounded-xl bg-surface-800 text-gray-300 active:bg-surface-700 flex items-center justify-center text-lg font-bold flex-shrink-0">
-        ›
+      <button onclick={prevDay} class="w-10 h-10 rounded-xl bg-surface-800/50 text-gray-400 flex items-center justify-center active:scale-90 transition-all" aria-label="Vorige dag">
+        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+      </button>
+
+      <div class="flex-1 overflow-x-auto no-scrollbar py-1">
+        <div class="flex gap-2 justify-start min-w-max px-1">
+          {#each weekDates as date}
+            {@const isSelected = formatDate(date) === formatDate(currentDate)}
+            {@const isTod = formatDate(date) === formatDate(new Date())}
+            <button
+              onclick={() => currentDate = date}
+              class="flex flex-col items-center min-w-[44px] py-1.5 rounded-2xl transition-all border
+                     {isSelected 
+                       ? 'bg-primary-500 text-white border-primary-400 shadow-lg shadow-primary-500/20' 
+                       : isTod 
+                         ? 'bg-primary-500/10 text-primary-400 border-primary-500/20' 
+                         : 'bg-surface-800/40 text-gray-500 border-transparent'}"
+            >
+              <span class="text-[9px] font-black uppercase tracking-tighter">{['Zo', 'Ma', 'Di', 'Wo', 'Do', 'Vr', 'Za'][date.getDay()]}</span>
+              <span class="text-xs font-black">{date.getDate()}</span>
+            </button>
+          {/each}
+        </div>
+      </div>
+
+      <button onclick={nextDay} class="w-10 h-10 rounded-xl bg-surface-800/50 text-gray-400 flex items-center justify-center active:scale-90 transition-all" aria-label="Volgende dag">
+        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
       </button>
     </div>
-
-    <!-- Current day label -->
-    <p class="text-sm font-semibold text-gray-100 capitalize text-center -mt-1">
-      {mobileDayLabel(currentDate)}
-    </p>
   </div>
 
   <!-- ===== DESKTOP HEADER ===== -->
@@ -310,11 +340,12 @@
                 </div>
               {/if}
             {/if}
-            <button
+            <div
+              role="button"
+              tabindex="0"
               onclick={() => selectEvent(event)}
-              class="w-full text-left rounded-2xl border p-4 transition-all active:scale-[0.98]
-                     {getEventColor(event)}
-                     {selectedEvent?.Id === event.Id ? 'ring-2 ring-primary-400/70' : ''}"
+              onkeydown={(e) => e.key === 'Enter' && selectEvent(event)}
+              class="w-full text-left rounded-2xl border p-4 transition-all active:scale-[0.98] cursor-pointer {getEventColor(event)} {selectedEvent?.Id === event.Id ? 'ring-2 ring-primary-400/70' : ''}"
             >
               <!-- Title row -->
               <div class="flex items-start justify-between gap-2">
@@ -356,7 +387,7 @@
                   {/if}
                 </div>
               {/if}
-            </button>
+            </div>
           {/each}
         {/if}
 
@@ -485,26 +516,26 @@
       </div>
       <form onsubmit={(e) => { e.preventDefault(); submitNewEvent(); }} class="p-5 space-y-4">
         <div>
-          <label class="block text-xs font-medium text-gray-400 mb-1 uppercase tracking-wider">Titel</label>
-          <input required type="text" bind:value={newEventForm.omschrijving}
+          <label for="event-title" class="block text-xs font-medium text-gray-400 mb-1 uppercase tracking-wider">Titel</label>
+          <input id="event-title" required type="text" bind:value={newEventForm.omschrijving}
             class="w-full bg-surface-800 border border-surface-700 rounded-lg px-3 py-2.5 text-sm text-gray-200 focus:outline-none focus:border-primary-500"
             placeholder="Bijv. Tandarts" />
         </div>
         <div class="grid grid-cols-2 gap-3">
           <div>
-            <label class="block text-xs font-medium text-gray-400 mb-1 uppercase tracking-wider">Start</label>
-            <input required type="datetime-local" bind:value={newEventForm.start}
+            <label for="event-start" class="block text-xs font-medium text-gray-400 mb-1 uppercase tracking-wider">Start</label>
+            <input id="event-start" required type="datetime-local" bind:value={newEventForm.start}
               class="w-full bg-surface-800 border border-surface-700 rounded-lg px-3 py-2.5 text-sm text-gray-200 focus:outline-none focus:border-primary-500 [&::-webkit-calendar-picker-indicator]:invert-[0.8]" />
           </div>
           <div>
-            <label class="block text-xs font-medium text-gray-400 mb-1 uppercase tracking-wider">Einde</label>
-            <input required type="datetime-local" bind:value={newEventForm.einde}
+            <label for="event-einde" class="block text-xs font-medium text-gray-400 mb-1 uppercase tracking-wider">Einde</label>
+            <input id="event-einde" required type="datetime-local" bind:value={newEventForm.einde}
               class="w-full bg-surface-800 border border-surface-700 rounded-lg px-3 py-2.5 text-sm text-gray-200 focus:outline-none focus:border-primary-500 [&::-webkit-calendar-picker-indicator]:invert-[0.8]" />
           </div>
         </div>
         <div>
-          <label class="block text-xs font-medium text-gray-400 mb-1 uppercase tracking-wider">Locatie (optioneel)</label>
-          <input type="text" bind:value={newEventForm.lokatie}
+          <label for="event-lokatie" class="block text-xs font-medium text-gray-400 mb-1 uppercase tracking-wider">Locatie (optioneel)</label>
+          <input id="event-lokatie" type="text" bind:value={newEventForm.lokatie}
             class="w-full bg-surface-800 border border-surface-700 rounded-lg px-3 py-2.5 text-sm text-gray-200 focus:outline-none focus:border-primary-500" />
         </div>
         <div class="flex gap-3 pt-1">

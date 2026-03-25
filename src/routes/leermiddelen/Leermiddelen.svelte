@@ -1,6 +1,8 @@
 <script lang="ts">
   import { personId } from '$lib/stores';
-  import { getLeermiddelen, formatDate } from '$lib/api';
+  import { get } from 'svelte/store';
+  import { getLeermiddelen, formatDate, getLeermiddelLaunchUrl } from '$lib/api';
+  import { openUrl } from '@tauri-apps/plugin-opener';
   import { onMount } from 'svelte';
   import { fade, fly, slide } from 'svelte/transition';
 
@@ -14,7 +16,7 @@
   });
 
   async function loadData() {
-    const pid = $personId;
+    const pid = get(personId);
     if (!pid) return;
     loading = true;
     error = null;
@@ -39,6 +41,16 @@
     if (status === 1) return 'text-emerald-400 bg-emerald-400/10 border-emerald-400/20';
     return 'text-gray-400 bg-gray-400/10 border-surface-700/30';
   }
+
+  async function handleOpen(href: string) {
+    try {
+      const launchUrl = await getLeermiddelLaunchUrl(href);
+      await openUrl(launchUrl);
+    } catch (e) {
+      console.error('Failed to open leermiddel:', e);
+      alert('Kon leermiddel niet openen. Probeer het later opnieuw.');
+    }
+  }
 </script>
 
 <div class="flex flex-col bg-surface-950 min-h-full">
@@ -49,6 +61,7 @@
         <button 
           onclick={loadData} 
           class="p-2 text-gray-500 hover:text-emerald-400 transition-all hover:scale-110 active:scale-95"
+          aria-label="Vernieuwen"
         >
           <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
         </button>
@@ -61,6 +74,7 @@
         placeholder="Zoeken..."
         bind:value={searchQuery}
         class="w-full bg-surface-800/50 border border-surface-700/50 rounded-xl px-4 py-2 pl-9 text-xs font-bold text-gray-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 transition-all shadow-inner"
+        aria-label="Materiaal zoeken"
       />
       <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-[10px]">🔍</span>
     </div>
@@ -131,13 +145,12 @@
                  <div class="absolute inset-x-6 bottom-6 translate-y-8 opacity-0 group-hover:translate-y-0 group-hover:opacity-100 transition-all duration-500 delay-75">
                     {#each material.Links as link}
                       {#if link.Rel === 'content'}
-                        <a
-                          href={link.Href}
-                          target="_blank"
-                          class="w-full bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-black py-4 rounded-[1.25rem] text-center transition-all flex items-center justify-center gap-3 uppercase tracking-[0.2em] shadow-[0_10px_30px_rgba(16,185,129,0.3)] ring-1 ring-emerald-400/50 hover:scale-[1.02] active:scale-98"
+                        <button
+                          onclick={() => handleOpen(link.Href)}
+                          class="w-full bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-black py-4 rounded-[1.25rem] text-center transition-all flex items-center justify-center gap-3 uppercase tracking-[0.2em] shadow-[0_10px_30px_rgba(16,185,129,0.3)] ring-1 ring-emerald-400/50 hover:scale-[1.02] active:scale-98 cursor-pointer"
                         >
                           Openen ↗
-                        </a>
+                        </button>
                       {/if}
                     {/each}
                  </div>

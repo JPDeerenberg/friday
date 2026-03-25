@@ -121,7 +121,12 @@ impl MagisterClient {
     pub async fn get(&mut self, path: &str) -> Result<serde_json::Value, ClientError> {
         self.ensure_valid_token().await?;
         let token_set = self.token_set.as_ref().unwrap();
-        let url = format!("{}/{}", token_set.api_endpoint.trim_end_matches('/'), path);
+
+        let url = if path.starts_with("http") {
+            path.to_string()
+        } else {
+            format!("{}/{}", token_set.api_endpoint.trim_end_matches('/'), path.trim_start_matches('/'))
+        };
 
         let resp = self
             .http
@@ -130,7 +135,6 @@ impl MagisterClient {
                 "Authorization",
                 format!("Bearer {}", token_set.access_token),
             )
-            .header("Content-Type", "application/json")
             .header("Accept", "application/json")
             .send()
             .await
@@ -184,7 +188,12 @@ impl MagisterClient {
     pub async fn get_bytes(&mut self, path: &str) -> Result<Option<Vec<u8>>, ClientError> {
         self.ensure_valid_token().await?;
         let token_set = self.token_set.as_ref().unwrap();
-        let url = format!("{}/{}", token_set.api_endpoint.trim_end_matches('/'), path);
+
+        let url = if path.starts_with("http") {
+            path.to_string()
+        } else {
+            format!("{}/{}", token_set.api_endpoint.trim_end_matches('/'), path.trim_start_matches('/'))
+        };
 
         let resp = self
             .http
@@ -202,10 +211,10 @@ impl MagisterClient {
         }
 
         if !resp.status().is_success() {
-            return Err(ClientError::ApiError(
-                resp.status().as_u16(),
-                resp.text().await.unwrap_or_default(),
-            ));
+            let status = resp.status().as_u16();
+            let text = resp.text().await.unwrap_or_default();
+            println!("API Bytes Error {}: {}", status, text);
+            return Err(ClientError::ApiError(status, text));
         }
 
         Ok(Some(
@@ -224,7 +233,12 @@ impl MagisterClient {
     ) -> Result<serde_json::Value, ClientError> {
         self.ensure_valid_token().await?;
         let token_set = self.token_set.as_ref().unwrap();
-        let url = format!("{}/{}", token_set.api_endpoint.trim_end_matches('/'), path);
+
+        let url = if path.starts_with("http") {
+            path.to_string()
+        } else {
+            format!("{}/{}", token_set.api_endpoint.trim_end_matches('/'), path.trim_start_matches('/'))
+        };
 
         let resp = self
             .http
@@ -259,7 +273,12 @@ impl MagisterClient {
     pub async fn put(&mut self, path: &str, body: &serde_json::Value) -> Result<(), ClientError> {
         self.ensure_valid_token().await?;
         let token_set = self.token_set.as_ref().unwrap();
-        let url = format!("{}/{}", token_set.api_endpoint.trim_end_matches('/'), path);
+
+        let url = if path.starts_with("http") {
+            path.to_string()
+        } else {
+            format!("{}/{}", token_set.api_endpoint.trim_end_matches('/'), path.trim_start_matches('/'))
+        };
 
         let resp = self
             .http
@@ -295,7 +314,12 @@ impl MagisterClient {
     ) -> Result<(), ClientError> {
         self.ensure_valid_token().await?;
         let token_set = self.token_set.as_ref().unwrap();
-        let url = format!("{}/{}", token_set.api_endpoint.trim_end_matches('/'), path);
+
+        let url = if path.starts_with("http") {
+            path.to_string()
+        } else {
+            format!("{}/{}", token_set.api_endpoint.trim_end_matches('/'), path.trim_start_matches('/'))
+        };
 
         let mut rb = self.http.delete(&url).header(
             "Authorization",
@@ -323,7 +347,12 @@ impl MagisterClient {
     pub async fn patch(&mut self, path: &str, body: &serde_json::Value) -> Result<(), ClientError> {
         self.ensure_valid_token().await?;
         let token_set = self.token_set.as_ref().unwrap();
-        let url = format!("{}/{}", token_set.api_endpoint.trim_end_matches('/'), path);
+
+        let url = if path.starts_with("http") {
+            path.to_string()
+        } else {
+            format!("{}/{}", token_set.api_endpoint.trim_end_matches('/'), path.trim_start_matches('/'))
+        };
 
         let resp = self
             .http
@@ -344,6 +373,54 @@ impl MagisterClient {
             return Err(ClientError::ApiError(status, text));
         }
         Ok(())
+    }
+
+    /// Make an authenticated GET request, do NOT follow redirects, and return the Location header.
+    pub async fn get_redirect_location(&mut self, path: &str) -> Result<String, ClientError> {
+        self.ensure_valid_token().await?;
+        let token_set = self.token_set.as_ref().unwrap();
+
+        let url = if path.starts_with("http") {
+            path.to_string()
+        } else {
+            format!("{}/{}", token_set.api_endpoint.trim_end_matches('/'), path.trim_start_matches('/'))
+        };
+
+        let no_redirect_client = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .map_err(|e| ClientError::RequestFailed(e.to_string()))?;
+
+        let resp = no_redirect_client
+            .get(&url)
+            .header(
+                "Authorization",
+                format!("Bearer {}", token_set.access_token),
+            )
+            .header("Accept", "application/json")
+            .send()
+            .await
+            .map_err(|e| ClientError::RequestFailed(e.to_string()))?;
+
+        let status = resp.status().as_u16();
+        
+        if resp.status().is_redirection() {
+            if let Some(loc) = resp.headers().get(reqwest::header::LOCATION) {
+                return Ok(loc.to_str().unwrap_or_default().to_string());
+            }
+        }
+
+        let text = resp.text().await.unwrap_or_default();
+
+        if status >= 200 && status < 300 {
+            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) {
+                if let Some(loc) = json.get("location").and_then(|l| l.as_str()) {
+                    return Ok(loc.to_string());
+                }
+            }
+        }
+
+        Err(ClientError::ApiError(status, text))
     }
 }
 

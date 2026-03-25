@@ -1,5 +1,6 @@
 <script lang="ts">
   import { personId, accountInfo, profilePicture, userSettings } from '$lib/stores';
+  import { get } from 'svelte/store';
   import { getCalendarEvents, getGrades, getSchoolyears, getMessageFolders, getAssignments, formatDate, infoTypeShort, getBulkGradeExtraInfo } from '$lib/api';
   import { onMount } from 'svelte';
   import { fade, fly, slide } from 'svelte/transition';
@@ -11,7 +12,7 @@
   let loading = $state(true);
 
   async function loadDashboardData() {
-    const pid = $personId;
+    const pid = get(personId);
     if (!pid) return;
     loading = true;
 

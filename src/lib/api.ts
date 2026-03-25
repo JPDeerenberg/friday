@@ -170,6 +170,10 @@ export async function getLeermiddelen(personId: number): Promise<any[]> {
   return invoke('get_leermiddelen', { personId });
 }
 
+export async function getLeermiddelLaunchUrl(href: string): Promise<string> {
+  return invoke('get_leermiddel_launch_url', { href });
+}
+
 // === Activities ===
 export async function getActivities(personId: number): Promise<any[]> {
   return invoke('get_activities', { personId });

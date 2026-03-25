@@ -2,6 +2,7 @@
   import { personId } from '$lib/stores';
   import { getAbsences, formatDate, getSchoolyears } from '$lib/api';
   import { onMount } from 'svelte';
+  import { get } from 'svelte/store';
   import { fade, fly, slide } from 'svelte/transition';
 
   let absences = $state<any[]>([]);
@@ -14,7 +15,7 @@
   let tot = $state('');
 
   onMount(async () => {
-    const pid = $personId;
+    const pid = get(personId);
     if (!pid) return;
     
     try {
@@ -145,7 +146,8 @@
         </div>
       </div>
     </div>
-  </header>
+  </div>
+</header>
 
   <main class="bg-[radial-gradient(circle_at_top_right,rgba(59,130,246,0.03),transparent_40%)] pb-10">
     <div class="max-w-5xl mx-auto p-8 space-y-8">
@@ -159,7 +161,7 @@
           { label: 'Ziek', value: stats().sick, icon: `<svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/></svg>`, color: 'text-blue-400' },
         ] as stat}
           <div in:fly={{ y: 20, delay: 100 }} class="glass p-5 rounded-[2rem] border-surface-800/50 flex flex-col items-center text-center group transition-all hover:scale-[1.02] hover:bg-surface-800/40 shadow-xl">
-            <span class="text-3xl mb-3 drop-shadow-md">{stat.icon}</span>
+            <span class="text-3xl mb-3 drop-shadow-md">{@html stat.icon}</span>
             <span class="text-3xl font-black text-white group-hover:text-primary-400 transition-colors uppercase tabular-nums tracking-tighter">{stat.value}</span>
             <span class="text-[10px] font-black uppercase tracking-widest mt-1.5 {stat.color} opacity-80">{stat.label}</span>
           </div>
@@ -205,7 +207,7 @@
                 <div class="flex-1 min-w-0">
                   <div class="flex items-center gap-2 mb-2 flex-wrap">
                     <span class="px-3 py-1 rounded-xl text-[9px] font-black uppercase tracking-widest border transition-colors {type.color} flex items-center gap-1.5">
-                      {@render (function() { return type.iconSvg; })()}
+                      {@html type.iconSvg}
                       {type.label}
                     </span>
                     {#if !absence.Geoorloofd}
