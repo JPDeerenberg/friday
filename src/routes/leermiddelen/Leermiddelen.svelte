@@ -45,14 +45,14 @@
   <header class="sticky top-0 z-10 border-b border-surface-800/50 bg-surface-950/95 backdrop-blur px-4 py-3 pb-4">
     <div class="flex items-center justify-between mb-3">
       <div class="flex items-center gap-3">
-        <h1 class="text-xl font-bold text-gray-100 italic">Leermiddelen</h1>
+        <h1 class="text-xl font-bold text-gray-100 italic tracking-tighter">Leermiddelen</h1>
+        <button 
+          onclick={loadData} 
+          class="p-2 text-gray-500 hover:text-emerald-400 transition-all hover:scale-110 active:scale-95"
+        >
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
+        </button>
       </div>
-      <button 
-        onclick={loadData}
-        class="p-2 rounded-xl hover:bg-surface-800/50 transition-colors text-gray-500 hover:text-emerald-400"
-      >
-        <span class="text-lg">🔄</span>
-      </button>
     </div>
     
     <div class="relative">
@@ -108,9 +108,11 @@
                  {#if material.PreviewImageUrl}
                    <img src={material.PreviewImageUrl} alt={material.Titel} class="w-full h-full object-cover group-hover:brightness-110 transition-all duration-700" />
                  {:else}
-                   <div class="w-full h-full bg-gradient-to-br from-surface-800 to-surface-950 flex flex-col items-center justify-center p-8 text-center border border-surface-700/50 shadow-inner">
-                     <span class="text-7xl mb-5 group-hover:scale-110 transition-transform duration-500 drop-shadow-2xl">{material.Vak?.Afkorting ? '📙' : '📖'}</span>
-                     <div class="px-4 py-1.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 shadow-[0_0_15px_rgba(16,185,129,0.1)] transition-all group-hover:bg-emerald-500/20">
+                    <div class="w-full h-full bg-gradient-to-br from-surface-800 to-surface-950 flex flex-col items-center justify-center p-8 text-center border border-surface-700/50 shadow-inner">
+                      <div class="text-gray-500 group-hover:scale-110 transition-transform duration-500 drop-shadow-2xl mb-5">
+                         <svg class="w-20 h-20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"/><path d="M8 7h6"/><path d="M8 11h8"/></svg>
+                      </div>
+                      <div class="px-4 py-1.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 shadow-[0_0_15px_rgba(16,185,129,0.1)] transition-all group-hover:bg-emerald-500/20">
                         <span class="text-[10px] font-black text-emerald-400 uppercase tracking-[0.2em]">
                            {material.Vak?.Afkorting || 'ALGEM'}
                         </span>

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { personId } from '$lib/stores';
+  import { personId, userSettings } from '$lib/stores';
   import { getCalendarEvents, updateCalendarEvent, createCalendarEvent, formatDate, getWeekRange, infoTypeShort, infoTypeName } from '$lib/api';
   import { onMount } from 'svelte';
 
@@ -94,12 +94,15 @@
 
   function getWeekDates(): Date[] {
     const { start } = getWeekRange(currentDate);
-    return Array.from({ length: 5 }, (_, i) => {
+    const length = $userSettings.showWeekend ? 7 : 5;
+    return Array.from({ length }, (_, i) => {
       const d = new Date(start);
       d.setDate(d.getDate() + i);
       return d;
     });
   }
+
+  const weekDates = $derived(getWeekDates());
 
   function getEventsForDay(date: Date): any[] {
     const dayStr = formatDate(date);
@@ -245,24 +248,6 @@
 
     <!-- Day navigation -->
     <div class="flex items-center gap-2">
-      <button onclick={prevDay}
-        class="w-10 h-10 rounded-xl bg-surface-800 text-gray-300 active:bg-surface-700 flex items-center justify-center text-lg font-bold flex-shrink-0">
-        ‹
-      </button>
-      <div class="flex-1 overflow-x-auto no-scrollbar">
-        <div class="flex gap-1.5 justify-start min-w-max">
-          {#each getWeekDates() as date, i}
-            {@const sel = formatDate(date) === formatDate(currentDate)}
-            {@const tod = isToday(date)}
-            <button onclick={() => { currentDate = date; }}
-              class="flex flex-col items-center px-3 py-1.5 rounded-xl min-w-[44px] transition-all
-                     {sel ? 'bg-primary-500 text-white' : tod ? 'bg-primary-500/15 text-primary-400 border border-primary-500/30' : 'bg-surface-800 text-gray-400'}">
-              <span class="text-[9px] font-bold uppercase tracking-wide">{weekDays[i]}</span>
-              <span class="text-base font-bold leading-tight">{date.getDate()}</span>
-            </button>
-          {/each}
-        </div>
-      </div>
       <button onclick={nextDay}
         class="w-10 h-10 rounded-xl bg-surface-800 text-gray-300 active:bg-surface-700 flex items-center justify-center text-lg font-bold flex-shrink-0">
         ›
@@ -307,9 +292,11 @@
       <!-- ======= MOBILE: Single-Day View ======= -->
       <div class="md:hidden px-4 py-3 space-y-2">
         {#if dayEvents.length === 0}
-          <div class="flex flex-col items-center justify-center py-16 text-center rounded-2xl bg-surface-900/40">
-            <span class="text-4xl mb-3">🏖️</span>
-            <p class="text-gray-400 font-medium text-sm">Geen lessen of afspraken</p>
+          <div class="flex flex-col items-center justify-center py-20 text-center rounded-[2.5rem] bg-surface-900/40 border border-white/5 opacity-60">
+            <div class="w-16 h-16 rounded-full bg-surface-800 flex items-center justify-center mb-4 text-2xl text-gray-500">
+               <svg class="w-8 h-8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/><path d="M8 14h.01"/><path d="M12 14h.01"/><path d="M16 14h.01"/><path d="M8 18h.01"/><path d="M12 18h.01"/><path d="M16 18h.01"/></svg>
+            </div>
+            <p class="text-gray-400 font-black uppercase tracking-[0.2em] text-[10px]">Geen lessen vandaag</p>
           </div>
         {:else}
           {#each dayEvents as event, j}

@@ -234,7 +234,15 @@
   <!-- Sticky Header -->
   <div class="sticky top-0 z-10 bg-surface-950/95 backdrop-blur border-b border-surface-800/50 px-4 py-3 pb-4">
     <div class="flex items-center justify-between mb-3">
-      <h1 class="text-xl font-bold text-gray-100">Cijfers</h1>
+      <div class="flex items-center gap-3">
+        <h1 class="text-xl font-bold text-gray-100 italic tracking-tighter">Cijfers</h1>
+        <button 
+          onclick={() => selectYear(selectedYear)} 
+          class="p-2 text-gray-500 hover:text-primary-400 transition-all hover:scale-110 active:scale-95"
+        >
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
+        </button>
+      </div>
       <div class="flex items-center gap-2 overflow-x-auto no-scrollbar max-w-[200px] justify-end">
         {#each schoolyears as year}
           <button

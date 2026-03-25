@@ -87,16 +87,16 @@
 
 <div class="flex flex-col bg-surface-950 min-h-full">
   <header class="sticky top-0 z-20 border-b border-surface-800/50 bg-surface-950/95 backdrop-blur px-4 py-3">
-    <div class="flex items-center gap-3">
-      {#if selectedSW}
-        <button 
-          onclick={goBack} 
-          class="text-primary-400 font-bold text-sm"
-        >
-          ‹ Terug
-        </button>
-      {/if}
-      <div class="flex flex-col text-left">
+    <div class="flex items-center justify-between w-full">
+      <div class="flex items-center gap-3">
+        {#if selectedSW}
+          <button 
+            onclick={goBack} 
+            class="text-primary-400 font-bold text-sm"
+          >
+            ‹ Terug
+          </button>
+        {/if}
         <h1 class="text-lg font-bold text-gray-100 italic tracking-tight truncate max-w-[200px]">
           {#if selectedSW}
              {selectedSW.Titel}
@@ -105,6 +105,15 @@
           {/if}
         </h1>
       </div>
+
+      {#if !selectedSW}
+        <button 
+          onclick={loadInitialData}
+          class="p-2 text-gray-500 hover:text-primary-400 transition-all hover:scale-110 active:scale-95"
+        >
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
+        </button>
+      {/if}
     </div>
   </header>
 
@@ -149,8 +158,12 @@
                 class="glass p-6 rounded-[2rem] border-surface-800/50 hover:border-primary-500/30 hover:bg-surface-800/40 transition-all text-left flex flex-col gap-4 group shadow-xl"
               >
                 <div class="flex items-start justify-between">
-                   <div class="w-12 h-12 rounded-2xl bg-surface-900/80 border border-surface-700/50 flex items-center justify-center text-2xl group-hover:scale-110 transition-transform">
-                      {isProj ? '📁' : '📖'}
+                   <div class="w-12 h-12 rounded-2xl bg-surface-900/80 border border-surface-700/50 flex items-center justify-center text-primary-400 group-hover:scale-110 transition-transform shadow-inner">
+                      {#if isProj}
+                        <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>
+                      {:else}
+                        <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"/><path d="M8 7h6"/><path d="M8 11h8"/></svg>
+                      {/if}
                    </div>
                    <span class="text-[9px] font-black uppercase tracking-[0.15em] px-2.5 py-1 rounded-full border {isProj ? 'bg-purple-500/10 text-purple-400 border-purple-500/20' : 'bg-primary-500/10 text-primary-400 border-primary-500/20'}">
                       {isProj ? 'Project' : 'Wijzer'}
@@ -242,7 +255,9 @@
             </div>
           {:else}
              <div class="h-full flex flex-col items-center justify-center p-8 text-center opacity-20">
-                <div class="text-6xl mb-4">📂</div>
+                <div class="w-20 h-20 rounded-full bg-surface-900 flex items-center justify-center mb-6 text-gray-500 border border-surface-800 shadow-inner">
+                  <svg class="w-10 h-10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>
+                </div>
                 <h3 class="text-xl font-black text-gray-400 italic">Selecteer een onderdeel</h3>
              </div>
           {/if}

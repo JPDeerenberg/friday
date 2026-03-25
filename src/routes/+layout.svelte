@@ -2,7 +2,7 @@
   import '../app.css';
   import { onMount } from 'svelte';
   import { listen } from '@tauri-apps/api/event';
-  import { isLoggedIn, personId, accountInfo, profilePicture, currentPage } from '$lib/stores';
+  import { isLoggedIn, personId, accountInfo, profilePicture, currentPage, userSettings } from '$lib/stores';
   import { restoreSession, getAccount, getPersonId, getProfilePicture, handleAuthCallback } from '$lib/api';
 
   let { children } = $props();
@@ -101,7 +101,11 @@
     {
       label: 'Communicatie',
       items: [
-        { id: 'messages', label: 'Berichten', icon: '✉️' },
+        { 
+          id: 'messages', 
+          label: 'Berichten', 
+          icon: `<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/><rect width="20" height="14" x="2" y="5" rx="2"/></svg>` 
+        },
       ]
     }
   ];
@@ -182,6 +186,31 @@
                 <span>Instellingen</span>
               </button>
             </div>
+            <!-- Quick Actions / Settings inside drawer -->
+            <div class="px-6 py-4 border-t border-surface-800/50 mt-auto">
+              <label class="flex items-center justify-between cursor-pointer group">
+                <span class="text-xs font-black text-gray-500 uppercase tracking-widest group-hover:text-gray-300 transition-colors">Toon weekend</span>
+                <div class="relative inline-flex items-center">
+                  <input
+                    type="checkbox"
+                    checked={$userSettings.showWeekend}
+                    onchange={(e) => $userSettings.showWeekend = e.target.checked}
+                    class="sr-only peer"
+                  >
+                  <div class="w-11 h-6 bg-surface-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-500/80"></div>
+                </div>
+              </label>
+            </div>
+
+            <button
+              onclick={() => isLoggedIn.set(false)}
+              class="w-full flex items-center gap-4 px-6 py-5 text-red-400 hover:bg-red-400/5 transition-colors border-t border-surface-800/50"
+            >
+              <span class="text-xl">
+                 <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg>
+              </span>
+              <span class="text-sm font-black uppercase tracking-[0.2em]">Uitloggen</span>
+            </button>
           </nav>
         </div>
       {/if}
@@ -263,17 +292,38 @@
 
     <!-- ====== MOBILE: Fixed bottom tab bar ====== -->
     {#if $isLoggedIn}
-      <nav class="fixed md:hidden bottom-0 left-0 right-0 z-30 bg-surface-900/95 backdrop-blur-sm border-t border-surface-700/50 flex items-stretch h-[60px]">
-        {#each bottomNavItems as item}
-          <button
-            onclick={() => handleBottomNav(item.id)}
-            class="flex-1 flex flex-col items-center justify-center gap-0.5 py-1 transition-colors
-                   {isBottomActive(item.id) ? 'text-primary-400' : 'text-gray-500'}"
-          >
-            <span class="text-xl leading-none">{item.icon}</span>
-            <span class="text-[10px] font-medium leading-none">{item.label}</span>
-          </button>
-        {/each}
+      <nav class="fixed md:hidden bottom-0 left-0 right-0 z-30 bg-surface-950/95 backdrop-blur-md border-t border-surface-800/50 flex items-stretch h-[60px] pb-[env(safe-area-inset-bottom)]">
+        <button
+          onclick={() => handleBottomNav('dashboard')}
+          class="flex-1 flex flex-col items-center justify-center gap-1 transition-all {isBottomActive('dashboard') ? 'text-primary-400' : 'text-gray-500'}"
+        >
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+          <span class="text-[9px] font-black uppercase tracking-widest">Home</span>
+        </button>
+
+        <button
+          onclick={() => handleBottomNav('calendar')}
+          class="flex-1 flex flex-col items-center justify-center gap-1 transition-all {isBottomActive('calendar') ? 'text-primary-400' : 'text-gray-500'}"
+        >
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/></svg>
+          <span class="text-[9px] font-black uppercase tracking-widest">Agenda</span>
+        </button>
+
+        <button
+          onclick={() => handleBottomNav('grades')}
+          class="flex-1 flex flex-col items-center justify-center gap-1 transition-all {isBottomActive('grades') ? 'text-primary-400' : 'text-gray-500'}"
+        >
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M7.105 13.123l2.895-2.123 2.895 2.123 5.105-4.123"/><path d="M3 21h18"/><path d="M3 3v18h18"/></svg>
+          <span class="text-[9px] font-black uppercase tracking-widest">Cijfers</span>
+        </button>
+
+        <button
+          onclick={() => handleBottomNav('more')}
+          class="flex-1 flex flex-col items-center justify-center gap-1 transition-all {mobileSidebarOpen ? 'text-primary-400' : 'text-gray-500'}"
+        >
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
+          <span class="text-[9px] font-black uppercase tracking-widest">Meer</span>
+        </button>
       </nav>
     {/if}
   </div>

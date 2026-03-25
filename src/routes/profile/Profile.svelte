@@ -50,19 +50,29 @@
       loading = false;
     }
   }
+
+  function getAbsenceType(type: number, code: string) {
+    const iconBase = `<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">`;
+    switch (code) {
+      case 'Z': return { label: 'Ziek', color: 'text-blue-400 border-blue-400/20 bg-blue-400/10', iconSvg: iconBase + `<path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/></svg>` };
+      case 'L': return { label: 'Te laat', color: 'text-yellow-400 border-yellow-400/20 bg-yellow-400/10', iconSvg: iconBase + `<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>` };
+      case 'V': return { label: 'Verwijderd', color: 'text-red-400 border-red-400/20 bg-red-400/10', iconSvg: iconBase + `<circle cx="12" cy="12" r="10"/><line x1="15" x2="9" y1="9" y2="15"/><line x1="9" x2="15" y1="9" y2="15"/></svg>` };
+      default: return { label: 'Afwezig', color: 'text-gray-400 border-surface-700/50 bg-surface-800/40', iconSvg: iconBase + `<circle cx="12" cy="12" r="10"/><line x1="8" x2="16" y1="12" y2="12"/></svg>` };
+    }
+  }
 </script>
 
 <div class="flex flex-col bg-surface-950 min-h-full">
   <header class="sticky top-0 z-10 border-b border-surface-800/50 bg-surface-950/95 backdrop-blur px-4 py-3">
-    <div class="flex items-center justify-between">
-      <h1 class="text-xl font-bold text-gray-100 italic">Profiel</h1>
-      <button 
-        onclick={loadProfile}
-        class="p-2 rounded-xl hover:bg-surface-800/50 transition-colors text-gray-500 hover:text-primary-400"
-      >
-        <span class="text-lg">🔄</span>
-      </button>
-    </div>
+      <div class="flex items-center gap-3">
+        <h1 class="text-xl font-bold text-gray-100 italic tracking-tighter">Profiel</h1>
+        <button 
+          onclick={loadProfile} 
+          class="p-2 text-gray-500 hover:text-primary-400 transition-all hover:scale-110 active:scale-95"
+        >
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
+        </button>
+      </div>
   </header>
 
   <main class="bg-[radial-gradient(circle_at_top_right,rgba(59,130,246,0.03),transparent_40%)] pb-10">
@@ -93,11 +103,13 @@
               {#if profilePic}
                 <img src="data:image/jpeg;base64,{profilePic}" alt="Avatar" class="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" />
               {:else}
-                <span class="text-6xl group-hover:scale-110 transition-transform duration-500">👤</span>
+                <div class="text-gray-500 group-hover:scale-110 transition-transform duration-500">
+                  <svg class="w-16 h-16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                </div>
               {/if}
             </div>
             <div class="absolute -bottom-2 -right-2 w-10 h-10 bg-primary-500 rounded-2xl flex items-center justify-center text-white shadow-lg border-4 border-surface-950">
-               <span class="text-sm">💎</span>
+               <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
             </div>
           </div>
 
@@ -153,7 +165,9 @@
 
           <div in:fly={{ y: 20, delay: 300 }} class="md:col-span-2 glass p-8 rounded-[2.5rem] border-surface-800/50 shadow-xl space-y-8">
             <div class="flex items-center gap-4">
-              <div class="w-10 h-10 rounded-xl bg-surface-900/80 border border-surface-700/50 flex items-center justify-center text-xl">🏠</div>
+              <div class="w-10 h-10 rounded-xl bg-surface-900/80 border border-surface-700/50 flex items-center justify-center text-primary-400">
+                 <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+              </div>
               <h3 class="text-sm font-black text-gray-500 uppercase tracking-[0.2em] italic">Adressen</h3>
             </div>
             {#if addresses.length === 0}

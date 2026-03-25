@@ -204,7 +204,7 @@
         <h1 class="text-lg font-bold text-gray-100">Opdrachten</h1>
       </div>
       
-      <div class="flex items-center gap-1 bg-surface-800/50 rounded-xl p-0.5 overflow-x-auto no-scrollbar">
+      <div class="flex items-center gap-1.5 bg-surface-800/50 rounded-xl p-1 flex-wrap justify-end">
         {#each [
           { id: 'all', label: 'Alle' },
           { id: 'open', label: 'Open' },
@@ -213,15 +213,19 @@
         ] as f}
           <button
             onclick={() => filter = f.id as any}
-            class="px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-tight whitespace-nowrap transition-all
+            class="px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all
                    {filter === f.id
                      ? 'bg-primary-500 text-white shadow-sm'
-                     : 'text-gray-400 hover:text-gray-200'}"
+                     : 'text-gray-500 hover:text-gray-300'}"
           >
             {f.label}
           </button>
         {/each}
       </div>
+
+      <button onclick={loadAssignments} class="p-2 text-gray-500 hover:text-primary-400 transition-colors shrink-0">
+        <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
+      </button>
     </div>
   </header>
 
@@ -454,12 +458,12 @@
           {/if}
         </div>
       {:else}
-        <div class="h-full flex flex-col items-center justify-center text-center p-8">
-           <div class="w-24 h-24 rounded-full bg-surface-900 flex items-center justify-center text-4xl mb-6 border border-surface-800 shadow-2xl">
-             🏜️
+        <div class="h-full flex flex-col items-center justify-center text-center p-8 opacity-60">
+           <div class="w-20 h-20 rounded-full bg-surface-900 flex items-center justify-center mb-6 border border-surface-800 shadow-xl text-gray-500">
+             <svg class="w-10 h-10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg>
            </div>
-           <h3 class="text-2xl font-black text-white mb-2">Selecteer een opdracht</h3>
-           <p class="text-gray-500 max-w-xs leading-relaxed font-medium">Kies een opdracht uit de lijst aan de linkerkant om details te bekijken of werk in te leveren.</p>
+           <h3 class="text-xl font-black text-white italic mb-2 tracking-tight">Selecteer een opdracht</h3>
+           <p class="text-gray-500 max-w-xs text-xs font-bold uppercase tracking-widest leading-relaxed">Kies een opdracht uit de lijst</p>
         </div>
       {/if}
     </section>

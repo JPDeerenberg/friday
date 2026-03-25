@@ -104,15 +104,19 @@
 
 <div class="flex flex-col bg-surface-950">
   <!-- Sticky Header -->
-  <header class="sticky top-0 z-10 border-b border-surface-800/50 flex flex-wrap items-center justify-between gap-2 px-4 py-3 bg-surface-900/90 backdrop-blur-xl">
-    <div class="flex items-center gap-3">
-      <div class="w-8 h-8 rounded-lg bg-red-500/20 flex items-center justify-center text-red-400 text-sm shadow-[0_0_15px_rgba(239,68,68,0.1)]">
-        🚫
+  <header class="sticky top-0 z-20 border-b border-surface-800/50 bg-surface-950/95 backdrop-blur px-4 py-3">
+    <div class="flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <h1 class="text-xl font-bold text-gray-100 italic tracking-tighter">Absentietoets</h1>
+        <button 
+          onclick={loadAbsences} 
+          class="p-2 text-gray-500 hover:text-primary-400 transition-all hover:scale-110 active:scale-95"
+        >
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
+        </button>
       </div>
-      <h1 class="text-lg font-bold text-gray-100 italic tracking-tight">Afwezigheid</h1>
-    </div>
-
-    <div class="flex items-center gap-4">
+      
+      <div class="flex items-center gap-2">
       <!-- Schoolyear Selector -->
       {#if schoolyears.length > 0}
         <div class="relative group">
@@ -149,10 +153,10 @@
       <!-- Statistics Tiles -->
       <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {#each [
-          { label: 'Totaal', value: stats().total, icon: '📊', color: 'text-gray-400' },
-          { label: 'Ongeoorloofd', value: stats().unexcused, icon: '⚠️', color: stats().unexcused > 0 ? 'text-red-400' : 'text-gray-400' },
-          { label: 'Te laat', value: stats().late, icon: '⏰', color: 'text-yellow-400' },
-          { label: 'Ziek', value: stats().sick, icon: '🤒', color: 'text-blue-400' },
+          { label: 'Totaal', value: stats().total, icon: `<svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg>`, color: 'text-gray-400' },
+          { label: 'Ongeoorloofd', value: stats().unexcused, icon: `<svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" x2="12" y1="9" y2="13"/><line x1="12" x2="12.01" y1="17" y2="17"/></svg>`, color: stats().unexcused > 0 ? 'text-red-400' : 'text-gray-400' },
+          { label: 'Te laat', value: stats().late, icon: `<svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>`, color: 'text-yellow-400' },
+          { label: 'Ziek', value: stats().sick, icon: `<svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/></svg>`, color: 'text-blue-400' },
         ] as stat}
           <div in:fly={{ y: 20, delay: 100 }} class="glass p-5 rounded-[2rem] border-surface-800/50 flex flex-col items-center text-center group transition-all hover:scale-[1.02] hover:bg-surface-800/40 shadow-xl">
             <span class="text-3xl mb-3 drop-shadow-md">{stat.icon}</span>
@@ -200,8 +204,9 @@
                 
                 <div class="flex-1 min-w-0">
                   <div class="flex items-center gap-2 mb-2 flex-wrap">
-                    <span class="px-3 py-1 rounded-xl text-[9px] font-black uppercase tracking-widest border transition-colors {type.color}">
-                      <span class="mr-1">{type.icon}</span> {type.label}
+                    <span class="px-3 py-1 rounded-xl text-[9px] font-black uppercase tracking-widest border transition-colors {type.color} flex items-center gap-1.5">
+                      {@render (function() { return type.iconSvg; })()}
+                      {type.label}
                     </span>
                     {#if !absence.Geoorloofd}
                        <span class="px-3 py-1 rounded-xl text-[9px] font-black uppercase tracking-widest bg-red-500/10 text-red-400 border border-red-500/20 shadow-[0_0_10px_rgba(239,68,68,0.1)]">

@@ -15,6 +15,7 @@ const DEFAULT_SETTINGS = {
   compactView: false,
   insufficientThreshold: 5.5,
   zoomGraph: false,
+  showWeekend: true,
 };
 
 const savedSettings = typeof window !== 'undefined' ? localStorage.getItem('user_settings') : null;
