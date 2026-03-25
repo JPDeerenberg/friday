@@ -230,7 +230,7 @@
   }
 </script>
 
-<div class="p-6 max-w-5xl mx-auto">
+<div class="p-4 md:p-6 max-w-5xl mx-auto">
   <!-- Header -->
   <div class="flex items-center justify-between mb-6">
     <h1 class="text-2xl font-bold text-gray-100">Cijfers</h1>
@@ -279,7 +279,7 @@
     {@const subjects = getSubjects()}
 
     {#if grades.length === 0}
-      <div class="glass rounded-2xl p-8 text-center">
+      <div class="glass rounded-2xl p-5 md:p-8 text-center">
         <p class="text-gray-500">Geen cijfers gevonden</p>
       </div>
     {:else if currentTab === 'vakken'}
@@ -368,7 +368,7 @@
         {/each}
       </div>
     {:else if currentTab === 'totaal'}
-        <div class="glass rounded-[2rem] p-8 space-y-8">
+        <div class="glass rounded-3xl md:rounded-[2rem] p-5 md:p-8 space-y-8">
             <div class="flex items-center justify-between">
                 <div>
                     <h2 class="text-xl font-bold text-gray-100">Algemene Voortgang</h2>

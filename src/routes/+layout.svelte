@@ -8,6 +8,7 @@
   let { children } = $props();
   let loading = $state(true);
   let sidebarCollapsed = $state(false);
+  let mobileSidebarOpen = $state(false);
 
   async function handleLogin(account: any) {
     accountInfo.set(account);
@@ -98,6 +99,7 @@
 
   function navigate(page: string) {
     currentPage.set(page);
+    mobileSidebarOpen = false;
   }
 </script>
 
@@ -109,18 +111,46 @@
     </div>
   </div>
 {:else}
-  <div class="flex h-screen overflow-hidden bg-surface-950">
+  <div class="flex flex-col md:flex-row h-screen overflow-hidden bg-surface-950">
     {#if $isLoggedIn}
+      <!-- Mobile Header -->
+      <div class="md:hidden flex items-center justify-between p-4 bg-surface-900 border-b border-surface-700/50 shrink-0">
+        <div class="flex items-center gap-3">
+          <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-primary-500 to-accent-500 flex items-center justify-center text-white font-bold text-sm">
+            M
+          </div>
+          <span class="text-base font-semibold text-gray-100">Magister</span>
+        </div>
+        <button onclick={() => mobileSidebarOpen = !mobileSidebarOpen} class="text-gray-300 p-2">
+          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
+        </button>
+      </div>
+
+      <!-- Mobile Backdrop -->
+      {#if mobileSidebarOpen}
+        <!-- svelte-ignore a11y_click_events_have_key_events -->
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <div class="fixed inset-0 bg-black/50 z-40 md:hidden" onclick={() => mobileSidebarOpen = false}></div>
+      {/if}
+
       <!-- Sidebar -->
-      <aside class="flex flex-col {sidebarCollapsed ? 'w-16' : 'w-56'} bg-surface-900 border-r border-surface-700/50 transition-all duration-300">
+      <aside class="fixed md:relative z-50 h-[100dvh] max-h-screen {mobileSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'} flex flex-col {sidebarCollapsed ? 'w-16' : 'w-56'} bg-surface-900 md:border-r border-surface-700/50 transition-all duration-300 shrink-0">
         <!-- Logo -->
-        <div class="flex items-center gap-3 px-4 py-5 border-b border-surface-700/50">
+        <div class="hidden md:flex items-center gap-3 px-4 py-5 border-b border-surface-700/50 shrink-0">
           <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-primary-500 to-accent-500 flex items-center justify-center text-white font-bold text-sm shrink-0">
             M
           </div>
           {#if !sidebarCollapsed}
             <span class="text-base font-semibold text-gray-100 truncate">Magister</span>
           {/if}
+        </div>
+
+        <!-- Mobile Menu Header -->
+        <div class="flex md:hidden items-center justify-between px-4 py-5 border-b border-surface-700/50 shrink-0">
+          <span class="text-base font-semibold text-gray-100">Menu</span>
+          <button onclick={() => mobileSidebarOpen = false} class="text-gray-400 p-2 hover:text-white">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+          </button>
         </div>
 
         <!-- Nav items -->
@@ -182,10 +212,10 @@
           {/if}
         </button>
 
-        <!-- Collapse toggle -->
+        <!-- Collapse toggle (Desktop only) -->
         <button
           onclick={() => sidebarCollapsed = !sidebarCollapsed}
-          class="p-3 text-gray-500 hover:text-gray-300 border-t border-surface-700/50 text-sm"
+          class="hidden md:block p-3 text-gray-500 hover:text-gray-300 border-t border-surface-700/50 text-sm shrink-0"
         >
           {sidebarCollapsed ? '→' : '←'}
         </button>

@@ -85,7 +85,7 @@
   }
 </script>
 
-<div class="p-6 max-w-6xl mx-auto">
+<div class="p-4 md:p-6 max-w-6xl mx-auto">
   {#if loading}
     <div class="flex items-center justify-center py-40">
       <div class="w-10 h-10 border-4 border-primary-500 border-t-transparent rounded-full animate-spin"></div>
@@ -118,7 +118,7 @@
       
       <!-- Left Column: Schedule (Focus) -->
       <div class="lg:col-span-7 space-y-6">
-        <section class="glass rounded-[2rem] p-8 border border-white/5 shadow-2xl relative overflow-hidden group">
+        <section class="glass rounded-3xl md:rounded-[2rem] p-5 md:p-8 border border-white/5 shadow-2xl relative overflow-hidden group">
           <div class="flex items-center justify-between mb-8">
             <h2 class="text-xl font-bold text-gray-100">Vandaag</h2>
             <span class="text-xs font-bold text-primary-400 bg-primary-400/10 px-3 py-1 rounded-full uppercase tracking-widest">
@@ -185,7 +185,7 @@
       <div class="lg:col-span-5 space-y-6">
         
         <!-- Latest Grades Widget -->
-        <section class="glass rounded-[3rem] p-8 border border-surface-800/50 shadow-2xl relative overflow-hidden group">
+        <section class="glass rounded-3xl md:rounded-[3rem] p-5 md:p-8 border border-surface-800/50 shadow-2xl relative overflow-hidden group">
           <div class="absolute -top-24 -right-24 w-48 h-48 bg-primary-500/10 rounded-full blur-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-1000"></div>
           
           <div class="flex items-center justify-between mb-8">
@@ -235,7 +235,7 @@
         </section>
 
         <!-- Assignments Widget -->
-        <section class="glass rounded-[2rem] p-8 border border-white/5 shadow-xl">
+        <section class="glass rounded-3xl md:rounded-[2rem] p-5 md:p-8 border border-white/5 shadow-xl">
           <h2 class="text-xl font-bold text-gray-100 mb-6 flex items-center gap-2">
             Opdrachten 🗓️
           </h2>
