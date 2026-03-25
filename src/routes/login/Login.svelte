@@ -109,9 +109,9 @@
     <!-- Logo -->
     <div class="text-center mb-8">
       <div class="w-20 h-20 rounded-2xl bg-gradient-to-br from-primary-500 via-primary-600 to-accent-500 flex items-center justify-center mx-auto mb-4 shadow-lg shadow-primary-500/20">
-        <span class="text-3xl font-bold text-white">M</span>
+        <span class="text-3xl font-bold text-white">F</span>
       </div>
-      <h1 class="text-2xl font-bold text-gray-100">Magister Agenda</h1>
+      <h1 class="text-2xl font-bold text-gray-100">Friday</h1>
       <p class="text-sm text-gray-500 mt-1">Log in met je Magister account</p>
     </div>
 

@@ -220,9 +220,9 @@
       <aside class="hidden md:flex flex-col {sidebarCollapsed ? 'w-16' : 'w-56'} bg-surface-900 border-r border-surface-700/50 transition-all duration-300 shrink-0">
         <!-- Logo -->
         <div class="flex items-center gap-3 px-4 py-5 border-b border-surface-700/50 shrink-0">
-          <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-primary-500 to-accent-500 flex items-center justify-center text-white font-bold text-sm shrink-0">M</div>
+          <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-primary-500 to-accent-500 flex items-center justify-center text-white font-bold text-sm shrink-0">F</div>
           {#if !sidebarCollapsed}
-            <span class="text-base font-semibold text-gray-100 truncate">Magister</span>
+            <span class="text-base font-semibold text-gray-100 truncate">Friday</span>
           {/if}
         </div>
 
