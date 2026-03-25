@@ -16,73 +16,69 @@ pub async fn start_login_flow(
     let url = auth.generate_login_url(tenant.as_deref(), username.as_deref());
     c.auth_flow = Some(auth);
 
-    // Close existing login window if any
-    #[cfg(not(target_os = "android"))]
-    if let Some(window) = app.get_webview_window("magister-login") {
-        let _ = window.destroy();
-    }
     #[cfg(target_os = "android")]
-    if let Some(webview) = app.get_webview("magister-login") {
-        let _ = webview.close();
+    {
+        use tauri_plugin_opener::OpenerExt;
+        app.opener()
+            .open_url(url.to_string(), None::<&str>)
+            .map_err(|e| e.to_string())?;
+        return Ok(());
     }
-
-    let client_clone = client.inner().clone();
-    let app_clone = app.clone();
-
-    // Create a new webview window for login
-    let mut builder = WebviewWindowBuilder::new(
-        &app,
-        "magister-login",
-        WebviewUrl::External(url.parse().unwrap()),
-    );
 
     #[cfg(not(target_os = "android"))]
     {
-        builder = builder
-            .title("Magister Login")
-            .inner_size(500.0, 700.0)
-            .resizable(false)
-            .center();
-    }
-
-    // Intercept m6loapp:// redirects
-    builder = builder.on_navigation(move |url: &url::Url| {
-        let url_str = url.as_str();
-        if url_str.starts_with("m6loapp://") {
-            let client_arc = client_clone.clone();
-            let app_handle = app_clone.clone();
-            let redirect_url = url_str.to_string();
-
-            // Spawn async task to handle the callback
-            tauri::async_runtime::spawn(async move {
-                match handle_auth_callback_internal(client_arc, app_handle.clone(), redirect_url).await
-                {
-                    Ok(account) => {
-                        app_handle.emit("auth-success", account).ok();
-                    }
-                    Err(e) => {
-                        app_handle.emit("auth-error", e).ok();
-                    }
-                }
-                // Close the login window
-                #[cfg(not(target_os = "android"))]
-                if let Some(window) = app_handle.get_webview_window("magister-login") {
-                    let _ = window.destroy();
-                }
-                #[cfg(target_os = "android")]
-                if let Some(webview) = app_handle.get_webview("magister-login") {
-                    let _ = webview.close();
-                }
-            });
-            // Cancel navigation since we are intercepting it
-            return false;
+        // Close existing login window if any
+        if let Some(window) = app.get_webview_window("magister-login") {
+            let _ = window.destroy();
         }
-        true
-    });
 
-    builder
-        .build()
-        .map_err(|e| format!("Failed to build login window: {}", e))?;
+        let client_clone = client.inner().clone();
+        let app_clone = app.clone();
+
+        // Create a new webview window for login
+        let builder = WebviewWindowBuilder::new(
+            &app,
+            "magister-login",
+            WebviewUrl::External(url.parse().unwrap()),
+        )
+        .title("Magister Login")
+        .inner_size(500.0, 700.0)
+        .resizable(false)
+        .center();
+
+        // Intercept m6loapp:// redirects
+        builder
+            .on_navigation(move |nav_url: &url::Url| {
+                let url_str = nav_url.as_str();
+                if url_str.starts_with("m6loapp://") {
+                    let client_arc = client_clone.clone();
+                    let app_handle = app_clone.clone();
+                    let redirect_url = url_str.to_string();
+
+                    // Spawn async task to handle the callback
+                    tauri::async_runtime::spawn(async move {
+                        match handle_auth_callback_internal(client_arc, app_handle.clone(), redirect_url).await
+                        {
+                            Ok(account) => {
+                                app_handle.emit("auth-success", account).ok();
+                            }
+                            Err(e) => {
+                                app_handle.emit("auth-error", e).ok();
+                            }
+                        }
+                        // Close the login window
+                        if let Some(window) = app_handle.get_webview_window("magister-login") {
+                            let _ = window.destroy();
+                        }
+                    });
+                    // Cancel navigation since we are intercepting it
+                    return false;
+                }
+                true
+            })
+            .build()
+            .map_err(|e| format!("Failed to build login window: {}", e))?;
+    }
 
     Ok(())
 }
