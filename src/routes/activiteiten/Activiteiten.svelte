@@ -37,7 +37,7 @@
   }
 </script>
 
-<div class="p-6 max-w-5xl mx-auto h-full flex flex-col">
+<div class="p-4 md:p-6 max-w-5xl mx-auto h-full flex flex-col">
   <div class="flex items-center justify-between mb-8">
     <div>
       <h1 class="text-3xl font-bold text-gray-100">Activiteiten</h1>

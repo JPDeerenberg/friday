@@ -88,9 +88,15 @@
     return { total, unexcused, late, sick };
   });
 
-  function getSubjectName(absence: any) {
-    if (absence.Afspraak && absence.Afspraak.Vakken && absence.Afspraak.Vakken.length > 0) {
-      return absence.Afspraak.Vakken[0].Naam || absence.Afspraak.Vakken[0].naam;
+  function getSubjectName(absence: any): string | null {
+    // Try Vakken first (often null in real data), then fall back to Afspraak.Omschrijving
+    if (absence.Afspraak?.Vakken?.length > 0) {
+      const naam = absence.Afspraak.Vakken[0].Naam || absence.Afspraak.Vakken[0].naam;
+      if (naam) return naam;
+    }
+    // Afspraak.Omschrijving is always populated: e.g. "wi - iah - bv3.wi_a"
+    if (absence.Afspraak?.Omschrijving) {
+      return absence.Afspraak.Omschrijving;
     }
     return null;
   }
@@ -206,14 +212,12 @@
                       {absence.Start ? new Date(absence.Start).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' }) : ''}
                     </span>
                   </div>
-                  <div class="flex items-baseline gap-2">
+                  <div class="flex flex-col gap-1">
                     <h3 class="text-base font-bold text-gray-100 truncate group-hover:text-white transition-colors">
-                      {absence.Omschrijving || 'Geen omschrijving'}
+                      {absence.Omschrijving || 'Afwezig'}
                     </h3>
                     {#if subject}
-                      <span class="text-[10px] font-bold text-primary-500 uppercase tracking-widest bg-primary-500/5 px-2 py-0.5 rounded-full border border-primary-500/10">
-                        {subject}
-                      </span>
+                      <span class="text-xs text-gray-400 truncate">{subject}</span>
                     {/if}
                   </div>
                 </div>

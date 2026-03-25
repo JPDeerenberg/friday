@@ -17,7 +17,7 @@
   let version = $state('0.1.0-alpha');
 </script>
 
-<div class="p-6 max-w-2xl mx-auto pb-20">
+<div class="p-4 md:p-6 max-w-2xl mx-auto pb-20">
   <div class="mb-10">
     <h1 class="text-4xl font-bold text-gray-100 tracking-tight">Instellingen</h1>
     <p class="text-gray-500 mt-2 font-medium">Personaliseer je Agenda ervaring</p>

@@ -25,11 +25,20 @@
     inhoud: ''
   });
 
+  // Mobile: detect if narrow viewport
+  let isMobile = $state(false);
+
+  onMount(() => {
+    const mq = window.matchMedia('(max-width: 767px)');
+    isMobile = mq.matches;
+    const handler = (e: MediaQueryListEvent) => { isMobile = e.matches; };
+    mq.addEventListener('change', handler);
+    return () => mq.removeEventListener('change', handler);
+  });
+
   const weekDays = ['Ma', 'Di', 'Wo', 'Do', 'Vr', 'Za', 'Zo'];
-  const hours = Array.from({ length: 14 }, (_, i) => i + 7); // 7:00 - 20:00
 
   $effect(() => {
-    // Sync currentDate with datePickerValue
     const d = new Date(datePickerValue);
     if (!isNaN(d.getTime()) && formatDate(d) !== formatDate(currentDate)) {
       currentDate = d;
@@ -37,7 +46,6 @@
   });
 
   $effect(() => {
-    // Sync datePickerValue with currentDate if changed via buttons
     datePickerValue = formatDate(currentDate);
   });
 
@@ -50,15 +58,34 @@
     if (!pid) return;
     loading = true;
 
-    const { start, end } = getWeekRange(currentDate);
-    try {
-      events = await getCalendarEvents(pid, start, end);
-      events.sort((a, b) => a.Start.localeCompare(b.Start));
-    } catch (e) {
-      console.error('Failed to load events:', e);
+    if (isMobile) {
+      // On mobile, load just the current day
+      const dayStr = formatDate(currentDate);
+      try {
+        events = await getCalendarEvents(pid, dayStr, dayStr);
+        events.sort((a, b) => a.Start.localeCompare(b.Start));
+      } catch (e) {
+        console.error('Failed to load events:', e);
+      }
+    } else {
+      // On desktop, load the full week
+      const { start, end } = getWeekRange(currentDate);
+      try {
+        events = await getCalendarEvents(pid, start, end);
+        events.sort((a, b) => a.Start.localeCompare(b.Start));
+      } catch (e) {
+        console.error('Failed to load events:', e);
+      }
     }
     loading = false;
   }
+
+  // Reload when isMobile changes (e.g. resize)
+  $effect(() => {
+    // isMobile is a dependency
+    void isMobile;
+    loadEvents();
+  });
 
   function nextWeek() {
     currentDate = new Date(currentDate.getTime() + 7 * 86400000);
@@ -66,6 +93,14 @@
 
   function prevWeek() {
     currentDate = new Date(currentDate.getTime() - 7 * 86400000);
+  }
+
+  function nextDay() {
+    currentDate = new Date(currentDate.getTime() + 86400000);
+  }
+
+  function prevDay() {
+    currentDate = new Date(currentDate.getTime() - 86400000);
   }
 
   function goToday() {
@@ -92,6 +127,20 @@
 
   function formatTime(iso: string): string {
     return new Date(iso).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' });
+  }
+
+  function eventTimeLabel(event: any): string {
+    if (event.DuurtHeleDag) return 'Hele dag';
+    return `${formatTime(event.Start)} – ${formatTime(event.Einde)}`;
+  }
+
+  function eventTimeLabelShort(event: any): string {
+    if (event.DuurtHeleDag) return 'Hele dag';
+    if (event.LesuurVan) {
+      const suffix = event.LesuurTotMet && event.LesuurTotMet !== event.LesuurVan ? `-${event.LesuurTotMet}` : '';
+      return `${event.LesuurVan}${suffix}e`;
+    }
+    return formatTime(event.Start);
   }
 
   function getEventColor(event: any): string {
@@ -165,20 +214,12 @@
 
   function openAddModal() {
     const now = new Date();
-    // Default to nearest hour
     now.setMinutes(0, 0, 0);
     const startIso = new Date(now.getTime() - (now.getTimezoneOffset() * 60000)).toISOString().slice(0, 16);
-    
-    const end = new Date(now.getTime() + 60 * 60000); // +1 hour
+    const end = new Date(now.getTime() + 60 * 60000);
     const endIso = new Date(end.getTime() - (end.getTimezoneOffset() * 60000)).toISOString().slice(0, 16);
 
-    newEventForm = {
-      omschrijving: '',
-      start: startIso,
-      einde: endIso,
-      lokatie: '',
-      inhoud: ''
-    };
+    newEventForm = { omschrijving: '', start: startIso, einde: endIso, lokatie: '', inhoud: '' };
     showAddModal = true;
   }
 
@@ -194,29 +235,41 @@
         omschrijving: newEventForm.omschrijving,
         lokatie: newEventForm.lokatie || undefined,
         inhoud: newEventForm.inhoud || undefined,
-        eventType: 1 // Personal event
+        eventType: 1
       });
       showAddModal = false;
-      await loadEvents(); // Refresh schedule
+      await loadEvents();
     } catch (e) {
       console.error('Failed to create event:', e);
       alert('Kon de afspraak niet maken.');
     }
     isSubmitting = false;
   }
+
+  // Friendly day label for mobile header
+  function mobileDayLabel(date: Date): string {
+    const today = new Date();
+    const tomorrow = new Date(today.getTime() + 86400000);
+    const yesterday = new Date(today.getTime() - 86400000);
+    if (formatDate(date) === formatDate(today)) return 'Vandaag';
+    if (formatDate(date) === formatDate(tomorrow)) return 'Morgen';
+    if (formatDate(date) === formatDate(yesterday)) return 'Gisteren';
+    return date.toLocaleDateString('nl-NL', { weekday: 'long', day: 'numeric', month: 'long' });
+  }
 </script>
 
-<div class="p-6 max-w-7xl mx-auto">
+<div class="p-4 md:p-6 max-w-7xl mx-auto">
   <!-- Header -->
-  <div class="flex items-center justify-between mb-6">
-    <div class="flex items-center gap-4">
-      <h1 class="text-2xl font-bold text-gray-100">Agenda</h1>
+  <div class="flex items-center justify-between mb-4 md:mb-6">
+    <div class="flex items-center gap-3">
+      <h1 class="text-xl md:text-2xl font-bold text-gray-100">Agenda</h1>
       <button onclick={openAddModal} class="px-3 py-1.5 rounded-lg bg-accent-500/20 text-accent-400 hover:bg-accent-500/30 text-sm font-medium flex items-center gap-1.5 transition-colors">
-        <span class="text-lg leading-none">+</span> Afspraak
+        <span class="text-lg leading-none">+</span><span class="hidden sm:inline">Afspraak</span>
       </button>
     </div>
-    <div class="flex flex-col sm:flex-row items-start sm:items-center gap-4">
-      <!-- Hide canceled toggle -->
+
+    <!-- Desktop controls -->
+    <div class="hidden md:flex items-center gap-4">
       <label class="flex items-center gap-2 cursor-pointer">
         <div class="relative inline-flex items-center">
           <input type="checkbox" bind:checked={hideCanceled} class="sr-only peer" />
@@ -224,16 +277,10 @@
         </div>
         <span class="text-sm text-gray-400">Verberg uitval</span>
       </label>
-
-      <!-- Date controls -->
       <div class="flex items-center gap-2">
         <button onclick={prevWeek} class="px-3 py-2 rounded-lg bg-surface-800 text-gray-300 hover:bg-surface-700 text-sm">‹</button>
         <button onclick={goToday} class="px-3 py-2 rounded-lg bg-primary-500/15 text-primary-400 hover:bg-primary-500/25 text-sm font-medium">Vandaag</button>
-        <input 
-          type="date" 
-          bind:value={datePickerValue} 
-          class="bg-surface-800 text-gray-300 border border-surface-700 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:border-primary-500" 
-        />
+        <input type="date" bind:value={datePickerValue} class="bg-surface-800 text-gray-300 border border-surface-700 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:border-primary-500" />
         <button onclick={nextWeek} class="px-3 py-2 rounded-lg bg-surface-800 text-gray-300 hover:bg-surface-700 text-sm">›</button>
       </div>
     </div>
@@ -243,22 +290,132 @@
     <div class="flex items-center justify-center py-20">
       <div class="w-8 h-8 border-3 border-primary-500 border-t-transparent rounded-full animate-spin"></div>
     </div>
+  {:else if isMobile}
+    <!-- ============ MOBILE: Day View ============ -->
+    <!-- Day navigation strip -->
+    <div class="flex items-center justify-between mb-3">
+      <button onclick={prevDay} class="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-surface-800 text-gray-300 active:bg-surface-700 text-sm">
+        ‹ <span class="hidden xs:inline">Gisteren</span>
+      </button>
+      <div class="text-center">
+        <p class="text-sm font-semibold text-gray-100 capitalize">{mobileDayLabel(currentDate)}</p>
+        <p class="text-xs text-gray-500">{currentDate.toLocaleDateString('nl-NL', { day: 'numeric', month: 'long' })}</p>
+      </div>
+      <button onclick={nextDay} class="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-surface-800 text-gray-300 active:bg-surface-700 text-sm">
+        <span class="hidden xs:inline">Morgen</span> ›
+      </button>
+    </div>
+
+    <!-- Scrollable day strip (tap to jump to that day) -->
+    <div class="flex gap-2 overflow-x-auto no-scrollbar mb-4 pb-1">
+      {#each getWeekDates().slice(0, 5) as date, i}
+        {@const isSelected = formatDate(date) === formatDate(currentDate)}
+        {@const isToday = formatDate(date) === formatDate(new Date())}
+        <button
+          onclick={() => { currentDate = date; }}
+          class="flex flex-col items-center px-3 py-2 rounded-2xl shrink-0 transition-all
+                 {isSelected ? 'bg-primary-500 text-white shadow-lg' : isToday ? 'bg-primary-500/15 text-primary-400' : 'bg-surface-800 text-gray-400'}"
+        >
+          <span class="text-[10px] font-bold uppercase">{weekDays[i]}</span>
+          <span class="text-lg font-bold leading-tight">{date.getDate()}</span>
+        </button>
+      {/each}
+    </div>
+
+    <!-- Day events list -->
+    {@const dayEvents = getEventsForDay(currentDate).filter(e => !hideCanceled || !isCanceled(e))}
+    {#if dayEvents.length === 0}
+      <div class="glass rounded-2xl flex flex-col items-center justify-center py-16 text-center">
+        <span class="text-4xl mb-3">🏖️</span>
+        <p class="text-gray-400 font-medium">Geen lessen</p>
+        <p class="text-xs text-gray-600 mt-1">Geniet van je vrije tijd!</p>
+      </div>
+    {:else}
+      <div class="space-y-2">
+        {#each dayEvents as event, j}
+          {#if j > 0}
+            {@const breakMins = getBreakDuration(dayEvents[j-1], event)}
+            {#if breakMins > 0}
+              <div class="flex items-center gap-2 px-2">
+                <div class="h-px bg-surface-700/50 flex-1"></div>
+                <span class="text-[10px] text-gray-600">{breakMins}m pauze</span>
+                <div class="h-px bg-surface-700/50 flex-1"></div>
+              </div>
+            {/if}
+          {/if}
+          <button
+            onclick={() => selectEvent(event)}
+            class="w-full text-left p-4 rounded-2xl border transition-all active:scale-[0.98]
+                   {getEventColor(event)}
+                   {selectedEvent?.Id === event.Id ? 'ring-1 ring-primary-400' : ''}"
+          >
+            <div class="flex items-start justify-between gap-2">
+              <div class="min-w-0 flex-1">
+                <p class="font-semibold text-sm {isCanceled(event) ? 'line-through' : ''} truncate">
+                  {event.Vakken?.[0]?.Naam ?? event.Omschrijving?.split(' - ')[0] ?? '—'}
+                </p>
+                <div class="flex items-center gap-2 mt-1 text-xs opacity-75">
+                  {#if !event.DuurtHeleDag && event.LesuurVan}
+                    <span class="font-bold">{event.LesuurVan}{event.LesuurTotMet && event.LesuurTotMet !== event.LesuurVan ? `-${event.LesuurTotMet}` : ''}e</span>
+                  {/if}
+                  <span>{eventTimeLabel(event)}</span>
+                  {#if event.Lokalen?.[0]?.Naam}
+                    <span>• {event.Lokalen[0].Naam}</span>
+                  {/if}
+                </div>
+                {#if event.Docenten?.[0]?.Naam}
+                  <p class="text-[11px] opacity-60 mt-0.5">{event.Docenten[0].Naam}</p>
+                {/if}
+              </div>
+              {#if infoTypeShort(event.InfoType)}
+                <span class="shrink-0 text-[10px] font-bold opacity-75 mt-0.5">{infoTypeShort(event.InfoType)}</span>
+              {/if}
+            </div>
+
+            <!-- Expanded detail (shown when selected) -->
+            {#if selectedEvent?.Id === event.Id}
+              <div class="mt-3 pt-3 border-t border-current/20 space-y-2">
+                {#if event.Inhoud}
+                  <div class="text-xs opacity-80 prose prose-xs prose-invert max-w-none">{@html event.Inhoud}</div>
+                {/if}
+                {#if event.Afgerond !== undefined}
+                  <button
+                    onclick={(e) => { e.stopPropagation(); toggleHomeworkDone(); }}
+                    class="flex items-center gap-2 text-xs font-medium opacity-80"
+                  >
+                    <span class="w-4 h-4 rounded border border-current/50 flex items-center justify-center">
+                      {#if event.Afgerond}✓{/if}
+                    </span>
+                    {event.Afgerond ? 'Afgerond' : 'Markeer als afgerond'}
+                  </button>
+                {/if}
+              </div>
+            {/if}
+          </button>
+        {/each}
+      </div>
+
+      <!-- Hide canceled toggle (mobile, below list) -->
+      <label class="flex items-center gap-2 cursor-pointer mt-4 px-1">
+        <div class="relative inline-flex items-center">
+          <input type="checkbox" bind:checked={hideCanceled} class="sr-only peer" />
+          <div class="w-9 h-5 bg-surface-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-gray-300 after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary-500"></div>
+        </div>
+        <span class="text-sm text-gray-400">Verberg uitval</span>
+      </label>
+    {/if}
+
   {:else}
-    <!-- Week view -->
+    <!-- ============ DESKTOP: Week View ============ -->
     <div class="glass rounded-2xl overflow-hidden">
       <!-- Day headers -->
       <div class="grid grid-cols-5 border-b border-surface-700/50">
         {#each getWeekDates().slice(0, 5) as date, i}
           {@const isToday = formatDate(date) === formatDate(new Date())}
-          <div class="text-center py-3 border-r border-surface-700/30 last:border-r-0
-                      {isToday ? 'bg-primary-500/10' : ''}">
+          <div class="text-center py-3 border-r border-surface-700/30 last:border-r-0 {isToday ? 'bg-primary-500/10' : ''}">
             <p class="text-xs text-gray-500 uppercase">{weekDays[i]}</p>
-            <p class="text-lg font-semibold {isToday ? 'text-primary-400' : 'text-gray-300'}">
-              {date.getDate()}
-            </p>
-            <p class="text-xs text-gray-600">
-              {date.toLocaleDateString('nl-NL', { month: 'short' })}
-            </p>
+            <p class="text-lg font-semibold {isToday ? 'text-primary-400' : 'text-gray-300'}">{date.getDate()}</p>
+            <p class="text-xs text-gray-600">{date.toLocaleDateString('nl-NL', { month: 'short' })}</p>
           </div>
         {/each}
       </div>
@@ -268,8 +425,7 @@
         {#each getWeekDates().slice(0, 5) as date, i}
           {@const dayEvents = getEventsForDay(date)}
           {@const isToday = formatDate(date) === formatDate(new Date())}
-          <div class="border-r border-surface-700/30 last:border-r-0 p-2 space-y-1.5
-                      {isToday ? 'bg-primary-500/5' : ''}">
+          <div class="border-r border-surface-700/30 last:border-r-0 p-2 space-y-1.5 {isToday ? 'bg-primary-500/5' : ''}">
             {#each dayEvents as event, j}
               {#if j > 0}
                 {@const breakMins = getBreakDuration(dayEvents[j-1], event)}
@@ -296,11 +452,7 @@
                   {/if}
                 </div>
                 <div class="flex items-center gap-1.5 mt-0.5 opacity-70">
-                  {#if event.LesuurVan}
-                    <span>{event.LesuurVan}{event.LesuurTotMet && event.LesuurTotMet !== event.LesuurVan ? `-${event.LesuurTotMet}` : ''}</span>
-                  {:else}
-                    <span>{formatTime(event.Start)}</span>
-                  {/if}
+                  <span>{eventTimeLabelShort(event)}</span>
                   {#if event.Lokalen?.[0]?.Naam}
                     <span>• {event.Lokalen[0].Naam}</span>
                   {/if}
@@ -315,7 +467,7 @@
       </div>
     </div>
 
-    <!-- Event detail panel -->
+    <!-- Event detail panel (desktop) -->
     {#if selectedEvent}
       <div class="glass rounded-2xl p-5 mt-4">
         <div class="flex items-start justify-between">
@@ -331,9 +483,9 @@
         <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
           <div>
             <p class="text-xs text-gray-500 uppercase">Tijd</p>
-            <p class="text-sm text-gray-300">{formatTime(selectedEvent.Start)} - {formatTime(selectedEvent.Einde)}</p>
+            <p class="text-sm text-gray-300">{eventTimeLabel(selectedEvent)}</p>
           </div>
-          {#if selectedEvent.LesuurVan}
+          {#if !selectedEvent.DuurtHeleDag && selectedEvent.LesuurVan}
             <div>
               <p class="text-xs text-gray-500 uppercase">Lesuur</p>
               <p class="text-sm text-gray-300">{selectedEvent.LesuurVan}{selectedEvent.LesuurTotMet ? ` - ${selectedEvent.LesuurTotMet}` : ''}</p>
@@ -387,13 +539,12 @@
         {/if}
 
         {#if selectedEvent.Afgerond !== undefined || selectedEvent.InfoType !== 0}
-          <!-- Always show checkbox if there is homework/test so user can check it off -->
           <div class="mt-4 pt-3 border-t border-surface-700/50">
             <label class="flex items-center gap-3 cursor-pointer p-2 rounded-lg hover:bg-surface-800/50 transition-colors inline-flex">
               <div class="relative flex items-center justify-center">
-                <input 
-                  type="checkbox" 
-                  checked={selectedEvent.Afgerond} 
+                <input
+                  type="checkbox"
+                  checked={selectedEvent.Afgerond}
                   onchange={toggleHomeworkDone}
                   class="peer h-5 w-5 cursor-pointer appearance-none rounded border border-surface-600 bg-surface-800 checked:border-accent-500 checked:bg-accent-500 transition-all"
                 />
@@ -414,81 +565,54 @@
 
 <!-- Add Appointment Modal -->
 {#if showAddModal}
-  <div class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-    <div class="bg-surface-900 border border-surface-700/50 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden shadow-black/50">
+  <div class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+    <div class="bg-surface-900 border border-surface-700/50 rounded-t-3xl sm:rounded-2xl w-full sm:max-w-md shadow-2xl overflow-hidden shadow-black/50">
       <div class="px-6 py-4 border-b border-surface-800 flex justify-between items-center bg-surface-800/20">
         <h2 class="text-lg font-semibold text-gray-100">Nieuwe afspraak</h2>
         <button onclick={() => showAddModal = false} class="text-gray-500 hover:text-gray-300">✕</button>
       </div>
-      
+
       <form onsubmit={(e) => { e.preventDefault(); submitNewEvent(); }} class="p-6 space-y-4">
         <div>
           <label class="block text-xs font-medium text-gray-400 mb-1 uppercase tracking-wider" for="title">Titel / Omschrijving</label>
-          <input 
-            id="title"
-            required
-            type="text" 
-            bind:value={newEventForm.omschrijving} 
+          <input id="title" required type="text" bind:value={newEventForm.omschrijving}
             class="w-full bg-surface-950 border border-surface-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-primary-500 transition-colors"
-            placeholder="Bijv. Tandarts"
-          />
+            placeholder="Bijv. Tandarts" />
         </div>
-        
+
         <div class="grid grid-cols-2 gap-4">
           <div>
             <label class="block text-xs font-medium text-gray-400 mb-1 uppercase tracking-wider" for="start">Start</label>
-            <input 
-              id="start"
-              required
-              type="datetime-local" 
-              bind:value={newEventForm.start} 
-              class="w-full bg-surface-950 border border-surface-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-primary-500 transition-colors [&::-webkit-calendar-picker-indicator]:invert-[0.8]"
-            />
+            <input id="start" required type="datetime-local" bind:value={newEventForm.start}
+              class="w-full bg-surface-950 border border-surface-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-primary-500 transition-colors [&::-webkit-calendar-picker-indicator]:invert-[0.8]" />
           </div>
           <div>
             <label class="block text-xs font-medium text-gray-400 mb-1 uppercase tracking-wider" for="end">Einde</label>
-            <input 
-              id="end"
-              required
-              type="datetime-local" 
-              bind:value={newEventForm.einde} 
-              class="w-full bg-surface-950 border border-surface-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-primary-500 transition-colors [&::-webkit-calendar-picker-indicator]:invert-[0.8]"
-            />
+            <input id="end" required type="datetime-local" bind:value={newEventForm.einde}
+              class="w-full bg-surface-950 border border-surface-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-primary-500 transition-colors [&::-webkit-calendar-picker-indicator]:invert-[0.8]" />
           </div>
         </div>
 
         <div>
           <label class="block text-xs font-medium text-gray-400 mb-1 uppercase tracking-wider" for="location">Locatie (Optioneel)</label>
-          <input 
-            id="location"
-            type="text" 
-            bind:value={newEventForm.lokatie} 
-            class="w-full bg-surface-950 border border-surface-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-primary-500 transition-colors"
-          />
+          <input id="location" type="text" bind:value={newEventForm.lokatie}
+            class="w-full bg-surface-950 border border-surface-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-primary-500 transition-colors" />
         </div>
 
         <div>
           <label class="block text-xs font-medium text-gray-400 mb-1 uppercase tracking-wider" for="content">Notities (Optioneel)</label>
-          <textarea 
-            id="content"
-            bind:value={newEventForm.inhoud} 
+          <textarea id="content" bind:value={newEventForm.inhoud}
             class="w-full h-24 bg-surface-950 border border-surface-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-primary-500 transition-colors resize-none"
           ></textarea>
         </div>
 
         <div class="flex gap-3 pt-2">
-          <button 
-            type="button" 
-            onclick={() => showAddModal = false}
-            class="flex-1 py-2.5 rounded-lg bg-surface-800 hover:bg-surface-700 text-gray-300 font-medium text-sm transition-colors"
-          >
+          <button type="button" onclick={() => showAddModal = false}
+            class="flex-1 py-2.5 rounded-lg bg-surface-800 hover:bg-surface-700 text-gray-300 font-medium text-sm transition-colors">
             Annuleren
           </button>
-          <button 
-            type="submit" 
-            disabled={isSubmitting}
-            class="flex-1 py-2.5 rounded-lg bg-primary-600 hover:bg-primary-500 text-white font-medium text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
+          <button type="submit" disabled={isSubmitting}
+            class="flex-1 py-2.5 rounded-lg bg-primary-600 hover:bg-primary-500 text-white font-medium text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
             {isSubmitting ? 'Opslaan...' : 'Afspraak toevoegen'}
           </button>
         </div>
