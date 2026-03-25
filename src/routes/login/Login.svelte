@@ -2,15 +2,37 @@
   import { onMount, onDestroy } from 'svelte';
   import { listen, type UnlistenFn } from '@tauri-apps/api/event';
   import { isLoggedIn, personId, accountInfo, profilePicture } from '$lib/stores';
-  import { startLoginFlow, getPersonId, getProfilePicture } from '$lib/api';
+  import { startLoginFlow, getPersonId, getProfilePicture, handleAuthCallback } from '$lib/api';
 
   let tenant = $state('');
   let loading = $state(false);
   let error = $state('');
   let unlistenSuccess: UnlistenFn | null = null;
   let unlistenError: UnlistenFn | null = null;
+  let unlistenCallback: UnlistenFn | null = null;
 
   onMount(async () => {
+    // Listen for deep-link auth callback (Android fallback when using external browser)
+    unlistenCallback = await listen('auth-callback', async (event: any) => {
+      const redirectUrl = event.payload as string;
+      if (!redirectUrl) return;
+      error = '';
+      try {
+        const account = await handleAuthCallback(redirectUrl);
+        accountInfo.set(account);
+        const pid = await getPersonId();
+        personId.set(pid);
+        isLoggedIn.set(true);
+        try {
+          const pic = await getProfilePicture(pid);
+          profilePicture.set(pic);
+        } catch (_) {}
+      } catch (e: any) {
+        error = e?.toString() ?? 'Login via deep link mislukt';
+        loading = false;
+      }
+    });
+
     // Listen for successful authentication from the Tauri backend
     unlistenSuccess = await listen('auth-success', async (event: any) => {
       const account = event.payload;
@@ -41,6 +63,7 @@
   onDestroy(() => {
     if (unlistenSuccess) unlistenSuccess();
     if (unlistenError) unlistenError();
+    if (unlistenCallback) unlistenCallback();
   });
 
   async function startLogin() {

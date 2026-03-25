@@ -30,12 +30,15 @@
                 <data android:scheme="https" />
                 <data android:scheme="http" />
                 <data android:host="auth" />
-                
-                
-                
-                
             </intent-filter>
             <!-- DEEP LINK PLUGIN. AUTO-GENERATED. DO NOT REMOVE. -->
+            <!-- m6loapp:// custom scheme for Magister OAuth2 callback -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="m6loapp" />
+            </intent-filter>
         </activity>
 
         <provider
