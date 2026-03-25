@@ -36,7 +36,7 @@
     "deep-link": {
       "mobile": [
         {
-          "host": "auth",
+          "host": "oauth2redirect",
           "schemes": ["m6loapp"]
         }
       ]

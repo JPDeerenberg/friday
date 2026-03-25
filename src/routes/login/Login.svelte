@@ -58,6 +58,27 @@
       loading = false;
     }
   }
+
+  let manualUrl = $state('');
+  
+  async function submitManualUrl() {
+    if (!manualUrl.trim()) return;
+    error = '';
+    try {
+      const { handleAuthCallback } = await import('$lib/api');
+      const account = await handleAuthCallback(manualUrl.trim());
+      accountInfo.set(account);
+      const pid = await getPersonId();
+      personId.set(pid);
+      isLoggedIn.set(true);
+      try {
+        const pic = await getProfilePicture(pid);
+        profilePicture.set(pic);
+      } catch (_) {}
+    } catch (e: any) {
+      error = e?.toString() ?? 'Handmatige login mislukt. Zorg dat je de volledige "m6loapp://" link kopieert.';
+    }
+  }
 </script>
 
 <div class="flex items-center justify-center min-h-screen bg-surface-950 p-4">
@@ -97,7 +118,27 @@
         <div class="text-center space-y-4 py-4">
           <div class="w-12 h-12 border-4 border-primary-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
           <p class="text-sm text-gray-300 font-medium">Bezig met inloggen...</p>
-          <p class="text-xs text-gray-500">Er is een apart venster geopend. Rond daar het inloggen af.</p>
+          <p class="text-xs text-gray-500">Rond het inloggen af in de browser. De app hoort daarna vanzelf te heropenen.</p>
+        </div>
+        
+        <div class="mt-6 pt-4 border-t border-surface-700/50">
+          <p class="text-xs text-gray-400 mb-3 text-center">Opent de app niet vanzelf? Kopieer de link uit je browser (begint met <code class="bg-surface-900 px-1 rounded">m6loapp://</code>) en plak hem hier:</p>
+          <div class="flex gap-2">
+            <input
+              type="text"
+              bind:value={manualUrl}
+              placeholder="m6loapp://oauth2redirect/..."
+              class="flex-1 px-3 py-2 rounded-lg bg-surface-900 border border-surface-600 text-gray-200 placeholder-gray-600 focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500/50 text-xs"
+              onkeydown={(e) => e.key === 'Enter' && submitManualUrl()}
+            />
+            <button
+              onclick={submitManualUrl}
+              disabled={!manualUrl.trim()}
+              class="px-4 py-2 rounded-lg bg-primary-600/20 text-primary-400 border border-primary-500/30 text-xs font-semibold hover:bg-primary-600/30 disabled:opacity-50"
+            >
+              Ga
+            </button>
+          </div>
         </div>
       {/if}
 
