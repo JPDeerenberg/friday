@@ -1,4 +1,4 @@
-package com.joris.tauriagenda
+package com.joris.friday
 
 import android.os.Bundle
 import androidx.activity.enableEdgeToEdge
