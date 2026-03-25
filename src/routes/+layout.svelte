@@ -134,7 +134,7 @@
     </div>
   </div>
 {:else}
-  <div class="flex flex-col md:flex-row h-[100dvh] overflow-hidden bg-surface-950">
+  <div class="flex flex-col md:flex-row h-[100dvh] overflow-hidden bg-surface-950 pt-[env(safe-area-inset-top)]">
     {#if $isLoggedIn}
 
       <!-- ====== MOBILE: "More" drawer (slides in from bottom) ====== -->

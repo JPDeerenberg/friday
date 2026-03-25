@@ -41,38 +41,32 @@
   }
 </script>
 
-<div class="h-screen flex flex-col overflow-hidden bg-surface-950">
-  <header class="h-16 shrink-0 border-b border-surface-800/50 flex items-center justify-between px-6 bg-surface-900/50 backdrop-blur-xl z-20 shadow-xl">
-    <div class="flex items-center gap-4">
-      <div class="w-10 h-10 rounded-2xl bg-emerald-500/10 flex items-center justify-center text-emerald-400 text-xl border border-emerald-500/20 shadow-[0_0_20px_rgba(16,185,129,0.1)]">
-        📚
-      </div>
-      <div class="flex flex-col text-left">
-        <h1 class="text-lg font-bold text-gray-100 italic tracking-tight leading-none mb-1">Leermiddelen</h1>
-        <span class="text-[10px] font-black text-gray-500 uppercase tracking-widest opacity-60">Boeken & Lesmateriaal</span>
-      </div>
-    </div>
-
-    <div class="flex items-center gap-4">
-      <div class="relative group">
-        <input
-          type="text"
-          placeholder="Zoeken..."
-          bind:value={searchQuery}
-          class="w-48 lg:w-64 bg-surface-800/50 border border-surface-700/50 rounded-xl px-4 py-2 pl-9 text-xs font-bold text-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-500/30 transition-all hover:bg-surface-700/50 shadow-inner"
-        />
-        <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-[10px] group-focus-within:text-emerald-500 transition-colors">🔍</span>
+<div class="flex flex-col bg-surface-950 min-h-full">
+  <header class="sticky top-0 z-10 border-b border-surface-800/50 bg-surface-950/95 backdrop-blur px-4 py-3 pb-4">
+    <div class="flex items-center justify-between mb-3">
+      <div class="flex items-center gap-3">
+        <h1 class="text-xl font-bold text-gray-100 italic">Leermiddelen</h1>
       </div>
       <button 
         onclick={loadData}
-        class="w-10 h-10 rounded-xl bg-surface-800/50 flex items-center justify-center hover:bg-surface-700/50 transition-all text-gray-500 hover:text-emerald-400 border border-surface-700/50"
+        class="p-2 rounded-xl hover:bg-surface-800/50 transition-colors text-gray-500 hover:text-emerald-400"
       >
         <span class="text-lg">🔄</span>
       </button>
     </div>
+    
+    <div class="relative">
+      <input
+        type="text"
+        placeholder="Zoeken..."
+        bind:value={searchQuery}
+        class="w-full bg-surface-800/50 border border-surface-700/50 rounded-xl px-4 py-2 pl-9 text-xs font-bold text-gray-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 transition-all shadow-inner"
+      />
+      <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-[10px]">🔍</span>
+    </div>
   </header>
 
-  <main class="flex-1 overflow-y-auto custom-scrollbar bg-[radial-gradient(circle_at_top_right,rgba(16,185,129,0.03),transparent_40%)]">
+  <main class="bg-[radial-gradient(circle_at_top_right,rgba(16,185,129,0.03),transparent_40%)] pb-10">
     <div class="max-w-7xl mx-auto p-10 lg:p-14">
       
       {#if loading && !leermiddelen.length}

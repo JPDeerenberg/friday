@@ -23,7 +23,12 @@
   let isSubmitting = $state(false);
   let uploadLoading = $state(false);
 
+  let isMobile = $state(false);
+
   onMount(async () => {
+    const mq = window.matchMedia('(max-width: 767px)');
+    isMobile = mq.matches;
+    mq.addEventListener('change', (e) => isMobile = e.matches);
     await loadAssignments();
   });
 
@@ -188,39 +193,41 @@
   }
 </script>
 
-<div class="h-screen flex flex-col overflow-hidden bg-surface-950">
-  <!-- Top Header -->
-  <header class="h-16 shrink-0 border-b border-surface-800/50 flex items-center justify-between px-6 bg-surface-900/50 backdrop-blur-xl z-10">
-    <div class="flex items-center gap-3">
-      <div class="w-8 h-8 rounded-lg bg-primary-500/20 flex items-center justify-center text-primary-400">
-        📝
+<div class="flex flex-col bg-surface-950 min-h-full">
+  <!-- Sticky Header -->
+  <header class="sticky top-0 z-20 border-b border-surface-800/50 bg-surface-950/95 backdrop-blur px-4 py-3">
+    <div class="flex items-center justify-between gap-3">
+      <div class="flex items-center gap-3">
+        {#if selectedAssignment && isMobile}
+           <button onclick={() => selectedAssignment = null} class="text-primary-400 font-bold text-sm">‹ Terug</button>
+        {/if}
+        <h1 class="text-lg font-bold text-gray-100">Opdrachten</h1>
       </div>
-      <h1 class="text-lg font-bold text-gray-100">Opdrachten</h1>
-    </div>
-
-    <div class="flex items-center gap-1 bg-surface-800/50 rounded-xl p-1">
-      {#each [
-        { id: 'all', label: 'Alle' },
-        { id: 'open', label: 'Open' },
-        { id: 'submitted', label: 'Ingeleverd' },
-        { id: 'graded', label: 'Beoordeeld' },
-      ] as f}
-        <button
-          onclick={() => filter = f.id as any}
-          class="px-4 py-1.5 rounded-lg text-xs font-medium transition-all
-                 {filter === f.id
-                   ? 'bg-primary-500/15 text-primary-400 shadow-sm'
-                   : 'text-gray-400 hover:text-gray-200 hover:bg-surface-700/50'}"
-        >
-          {f.label}
-        </button>
-      {/each}
+      
+      <div class="flex items-center gap-1 bg-surface-800/50 rounded-xl p-0.5 overflow-x-auto no-scrollbar">
+        {#each [
+          { id: 'all', label: 'Alle' },
+          { id: 'open', label: 'Open' },
+          { id: 'submitted', label: 'Ingeleverd' },
+          { id: 'graded', label: 'Beoordeeld' },
+        ] as f}
+          <button
+            onclick={() => filter = f.id as any}
+            class="px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-tight whitespace-nowrap transition-all
+                   {filter === f.id
+                     ? 'bg-primary-500 text-white shadow-sm'
+                     : 'text-gray-400 hover:text-gray-200'}"
+          >
+            {f.label}
+          </button>
+        {/each}
+      </div>
     </div>
   </header>
 
-  <main class="flex-1 flex min-h-0">
+  <div class="flex flex-1 min-h-0">
     <!-- List Pane -->
-    <aside class="w-80 border-r border-surface-800/50 flex flex-col bg-surface-900/30">
+    <aside class="{selectedAssignment ? 'hidden md:flex' : 'flex'} w-full md:w-80 border-r border-surface-800/50 flex-col bg-surface-900/30">
       {#if loadingList}
         <div class="flex-1 flex items-center justify-center">
           <div class="w-6 h-6 border-2 border-primary-500 border-t-transparent rounded-full animate-spin"></div>
@@ -455,8 +462,8 @@
            <p class="text-gray-500 max-w-xs leading-relaxed font-medium">Kies een opdracht uit de lijst aan de linkerkant om details te bekijken of werk in te leveren.</p>
         </div>
       {/if}
-    </section>
-  </main>
+    </div>
+  </div>
 </div>
 
 <style>

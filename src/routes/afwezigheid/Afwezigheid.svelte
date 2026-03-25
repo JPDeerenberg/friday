@@ -102,9 +102,9 @@
   }
 </script>
 
-<div class="h-screen flex flex-col overflow-hidden bg-surface-950">
-  <!-- Top Header -->
-  <header class="h-16 shrink-0 border-b border-surface-800/50 flex items-center justify-between px-6 bg-surface-900/50 backdrop-blur-xl z-10">
+<div class="flex flex-col bg-surface-950">
+  <!-- Sticky Header -->
+  <header class="sticky top-0 z-10 border-b border-surface-800/50 flex flex-wrap items-center justify-between gap-2 px-4 py-3 bg-surface-900/90 backdrop-blur-xl">
     <div class="flex items-center gap-3">
       <div class="w-8 h-8 rounded-lg bg-red-500/20 flex items-center justify-center text-red-400 text-sm shadow-[0_0_15px_rgba(239,68,68,0.1)]">
         🚫
@@ -143,7 +143,7 @@
     </div>
   </header>
 
-  <main class="flex-1 overflow-y-auto custom-scrollbar bg-[radial-gradient(circle_at_top_right,rgba(59,130,246,0.03),transparent_40%)]">
+  <main class="bg-[radial-gradient(circle_at_top_right,rgba(59,130,246,0.03),transparent_40%)] pb-10">
     <div class="max-w-5xl mx-auto p-8 space-y-8">
       
       <!-- Statistics Tiles -->

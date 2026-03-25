@@ -85,44 +85,30 @@
   }
 </script>
 
-<div class="h-screen flex flex-col overflow-hidden bg-surface-950">
-  <header class="h-16 shrink-0 border-b border-surface-800/50 flex items-center justify-between px-6 bg-surface-900/50 backdrop-blur-xl z-20">
-    <div class="flex items-center gap-4">
+<div class="flex flex-col bg-surface-950 min-h-full">
+  <header class="sticky top-0 z-20 border-b border-surface-800/50 bg-surface-950/95 backdrop-blur px-4 py-3">
+    <div class="flex items-center gap-3">
       {#if selectedSW}
         <button 
           onclick={goBack} 
-          class="w-10 h-10 rounded-xl bg-surface-800/50 hover:bg-surface-700/50 border border-surface-700/50 flex items-center justify-center transition-all hover:scale-105 active:scale-95"
+          class="text-primary-400 font-bold text-sm"
         >
-          <span class="text-gray-300 text-lg">←</span>
+          ‹ Terug
         </button>
       {/if}
       <div class="flex flex-col text-left">
-        <h1 class="text-lg font-bold text-gray-100 italic tracking-tight truncate max-w-[300px]">
+        <h1 class="text-lg font-bold text-gray-100 italic tracking-tight truncate max-w-[200px]">
           {#if selectedSW}
              {selectedSW.Titel}
           {:else}
              Studiewijzers
           {/if}
         </h1>
-        {#if !selectedSW}
-          <span class="text-[10px] font-black text-gray-500 uppercase tracking-widest leading-none">Planners & Projecten</span>
-        {/if}
       </div>
     </div>
-
-    {#if !selectedSW}
-      <div class="flex items-center gap-3">
-         <button 
-           onclick={loadInitialData}
-           class="p-2 rounded-xl hover:bg-surface-800/50 transition-colors text-gray-500 hover:text-primary-400"
-         >
-           <span class="text-lg">🔄</span>
-         </button>
-      </div>
-    {/if}
   </header>
 
-  <main class="flex-1 overflow-hidden relative">
+  <div class="flex-1 flex flex-col min-h-0">
     {#if loading && !selectedSW && !studiewijzers.length}
       <div class="absolute inset-0 flex flex-col items-center justify-center gap-4 z-10">
         <div class="w-12 h-12 border-4 border-primary-500/20 border-t-primary-500 rounded-full animate-spin"></div>

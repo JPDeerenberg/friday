@@ -52,23 +52,20 @@
   }
 </script>
 
-<div class="h-screen flex flex-col overflow-hidden bg-surface-950">
-  <header class="h-16 shrink-0 border-b border-surface-800/50 flex items-center justify-between px-6 bg-surface-900/50 backdrop-blur-xl z-20 shadow-xl">
-    <div class="flex items-center gap-3">
-      <div class="w-8 h-8 rounded-lg bg-primary-500/20 flex items-center justify-center text-primary-400 text-sm shadow-[0_0_15px_rgba(59,130,246,0.1)]">
-        👤
-      </div>
-      <h1 class="text-lg font-bold text-gray-100 italic tracking-tight leading-none">Mijn Profiel</h1>
+<div class="flex flex-col bg-surface-950 min-h-full">
+  <header class="sticky top-0 z-10 border-b border-surface-800/50 bg-surface-950/95 backdrop-blur px-4 py-3">
+    <div class="flex items-center justify-between">
+      <h1 class="text-xl font-bold text-gray-100 italic">Profiel</h1>
+      <button 
+        onclick={loadProfile}
+        class="p-2 rounded-xl hover:bg-surface-800/50 transition-colors text-gray-500 hover:text-primary-400"
+      >
+        <span class="text-lg">🔄</span>
+      </button>
     </div>
-    <button 
-      onclick={loadProfile}
-      class="p-2 rounded-xl hover:bg-surface-800/50 transition-colors text-gray-500 hover:text-primary-400"
-    >
-      <span class="text-lg">🔄</span>
-    </button>
   </header>
 
-  <main class="flex-1 overflow-y-auto custom-scrollbar bg-[radial-gradient(circle_at_top_right,rgba(59,130,246,0.03),transparent_40%)]">
+  <main class="bg-[radial-gradient(circle_at_top_right,rgba(59,130,246,0.03),transparent_40%)] pb-10">
     {#if loading && !info}
       <div class="h-full flex flex-col items-center justify-center gap-6">
         <div class="w-14 h-14 border-4 border-primary-500/10 border-t-primary-500 rounded-full animate-spin shadow-[0_0_30px_rgba(59,130,246,0.15)]"></div>

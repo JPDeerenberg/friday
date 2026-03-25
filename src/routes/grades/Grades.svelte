@@ -230,24 +230,28 @@
   }
 </script>
 
-<div class="p-4 md:p-6 max-w-5xl mx-auto">
-  <!-- Header -->
-  <div class="flex items-center justify-between mb-6">
-    <h1 class="text-2xl font-bold text-gray-100">Cijfers</h1>
-    <div class="flex items-center gap-2">
-      {#each schoolyears as year}
-        <button
-          onclick={() => selectYear(year)}
-          class="px-3 py-1.5 rounded-lg text-xs font-medium
-                 {selectedYear?.id === year.id
-                   ? 'bg-primary-500/15 text-primary-400'
-                   : 'bg-surface-800 text-gray-400 hover:bg-surface-700'}"
-        >
-          {year.groep?.code ?? year.studie?.code ?? '?'}
-        </button>
-      {/each}
+<div class="flex flex-col bg-surface-950">
+  <!-- Sticky Header -->
+  <div class="sticky top-0 z-10 bg-surface-950/95 backdrop-blur border-b border-surface-800/50 px-4 py-3 pb-4">
+    <div class="flex items-center justify-between mb-3">
+      <h1 class="text-xl font-bold text-gray-100">Cijfers</h1>
+      <div class="flex items-center gap-2 overflow-x-auto no-scrollbar max-w-[200px] justify-end">
+        {#each schoolyears as year}
+          <button
+            onclick={() => selectYear(year)}
+            class="px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider shrink-0
+                   {selectedYear?.id === year.id
+                     ? 'bg-primary-500 text-white'
+                     : 'bg-surface-800 text-gray-400 hover:bg-surface-700'}"
+          >
+            {year.groep?.code ?? year.studie?.code ?? '?'}
+          </button>
+        {/each}
+      </div>
     </div>
   </div>
+
+  <div class="p-4 md:p-6 max-w-5xl mx-auto w-full">
 
   {#if loading}
     <div class="flex items-center justify-center py-20">
