@@ -1,5 +1,6 @@
 # Friday
-## Friday is a high-performance, cross-platform agenda and school management application built with Tauri v2 and SvelteKit. Designed to be lightweight and fast, it provides a seamless interface for managing academic schedules, assignments, and school data.
+
+Friday is a high-performance, cross-platform agenda and school management application built with Tauri v2 and SvelteKit. Designed to be lightweight and fast, it provides a seamless interface for managing academic schedules, assignments, and school data.
 
 🚀 Key Features
  * Multi-Platform Support: Native builds for Windows (.exe), Linux (.deb/AppImage), and Android (.apk).
