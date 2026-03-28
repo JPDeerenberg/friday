@@ -56,13 +56,13 @@ jobs:
           workspaces: "./src-tauri -> target"
 
       - name: Install Linux build dependencies
-        if: matrix.settings.platform == 'ubuntu-22.04' && !matrix.settings.is-android
+        if: ${{ matrix.settings.platform == 'ubuntu-22.04' && !matrix.settings.is-android }}
         run: |
           sudo apt-get update
           sudo apt-get install -y libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libsoup-3.0-dev libwebkit2gtk-4.1-dev
 
       - name: Setup Java (Android Only)
-        if: matrix.settings.is-android
+        if: ${{ matrix.settings.is-android }}
         uses: actions/setup-java@v4
         with:
           distribution: "zulu"
@@ -70,15 +70,15 @@ jobs:
           cache: "gradle"
 
       - name: Setup Android SDK (Android Only)
-        if: matrix.settings.is-android
+        if: ${{ matrix.settings.is-android }}
         uses: android-actions/setup-android@v3
 
       - name: Install frontend dependencies
         run: pnpm install
 
       - name: Build and Release (Desktop)
-        if: !matrix.settings.is-android
-        uses: tauri-apps/tauri-action@v0 # This is the actual version, try to remember it.
+        if: ${{ !matrix.settings.is-android }}
+        uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -89,15 +89,15 @@ jobs:
           prerelease: false
 
       - name: Build Android App (Universal APK)
-        if: matrix.settings.is-android
+        if: ${{ matrix.settings.is-android }}
         run: pnpm tauri android build --apk --target aarch64-linux-android --target armv7-linux-android --target i686-linux-android --target x86_64-linux-android
 
       - name: Get App Version (Android Only)
-        if: matrix.settings.is-android
+        if: ${{ matrix.settings.is-android }}
         run: echo "APP_VERSION=$(node -p "require('./package.json').version")" >> $GITHUB_ENV
 
       - name: Upload Android Release (Android Only)
-        if: matrix.settings.is-android
+        if: ${{ matrix.settings.is-android }}
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ env.APP_VERSION }}
