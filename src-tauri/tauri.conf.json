@@ -4,9 +4,9 @@
   "version": "0.1.0",
   "identifier": "com.joris.friday",
   "build": {
-    "beforeDevCommand": "npm run dev",
+    "beforeDevCommand": "node ./scripts/pkg-run.js dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "npm run build",
+    "beforeBuildCommand": "node ./scripts/pkg-run.js build",
     "frontendDist": "../build"
   },
   "app": {

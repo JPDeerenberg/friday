@@ -1070,6 +1070,7 @@ dependencies = [
  "base64 0.22.1",
  "chrono",
  "futures",
+ "jni",
  "mime_guess",
  "rand 0.8.5",
  "reqwest 0.12.28",

@@ -68,6 +68,7 @@
         <h1 class="text-xl font-bold text-gray-100 italic tracking-tighter">Profiel</h1>
         <button 
           onclick={loadProfile} 
+          aria-label="Vernieuwen"
           class="p-2 text-gray-500 hover:text-primary-400 transition-all hover:scale-110 active:scale-95"
         >
           <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
@@ -98,7 +99,7 @@
       <div class="max-w-4xl mx-auto p-8 lg:p-14 space-y-12">
         <section in:fly={{ y: 20 }} class="flex flex-col items-center text-center">
           <div class="relative group">
-            <div class="absolute -inset-4 bg-gradient-to-tr from-primary-600 to-purple-600 rounded-[3rem] blur-2xl opacity-20 group-hover:opacity-40 transition-opacity duration-700"></div>
+            <div class="absolute -inset-4 bg-gradient-to-tr from-primary-500 to-accent-500 rounded-[3rem] blur-2xl opacity-20 group-hover:opacity-40 transition-opacity duration-700"></div>
             <div class="relative w-40 h-40 rounded-[2.5rem] overflow-hidden border-4 border-surface-800 shadow-2xl bg-surface-900/80 backdrop-blur-md flex items-center justify-center ring-1 ring-white/5">
               {#if profilePic}
                 <img src="data:image/jpeg;base64,{profilePic}" alt="Avatar" class="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" />
@@ -118,10 +119,10 @@
                {career?.StamNr || 'Student'}
             </h2>
             <div class="flex items-center justify-center gap-3">
-               <span class="px-3 py-1 rounded-full bg-primary-500/10 text-primary-400 text-[10px] font-black uppercase tracking-widest border border-primary-500/20 shadow-sm">
+               <span class="px-3 py-1 rounded-full bg-primary-500/10 text-primary-500 text-[10px] font-black uppercase tracking-widest border border-primary-500/20 shadow-sm">
                   {career?.Studie || 'Geen opleiding'}
                </span>
-               <span class="px-3 py-1 rounded-full bg-purple-500/10 text-purple-400 text-[10px] font-black uppercase tracking-widest border border-purple-500/20 shadow-sm">
+               <span class="px-3 py-1 rounded-full bg-secondary-container text-on-primary-container text-[10px] font-black uppercase tracking-widest border border-white/5 shadow-sm">
                   {career?.Klas || 'Zonder groep'}
                </span>
             </div>

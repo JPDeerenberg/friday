@@ -6,7 +6,8 @@
     getAssignmentDetail, 
     formatDate, 
     handInAssignment, 
-    uploadAssignmentAttachment 
+    uploadAssignmentAttachment,
+    formatTeacherName
   } from '$lib/api';
   import { onMount } from 'svelte';
   import { fade, fly, slide } from 'svelte/transition';
@@ -54,7 +55,7 @@
     if (a.Afgesloten) return { label: 'Afgesloten', color: 'bg-gray-500/10 text-gray-400 border-gray-500/20' };
     if (a.BeoordeeldOp) return { label: 'Beoordeeld', color: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' };
     if (a.IngeleverdOp) return { label: 'Ingeleverd', color: 'bg-blue-500/10 text-blue-400 border-blue-500/20' };
-    if (a.MagInleveren) return { label: 'In te leveren', color: 'bg-orange-500/10 text-orange-400 border-orange-500/20' };
+    if (a.MagInleveren) return { label: 'In te leveren', color: 'bg-accent-500/10 text-accent-500 border-accent-500/20' };
     return { label: 'Openstaand', color: 'bg-surface-700 text-gray-300 border-surface-600' };
   }
 
@@ -205,18 +206,18 @@
         <h1 class="text-lg font-bold text-gray-100">Opdrachten</h1>
       </div>
       
-      <div class="flex items-center gap-1.5 bg-surface-800/50 rounded-xl p-1 flex-wrap justify-end">
+      <div class="flex items-center gap-1 bg-surface-800/40 rounded-2xl p-1.5 border border-white/5">
         {#each [
           { id: 'all', label: 'Alle' },
           { id: 'open', label: 'Open' },
-          { id: 'submitted', label: 'Ingeleverd' },
-          { id: 'graded', label: 'Beoordeeld' },
+          { id: 'submitted', label: 'Ingevuld' },
+          { id: 'graded', label: 'Cijfer' },
         ] as f}
           <button
             onclick={() => filter = f.id as any}
-            class="px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all
+            class="px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-tight transition-all
                    {filter === f.id
-                     ? 'bg-primary-500 text-white shadow-sm'
+                     ? 'bg-primary-500 text-on-primary shadow-lg shadow-primary-500/20'
                      : 'text-gray-500 hover:text-gray-300'}"
           >
             {f.label}
@@ -224,7 +225,7 @@
         {/each}
       </div>
 
-      <button onclick={loadAssignments} class="p-2 text-gray-500 hover:text-primary-400 transition-colors shrink-0">
+      <button onclick={loadAssignments} aria-label="Vernieuwen" class="p-2 text-gray-500 hover:text-primary-500 transition-all hover:scale-110 active:scale-90 shrink-0">
         <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
       </button>
     </div>
@@ -243,22 +244,23 @@
             {@const status = getStatus(assignment)}
             <button
               onclick={() => selectAssignment(assignment)}
-              class="w-full text-left p-3 rounded-xl transition-all border
+              class="w-full text-left p-4 rounded-2xl transition-all border
                      {selectedAssignment?.Id === assignment.Id 
-                       ? 'bg-primary-500/10 border-primary-500/30 ring-1 ring-primary-500/20' 
-                       : 'bg-surface-800/20 border-transparent hover:bg-surface-800/40 hover:border-surface-700'}"
+                       ? 'bg-primary-container border-primary-500/40 shadow-xl shadow-primary-500/5 -translate-y-0.5' 
+                       : 'bg-surface-800/40 border-white/5 hover:bg-surface-800/60 hover:border-white/10'}"
             >
-              <div class="flex justify-between items-start mb-1 gap-2">
-                <p class="text-sm font-semibold text-gray-200 truncate flex-1">{assignment.Titel}</p>
-                <div class="w-2 h-2 rounded-full mt-1.5 shrink-0
-                            {status.label === 'In te leveren' ? 'bg-orange-500 shadow-[0_0_8px_rgba(249,115,22,0.4)]' : 
-                             status.label === 'Ingeleverd' ? 'bg-blue-500' : 
-                             status.label === 'Beoordeeld' ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]' : 'bg-gray-600'}">
+              <div class="flex justify-between items-start mb-2 gap-3">
+                <p class="text-sm font-bold text-gray-100 truncate flex-1 leading-tight">{assignment.Titel}</p>
+                <div class="px-2 py-0.5 rounded-md text-[8px] font-black uppercase tracking-widest border
+                            {status.label === 'In te leveren' ? 'bg-accent-500/10 text-accent-500 border-accent-500/20' : 
+                             status.label === 'Ingeleverd' ? 'bg-blue-500/20 text-blue-400 border-blue-500/30' : 
+                             status.label === 'Beoordeeld' ? 'bg-primary-500/20 text-primary-400 border-primary-500/30' : 'bg-gray-700/40 text-gray-500 border-gray-600/30'}">
+                  {status.label}
                 </div>
               </div>
-              <div class="flex items-center justify-between text-[10px] text-gray-500 uppercase tracking-wider font-medium">
-                <span>{assignment.Vak ?? 'Algemeen'}</span>
-                <span class={isOverdue(assignment) ? 'text-red-400 font-bold' : ''}>
+              <div class="flex items-center justify-between text-[10px] text-gray-500 uppercase tracking-tighter font-black">
+                <span class="opacity-60">{assignment.Vak ?? 'Algemeen'}</span>
+                <span class={isOverdue(assignment) ? 'text-red-400' : 'opacity-80'}>
                   {new Date(assignment.InleverenVoor).toLocaleDateString('nl-NL', { day: 'numeric', month: 'short' })}
                 </span>
               </div>
@@ -323,7 +325,7 @@
               {/if}
               <div class="glass p-3 rounded-xl">
                 <p class="text-[10px] text-gray-500 font-bold uppercase tracking-tighter mb-1">Docent</p>
-                <p class="text-xs text-gray-200 truncate">{selectedAssignment.Docenten?.map((d: any) => d.Naam).join(', ') || 'N.v.t.'}</p>
+                <p class="text-xs text-gray-200 truncate">{selectedAssignment.Docenten?.map((d: any) => formatTeacherName(d.Naam)).join(', ') || 'N.v.t.'}</p>
               </div>
             </div>
           </div>

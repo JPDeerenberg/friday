@@ -3,9 +3,14 @@ mod client;
 mod commands;
 mod models;
 
+#[cfg(target_os = "android")]
+pub mod jni;
+
 use client::{MagisterClient, SharedClient};
 use std::sync::Arc;
 use tokio::sync::Mutex;
+
+// use tauri::Manager; // already imported in some blocks or traits
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -84,6 +89,7 @@ pub fn run() {
             commands::studiewijzers::get_studiewijzers,
             commands::studiewijzers::get_studiewijzer_detail,
             commands::studiewijzers::get_studiewijzer_onderdeel_detail,
+            commands::notifications::trigger_test_notification,
         ])
         .plugin(tauri_plugin_dialog::init())
         .run(tauri::generate_context!())

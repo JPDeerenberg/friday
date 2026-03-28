@@ -1,7 +1,7 @@
 <script lang="ts">
   import { personId, accountInfo, profilePicture, userSettings } from '$lib/stores';
   import { get } from 'svelte/store';
-  import { getCalendarEvents, getGrades, getSchoolyears, getMessageFolders, getAssignments, formatDate, infoTypeShort, getBulkGradeExtraInfo } from '$lib/api';
+  import { getCalendarEvents, getGrades, getSchoolyears, getMessageFolders, getAssignments, formatDate, infoTypeShort, getBulkGradeExtraInfo, formatTeacherName } from '$lib/api';
   import { onMount } from 'svelte';
   import { fade, fly, slide } from 'svelte/transition';
 
@@ -10,6 +10,19 @@
   let unreadCount = $state(0);
   let upcomingAssignments = $state<any[]>([]);
   let loading = $state(true);
+
+  onMount(async () => {
+    // Load cache
+    const cached = localStorage.getItem('dashboard_cache');
+    if (cached) {
+      const data = JSON.parse(cached);
+      todayEvents = data.todayEvents;
+      latestGrades = data.latestGrades;
+      unreadCount = data.unreadCount;
+      upcomingAssignments = data.upcomingAssignments;
+    }
+    await loadDashboardData();
+  });
 
   async function loadDashboardData() {
     const pid = get(personId);
@@ -54,16 +67,20 @@
         .filter(a => !a.Afgesloten)
         .sort((a, b) => a.InleverenVoor.localeCompare(b.InleverenVoor))
         .slice(0, 3);
+        
+      // Update cache
+      localStorage.setItem('dashboard_cache', JSON.stringify({
+        todayEvents,
+        latestGrades,
+        unreadCount,
+        upcomingAssignments
+      }));
 
     } catch (e) {
       console.error('Dashboard load error:', e);
     }
     loading = false;
   }
-
-  onMount(async () => {
-    await loadDashboardData();
-  });
 
   function getSubjectIcon(subject: string): string {
     const s = subject.toLowerCase();
@@ -137,13 +154,18 @@
         
         <!-- Left Column: Schedule -->
         <div class="lg:col-span-7 space-y-6">
-          <section class="glass rounded-3xl md:rounded-[2rem] p-5 md:p-8 border border-white/5 shadow-2xl relative overflow-hidden group">
+          <section 
+            role="button"
+            tabindex="0"
+            onclick={() => currentPage.set('calendar')}
+            class="glass rounded-3xl md:rounded-[2rem] p-5 md:p-8 border border-white/5 shadow-2xl relative overflow-hidden group cursor-pointer hover:bg-surface-800/40 transition-all"
+          >
             <div class="flex items-center justify-between mb-8">
               <h2 class="text-xl font-bold text-gray-100 flex items-center gap-2">
                 <svg class="w-5 h-5 text-primary-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/></svg>
                 Vandaag
               </h2>
-              <span class="text-[9px] font-black text-primary-400 bg-primary-400/10 px-3 py-1.5 rounded-full uppercase tracking-widest border border-primary-400/20 shadow-sm">
+              <span class="text-[9px] font-black text-primary-500 bg-primary-500/10 px-3 py-1.5 rounded-full uppercase tracking-widest border border-primary-500/20 shadow-sm">
                 {todayEvents.length} lessen
               </span>
             </div>
@@ -170,7 +192,7 @@
                       </p>
                       <div class="flex items-center gap-2 mt-1">
                         <span class="text-[9px] font-black text-gray-500 uppercase tracking-widest px-2 py-0.5 rounded-lg bg-surface-800 border border-white/5">{event.Lokalen?.[0]?.Naam ?? '??'}</span>
-                        <span class="text-[9px] font-black text-gray-600 uppercase tracking-tighter truncate">{event.Docenten?.[0]?.Naam ?? ''}</span>
+                        <span class="text-[9px] font-black text-gray-600 uppercase tracking-tighter truncate">{formatTeacherName(event.Docenten?.[0]?.Naam) ?? ''}</span>
                       </div>
                     </div>
                   </div>
@@ -180,10 +202,15 @@
           </section>
 
           <!-- Grades Section -->
-          <section class="glass rounded-3xl md:rounded-[2rem] p-5 md:p-8 border border-white/5 shadow-2xl">
+          <section 
+            role="button"
+            tabindex="0"
+            onclick={() => currentPage.set('grades')}
+            class="glass rounded-3xl md:rounded-[2rem] p-5 md:p-8 border border-white/5 shadow-2xl cursor-pointer hover:bg-surface-800/40 transition-all"
+          >
             <h2 class="text-xl font-bold text-gray-100 mb-8 flex items-center justify-between">
               <span class="flex items-center gap-2">
-                <svg class="w-5 h-5 text-accent-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M7.105 13.123l2.895-2.123 2.895 2.123 5.105-4.123"/><path d="M3 21h18"/><path d="M3 3v18h18"/></svg>
+                <svg class="w-5 h-5 text-accent-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M7.105 13.123l2.895-2.123 2.895 2.123 5.105-4.123"/><path d="M3 21h18"/><path d="M3 3v18h18"/></svg>
                 Laatste Cijfers
               </span>
               <span class="text-[9px] font-black text-gray-600 uppercase tracking-widest bg-white/5 px-2 py-1 rounded-lg">Top 5</span>
@@ -209,7 +236,7 @@
                 </div>
                 
                 <div class="text-right">
-                  <div class="text-2xl font-black italic tracking-tighter {$userSettings.highlightFailing && !isVoldoende(grade) ? 'text-red-500' : 'text-accent-400'} drop-shadow-sm">
+                  <div class="text-2xl font-black italic tracking-tighter {$userSettings.highlightFailing && !isVoldoende(grade) ? 'text-red-500' : 'text-accent-500'} drop-shadow-sm">
                     {grade.CijferStr}
                   </div>
                   {#if grade.Weging}
@@ -232,9 +259,14 @@
 
         <!-- Right Column: Assignments -->
         <div class="lg:col-span-5">
-          <section class="glass rounded-3xl md:rounded-[2rem] p-5 md:p-8 border border-white/5 shadow-xl sticky top-28">
+          <section 
+             role="button"
+             tabindex="0"
+             onclick={() => currentPage.set('assignments')}
+             class="glass rounded-3xl md:rounded-[2rem] p-5 md:p-8 border border-white/5 shadow-xl sticky top-28 cursor-pointer hover:bg-surface-800/40 transition-all"
+          >
             <h2 class="text-xl font-bold text-gray-100 mb-6 flex items-center gap-2">
-              <svg class="w-5 h-5 text-orange-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg>
+              <svg class="w-5 h-5 text-primary-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg>
               Opdrachten
             </h2>
             
@@ -261,7 +293,7 @@
             
             <button 
               onclick={() => currentPage.set('assignments')}
-              class="w-full mt-6 py-4 rounded-2xl bg-primary-600 text-white font-black text-[10px] uppercase tracking-[0.2em] shadow-lg shadow-primary-500/20 hover:bg-primary-500 transition-all active:scale-95 ring-1 ring-white/10"
+              class="w-full mt-6 py-4 rounded-2xl bg-primary-500 text-on-primary font-black text-[10px] uppercase tracking-[0.2em] shadow-lg shadow-primary-500/20 hover:scale-[1.02] transition-all active:scale-95 ring-1 ring-white/10"
             >
               Bekijk Alle Opdrachten
             </button>

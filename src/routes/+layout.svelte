@@ -21,47 +21,79 @@
     } catch (_) {}
   }
 
-  onMount(async () => {
-    const unlistenCallback = await listen('auth-callback', async (event) => {
-      const url = event.payload as string;
-      try {
-        const account = await handleAuthCallback(url);
-        await handleLogin(account);
-      } catch (e) {
-        console.error('Auth callback error:', e);
-      }
-    });
+  onMount(() => {
+    let unlistenCallback: any, unlistenSuccess: any, unlistenError: any, unlistenBack: any;
 
-    const unlistenSuccess = await listen('auth-success', async (event) => {
-      await handleLogin(event.payload);
-    });
-
-    const unlistenError = await listen('auth-error', (event) => {
-      console.error('Auth error:', event.payload);
-    });
-
-    try {
-      const restored = await restoreSession();
-      if (restored) {
-        const account = await getAccount();
-        const pid = await getPersonId();
-        accountInfo.set(account);
-        personId.set(pid);
-        isLoggedIn.set(true);
-
+    (async () => {
+      unlistenCallback = await listen('auth-callback', async (event) => {
+        const url = event.payload as string;
         try {
-          const pic = await getProfilePicture(pid);
-          profilePicture.set(pic);
-        } catch (_) {}
+          const account = await handleAuthCallback(url);
+          await handleLogin(account);
+        } catch (e) {
+          console.error('Auth callback error:', e);
+        }
+      });
+
+      unlistenSuccess = await listen('auth-success', async (event) => {
+        await handleLogin(event.payload);
+      });
+
+      unlistenError = await listen('auth-error', (event) => {
+        console.error('Auth error:', event.payload);
+      });
+
+      try {
+        const restored = await restoreSession();
+        if (restored) {
+          const account = await getAccount();
+          const pid = await getPersonId();
+          accountInfo.set(account);
+          personId.set(pid);
+          isLoggedIn.set(true);
+
+          try {
+            const pic = await getProfilePicture(pid);
+            profilePicture.set(pic);
+          } catch (_) {}
+        }
+      } catch (_) {}
+      loading = false;
+
+      unlistenBack = await listen('tauri://back-button', () => {
+        if (mobileSidebarOpen) {
+          mobileSidebarOpen = false;
+          return;
+        }
+        const cp = get(currentPage);
+        if (cp !== 'dashboard') {
+          currentPage.set('dashboard');
+        }
+      });
+    })();
+    
+    const handlePopstate = () => {
+      const cp = get(currentPage);
+      if (cp !== 'dashboard') {
+        currentPage.set('dashboard');
       }
-    } catch (_) {}
-    loading = false;
+    };
+    window.addEventListener('popstate', handlePopstate);
 
     return () => {
-      unlistenCallback();
-      unlistenSuccess();
-      unlistenError();
+      if (unlistenCallback) unlistenCallback();
+      if (unlistenSuccess) unlistenSuccess();
+      if (unlistenError) unlistenError();
+      if (unlistenBack) unlistenBack();
+      window.removeEventListener('popstate', handlePopstate);
     };
+  });
+
+  $effect(() => {
+    const cp = $currentPage;
+    if (cp !== 'dashboard') {
+      window.history.pushState({ page: cp }, "");
+    }
   });
 
   // Bottom nav items (most used pages)
@@ -138,7 +170,10 @@
     </div>
   </div>
 {:else}
-  <div class="flex flex-col md:flex-row h-[100dvh] overflow-hidden bg-surface-950 pt-[env(safe-area-inset-top)]">
+  <div
+    class="flex flex-col md:flex-row h-[100dvh] overflow-hidden bg-surface-950 pt-[env(safe-area-inset-top)] theme-{$userSettings.themeColor} mode-{$userSettings.backgroundMode}"
+    style="--custom-primary: {$userSettings.customThemeColor || '#8b5cf6'}"
+  >
     {#if $isLoggedIn}
 
       <!-- ====== MOBILE: "More" drawer (slides in from bottom) ====== -->
@@ -148,8 +183,16 @@
         <div class="fixed inset-0 bg-black/60 z-40 md:hidden" onclick={() => mobileSidebarOpen = false}></div>
         <div class="fixed bottom-[60px] left-0 right-0 z-50 md:hidden bg-surface-900 border border-surface-700/50 rounded-t-3xl shadow-2xl overflow-y-auto max-h-[70dvh]">
           <div class="flex items-center justify-between px-5 py-4 border-b border-surface-700/50">
-            <span class="text-base font-semibold text-gray-100">Menu</span>
-            <button onclick={() => mobileSidebarOpen = false} class="text-gray-400 p-1 hover:text-white">
+            <div class="flex items-center gap-3 p-6 mb-2">
+              <div class="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 overflow-hidden">
+                <img src="/logo.png" alt="Friday Logo" class="w-full h-full object-cover" />
+              </div>
+              <div class="flex flex-col">
+                <h1 class="text-xl font-black text-white italic tracking-tighter" in:fade>Friday</h1>
+                <p class="text-[8px] font-bold text-primary-400 uppercase tracking-widest" in:fade>Menu</p>
+              </div>
+            </div>
+            <button onclick={() => mobileSidebarOpen = false} class="text-gray-400 p-1">
               <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
             </button>
           </div>
@@ -171,7 +214,7 @@
                 {/each}
               </div>
             {/each}
-            <!-- Profile + Settings at bottom of drawer -->
+            <!-- Profile at bottom of drawer -->
             <div class="space-y-1 border-t border-surface-700/50 pt-4">
               <button onclick={() => navigate('profile')} class="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-medium text-gray-400 hover:bg-surface-800 hover:text-gray-200 transition-all">
                 {#if $profilePicture}
@@ -182,12 +225,6 @@
                   </span>
                 {/if}
                 <span>Profiel</span>
-              </button>
-              <button onclick={() => navigate('settings')} class="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-medium text-gray-400 hover:bg-surface-800 hover:text-gray-200 transition-all">
-                <span class="text-primary-400">
-                  <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
-                </span>
-                <span>Instellingen</span>
               </button>
             </div>
             <!-- Settings inside drawer -->
@@ -220,9 +257,11 @@
       <aside class="hidden md:flex flex-col {sidebarCollapsed ? 'w-16' : 'w-56'} bg-surface-900 border-r border-surface-700/50 transition-all duration-300 shrink-0">
         <!-- Logo -->
         <div class="flex items-center gap-3 px-4 py-5 border-b border-surface-700/50 shrink-0">
-          <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-primary-500 to-accent-500 flex items-center justify-center text-white font-bold text-sm shrink-0">F</div>
+          <div class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 overflow-hidden">
+            <img src="/logo.png" alt="Friday" class="w-full h-full object-cover" />
+          </div>
           {#if !sidebarCollapsed}
-            <span class="text-base font-semibold text-gray-100 truncate">Friday</span>
+            <span class="text-base font-black text-white italic tracking-tighter truncate">Friday</span>
           {/if}
         </div>
 

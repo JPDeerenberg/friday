@@ -1,7 +1,15 @@
 <script lang="ts">
   import { userSettings } from '$lib/stores';
   import { currentPage } from '$lib/stores';
+  import { triggerTestNotification } from '$lib/api';
   import { fade, fly } from 'svelte/transition';
+  import { onMount } from 'svelte';
+
+  let isMobile = $state(false);
+
+  onMount(() => {
+    isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+  });
 
   function goBack() {
     currentPage.set('dashboard');
@@ -18,7 +26,7 @@
     }
   }
 
-  const sections = [
+  const sections: any[] = [
     {
       title: 'Agenda',
       settings: [
@@ -35,12 +43,45 @@
       ]
     },
     {
-      title: 'Weergave',
+      title: 'Thema',
       settings: [
-        { id: 'compactView', label: 'Compacte Weergave', description: 'Toon meer informatie op één scherm.', type: 'toggle' },
+        { id: 'themeColor', label: 'Primaire Kleur', description: 'Kies de hoofdkleur van de app.', type: 'theme-picker' },
+        { id: 'backgroundMode', label: 'Achtergrond', description: 'Kies hoe donker de achtergrond moet zijn.', type: 'select', options: [
+          { value: 'normal', label: 'Normaal (Getint)' },
+          { value: 'amoled', label: 'AMOLED (Zwart)' }
+        ]},
       ]
+    },
+    {
+      title: 'Meldingen',
+      settings: [
+        { id: 'testNotification', label: 'Test Notificatie', description: 'Stuur een testbericht om te controleren of meldingen werken.', type: 'action', action: async () => {
+          try {
+            await triggerTestNotification();
+            alert('Test notificatie is verstuurd!');
+          } catch (e) {
+            alert('Fout bij het versturen: ' + e);
+          }
+        } },
+      ],
+      hideIfDesktop: true
     }
   ];
+
+  const themeColors = [
+    { id: 'violet', bg: 'bg-[#a855f7]', label: 'Violet' },
+    { id: 'pink', bg: 'bg-[#ec4899]', label: 'Roze' },
+    { id: 'red', bg: 'bg-[#ef4444]', label: 'Rood' },
+    { id: 'orange', bg: 'bg-[#fb923c]', label: 'Oranje' },
+    { id: 'yellow', bg: 'bg-[#eab308]', label: 'Geel' },
+    { id: 'green', bg: 'bg-[#22c55e]', label: 'Groen' },
+    { id: 'cyan', bg: 'bg-[#06b6d4]', label: 'Cyaan' },
+    { id: 'blue', bg: 'bg-[#3b82f6]', label: 'Blauw' },
+  ];
+
+  function updateSetting(id: string, value: any) {
+    userSettings.update(s => ({ ...s, [id]: value }));
+  }
 </script>
 
 <div class="flex flex-col bg-surface-950 min-h-full">
@@ -56,8 +97,9 @@
 
   <main class="max-w-3xl mx-auto w-full p-6 space-y-10 pb-20">
     {#each sections as section, i}
-      <section in:fly={{ y: 20, delay: i * 100 }} class="space-y-4">
-        <h2 class="text-[10px] font-black text-gray-500 uppercase tracking-[0.3em] px-2">{section.title}</h2>
+      {#if !section.hideIfDesktop || isMobile}
+        <section in:fly={{ y: 20, delay: i * 100 }} class="space-y-4">
+          <h2 class="text-[10px] font-black text-gray-500 uppercase tracking-[0.3em] px-2">{section.title}</h2>
         
         <div class="space-y-2">
           {#each section.settings as setting}
@@ -87,11 +129,44 @@
                   step={setting.step ?? 1}
                   class="w-20 px-3 py-2 rounded-xl bg-surface-900 border border-surface-700 text-sm text-gray-100 text-center focus:outline-none focus:border-primary-500"
                 />
+              {:else if setting.type === 'theme-picker'}
+                <div class="grid grid-cols-4 gap-3 py-1">
+                  {#each themeColors as color}
+                    <button
+                      onclick={() => updateSetting(setting.id, color.id)}
+                      class="group flex flex-col items-center gap-1.5"
+                    >
+                      <div class="w-10 h-10 rounded-full {color.bg} transition-all border-2
+                                 {$userSettings[setting.id] === color.id 
+                                   ? 'border-white scale-110 shadow-lg shadow-white/20' 
+                                   : 'border-transparent opacity-60 group-hover:opacity-100 group-hover:scale-105'}"></div>
+                      <span class="text-[8px] font-black uppercase tracking-tighter text-gray-500 group-hover:text-gray-300 transition-colors">{color.label}</span>
+                    </button>
+                  {/each}
+                </div>
+              {:else if setting.type === 'select'}
+                <select 
+                  value={$userSettings[setting.id]}
+                  onchange={(e) => updateSetting(setting.id, e.currentTarget.value)}
+                  class="bg-surface-800 border-none text-gray-200 text-xs font-black uppercase tracking-widest rounded-xl px-3 py-2 outline-none cursor-pointer hover:bg-surface-700 transition-colors"
+                >
+                  {#each setting.options as option}
+                    <option value={option.value}>{option.label}</option>
+                  {/each}
+                </select>
+              {:else if setting.type === 'action'}
+                <button 
+                  onclick={() => setting.action()}
+                  class="bg-primary-500/15 text-primary-400 text-xs font-bold uppercase tracking-widest rounded-xl px-4 py-2 hover:bg-primary-500/25 transition-all active:scale-95"
+                >
+                  🚀 Test
+                </button>
               {/if}
             </div>
           {/each}
         </div>
       </section>
+      {/if}
     {/each}
 
     <div class="pt-6 border-t border-surface-800/50">

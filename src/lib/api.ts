@@ -202,7 +202,11 @@ export async function getStudiewijzerDetail(personId: number, id: number, isProj
 }
 
 export async function getStudiewijzerOnderdeelDetail(personId: number, swId: number, onderdeelId: number, isProject: boolean): Promise<any> {
-  return invoke('get_studiewijzer_onderdeel_detail', { personId, swId, onderdeelId, isProject });
+    return invoke('get_studiewijzer_onderdeel_detail', { personId, swId, onderdeelId, isProject });
+}
+
+export async function triggerTestNotification(): Promise<void> {
+    return invoke('trigger_test_notification');
 }
 
 // === Helpers ===
@@ -243,6 +247,11 @@ export function calendarTypeName(type: number): string {
     0: 'Geen', 1: 'Persoonlijk', 2: 'Algemeen', 3: 'Schoolbreed',
     4: 'Stage', 5: 'Intake', 6: 'Vrij', 7: 'KWT', 8: 'Standby',
     9: 'Geblokkeerd', 10: 'Anders', 13: 'Les', 16: 'Rooster'
-  };
+};
   return names[type] ?? 'Onbekend';
+}
+
+export function formatTeacherName(name: string | undefined | null): string {
+  if (!name) return '';
+  return name.replace(/\s*\([^)]+\)/g, '').trim();
 }

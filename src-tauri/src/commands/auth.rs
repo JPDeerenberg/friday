@@ -1,7 +1,7 @@
 use crate::auth::AuthFlow;
 use crate::client::{MagisterClient, SharedClient, TokenSet};
 use crate::models::account::ApiAccount;
-use tauri::{AppHandle, State, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder, Wry};
 
 /// Start a new auth flow by opening a webview window.
 #[tauri::command]
@@ -28,7 +28,7 @@ pub async fn start_login_flow(
     #[cfg(not(target_os = "android"))]
     {
         // Close existing login window if any
-        if let Some(window) = app.get_webview_window("magister-login") {
+        if let Some(window) = Manager::<Wry>::get_webview_window(&app, "magister-login") {
             let _ = window.destroy();
         }
 
@@ -67,7 +67,7 @@ pub async fn start_login_flow(
                             }
                         }
                         // Close the login window
-                        if let Some(window) = app_handle.get_webview_window("magister-login") {
+                        if let Some(window) = Manager::<Wry>::get_webview_window(&app_handle, "magister-login") {
                             let _ = window.destroy();
                         }
                     });
@@ -78,9 +78,9 @@ pub async fn start_login_flow(
             })
             .build()
             .map_err(|e| format!("Failed to build login window: {}", e))?;
+        
+        Ok(())
     }
-
-    Ok(())
 }
 
 /// Internal helper to handle the OAuth2 callback Exchange code for tokens.

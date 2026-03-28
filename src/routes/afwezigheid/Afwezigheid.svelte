@@ -111,6 +111,7 @@
         <h1 class="text-xl font-bold text-gray-100 italic tracking-tighter">Absentietoets</h1>
         <button 
           onclick={loadAbsences} 
+          aria-label="Vernieuwen"
           class="p-2 text-gray-500 hover:text-primary-400 transition-all hover:scale-110 active:scale-95"
         >
           <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>

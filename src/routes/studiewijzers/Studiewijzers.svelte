@@ -110,6 +110,7 @@
       {#if !selectedSW}
         <button 
           onclick={loadInitialData}
+          aria-label="Vernieuwen"
           class="p-2 text-gray-500 hover:text-primary-400 transition-all hover:scale-110 active:scale-95"
         >
           <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
@@ -133,7 +134,7 @@
           </div>
           <h3 class="text-xl font-black text-white italic mb-2">Oeps!</h3>
           <p class="text-gray-400 text-sm max-w-xs mb-6">{error}</p>
-          <button onclick={loadInitialData} class="px-6 py-2 rounded-xl bg-primary-600 hover:bg-primary-500 text-white text-xs font-black uppercase tracking-widest">
+          <button onclick={loadInitialData} class="px-6 py-2 rounded-xl bg-primary-500 text-on-primary text-xs font-black uppercase tracking-widest shadow-lg shadow-primary-500/20">
              Opnieuw
           </button>
        </div>
@@ -166,7 +167,7 @@
                         <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"/><path d="M8 7h6"/><path d="M8 11h8"/></svg>
                       {/if}
                    </div>
-                   <span class="text-[9px] font-black uppercase tracking-[0.15em] px-2.5 py-1 rounded-full border {isProj ? 'bg-purple-500/10 text-purple-400 border-purple-500/20' : 'bg-primary-500/10 text-primary-400 border-primary-500/20'}">
+                   <span class="text-[9px] font-black uppercase tracking-[0.15em] px-2.5 py-1 rounded-full border {isProj ? 'bg-secondary-container text-on-surface-variant border-white/10' : 'bg-primary-500/10 text-primary-500 border-primary-500/20'}">
                       {isProj ? 'Project' : 'Wijzer'}
                    </span>
                 </div>
@@ -194,7 +195,7 @@
               {#each selectedSW.Detail.Onderdelen.Items as onderdeel}
                 <button 
                   onclick={() => selectOnderdeel(onderdeel)}
-                  class="w-full p-4 rounded-2xl text-left transition-all border {selectedOnderdeel?.Id === onderdeel.Id ? 'bg-primary-500/10 border-primary-500/30' : 'bg-surface-800/30 border-transparent hover:bg-surface-800/80'} flex items-center gap-3 group"
+                  class="w-full p-4 rounded-2xl text-left transition-all border {selectedOnderdeel?.Id === onderdeel.Id ? 'bg-primary-500/15 border-primary-500/40 shadow-lg shadow-primary-500/5' : 'bg-surface-800/30 border-transparent hover:bg-surface-800/80'} flex items-center gap-3 group"
                 >
                   <div class="w-2 h-2 rounded-full shrink-0" style="background-color: {onderdeel.Kleur ? '#' + onderdeel.Kleur.toString(16).padStart(6, '0') : '#3b82f6'}"></div>
                   <span class="text-sm font-bold text-gray-200 group-hover:text-white transition-colors">{onderdeel.Titel}</span>

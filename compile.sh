@@ -28,16 +28,27 @@ COMMON_DOCKER_FLAGS=(
   --cpus="1"
 )
 
+# Detect Package Manager
+if [ -f "pnpm-lock.yaml" ]; then
+    PKG_MANAGER="pnpm"
+elif [ -f "yarn.lock" ]; then
+    PKG_MANAGER="yarn"
+else
+    PKG_MANAGER="npm"
+fi
+
+echo "Initialized with $PKG_MANAGER protocol."
+
 if [ "$TARGET" == "android" ]; then
     echo "Targeting Android (aarch64). Deployed to the cloud (of je broekzak)."
     
     docker run "${COMMON_DOCKER_FLAGS[@]}" "$IMAGE_NAME" \
-      bash -c "pnpm install && pnpm tauri android build --target aarch64 --debug"
+      bash -c "$PKG_MANAGER install && $PKG_MANAGER tauri android build --target aarch64 --debug"
 
 elif [ "$TARGET" == "pc" ]; then
     echo "Targeting PC (Linux native). Probeer je weer een mainframe te hacken?"
     docker run "${COMMON_DOCKER_FLAGS[@]}" "$IMAGE_NAME" \
-      bash -c "pnpm install && pnpm tauri build"
+      bash -c "$PKG_MANAGER install && $PKG_MANAGER tauri build"
 
 else
     echo "System Failure: '$TARGET' is not a recognized platform. Schrapnel in de hersenen?"
