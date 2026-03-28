@@ -48,7 +48,7 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.settings.is-android && 'aarch64-linux-android,armv7-linux-android,i686-linux-android,x86_64-linux-android' || '' }}
+          targets: ${{ matrix.settings.is-android && 'aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android' || '' }}
 
       - name: Rust Cache
         uses: swatinem/rust-cache@v2
@@ -59,7 +59,7 @@ jobs:
         if: ${{ matrix.settings.platform == 'ubuntu-22.04' && !matrix.settings.is-android }}
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libsoup-3.0-dev libwebkit2gtk-4.1-dev
+          sudo apt-get install -y libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libsoup-3.0-dev libwebkit2gtk-4.1-dev mold clang
 
       - name: Setup Java (Android Only)
         if: ${{ matrix.settings.is-android }}
@@ -90,7 +90,7 @@ jobs:
 
       - name: Build Android App (Universal APK)
         if: ${{ matrix.settings.is-android }}
-        run: pnpm tauri android build --apk --target aarch64-linux-android --target armv7-linux-android --target i686-linux-android --target x86_64-linux-android
+        run: pnpm tauri android build --apk
 
       - name: Get App Version (Android Only)
         if: ${{ matrix.settings.is-android }}
