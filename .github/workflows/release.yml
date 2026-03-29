@@ -115,7 +115,7 @@ jobs:
 
       - name: Install Build Tools for Signing
         if: ${{ matrix.settings.is-android }}
-        run: echo "y" | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "build-tools;34.0.0"
+run: echo "y" | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "build-tools;29.0.3"
 
       - name: Sign Android APK
         if: ${{ matrix.settings.is-android }}
