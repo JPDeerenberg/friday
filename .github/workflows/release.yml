@@ -1,10 +1,5 @@
 name: Release
 on:
-  push:
-    branches:
-      - main
-    tags:
-      - "v*"
   workflow_dispatch:
 
 concurrency:
@@ -12,7 +7,31 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      release_upload_url: ${{ steps.create_release.outputs.upload_url }}
+      app_version: ${{ steps.get_version.outputs.VERSION }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get App Version
+        id: get_version
+        run: echo "VERSION=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        id: create_release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.get_version.outputs.VERSION }}
+          name: "App v${{ steps.get_version.outputs.VERSION }}"
+          body: "See the assets to download this version."
+          draft: true
+
   build:
+    needs: create-release
     permissions:
       contents: write
     strategy:
@@ -48,7 +67,7 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.settings.is-android && 'aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android' || '' }}
+          targets: ${{ matrix.settings.is-android && 'aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android' || 'x86_64-unknown-linux-gnu' }}
 
       - name: Rust Cache
         uses: swatinem/rust-cache@v2
@@ -69,9 +88,15 @@ jobs:
           java-version: "17"
           cache: "gradle"
 
-      - name: Setup Android SDK (Android Only)
+      - name: Setup Android SDK & NDK (Android Only)
         if: ${{ matrix.settings.is-android }}
         uses: android-actions/setup-android@v3
+
+      - name: Install Android NDK
+        if: ${{ matrix.settings.is-android }}
+        run: |
+          echo "y" | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "ndk;26.1.10909125"
+          echo "NDK_HOME=$ANDROID_HOME/ndk/26.1.10909125" >> $GITHUB_ENV
 
       - name: Install frontend dependencies
         run: pnpm install
@@ -82,15 +107,15 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: v__VERSION__
-          releaseName: "App v__VERSION__"
-          releaseBody: "See the assets to download this version."
-          releaseDraft: true
-          prerelease: false
+          releaseId: ${{ needs.create-release.outputs.release_id }}
 
       - name: Build Android App (Universal APK)
         if: ${{ matrix.settings.is-android }}
         run: pnpm tauri android build --apk
+
+      - name: Install Build Tools for Signing
+        if: ${{ matrix.settings.is-android }}
+        run: echo "y" | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "build-tools;34.0.0"
 
       - name: Sign Android APK
         if: ${{ matrix.settings.is-android }}
@@ -102,17 +127,11 @@ jobs:
           alias: ${{ secrets.ANDROID_KEY_ALIAS }}
           keyStorePassword: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           keyPassword: ${{ secrets.ANDROID_KEY_PASSWORD }}
-          buildToolsVersion: 34.0.0
-
-      - name: Get App Version (Android Only)
-        if: ${{ matrix.settings.is-android }}
-        run: echo "APP_VERSION=$(node -p "require('./package.json').version")" >> $GITHUB_ENV
 
       - name: Upload Android Release (Android Only)
         if: ${{ matrix.settings.is-android }}
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ env.APP_VERSION }}
-          draft: true
+          tag_name: v${{ needs.create-release.outputs.app_version }}
           files: |
             ${{steps.sign_app.outputs.signedReleaseFile}}
