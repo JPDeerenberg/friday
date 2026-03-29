@@ -92,6 +92,17 @@ jobs:
         if: ${{ matrix.settings.is-android }}
         run: pnpm tauri android build --apk
 
+      - name: Sign Android APK
+        if: ${{ matrix.settings.is-android }}
+        uses: r0adkll/sign-android-release@v1
+        id: sign_app
+        with:
+          releaseDirectory: src-tauri/gen/android/app/build/outputs/apk/universal/release
+          signingKeyBase64: ${{ secrets.ANDROID_SIGNING_KEY }}
+          alias: ${{ secrets.ANDROID_KEY_ALIAS }}
+          keyStorePassword: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          keyPassword: ${{ secrets.ANDROID_KEY_PASSWORD }}
+
       - name: Get App Version (Android Only)
         if: ${{ matrix.settings.is-android }}
         run: echo "APP_VERSION=$(node -p "require('./package.json').version")" >> $GITHUB_ENV
@@ -103,5 +114,4 @@ jobs:
           tag_name: v${{ env.APP_VERSION }}
           draft: true
           files: |
-            src-tauri/gen/android/app/build/outputs/apk/**/*.apk
-            src-tauri/gen/android/app/build/outputs/bundle/**/*.aab
+            ${{steps.sign_app.outputs.signedReleaseFile}}
