@@ -90,6 +90,9 @@ pub fn run() {
             commands::studiewijzers::get_studiewijzer_detail,
             commands::studiewijzers::get_studiewijzer_onderdeel_detail,
             commands::notifications::trigger_test_notification,
+            commands::notifications::show_notification,
+            commands::notifications::trigger_sync,
+            commands::notifications::sync_notification_preferences,
         ])
         .plugin(tauri_plugin_dialog::init())
         .run(tauri::generate_context!())

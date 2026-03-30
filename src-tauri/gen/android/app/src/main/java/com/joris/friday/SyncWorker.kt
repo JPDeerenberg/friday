@@ -1,14 +1,12 @@
 package com.joris.friday
 
-import android.app.NotificationChannel
 import android.app.NotificationManager
-import android.app.PendingIntent
 import android.content.Context
-import android.content.Intent
-import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
+import org.json.JSONArray
+import org.json.JSONObject
 import java.io.File
 
 class SyncWorker(appContext: Context, workerParams: WorkerParameters) :
@@ -18,7 +16,6 @@ class SyncWorker(appContext: Context, workerParams: WorkerParameters) :
     private external fun runSync(dataDir: String): String
 
     init {
-        // We load the Tauri library. For Friday it's libfriday_lib.so
         try {
             System.loadLibrary("friday_lib")
         } catch (e: Exception) {
@@ -28,6 +25,7 @@ class SyncWorker(appContext: Context, workerParams: WorkerParameters) :
 
     override suspend fun doWork(): Result {
         val dataDir = applicationContext.filesDir.absolutePath
+        
         val resultString = try {
             runSync(dataDir)
         } catch (e: Exception) {
@@ -35,53 +33,138 @@ class SyncWorker(appContext: Context, workerParams: WorkerParameters) :
             "ERROR"
         }
 
-        // Based on the string we get back from Rust, we can trigger notifications.
-        if (resultString == "SYNC_SUCCESS") {
-            showNotification(applicationContext, "Friday Sync", "Background sync completed successfully")
-        } else if (resultString != "NO_TOKENS" && resultString != "ERROR") {
-            showNotification(applicationContext, "Friday Sync Info", resultString)
-        }
+        // Process the sync result and detect changes
+        processSyncResult(resultString)
 
         return Result.success()
+    }
+    
+    private fun processSyncResult(resultString: String) {
+        // Skip if no tokens or critical error
+        if (resultString == "NO_TOKENS" || resultString == "ERROR" || 
+            resultString.startsWith("AUTH_ERROR") || resultString.startsWith("INVALID") ||
+            resultString == "NO_PERSON_ID") {
+            return
+        }
+        
+        try {
+            val syncData = JSONObject(resultString)
+            
+            // Extract data arrays
+            val messages = syncData.optJSONArray("messages") ?: JSONArray()
+            val grades = syncData.optJSONArray("grades") ?: JSONArray()
+            val assignments = syncData.optJSONArray("assignments") ?: JSONArray()
+            val calendar = syncData.optJSONArray("calendar") ?: JSONArray()
+            
+            // Detect changes using SyncStateManager
+            val changes = SyncStateManager.detectChanges(
+                applicationContext,
+                messages,
+                grades,
+                assignments,
+                calendar
+            )
+            
+            // Send notifications for detected changes
+            sendChangeNotifications(changes)
+            
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+    
+    private fun sendChangeNotifications(changes: SyncStateManager.SyncChanges) {
+        val context = applicationContext
+        
+        // New Messages Notification
+        if (changes.newMessages.isNotEmpty() && 
+            SyncStateManager.isNotificationEnabled(context, "messages")) {
+            val count = changes.newMessages.size
+            val firstMsg = changes.newMessages.first()
+            val title = if (count == 1) "Nieuw bericht" else "$count nieuwe berichten"
+            val message = if (count == 1) {
+                "${firstMsg.senderName}: ${firstMsg.subject}"
+            } else {
+                "Van: ${firstMsg.senderName} en ${count - 1} andere(n)"
+            }
+            NotificationHelper.showMessageNotification(
+                context, title, message, firstMsg.senderName
+            )
+        }
+        
+        // New Grades Notification
+        if (changes.newGrades.isNotEmpty() && 
+            SyncStateManager.isNotificationEnabled(context, "grades")) {
+            val count = changes.newGrades.size
+            val firstGrade = changes.newGrades.first()
+            val title = if (count == 1) "Nieuw cijfer" else "$count nieuwe cijfers"
+            val message = if (count == 1) {
+                "${firstGrade.courseName}: ${firstGrade.grade}"
+            } else {
+                "Laatste: ${firstGrade.courseName} (${firstGrade.grade})"
+            }
+            NotificationHelper.showGradeNotification(
+                context, title, message, firstGrade.id.toString()
+            )
+        }
+        
+        // Deadline Reminders
+        if (changes.upcomingDeadlines.isNotEmpty() && 
+            SyncStateManager.isNotificationEnabled(context, "deadlines")) {
+            val deadline = changes.upcomingDeadlines.first()
+            val timeLeft = formatTimeUntil(deadline.deadline)
+            NotificationHelper.showDeadlineNotification(
+                context, 
+                "Deadline over ${timeLeft}", 
+                deadline.title,
+                deadline.id.toString()
+            )
+        }
+        
+        // Calendar Changes
+        if (changes.calendarChanges.isNotEmpty() && 
+            SyncStateManager.isNotificationEnabled(context, "calendar")) {
+            val count = changes.calendarChanges.size
+            val firstEvent = changes.calendarChanges.first()
+            val title = if (count == 1) "Nieuwe afspraak" else "$count nieuwe afspraken"
+            val message = if (count == 1) {
+                firstEvent.title
+            } else {
+                "${firstEvent.title} en ${count - 1} andere(n)"
+            }
+            NotificationHelper.showCalendarNotification(
+                context, title, message, firstEvent.id.toString()
+            )
+        }
+    }
+    
+    private fun formatTimeUntil(deadline: String): String {
+        try {
+            val deadlineFormat = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US)
+            val deadlineTime = deadlineFormat.parse(deadline)?.time ?: return "binnenkort"
+            val now = System.currentTimeMillis()
+            val diffMs = deadlineTime - now
+            val diffHours = diffMs / (1000 * 60 * 60)
+            
+            return when {
+                diffHours < 1 -> "minder dan 1 uur"
+                diffHours < 24 -> "${diffHours.toInt()} uur"
+                else -> "${(diffHours / 24).toInt()} dag(en)"
+            }
+        } catch (e: Exception) {
+            return "binnenkort"
+        }
     }
 
     companion object {
         @JvmStatic
         fun showNotification(context: Context, title: String, message: String) {
-            val channelId = "friday_sync_channel"
-            val notificationManager =
-                context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                val channel = NotificationChannel(
-                    channelId,
-                    "Background Sync",
-                    NotificationManager.IMPORTANCE_DEFAULT
-                )
-                notificationManager.createNotificationChannel(channel)
-            }
-
-            // Intent to open the app
-            val intent = Intent(context, MainActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
-            }
-            val pendingIntent: PendingIntent = PendingIntent.getActivity(
-                context, 0, intent, PendingIntent.FLAG_IMMUTABLE
-            )
-
-            try {
-                val builder = NotificationCompat.Builder(context, channelId)
-                    .setSmallIcon(android.R.drawable.ic_popup_sync) 
-                    .setContentTitle(title)
-                    .setContentText(message)
-                    .setPriority(NotificationCompat.PRIORITY_DEFAULT)
-                    .setContentIntent(pendingIntent)
-                    .setAutoCancel(true)
-
-                notificationManager.notify(1001, builder.build())
-            } catch (e: SecurityException) {
-                e.printStackTrace()
-            }
+            NotificationHelper.showTestNotification(context, title, message)
+        }
+        
+        @JvmStatic
+        fun showNotificationWithType(context: Context, type: Int, title: String, message: String, extra: String?) {
+            NotificationHelper.showNotification(context, type, title, message, extra)
         }
     }
 }
