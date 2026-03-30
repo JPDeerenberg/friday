@@ -1,11 +1,12 @@
 <script lang="ts">
   import { userSettings } from '$lib/stores';
   import { currentPage } from '$lib/stores';
-  import { triggerTestNotification } from '$lib/api';
+  import { triggerTestNotification, notifyNewMessage, notifyNewGrade, notifyDeadline, notifyCalendarChange } from '$lib/api';
   import { fade, fly } from 'svelte/transition';
   import { onMount } from 'svelte';
 
   let isMobile = $state(false);
+  let testingNotification = $state<string | null>(null);
 
   onMount(() => {
     isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
@@ -17,12 +18,40 @@
 
   function updateToggle(id: string, value: boolean) {
     userSettings.update(s => ({ ...s, [id]: value }));
+    // The stores.ts will automatically sync preferences to Android
   }
 
   function updateNumber(id: string, value: string) {
     const num = parseFloat(value);
     if (!isNaN(num)) {
       userSettings.update(s => ({ ...s, [id]: num }));
+    }
+  }
+
+  async function testNotificationType(type: string, title: string, message: string) {
+    testingNotification = type;
+    try {
+      await new Promise(resolve => setTimeout(resolve, 100));
+      switch (type) {
+        case 'message':
+          await notifyNewMessage(title, message, 'Test Sender');
+          break;
+        case 'grade':
+          await notifyNewGrade(title, message, '12345');
+          break;
+        case 'deadline':
+          await notifyDeadline(title, message, '67890');
+          break;
+        case 'calendar':
+          await notifyCalendarChange(title, message, 'event_123');
+          break;
+        default:
+          await triggerTestNotification();
+      }
+    } catch (e) {
+      alert('Fout bij het versturen: ' + e);
+    } finally {
+      testingNotification = null;
     }
   }
 
@@ -55,14 +84,21 @@
     {
       title: 'Meldingen',
       settings: [
-        { id: 'testNotification', label: 'Test Notificatie', description: 'Stuur een testbericht om te controleren of meldingen werken.', type: 'action', action: async () => {
-          try {
-            await triggerTestNotification();
-            alert('Test notificatie is verstuurd!');
-          } catch (e) {
-            alert('Fout bij het versturen: ' + e);
-          }
-        } },
+        { id: 'notifyMessages', label: 'Berichten', description: 'Melding bij nieuwe berichten.', type: 'toggle', notificationType: 'message' },
+        { id: 'notifyGrades', label: 'Nieuwe Cijfers', description: 'Melding bij nieuwe cijfers.', type: 'toggle', notificationType: 'grade' },
+        { id: 'notifyDeadlines', label: 'Deadlines', description: 'Melding bij opdrachten en deadlines.', type: 'toggle', notificationType: 'deadline' },
+        { id: 'notifyCalendar', label: 'Agenda Wijzigingen', description: 'Melding bij agenda wijzigingen.', type: 'toggle', notificationType: 'calendar' },
+      ],
+      hideIfDesktop: true
+    },
+    {
+      title: 'Meldingen Testen',
+      settings: [
+        { id: 'testMessage', label: 'Bericht Notificatie', description: 'Test bericht notificatie.', type: 'action', action: () => testNotificationType('message', 'Nieuw Bericht', 'Je hebt een nieuw bericht van Test Sender') },
+        { id: 'testGrade', label: 'Cijfer Notificatie', description: 'Test cijfer notificatie.', type: 'action', action: () => testNotificationType('grade', 'Nieuw Cijfer', 'Er is een nieuw cijfer toegevoegd') },
+        { id: 'testDeadline', label: 'Deadline Notificatie', description: 'Test deadline notificatie.', type: 'action', action: () => testNotificationType('deadline', 'Deadline Aankomst', 'Een opdracht deadline nadert') },
+        { id: 'testCalendar', label: 'Agenda Notificatie', description: 'Test agenda notificatie.', type: 'action', action: () => testNotificationType('calendar', 'Agenda Gewijzigd', 'Er is een wijziging in je agenda') },
+        { id: 'testBasic', label: 'Basis Test', description: 'Standaard test notificatie.', type: 'action', action: () => testNotificationType('test', 'Test Notificatie', 'Dit is een test van het Friday meldingen systeem!') },
       ],
       hideIfDesktop: true
     }
@@ -157,9 +193,10 @@
               {:else if setting.type === 'action'}
                 <button 
                   onclick={() => setting.action()}
-                  class="bg-primary-500/15 text-primary-400 text-xs font-bold uppercase tracking-widest rounded-xl px-4 py-2 hover:bg-primary-500/25 transition-all active:scale-95"
+                  disabled={testingNotification === setting.id.split('test')[1]}
+                  class="bg-primary-500/15 text-primary-400 text-xs font-bold uppercase tracking-widest rounded-xl px-4 py-2 hover:bg-primary-500/25 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-wait"
                 >
-                  🚀 Test
+                  {testingNotification === setting.id.split('test')[1] ? '⏳...' : '🚀 Test'}
                 </button>
               {/if}
             </div>

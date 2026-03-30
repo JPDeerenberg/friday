@@ -209,6 +209,75 @@ export async function triggerTestNotification(): Promise<void> {
     return invoke('trigger_test_notification');
 }
 
+// Notification types
+export enum NotificationType {
+    Test = 0,
+    Message = 1,
+    CalendarChange = 2,
+    NewGrade = 3,
+    AssignmentDeadline = 4,
+}
+
+export interface NotificationPayload {
+    notification_type: NotificationType;
+    title: string;
+    message: string;
+    extra?: string;
+}
+
+export async function showNotification(
+    type: NotificationType,
+    title: string,
+    message: string,
+    extra?: string
+): Promise<void> {
+    return invoke('show_notification', { 
+        notificationType: type, 
+        title, 
+        message, 
+        extra: extra ?? null 
+    });
+}
+
+// Type-specific notification helpers
+export async function notifyNewMessage(title: string, message: string, sender?: string): Promise<void> {
+    const extra = sender ? JSON.stringify({ sender }) : undefined;
+    return showNotification(NotificationType.Message, title, message, extra);
+}
+
+export async function notifyCalendarChange(title: string, message: string, eventId?: string): Promise<void> {
+    const extra = eventId ? JSON.stringify({ eventId }) : undefined;
+    return showNotification(NotificationType.CalendarChange, title, message, extra);
+}
+
+export async function notifyNewGrade(title: string, message: string, gradeId?: string): Promise<void> {
+    const extra = gradeId ? JSON.stringify({ gradeId }) : undefined;
+    return showNotification(NotificationType.NewGrade, title, message, extra);
+}
+
+export async function notifyDeadline(title: string, message: string, assignmentId?: string): Promise<void> {
+    const extra = assignmentId ? JSON.stringify({ assignmentId }) : undefined;
+    return showNotification(NotificationType.AssignmentDeadline, title, message, extra);
+}
+
+export async function triggerSync(): Promise<void> {
+    return invoke('trigger_sync');
+}
+
+export async function syncNotificationPreferences(
+    notifyMessages: boolean,
+    notifyGrades: boolean,
+    notifyDeadlines: boolean,
+    notifyCalendar: boolean
+): Promise<void> {
+    return invoke('sync_notification_preferences', {
+        notifyMessages,
+        notifyGrades,
+        notifyDeadlines,
+        notifyCalendar
+    });
+}
+
 // === Helpers ===
 export function formatDate(date: Date): string {
   return date.toISOString().split('T')[0];
