@@ -12,7 +12,7 @@ jobs:
     permissions:
       contents: write
     outputs:
-      release_upload_url: ${{ steps.create_release.outputs.upload_url }}
+      release_id: ${{ steps.create_release.outputs.id }}
       app_version: ${{ steps.get_version.outputs.VERSION }}
     steps:
       - uses: actions/checkout@v4
@@ -29,6 +29,7 @@ jobs:
           name: "App v${{ steps.get_version.outputs.VERSION }}"
           body: "See the assets to download this version."
           draft: true
+          make_latest: true
 
   build:
     needs: create-release
@@ -131,7 +132,8 @@ jobs:
       - name: Upload Android Release (Android Only)
         if: ${{ matrix.settings.is-android }}
         uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tag_name: v${{ needs.create-release.outputs.app_version }}
-          files: |
-            ${{steps.sign_app.outputs.signedReleaseFile}}
+          files: ${{ steps.sign_app.outputs.signedReleaseFile }}
