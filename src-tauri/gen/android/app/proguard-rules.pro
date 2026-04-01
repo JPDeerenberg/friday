@@ -19,3 +19,9 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+
+# Keep JNI classes and their members so Rust can find them
+-keep class com.joris.friday.NotificationHelper { *; }
+-keep class com.joris.friday.SyncStateManager { *; }
+-keep class com.joris.friday.MainActivity { *; }
+-keep class com.joris.friday.SyncWorker { *; }
