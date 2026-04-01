@@ -4,6 +4,7 @@ use tauri::AppHandle;
 use tauri::Manager;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[repr(i32)]
 pub enum NotificationType {
     Test = 0,
     Message = 1,
@@ -18,13 +19,28 @@ impl Default for NotificationType {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct NotificationPayload {
-    pub notification_type: NotificationType,
-    pub title: String,
-    pub message: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub extra: Option<String>,
+
+
+#[cfg(target_os = "android")]
+fn find_app_class<'local>(
+    env: &mut jni::JNIEnv<'local>,
+    activity: &jni::objects::JObject<'_>,
+    name: &str,
+) -> Result<jni::objects::JClass<'local>, jni::errors::Error> {
+    let class_loader = env.call_method(
+        activity,
+        "getClassLoader",
+        "()Ljava/lang/ClassLoader;",
+        &[],
+    )?.l()?;
+    let class_name = env.new_string(name)?;
+    let class_obj = env.call_method(
+        &class_loader,
+        "loadClass",
+        "(Ljava/lang/String;)Ljava/lang/Class;",
+        &[jni::objects::JValue::from(&class_name)],
+    )?.l()?;
+    Ok(jni::objects::JClass::from(class_obj))
 }
 
 #[tauri::command]
@@ -40,14 +56,18 @@ pub fn trigger_test_notification(app: AppHandle) -> Result<(), String> {
             .ok_or_else(|| "No active window found for JNI access".to_string())?;
 
         // In Tauri 2, WebView has jni_handle()
-        window.with_webview(|webview| {
+        window.with_webview(move |webview| {
             #[cfg(target_os = "android")]
             {
-                let _ = webview.jni_handle().exec(|env, activity, _webview| {
-                    // Find the SyncWorker class
-                    let class = match env.find_class("com/joris/friday/SyncWorker") {
+                let _ = webview.jni_handle().exec(move |env, activity, _webview| {
+                    // Find the NotificationHelper class via Activity's ClassLoader to prevent JNI thread isolation
+                    let class = match find_app_class(env, &activity, "com.joris.friday.NotificationHelper") {
                         Ok(c) => c,
-                        Err(_) => return,
+                        Err(e) => {
+                            let _ = env.exception_clear();
+                            eprintln!("JNI ERROR: Failed to find NotificationHelper: {:?}", e);
+                            return;
+                        }
                     };
                     
                     // Create JStrings
@@ -60,10 +80,10 @@ pub fn trigger_test_notification(app: AppHandle) -> Result<(), String> {
                         Err(_) => return,
                     };
                     
-                    // Call the new native method that handles notification with proper intent
+                    // Call showTestNotification static method
                     let res = env.call_static_method(
                         &class,
-                        "showNotification",
+                        "showTestNotification",
                         "(Landroid/content/Context;Ljava/lang/String;Ljava/lang/String;)V",
                         &[
                             JValue::from(&activity),
@@ -108,14 +128,18 @@ pub fn show_notification(
             .or_else(|| app.webview_windows().values().next().cloned())
             .ok_or_else(|| "No active window found for JNI access".to_string())?;
 
-        window.with_webview(|webview| {
+        window.with_webview(move |webview| {
             #[cfg(target_os = "android")]
             {
-                let _ = webview.jni_handle().exec(|env, activity, _webview| {
-                    // Find the SyncWorker class
-                    let class = match env.find_class("com/joris/friday/SyncWorker") {
+                let _ = webview.jni_handle().exec(move |env, activity, _webview| {
+                    // Find the NotificationHelper class via Activity's ClassLoader
+                    let class = match find_app_class(env, &activity, "com.joris.friday.NotificationHelper") {
                         Ok(c) => c,
-                        Err(_) => return,
+                        Err(e) => {
+                            let _ = env.exception_clear();
+                            eprintln!("JNI ERROR: Failed to find NotificationHelper: {:?}", e);
+                            return;
+                        }
                     };
                     
                     // Create JStrings
@@ -136,10 +160,10 @@ pub fn show_notification(
                         Err(_) => return,
                     };
                     
-                    // Call the native method with type
+                    // Call the static method showNotification
                     let res = env.call_static_method(
                         &class,
-                        "showNotificationWithType",
+                        "showNotification",
                         "(Landroid/content/Context;ILjava/lang/String;Ljava/lang/String;Ljava/lang/String;)V",
                         &[
                             JValue::from(&activity),
@@ -173,28 +197,27 @@ pub fn trigger_sync(app: AppHandle) -> Result<(), String> {
     let _ = &app;
     #[cfg(target_os = "android")]
     {
-        use jni::objects::JValue;
-        
         let window = app.get_webview_window("main")
             .or_else(|| app.webview_windows().values().next().cloned())
             .ok_or_else(|| "No active window found for JNI access".to_string())?;
 
-        window.with_webview(|webview| {
+        window.with_webview(move |webview| {
             #[cfg(target_os = "android")]
             {
                 // Call MainActivity.triggerManualSync() via JNI
-                let _ = webview.jni_handle().exec(|env, activity, _webview| {
-                    let class = match env.find_class("com/joris/friday/MainActivity") {
-                        Ok(c) => c,
-                        Err(_) => return,
-                    };
-                    
-                    let _ = env.call_method(
+                let _ = webview.jni_handle().exec(move |env, activity, _webview| {
+                    let res = env.call_method(
                         &activity,
                         "triggerManualSync",
                         "()V",
                         &[],
                     );
+                    
+                    if let Err(_) = res {
+                        if let Ok(true) = env.exception_check() {
+                            let _ = env.exception_clear();
+                        }
+                    }
                 });
             }
         }).map_err(|e| e.to_string())?;
@@ -218,28 +241,38 @@ pub fn sync_notification_preferences(
             .or_else(|| app.webview_windows().values().next().cloned())
             .ok_or_else(|| "No active window found for JNI access".to_string())?;
 
-        window.with_webview(|webview| {
+        window.with_webview(move |webview| {
             #[cfg(target_os = "android")]
             {
-                let _ = webview.jni_handle().exec(|env, activity, _webview| {
-                    let class = match env.find_class("com/joris/friday/SyncStateManager") {
+                let _ = webview.jni_handle().exec(move |env, activity, _webview| {
+                    let class = match find_app_class(env, &activity, "com.joris.friday.SyncStateManager") {
                         Ok(c) => c,
-                        Err(_) => return,
+                        Err(e) => {
+                            let _ = env.exception_clear();
+                            eprintln!("JNI ERROR: Failed to find SyncStateManager: {:?}", e);
+                            return;
+                        }
                     };
                     
                     // Call the static method that accepts context and four booleans
-                    let _ = env.call_static_method(
+                    let res = env.call_static_method(
                         &class,
                         "syncPreferencesFromFrontend",
                         "(Landroid/content/Context;ZZZZ)V",
                         &[
                             jni::objects::JValue::from(&activity),
-                            jni::objects::JValue::Bool(if notify_messages { 1 } else { 0 }),
-                            jni::objects::JValue::Bool(if notify_grades { 1 } else { 0 }),
-                            jni::objects::JValue::Bool(if notify_deadlines { 1 } else { 0 }),
-                            jni::objects::JValue::Bool(if notify_calendar { 1 } else { 0 }),
+                            jni::objects::JValue::Bool(if notify_messages { 1u8 } else { 0u8 }),
+                            jni::objects::JValue::Bool(if notify_grades { 1u8 } else { 0u8 }),
+                            jni::objects::JValue::Bool(if notify_deadlines { 1u8 } else { 0u8 }),
+                            jni::objects::JValue::Bool(if notify_calendar { 1u8 } else { 0u8 }),
                         ],
                     );
+                    
+                    if let Err(_) = res {
+                        if let Ok(true) = env.exception_check() {
+                            let _ = env.exception_clear();
+                        }
+                    }
                 });
             }
         }).map_err(|e| e.to_string())?;

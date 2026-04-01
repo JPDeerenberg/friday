@@ -211,19 +211,14 @@ export async function triggerTestNotification(): Promise<void> {
 
 // Notification types
 export enum NotificationType {
-    Test = 0,
-    Message = 1,
-    CalendarChange = 2,
-    NewGrade = 3,
-    AssignmentDeadline = 4,
+    Test = 'Test',
+    Message = 'Message',
+    CalendarChange = 'CalendarChange',
+    NewGrade = 'NewGrade',
+    AssignmentDeadline = 'AssignmentDeadline',
 }
 
-export interface NotificationPayload {
-    notification_type: NotificationType;
-    title: string;
-    message: string;
-    extra?: string;
-}
+
 
 export async function showNotification(
     type: NotificationType,

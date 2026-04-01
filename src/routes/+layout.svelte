@@ -4,6 +4,8 @@
   import { listen } from '@tauri-apps/api/event';
   import { isLoggedIn, personId, accountInfo, profilePicture, currentPage, userSettings } from '$lib/stores';
   import { restoreSession, getAccount, getPersonId, getProfilePicture, handleAuthCallback } from '$lib/api';
+  import { get } from 'svelte/store';
+  import { fade } from 'svelte/transition';
 
   let { children } = $props();
   let loading = $state(true);

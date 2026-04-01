@@ -3,6 +3,7 @@
   import { getCalendarEvents, updateCalendarEvent, createCalendarEvent, deleteCalendarEvent, formatDate, getWeekRange, infoTypeShort, infoTypeName, formatTeacherName } from '$lib/api';
   import { onMount, getContext } from 'svelte';
   import { get } from 'svelte/store';
+  import { fly, fade } from 'svelte/transition';
 
   let events = $state<any[]>([]);
   let loading = $state(true);
@@ -284,7 +285,7 @@
     isSubmitting = true;
     try {
       await createCalendarEvent({
-        ['personId']: get(personId),
+        ['personId']: get(personId) as number,
         start: new Date(newEventForm.start).toISOString(),
         einde: new Date(newEventForm.einde).toISOString(),
         duurtHeleDag: false,
@@ -342,7 +343,7 @@
       </div>
       <div class="flex items-center gap-3">
         <button 
-          onclick={loadEvents} 
+          onclick={() => loadEvents()} 
           class="p-2 text-gray-500 hover:text-primary-400 transition-all hover:scale-110 active:scale-95"
           aria-label="Vernieuwen"
         >

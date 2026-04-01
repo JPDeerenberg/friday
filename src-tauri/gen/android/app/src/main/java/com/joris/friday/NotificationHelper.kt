@@ -31,6 +31,7 @@ object NotificationHelper {
     private const val ID_GRADE = 4001
     private const val ID_DEADLINE = 5001
     
+    @JvmStatic
     fun showNotification(context: Context, type: Int, title: String, message: String, extra: String?) {
         val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         
@@ -39,11 +40,11 @@ object NotificationHelper {
         
         // Determine channel, icon, and ID based on type
         val (channelId, icon, notificationId, action) = when (type) {
-            TYPE_MESSAGE -> ChannelInfo(CHANNEL_MESSAGES, android.R.drawable.ic_dialog_email, ID_MESSAGE, "messages")
-            TYPE_CALENDAR -> ChannelInfo(CHANNEL_CALENDAR, android.R.drawable.ic_menu_my_calendar, ID_CALENDAR, "calendar")
-            TYPE_GRADE -> ChannelInfo(CHANNEL_GRADES, android.R.drawable.ic_menu_agenda, ID_GRADE, "grades")
-            TYPE_DEADLINE -> ChannelInfo(CHANNEL_DEADLINES, android.R.drawable.ic_popup_reminder, ID_DEADLINE, "assignments")
-            else -> ChannelInfo(CHANNEL_TEST, android.R.drawable.ic_popup_sync, ID_TEST, null)
+            TYPE_MESSAGE -> ChannelInfo(CHANNEL_MESSAGES, com.joris.friday.R.drawable.ic_notification, ID_MESSAGE, "messages")
+            TYPE_CALENDAR -> ChannelInfo(CHANNEL_CALENDAR, com.joris.friday.R.drawable.ic_notification, ID_CALENDAR, "calendar")
+            TYPE_GRADE -> ChannelInfo(CHANNEL_GRADES, com.joris.friday.R.drawable.ic_notification, ID_GRADE, "grades")
+            TYPE_DEADLINE -> ChannelInfo(CHANNEL_DEADLINES, com.joris.friday.R.drawable.ic_notification, ID_DEADLINE, "assignments")
+            else -> ChannelInfo(CHANNEL_TEST, com.joris.friday.R.drawable.ic_notification, ID_TEST, null)
         }
         
         // Create intent with proper flags to open app
@@ -71,7 +72,7 @@ object NotificationHelper {
                 .setAutoCancel(true)
             
             notificationManager.notify(notificationId, builder.build())
-        } catch (e: SecurityException) {
+        } catch (e: Exception) {
             e.printStackTrace()
         }
     }
@@ -130,25 +131,30 @@ object NotificationHelper {
     }
     
     // Convenience methods for each type
+    @JvmStatic
     fun showTestNotification(context: Context, title: String, message: String) {
         showNotification(context, TYPE_TEST, title, message, null)
     }
     
+    @JvmStatic
     fun showMessageNotification(context: Context, title: String, message: String, sender: String?) {
         val extra = sender?.let { """{"sender":"$it"}""" }
         showNotification(context, TYPE_MESSAGE, title, message, extra)
     }
     
+    @JvmStatic
     fun showCalendarNotification(context: Context, title: String, message: String, eventId: String?) {
         val extra = eventId?.let { """{"eventId":"$it"}""" }
         showNotification(context, TYPE_CALENDAR, title, message, extra)
     }
     
+    @JvmStatic
     fun showGradeNotification(context: Context, title: String, message: String, gradeId: String?) {
         val extra = gradeId?.let { """{"gradeId":"$it"}""" }
         showNotification(context, TYPE_GRADE, title, message, extra)
     }
     
+    @JvmStatic
     fun showDeadlineNotification(context: Context, title: String, message: String, assignmentId: String?) {
         val extra = assignmentId?.let { """{"assignmentId":"$it"}""" }
         showNotification(context, TYPE_DEADLINE, title, message, extra)

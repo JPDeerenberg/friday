@@ -6,6 +6,8 @@ use jni::{
 };
 #[cfg(target_os = "android")]
 use tokio::runtime::Runtime;
+use crate::client::MagisterClient;
+use chrono::Utc;
 
 #[cfg(target_os = "android")]
 #[no_mangle]
@@ -63,7 +65,11 @@ pub extern "system" fn Java_com_joris_friday_SyncWorker_showNotificationWithType
     // Call the Kotlin NotificationHelper via JNI
     let class = match env.find_class("com/joris/friday/NotificationHelper") {
         Ok(c) => c,
-        Err(_) => return,
+        Err(_) => {
+            let _ = env.exception_clear();
+            eprintln!("JNI ERROR: Failed to find NotificationHelper");
+            return;
+        }
     };
     
     // Build the method signature for: showNotification(Context, int, String, String, String)
@@ -97,6 +103,11 @@ pub extern "system" fn Java_com_joris_friday_SyncWorker_showNotificationWithType
                 jni::objects::JValue::from(&extra_jni),
             ],
         );
+        
+        // Clear any possible exception from the call
+        if let Ok(true) = env.exception_check() {
+            let _ = env.exception_clear();
+        }
     }
 }
 
@@ -107,10 +118,10 @@ pub extern "system" fn Java_com_joris_friday_SyncStateManager_syncPreferencesFro
     mut env: JNIEnv<'local>,
     _class: JClass<'local>,
     context: jni::objects::JObject<'local>,
-    notify_messages: bool,
-    notify_grades: bool,
-    notify_deadlines: bool,
-    notify_calendar: bool,
+    notify_messages: jni::sys::jboolean,
+    notify_grades: jni::sys::jboolean,
+    notify_deadlines: jni::sys::jboolean,
+    notify_calendar: jni::sys::jboolean,
 ) {
     let prefs = match env.call_method(
         &context,
@@ -121,8 +132,17 @@ pub extern "system" fn Java_com_joris_friday_SyncStateManager_syncPreferencesFro
             jni::objects::JValue::Int(0),
         ],
     ) {
-        Ok(p) => p.l().unwrap_or_default(),
-        Err(_) => return,
+        Ok(p) => match p.l() {
+            Ok(obj) => obj,
+            Err(_) => {
+                let _ = env.exception_clear();
+                return;
+            }
+        },
+        Err(_) => {
+            let _ = env.exception_clear();
+            return;
+        }
     };
     
     let editor = match env.call_method(
@@ -131,8 +151,17 @@ pub extern "system" fn Java_com_joris_friday_SyncStateManager_syncPreferencesFro
         "()Landroid/content/SharedPreferences$Editor;",
         &[],
     ) {
-        Ok(e) => e.l().unwrap_or_default(),
-        Err(_) => return,
+        Ok(e) => match e.l() {
+            Ok(obj) => obj,
+            Err(_) => {
+                let _ = env.exception_clear();
+                return;
+            }
+        },
+        Err(_) => {
+            let _ = env.exception_clear();
+            return;
+        }
     };
     
     let _ = env.call_method(
@@ -140,8 +169,8 @@ pub extern "system" fn Java_com_joris_friday_SyncStateManager_syncPreferencesFro
         "putBoolean",
         "(Ljava/lang/String;Z)Landroid/content/SharedPreferences$Editor;",
         &[
-            jni::objects::JValue::from(&env.new_string("notifyMessages").unwrap_or_default()),
-            jni::objects::JValue::Bool(if notify_messages { 1 } else { 0 }),
+            jni::objects::JValue::from(&env.new_string("notifyMessages").expect("Failed to create JString")),
+            jni::objects::JValue::Bool(if notify_messages != 0 { 1u8 } else { 0u8 }),
         ],
     );
     
@@ -150,8 +179,8 @@ pub extern "system" fn Java_com_joris_friday_SyncStateManager_syncPreferencesFro
         "putBoolean",
         "(Ljava/lang/String;Z)Landroid/content/SharedPreferences$Editor;",
         &[
-            jni::objects::JValue::from(&env.new_string("notifyGrades").unwrap_or_default()),
-            jni::objects::JValue::Bool(if notify_grades { 1 } else { 0 }),
+            jni::objects::JValue::from(&env.new_string("notifyGrades").expect("Failed to create JString")),
+            jni::objects::JValue::Bool(if notify_grades != 0 { 1u8 } else { 0u8 }),
         ],
     );
     
@@ -160,8 +189,8 @@ pub extern "system" fn Java_com_joris_friday_SyncStateManager_syncPreferencesFro
         "putBoolean",
         "(Ljava/lang/String;Z)Landroid/content/SharedPreferences$Editor;",
         &[
-            jni::objects::JValue::from(&env.new_string("notifyDeadlines").unwrap_or_default()),
-            jni::objects::JValue::Bool(if notify_deadlines { 1 } else { 0 }),
+            jni::objects::JValue::from(&env.new_string("notifyDeadlines").expect("Failed to create JString")),
+            jni::objects::JValue::Bool(if notify_deadlines != 0 { 1u8 } else { 0u8 }),
         ],
     );
     
@@ -170,8 +199,8 @@ pub extern "system" fn Java_com_joris_friday_SyncStateManager_syncPreferencesFro
         "putBoolean",
         "(Ljava/lang/String;Z)Landroid/content/SharedPreferences$Editor;",
         &[
-            jni::objects::JValue::from(&env.new_string("notifyCalendar").unwrap_or_default()),
-            jni::objects::JValue::Bool(if notify_calendar { 1 } else { 0 }),
+            jni::objects::JValue::from(&env.new_string("notifyCalendar").expect("Failed to create JString")),
+            jni::objects::JValue::Bool(if notify_calendar != 0 { 1u8 } else { 0u8 }),
         ],
     );
     
@@ -180,8 +209,8 @@ pub extern "system" fn Java_com_joris_friday_SyncStateManager_syncPreferencesFro
         "putBoolean",
         "(Ljava/lang/String;Z)Landroid/content/SharedPreferences$Editor;",
         &[
-            jni::objects::JValue::from(&env.new_string("initialized").unwrap_or_default()),
-            jni::objects::JValue::Bool(1),
+            jni::objects::JValue::from(&env.new_string("initialized").expect("Failed to create JString")),
+            jni::objects::JValue::Bool(1u8),
         ],
     );
     
@@ -191,12 +220,16 @@ pub extern "system" fn Java_com_joris_friday_SyncStateManager_syncPreferencesFro
         "()V",
         &[],
     );
+    
+    // Clear any possible exceptions at the end
+    if let Ok(true) = env.exception_check() {
+        let _ = env.exception_clear();
+    }
 }
 
 #[cfg(target_os = "android")]
 async fn do_sync(data_dir: &str) -> String {
-    use crate::client::{MagisterClient, TokenSet};
-    use chrono::Utc;
+    use crate::client::TokenSet;
     use std::path::PathBuf;
 
     let dir = PathBuf::from(data_dir);
@@ -229,13 +262,11 @@ async fn do_sync(data_dir: &str) -> String {
         None => return "NO_PERSON_ID".to_string(),
     };
 
-    // Fetch all data in parallel
-    let (messages_result, grades_result, assignments_result, calendar_result) = tokio::join!(
-        fetch_messages(&client),
-        fetch_recent_grades(&client),
-        fetch_assignments(&client),
-        fetch_calendar(&client, person_id, &today_string(), &tomorrow_string())
-    );
+    // Fetch all data (serially because client is mut)
+    let messages_result = fetch_messages(&mut client).await;
+    let grades_result = fetch_recent_grades(&mut client).await;
+    let assignments_result = fetch_assignments(&mut client).await;
+    let calendar_result = fetch_calendar(&mut client, person_id, &today_string(), &tomorrow_string()).await;
 
     // Build JSON result with all data for change detection
     let sync_data = serde_json::json!({
@@ -257,14 +288,14 @@ fn tomorrow_string() -> String {
     (Utc::now() + chrono::Duration::days(1)).format("%Y-%m-%d").to_string()
 }
 
-async fn fetch_messages(client: &MagisterClient) -> serde_json::Value {
+async fn fetch_messages(client: &mut MagisterClient) -> serde_json::Value {
     match client.get("berichten/mappen/1/berichten?top=10&skip=0").await {
         Ok(data) => data,
         Err(_) => serde_json::json!([])
     }
 }
 
-async fn fetch_recent_grades(client: &MagisterClient) -> serde_json::Value {
+async fn fetch_recent_grades(client: &mut MagisterClient) -> serde_json::Value {
     // Try to get grades from the last 30 days
     let thirty_days_ago = (Utc::now() - chrono::Duration::days(30)).format("%Y-%m-%d").to_string();
     let today = Utc::now().format("%Y-%m-%d").to_string();
@@ -272,7 +303,7 @@ async fn fetch_recent_grades(client: &MagisterClient) -> serde_json::Value {
     match client.get(&url).await {
         Ok(data) => {
             // Extract items from the response
-            if let Some(items) = data.get("items") {
+            if let Some(items) = data.get("items").filter(|v| v.is_array()) {
                 items.clone()
             } else {
                 data
@@ -282,14 +313,14 @@ async fn fetch_recent_grades(client: &MagisterClient) -> serde_json::Value {
     }
 }
 
-async fn fetch_assignments(client: &MagisterClient) -> serde_json::Value {
+async fn fetch_assignments(client: &mut MagisterClient) -> serde_json::Value {
     // Get assignments for next 14 days
     let today = Utc::now().format("%Y-%m-%d").to_string();
     let two_weeks = (Utc::now() + chrono::Duration::days(14)).format("%Y-%m-%d").to_string();
     let url = format!("opdrachten?van={}&tot={}&top=50", today, two_weeks);
     match client.get(&url).await {
         Ok(data) => {
-            if let Some(items) = data.get("items") {
+            if let Some(items) = data.get("items").filter(|v| v.is_array()) {
                 items.clone()
             } else {
                 data
@@ -299,11 +330,11 @@ async fn fetch_assignments(client: &MagisterClient) -> serde_json::Value {
     }
 }
 
-async fn fetch_calendar(client: &MagisterClient, person_id: i64, from: &str, to: &str) -> serde_json::Value {
+async fn fetch_calendar(client: &mut MagisterClient, person_id: i64, from: &str, to: &str) -> serde_json::Value {
     let url = format!("personen/{}/afspraken?van={}&tot={}", person_id, from, to);
     match client.get(&url).await {
         Ok(data) => {
-            if let Some(items) = data.get("items") {
+            if let Some(items) = data.get("items").filter(|v| v.is_array()) {
                 items.clone()
             } else {
                 data

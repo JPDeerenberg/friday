@@ -117,7 +117,7 @@ object SyncStateManager {
     }
     
     private fun detectNewMessages(previous: JSONArray?, current: JSONArray): List<MessageInfo> {
-        if (current.length() == 0) return emptyList()
+        if (current.length() == 0 || previous == null) return emptyList()
         
         val previousIds = mutableSetOf<Long>()
         previous?.let {
@@ -165,7 +165,7 @@ object SyncStateManager {
     }
     
     private fun detectNewGrades(previous: JSONArray?, current: JSONArray): List<GradeInfo> {
-        if (current.length() == 0) return emptyList()
+        if (current.length() == 0 || previous == null) return emptyList()
         
         val previousIds = mutableSetOf<Long>()
         previous?.let {
@@ -228,7 +228,7 @@ object SyncStateManager {
     }
     
     private fun detectCalendarChanges(previous: JSONArray?, current: JSONArray): List<CalendarChangeInfo> {
-        if (current.length() == 0) return emptyList()
+        if (current.length() == 0 || previous == null) return emptyList()
         
         val previousIds = mutableSetOf<Long>()
         previous?.let {
@@ -310,10 +310,47 @@ object SyncStateManager {
     /**
      * Write preferences from frontend to a file for Android to read
      */
+    @JvmStatic
     fun writePreferencesFromFrontend(context: Context, prefs: JSONObject) {
         try {
             val file = File(context.filesDir, "notification_prefs.json")
             file.writeText(prefs.toString())
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    /**
+     * Called from Rust JNI to sync notification preferences directly.
+     * signature: (Landroid/content/Context;ZZZZ)V
+     */
+    @JvmStatic
+    fun syncPreferencesFromFrontend(
+        context: Context,
+        notifyMessages: Boolean,
+        notifyGrades: Boolean,
+        notifyDeadlines: Boolean,
+        notifyCalendar: Boolean
+    ) {
+        val prefs = context.getSharedPreferences("friday_prefs", Context.MODE_PRIVATE)
+        prefs.edit().apply {
+            putBoolean("notifyMessages", notifyMessages)
+            putBoolean("notifyGrades", notifyGrades)
+            putBoolean("notifyDeadlines", notifyDeadlines)
+            putBoolean("notifyCalendar", notifyCalendar)
+            putBoolean("initialized", true)
+            apply()
+        }
+        
+        // Also update the JSON file for consistency if needed by other components
+        try {
+            val json = JSONObject().apply {
+                put("notifyMessages", notifyMessages)
+                put("notifyGrades", notifyGrades)
+                put("notifyDeadlines", notifyDeadlines)
+                put("notifyCalendar", notifyCalendar)
+            }
+            writePreferencesFromFrontend(context, json)
         } catch (e: Exception) {
             e.printStackTrace()
         }

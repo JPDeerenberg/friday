@@ -208,7 +208,7 @@
                 <div class="flex-1 min-w-0">
                   <div class="flex items-center gap-2 mb-2 flex-wrap">
                     <span class="px-3 py-1 rounded-xl text-[9px] font-black uppercase tracking-widest border transition-colors {type.color} flex items-center gap-1.5">
-                      {@html type.iconSvg}
+                      {type.icon}
                       {type.label}
                     </span>
                     {#if !absence.Geoorloofd}

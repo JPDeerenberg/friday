@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { personId, accountInfo, profilePicture, userSettings } from '$lib/stores';
+  import { personId, accountInfo, profilePicture, userSettings, currentPage } from '$lib/stores';
   import { get } from 'svelte/store';
   import { getCalendarEvents, getGrades, getSchoolyears, getMessageFolders, getAssignments, formatDate, infoTypeShort, getBulkGradeExtraInfo, formatTeacherName } from '$lib/api';
   import { onMount } from 'svelte';
@@ -223,7 +223,7 @@
               >
                 <div class="flex items-center gap-4">
                   <div class="w-12 h-12 rounded-2xl bg-surface-900 border border-surface-700/50 flex items-center justify-center text-primary-400 relative group-hover/grade:scale-110 transition-transform duration-500 shadow-inner">
-                    {@render (function() { return getSubjectIcon(grade.Vak?.Omschrijving ?? ''); })()}
+                    {@html getSubjectIcon(grade.Vak?.Omschrijving ?? '')}
                   </div>
                   <div class="min-w-0">
                     <p class="text-sm font-black text-gray-100 truncate group-hover/grade:text-primary-400 transition-colors italic tracking-tight">

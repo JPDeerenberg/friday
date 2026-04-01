@@ -15,6 +15,7 @@ magister_dump_json/
 .idea/
 .vscode/
 *.swp
+.agents/
 
 # Build Output & Logs
 dist/
