@@ -32,6 +32,16 @@ pub extern "system" fn Java_com_joris_friday_SyncWorker_runSync<'local>(
     }
 }
 
+#[cfg(target_os = "android")]
+#[no_mangle]
+pub extern "system" fn Java_com_joris_friday_SyncService_runSync<'local>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    data_dir: JString<'local>,
+) -> jstring {
+    Java_com_joris_friday_SyncWorker_runSync(env, _class, data_dir)
+}
+
 // JNI function for showing notifications with type
 #[cfg(target_os = "android")]
 #[no_mangle]

@@ -233,6 +233,7 @@ pub fn sync_notification_preferences(
     notify_grades: bool,
     notify_deadlines: bool,
     notify_calendar: bool,
+    notify_auto_dnd: bool,
 ) -> Result<(), String> {
     let _ = &app;
     #[cfg(target_os = "android")]
@@ -254,17 +255,18 @@ pub fn sync_notification_preferences(
                         }
                     };
                     
-                    // Call the static method that accepts context and four booleans
+                    // Call the static method that accepts context and five booleans
                     let res = env.call_static_method(
                         &class,
                         "syncPreferencesFromFrontend",
-                        "(Landroid/content/Context;ZZZZ)V",
+                        "(Landroid/content/Context;ZZZZZ)V",
                         &[
                             jni::objects::JValue::from(&activity),
                             jni::objects::JValue::Bool(if notify_messages { 1u8 } else { 0u8 }),
                             jni::objects::JValue::Bool(if notify_grades { 1u8 } else { 0u8 }),
                             jni::objects::JValue::Bool(if notify_deadlines { 1u8 } else { 0u8 }),
                             jni::objects::JValue::Bool(if notify_calendar { 1u8 } else { 0u8 }),
+                            jni::objects::JValue::Bool(if notify_auto_dnd { 1u8 } else { 0u8 }),
                         ],
                     );
                     
@@ -273,6 +275,64 @@ pub fn sync_notification_preferences(
                             let _ = env.exception_clear();
                         }
                     }
+                });
+            }
+        }).map_err(|e| e.to_string())?;
+    }
+    
+    Ok(())
+}
+
+#[tauri::command]
+pub fn open_notification_policy_settings(app: AppHandle) -> Result<(), String> {
+    let _ = &app;
+    #[cfg(target_os = "android")]
+    {
+        let window = app.get_webview_window("main")
+            .or_else(|| app.webview_windows().values().next().cloned())
+            .ok_or_else(|| "No active window found for JNI access".to_string())?;
+
+        window.with_webview(move |webview| {
+            #[cfg(target_os = "android")]
+            {
+                let _ = webview.jni_handle().exec(move |env, activity, _webview| {
+                    use jni::objects::JValue;
+                    
+                    // Intent intent = new Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS);
+                    let settings_class = match env.find_class("android/provider/Settings") {
+                        Ok(c) => c,
+                        Err(_) => return,
+                    };
+                    
+                    let action = match env.get_static_field(settings_class, "ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS", "Ljava/lang/String;") {
+                        Ok(f) => match f.l() {
+                            Ok(l) => l,
+                            Err(_) => return,
+                        },
+                        Err(_) => return,
+                    };
+                    
+                    let intent_class = match env.find_class("android/content/Intent") {
+                        Ok(c) => c,
+                        Err(_) => return,
+                    };
+                    
+                    let intent = match env.new_object(
+                        intent_class,
+                        "(Ljava/lang/String;)V",
+                        &[JValue::from(&action)],
+                    ) {
+                        Ok(o) => o,
+                        Err(_) => return,
+                    };
+                    
+                    // activity.startActivity(intent);
+                    let _ = env.call_method(
+                        &activity,
+                        "startActivity",
+                        "(Landroid/content/Intent;)V",
+                        &[JValue::from(&intent)],
+                    );
                 });
             }
         }).map_err(|e| e.to_string())?;

@@ -263,13 +263,15 @@ export async function syncNotificationPreferences(
     notifyMessages: boolean,
     notifyGrades: boolean,
     notifyDeadlines: boolean,
-    notifyCalendar: boolean
+    notifyCalendar: boolean,
+    notifyAutoDnd: boolean
 ): Promise<void> {
     return invoke('sync_notification_preferences', {
         notifyMessages,
         notifyGrades,
         notifyDeadlines,
-        notifyCalendar
+        notifyCalendar,
+        notifyAutoDnd
     });
 }
 

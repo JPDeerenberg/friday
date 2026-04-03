@@ -93,6 +93,7 @@ pub fn run() {
             commands::notifications::show_notification,
             commands::notifications::trigger_sync,
             commands::notifications::sync_notification_preferences,
+            commands::notifications::open_notification_policy_settings,
         ])
         .plugin(tauri_plugin_dialog::init())
         .run(tauri::generate_context!())

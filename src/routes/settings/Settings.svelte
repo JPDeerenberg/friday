@@ -88,6 +88,7 @@
         { id: 'notifyGrades', label: 'Nieuwe Cijfers', description: 'Melding bij nieuwe cijfers.', type: 'toggle', notificationType: 'grade' },
         { id: 'notifyDeadlines', label: 'Deadlines', description: 'Melding bij opdrachten en deadlines.', type: 'toggle', notificationType: 'deadline' },
         { id: 'notifyCalendar', label: 'Agenda Wijzigingen', description: 'Melding bij agenda wijzigingen.', type: 'toggle', notificationType: 'calendar' },
+        { id: 'notifyAutoDnd', label: 'Autom. Niet Storen', description: 'Zet DND aan tijdens lessen (Android DND toegang nodig).', type: 'toggle' },
       ],
       hideIfDesktop: true
     },
@@ -99,6 +100,7 @@
         { id: 'testDeadline', label: 'Deadline Notificatie', description: 'Test deadline notificatie.', type: 'action', action: () => testNotificationType('deadline', 'Deadline Aankomst', 'Een opdracht deadline nadert') },
         { id: 'testCalendar', label: 'Agenda Notificatie', description: 'Test agenda notificatie.', type: 'action', action: () => testNotificationType('calendar', 'Agenda Gewijzigd', 'Er is een wijziging in je agenda') },
         { id: 'testBasic', label: 'Basis Test', description: 'Standaard test notificatie.', type: 'action', action: () => testNotificationType('test', 'Test Notificatie', 'Dit is een test van het Friday meldingen systeem!') },
+        { id: 'openDndSettings', label: 'DND Toegang', description: 'Open Android instellingen voor Niet Storen toegang.', type: 'action', action: () => openDndSettings() },
       ],
       hideIfDesktop: true
     }
@@ -117,6 +119,15 @@
 
   function updateSetting(id: string, value: any) {
     userSettings.update(s => ({ ...s, [id]: value }));
+  }
+
+  async function openDndSettings() {
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      await invoke('open_notification_policy_settings');
+    } catch (e) {
+      alert('Kan instellingen niet openen: ' + e);
+    }
   }
 </script>
 

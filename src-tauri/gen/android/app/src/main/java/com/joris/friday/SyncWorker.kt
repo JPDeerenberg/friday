@@ -78,6 +78,12 @@ class SyncWorker(appContext: Context, workerParams: WorkerParameters) :
             // Send notifications for detected changes
             sendChangeNotifications(changes)
             
+            // Handle Automatic Do Not Disturb
+            if (SyncStateManager.isNotificationEnabled(applicationContext, "autoDnd")) {
+                val isAnyActive = SyncStateManager.isAnyLessonActive(calendar)
+                NotificationHelper.updateDndStatus(applicationContext, isAnyActive)
+            }
+            
         } catch (e: Exception) {
             e.printStackTrace()
         }

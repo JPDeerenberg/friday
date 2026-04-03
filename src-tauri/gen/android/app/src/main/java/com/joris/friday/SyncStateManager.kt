@@ -273,6 +273,40 @@ object SyncStateManager {
     }
     
     /**
+     * Check if any lesson is currently active in the provided calendar data.
+     * A lesson is active if now is between start and einde, and it's not cancelled.
+     */
+    fun isAnyLessonActive(currentCalendar: JSONArray): Boolean {
+        val now = System.currentTimeMillis()
+        val dateFormat = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US)
+        
+        for (i in 0 until currentCalendar.length()) {
+            try {
+                val event = currentCalendar.getJSONObject(i)
+                val startTime = event.optString("start", "")
+                val endTime = event.optString("einde", "")
+                val status = event.optInt("status", 0)
+                
+                // Check if it's a scheduled event (usually type 16, but we'll check status)
+                // status 4 and 5 are cancelled.
+                if (status == 4 || status == 5) continue
+                
+                if (startTime.isNotEmpty() && endTime.isNotEmpty()) {
+                    val startMs = dateFormat.parse(startTime)?.time ?: continue
+                    val endMs = dateFormat.parse(endTime)?.time ?: continue
+                    
+                    if (now in startMs..endMs) {
+                        return true
+                    }
+                }
+            } catch (e: Exception) {
+                // Skip malformed dates or objects
+            }
+        }
+        return false
+    }
+    
+    /**
      * Clear the cached state (force full re-check on next sync)
      */
     fun clearState(context: Context) {
@@ -302,6 +336,7 @@ object SyncStateManager {
                         "grades" -> json.optBoolean("notifyGrades", true)
                         "deadlines" -> json.optBoolean("notifyDeadlines", true)
                         "calendar" -> json.optBoolean("notifyCalendar", true)
+                        "autoDnd" -> json.optBoolean("notifyAutoDnd", false)
                         else -> true
                     }
                 }
@@ -315,6 +350,7 @@ object SyncStateManager {
             "grades" -> prefs.getBoolean("notifyGrades", true)
             "deadlines" -> prefs.getBoolean("notifyDeadlines", true)
             "calendar" -> prefs.getBoolean("notifyCalendar", true)
+            "autoDnd" -> prefs.getBoolean("notifyAutoDnd", false)
             else -> true
         }
     }
@@ -350,7 +386,8 @@ object SyncStateManager {
         notifyMessages: Boolean,
         notifyGrades: Boolean,
         notifyDeadlines: Boolean,
-        notifyCalendar: Boolean
+        notifyCalendar: Boolean,
+        notifyAutoDnd: Boolean
     ) {
         val prefs = context.getSharedPreferences("friday_prefs", Context.MODE_PRIVATE)
         prefs.edit().apply {
@@ -358,6 +395,7 @@ object SyncStateManager {
             putBoolean("notifyGrades", notifyGrades)
             putBoolean("notifyDeadlines", notifyDeadlines)
             putBoolean("notifyCalendar", notifyCalendar)
+            putBoolean("notifyAutoDnd", notifyAutoDnd)
             putBoolean("initialized", true)
             apply()
         }
@@ -369,6 +407,7 @@ object SyncStateManager {
                 put("notifyGrades", notifyGrades)
                 put("notifyDeadlines", notifyDeadlines)
                 put("notifyCalendar", notifyCalendar)
+                put("notifyAutoDnd", notifyAutoDnd)
             }
             writePreferencesFromFrontend(context, json)
         } catch (e: Exception) {

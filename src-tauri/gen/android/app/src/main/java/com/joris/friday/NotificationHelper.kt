@@ -159,6 +159,50 @@ object NotificationHelper {
         val extra = assignmentId?.let { """{"assignmentId":"$it"}""" }
         showNotification(context, TYPE_DEADLINE, title, message, extra)
     }
+
+    /**
+     * Check if the app has permission to modify DND policy
+     */
+    @JvmStatic
+    fun hasDndAccess(context: Context): Boolean {
+        val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            notificationManager.isNotificationPolicyAccessGranted
+        } else {
+            true
+        }
+    }
+
+    /**
+     * Update the system DND status
+     * @param enabled true to enable DND (Priority only), false to disable DND (All)
+     */
+    @JvmStatic
+    fun updateDndStatus(context: Context, enabled: Boolean) {
+        val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            if (notificationManager.isNotificationPolicyAccessGranted) {
+                val currentFilter = notificationManager.currentInterruptionFilter
+                val targetFilter = if (enabled) {
+                    NotificationManager.INTERRUPTION_FILTER_PRIORITY
+                } else {
+                    NotificationManager.INTERRUPTION_FILTER_ALL
+                }
+                
+                if (currentFilter != targetFilter) {
+                    try {
+                        notificationManager.setInterruptionFilter(targetFilter)
+                        android.util.Log.d("FridayDnd", "DND status updated to: ${if (enabled) "PRIORITY" else "ALL"}")
+                    } catch (e: Exception) {
+                        android.util.Log.e("FridayDnd", "Failed to set interruption filter", e)
+                    }
+                }
+            } else {
+                android.util.Log.w("FridayDnd", "Cannot update DND: Permission not granted")
+            }
+        }
+    }
     
     private data class ChannelInfo(
         val channelId: String,

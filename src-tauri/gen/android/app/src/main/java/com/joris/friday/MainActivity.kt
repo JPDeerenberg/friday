@@ -9,6 +9,7 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import java.util.concurrent.TimeUnit
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import androidx.core.app.ActivityCompat
@@ -22,20 +23,16 @@ class MainActivity : TauriActivity() {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         
-        // Schedule periodic sync every 15 minutes (minimum for WorkManager)
-        val constraints = Constraints.Builder()
-            .setRequiredNetworkType(NetworkType.CONNECTED)
-            .build()
+        // Start background sync service
+        val serviceIntent = Intent(this, SyncService::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(serviceIntent)
+        } else {
+            startService(serviceIntent)
+        }
         
-        val syncRequest = PeriodicWorkRequestBuilder<SyncWorker>(15, TimeUnit.MINUTES)
-            .setConstraints(constraints)
-            .build()
-        
-        WorkManager.getInstance(this).enqueueUniquePeriodicWork(
-            "FridaySync",
-            ExistingPeriodicWorkPolicy.REPLACE,
-            syncRequest
-        )
+        // Remove old WorkManager periodic task if it exists
+        WorkManager.getInstance(this).cancelUniqueWork("FridaySync")
     }
   
     override fun onResume() {

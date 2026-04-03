@@ -51,6 +51,7 @@ const DEFAULT_SETTINGS = {
   notifyGrades: true,
   notifyDeadlines: true,
   notifyCalendar: true,
+  notifyAutoDnd: false,
 };
 
 // Load settings from localStorage
@@ -76,7 +77,8 @@ if (typeof window !== 'undefined') {
     
     // Sync notification preferences to Android
     if (val.notifyMessages !== undefined || val.notifyGrades !== undefined || 
-        val.notifyDeadlines !== undefined || val.notifyCalendar !== undefined) {
+        val.notifyDeadlines !== undefined || val.notifyCalendar !== undefined ||
+        val.notifyAutoDnd !== undefined) {
       syncPreferencesToAndroid(val);
     }
   });
@@ -90,6 +92,7 @@ function syncPreferencesToAndroid(settings: any) {
     notifyGrades: settings.notifyGrades ?? true,
     notifyDeadlines: settings.notifyDeadlines ?? true,
     notifyCalendar: settings.notifyCalendar ?? true,
+    notifyAutoDnd: settings.notifyAutoDnd ?? false,
   }));
   
   // Also sync via Tauri command
@@ -99,7 +102,8 @@ function syncPreferencesToAndroid(settings: any) {
         settings.notifyMessages ?? true,
         settings.notifyGrades ?? true,
         settings.notifyDeadlines ?? true,
-        settings.notifyCalendar ?? true
+        settings.notifyCalendar ?? true,
+        settings.notifyAutoDnd ?? false
       ).catch(() => {
         // Ignore errors - preferences will still be read from localStorage by Android
       });
