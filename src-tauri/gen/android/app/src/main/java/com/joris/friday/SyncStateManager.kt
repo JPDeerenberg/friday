@@ -96,13 +96,14 @@ object SyncStateManager {
         
         val newMessages = detectNewMessages(previousState.optJSONArray("messages"), currentMessages)
         val newGrades = detectNewGrades(previousState.optJSONArray("grades"), currentGrades)
-        val upcomingDeadlines = detectUpcomingDeadlines(currentAssignments)
+        val upcomingDeadlines = detectAssignmentChanges(previousState.optJSONArray("assignments"), currentAssignments)
         val calendarChanges = detectCalendarChanges(previousState.optJSONArray("calendar"), currentCalendar)
         
         // Save new state
         val newState = JSONObject().apply {
             put("messages", currentMessages)
             put("grades", currentGrades)
+            put("assignments", currentAssignments)
             put("calendar", currentCalendar)
             put("lastSync", System.currentTimeMillis())
         }
@@ -198,24 +199,43 @@ object SyncStateManager {
         return grade.optString("vakNaam", "")
     }
     
-    private fun detectUpcomingDeadlines(assignments: JSONArray): List<DeadlineInfo> {
-        val deadlines = mutableListOf<DeadlineInfo>()
+    private fun detectAssignmentChanges(previous: JSONArray?, current: JSONArray): List<DeadlineInfo> {
+        val changes = mutableListOf<DeadlineInfo>()
         val now = System.currentTimeMillis()
         val oneDayMs = 24 * 60 * 60 * 1000L
         
-        for (i in 0 until assignments.length()) {
-            val assignment = assignments.getJSONObject(i)
+        val previousIds = mutableSetOf<Long>()
+        previous?.let {
+            for (i in 0 until it.length()) {
+                it.getJSONObject(i).optLong("id").takeIf { id -> id > 0 }?.let { id -> previousIds.add(id) }
+            }
+        }
+        
+        for (i in 0 until current.length()) {
+            val assignment = current.getJSONObject(i)
+            val id = assignment.optLong("id")
             val deadline = assignment.optString("deadline", "")
+            
+            // 1. Detect New Assignments
+            if (id > 0 && id !in previousIds) {
+                changes.add(DeadlineInfo(
+                    id = id,
+                    title = "Nieuwe opdracht: " + assignment.optString("titel", "Opdracht"),
+                    deadline = deadline
+                ))
+                continue // Don't add twice if it's also a near deadline
+            }
+            
+            // 2. Detect Upcoming Deadlines (within 24h)
             if (deadline.isNotEmpty()) {
                 try {
                     val deadlineMs = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US)
                         .parse(deadline)?.time ?: continue
                     
-                    // Only include deadlines within next 24 hours
                     if (deadlineMs > now && deadlineMs <= now + oneDayMs) {
-                        deadlines.add(DeadlineInfo(
-                            id = assignment.optLong("id"),
-                            title = assignment.optString("titel", "Opdracht"),
+                        changes.add(DeadlineInfo(
+                            id = id,
+                            title = "Deadline nabij: " + assignment.optString("titel", "Opdracht"),
                             deadline = deadline
                         ))
                     }
@@ -224,7 +244,7 @@ object SyncStateManager {
                 }
             }
         }
-        return deadlines
+        return changes
     }
     
     private fun detectCalendarChanges(previous: JSONArray?, current: JSONArray): List<CalendarChangeInfo> {

@@ -5,12 +5,15 @@ import android.content.Context
 import androidx.core.app.NotificationCompat
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
+import android.util.Log
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 
 class SyncWorker(appContext: Context, workerParams: WorkerParameters) :
     CoroutineWorker(appContext, workerParams) {
+
+    private val TAG = "FridaySyncWorker"
 
     // Declare the native method
     private external fun runSync(dataDir: String): String
@@ -19,21 +22,28 @@ class SyncWorker(appContext: Context, workerParams: WorkerParameters) :
         try {
             System.loadLibrary("friday_lib")
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.e(TAG, "Failed to load friday_lib", e)
         }
     }
-
     override suspend fun doWork(): Result {
         val dataDir = applicationContext.filesDir.absolutePath
+        Log.d(TAG, "Starting background sync...")
         
         val resultString = try {
             runSync(dataDir)
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.e(TAG, "Native runSync crashed", e)
             "ERROR"
         }
 
+        Log.d(TAG, "Sync result: ${if (resultString.length > 50) resultString.substring(0, 50) + "..." else resultString}")
+
         // Process the sync result and detect changes
+        if (resultString == "ERROR" || resultString.startsWith("AUTH_ERROR")) {
+            Log.w(TAG, "Sync failed with error: $resultString. Retrying later...")
+            return Result.retry()
+        }
+
         processSyncResult(resultString)
 
         return Result.success()

@@ -230,19 +230,43 @@ pub extern "system" fn Java_com_joris_friday_SyncStateManager_syncPreferencesFro
 #[cfg(target_os = "android")]
 async fn do_sync(data_dir: &str) -> String {
     use crate::client::TokenSet;
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
 
     let dir = PathBuf::from(data_dir);
-    let token_path = dir.join("tokens.json");
+    
+    // Potential token paths (Tauri 2 may use subdirectories on some devices)
+    let paths = vec![
+        dir.join("tokens.json"),
+        dir.join("com.joris.friday/tokens.json"), // potential subfolder
+        dir.parent().unwrap_or(Path::new("/")).join("tokens.json"), // fallback to parent
+    ];
 
-    let token_data = match std::fs::read_to_string(&token_path) {
-        Ok(data) => data,
-        Err(_) => return "NO_TOKENS".to_string(),
+    let mut token_data = None;
+    let mut successful_path = None;
+    for path in &paths {
+        println!("FridaySyncWorker (Rust): Checking for tokens at {:?}", path);
+        if let Ok(data) = std::fs::read_to_string(path) {
+            println!("FridaySyncWorker (Rust): Found tokens at {:?}", path);
+            token_data = Some(data);
+            successful_path = Some(path.clone());
+            break;
+        }
+    }
+
+    let token_content = match token_data {
+        Some(data) => data,
+        None => {
+            eprintln!("FridaySyncWorker (Rust): Could not find tokens.json in any location: {:?}", paths);
+            return "NO_TOKENS".to_string()
+        },
     };
 
-    let token_set: TokenSet = match serde_json::from_str(&token_data) {
+    let token_set: TokenSet = match serde_json::from_str(&token_content) {
         Ok(ts) => ts,
-        Err(_) => return "INVALID_TOKENS".to_string(),
+        Err(e) => {
+            eprintln!("FridaySyncWorker (Rust): Failed to parse tokens: {}", e);
+            return "INVALID_TOKENS".to_string()
+        },
     };
 
     let mut client = MagisterClient::new();
@@ -253,8 +277,8 @@ async fn do_sync(data_dir: &str) -> String {
     }
 
     // Save refreshed token if needed
-    if let Ok(new_data) = serde_json::to_string_pretty(&client.token_set) {
-        let _ = std::fs::write(&token_path, new_data);
+    if let (Some(path), Ok(new_data)) = (successful_path, serde_json::to_string_pretty(&client.token_set)) {
+        let _ = std::fs::write(path, new_data);
     }
 
     let person_id = match client.token_set.as_ref().unwrap().person_id {

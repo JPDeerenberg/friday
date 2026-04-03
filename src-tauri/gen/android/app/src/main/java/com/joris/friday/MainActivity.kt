@@ -24,20 +24,19 @@ class MainActivity : TauriActivity() {
         
         // Schedule periodic sync every 15 minutes (minimum for WorkManager)
         val constraints = Constraints.Builder()
-        .setRequiredNetworkType(NetworkType.CONNECTED)
-        .setRequiresBatteryNotLow(true)
-        .build()
-    
-    val syncRequest = PeriodicWorkRequestBuilder<SyncWorker>(15, TimeUnit.MINUTES)
-        .setConstraints(constraints)
-        .build()
-    
-    WorkManager.getInstance(this).enqueueUniquePeriodicWork(
-        "FridaySync",
-        ExistingPeriodicWorkPolicy.KEEP,
-        syncRequest
-    )
-  }
+            .setRequiredNetworkType(NetworkType.CONNECTED)
+            .build()
+        
+        val syncRequest = PeriodicWorkRequestBuilder<SyncWorker>(15, TimeUnit.MINUTES)
+            .setConstraints(constraints)
+            .build()
+        
+        WorkManager.getInstance(this).enqueueUniquePeriodicWork(
+            "FridaySync",
+            ExistingPeriodicWorkPolicy.REPLACE,
+            syncRequest
+        )
+    }
   
     override fun onResume() {
         super.onResume()
