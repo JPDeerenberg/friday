@@ -15,7 +15,9 @@ pub async fn get_schoolyears(
     let mut c = client.lock().await;
 
     let path = if let (Some(start), Some(end)) = (&start, &end) {
-        format!("leerlingen/{person_id}/aanmeldingen?begin={start}&einde={end}")
+        let start_date = if start.len() >= 10 { &start[0..10] } else { start };
+        let end_date = if end.len() >= 10 { &end[0..10] } else { end };
+        format!("leerlingen/{person_id}/aanmeldingen?begin={start_date}&einde={end_date}")
     } else {
         format!("leerlingen/{person_id}/aanmeldingen/")
     };
@@ -32,9 +34,17 @@ pub async fn get_grades(
     client: State<'_, SharedClient>,
     person_id: i64,
     schoolyear_id: i64,
-    einde: String, // ISO 8601 date for peildatum
+    einde: String, // peildatum
 ) -> Result<Vec<Grade>, String> {
     let mut c = client.lock().await;
+
+    // Magister requires YYYY-MM-DD for peildatum. 
+    // Passing full ISO string (with T and Z) often causes 500 errors.
+    let peildatum = if einde.len() > 10 {
+        &einde[0..10]
+    } else {
+        &einde
+    };
 
     let path = format!(
         "personen/{person_id}/aanmeldingen/{schoolyear_id}/cijfers/\
@@ -42,7 +52,7 @@ pub async fn get_grades(
          actievePerioden=false\
          &alleenBerekendeKolommen=false\
          &alleenPTAKolommen=false\
-         &peildatum={einde}"
+         &peildatum={peildatum}"
     );
 
     let data = c.get(&path).await.map_err(|e| e.to_string())?;
@@ -70,7 +80,7 @@ pub async fn get_grade_extra_info(
     serde_json::from_value(data).map_err(|e| e.to_string())
 }
 
-/// Get extra info for multiple grade columns in parallel.
+/// Get extra info for multiple grade columns - limited concurrency to avoid 500s.
 #[tauri::command]
 pub async fn get_bulk_grade_extra_info(
     client: State<'_, SharedClient>,
@@ -78,10 +88,9 @@ pub async fn get_bulk_grade_extra_info(
     schoolyear_id: i64,
     kolom_ids: Vec<i64>,
 ) -> Result<std::collections::HashMap<i64, GradeExtraInfo>, String> {
-    use futures::future::join_all;
+    use futures::StreamExt;
 
-    // We clone the components needed for requests to avoid holding the lock
-    // on the Mutex during the network calls, which allows true parallelism.
+    // Get auth once
     let (http, api_endpoint, access_token) = {
         let mut c = client.lock().await;
         c.ensure_valid_token().await.map_err(|e| e.to_string())?;
@@ -93,47 +102,46 @@ pub async fn get_bulk_grade_extra_info(
         )
     };
 
-    let mut futures_vec = Vec::new();
-    for id in &kolom_ids {
-        let http = http.clone();
-        let api_endpoint = api_endpoint.clone();
-        let access_token = access_token.clone();
-        let url = format!(
-            "{}/personen/{person_id}/aanmeldingen/{schoolyear_id}/\
-             cijfers/extracijferkolominfo/{id}",
-            api_endpoint.trim_end_matches('/')
-        );
+    let api_base = api_endpoint.trim_end_matches('/').to_string();
+    
+    // Use a stream to process with limited concurrency (e.g., 5 at a time)
+    // This prevents triggering rate limits or 500 errors on the server.
+    let results = futures::stream::iter(kolom_ids.clone())
+        .map(|id| {
+            let http = http.clone();
+            let access_token = access_token.clone();
+            let url = format!(
+                "{}/personen/{person_id}/aanmeldingen/{schoolyear_id}/cijfers/extracijferkolominfo/{id}",
+                api_base
+            );
 
-        futures_vec.push(async move {
-            let res = http
-                .get(&url)
-                .header("Authorization", format!("Bearer {}", access_token))
-                .header("Content-Type", "application/json")
-                .header("Accept", "application/json")
-                .send()
-                .await
-                .map_err(|e| e.to_string());
+            async move {
+                let res = http
+                    .get(&url)
+                    .header("Authorization", format!("Bearer {}", access_token))
+                    .header("Accept", "application/json")
+                    .send()
+                    .await;
 
-            match res {
-                Ok(resp) => {
-                    if !resp.status().is_success() {
-                        return Err(format!("API error ({})", resp.status()));
+                match res {
+                    Ok(resp) if resp.status().is_success() => {
+                        match resp.json::<GradeExtraInfo>().await {
+                            Ok(info) => Ok((id, info)),
+                            Err(e) => Err(e.to_string()),
+                        }
                     }
-                    resp.json::<GradeExtraInfo>()
-                        .await
-                        .map_err(|e| e.to_string())
+                    Ok(resp) => Err(format!("API error ({})", resp.status())),
+                    Err(e) => Err(e.to_string()),
                 }
-                Err(e) => Err(e),
             }
-        });
-    }
+        })
+        .buffer_unordered(5) // Max 5 parallel requests
+        .collect::<Vec<_>>()
+        .await;
 
-    let results = join_all(futures_vec).await;
     let mut map = std::collections::HashMap::new();
-
-    for (i, res) in results.into_iter().enumerate() {
-        let id = kolom_ids[i];
-        if let Ok(info) = res {
+    for res in results {
+        if let Ok((id, info)) = res {
             map.insert(id, info);
         }
     }

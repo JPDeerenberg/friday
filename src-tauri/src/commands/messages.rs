@@ -39,7 +39,8 @@ pub async fn get_messages(
     params.push(format!("top={}", top.unwrap_or(15)));
     params.push(format!("skip={}", skip.unwrap_or(0)));
     if let Some(q) = &query {
-        params.push(format!("trefwoorden={}", q.replace(' ', "+")));
+        let encoded: String = url::form_urlencoded::byte_serialize(q.as_bytes()).collect();
+        params.push(format!("trefwoorden={}", encoded));
     }
 
     let path = format!("{}?{}", link, params.join("&"));
@@ -223,8 +224,9 @@ pub async fn search_contacts(
     let mut c = client.lock().await;
     let max = max_results.unwrap_or(250);
 
+    let encoded: String = url::form_urlencoded::byte_serialize(query.as_bytes()).collect();
     let data = c
-        .get(&format!("contacten/personen?q={query}&top={max}&type=alle"))
+        .get(&format!("contacten/personen?q={encoded}&top={max}&type=alle"))
         .await
         .map_err(|e| e.to_string())?;
 

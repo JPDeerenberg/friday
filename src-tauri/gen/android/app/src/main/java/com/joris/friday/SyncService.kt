@@ -28,11 +28,17 @@ class SyncService : Service() {
     
     private var scheduler: ScheduledExecutorService? = null
     private var wakeLock: PowerManager.WakeLock? = null
+    private var syncIntervalMinutes: Long = 5L
 
     // Declare the native method
     private external fun runSync(dataDir: String): String
 
     companion object {
+        const val ACTION_FORCE_SYNC = "com.joris.friday.FORCE_SYNC"
+        const val ACTION_SET_INTERVAL = "com.joris.friday.SET_INTERVAL"
+        const val EXTRA_INTERVAL_SECONDS = "interval_seconds"
+        const val PREF_SYNC_INTERVAL = "sync_interval_minutes"
+
         init {
             try {
                 System.loadLibrary("friday_lib")
@@ -46,11 +52,15 @@ class SyncService : Service() {
         super.onCreate()
         Log.d(TAG, "SyncService created")
         createNotificationChannel()
+        // Restore saved interval
+        val prefs = getSharedPreferences("friday_prefs", Context.MODE_PRIVATE)
+        syncIntervalMinutes = prefs.getLong(PREF_SYNC_INTERVAL, 5L)
+        Log.d(TAG, "Sync interval restored: ${syncIntervalMinutes}m")
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        Log.d(TAG, "SyncService starting...")
-        
+        Log.d(TAG, "SyncService onStartCommand: action=${intent?.action}")
+
         // Start as foreground service
         val notification = createNotification()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
@@ -58,18 +68,49 @@ class SyncService : Service() {
         } else {
             startForeground(NOTIFICATION_ID, notification)
         }
-        
-        // Setup scheduler if not already running
-        if (scheduler == null) {
-            scheduler = Executors.newSingleThreadScheduledExecutor()
-            // Run every 15 minutes
-            scheduler?.scheduleAtFixedRate({
-                performSync()
-            }, 0, 15, TimeUnit.MINUTES)
+
+        when (intent?.action) {
+            ACTION_FORCE_SYNC -> {
+                // Immediately run a sync on a background thread
+                Log.d(TAG, "Force sync requested")
+                Executors.newSingleThreadExecutor().execute { performSync() }
+            }
+            ACTION_SET_INTERVAL -> {
+                val seconds = intent.getLongExtra(EXTRA_INTERVAL_SECONDS, 300L)
+                val minutes = (seconds / 60L).coerceAtLeast(1L)
+                Log.d(TAG, "Interval update requested: ${seconds}s -> ${minutes}m")
+                syncIntervalMinutes = minutes
+                // Persist
+                getSharedPreferences("friday_prefs", Context.MODE_PRIVATE)
+                    .edit().putLong(PREF_SYNC_INTERVAL, minutes).apply()
+                // Restart scheduler with new interval
+                restartScheduler()
+            }
+            else -> {
+                // Normal start — setup scheduler if not already running
+                if (scheduler == null) {
+                    startScheduler()
+                }
+            }
         }
-        
+
         // Keep service alive if killed
         return START_STICKY
+    }
+
+    private fun startScheduler() {
+        scheduler = Executors.newSingleThreadScheduledExecutor()
+        Log.d(TAG, "Scheduler starting: every ${syncIntervalMinutes} minute(s)")
+        scheduler?.scheduleAtFixedRate({
+            performSync()
+        }, 0, syncIntervalMinutes, TimeUnit.MINUTES)
+    }
+
+    private fun restartScheduler() {
+        Log.d(TAG, "Restarting scheduler with new interval: ${syncIntervalMinutes}m")
+        scheduler?.shutdownNow()
+        scheduler = null
+        startScheduler()
     }
 
     private fun performSync() {
@@ -77,10 +118,16 @@ class SyncService : Service() {
         wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Friday::SyncWakeLock")
         
         try {
+            updateNotification("Syncing now...")
             wakeLock?.acquire(10 * 60 * 1000L /*10 minutes max*/)
-            Log.d(TAG, "Performing background sync...")
+            Log.d(TAG, "=== Starting background sync ===")
             
-            val dataDir = filesDir.absolutePath
+            // Tauri saves tokens.json to app_data_dir which is the PARENT of filesDir.
+            // filesDir = /data/user/0/com.joris.friday/files
+            // app_data_dir = /data/user/0/com.joris.friday  <-- tokens.json is here
+            val dataDir = filesDir.parentFile?.absolutePath ?: filesDir.absolutePath
+            Log.d(TAG, "Data dir: $dataDir")
+            
             val resultString = try {
                 runSync(dataDir)
             } catch (e: Exception) {
@@ -88,16 +135,27 @@ class SyncService : Service() {
                 "ERROR"
             }
 
-            Log.d(TAG, "Sync result: ${if (resultString.length > 50) resultString.substring(0, 50) + "..." else resultString}")
+            val resultPreview = when {
+                resultString.startsWith("ERROR") || resultString.startsWith("AUTH_ERROR") ||
+                resultString == "NO_TOKENS" || resultString == "INVALID_TOKENS" ||
+                resultString == "NO_PERSON_ID" -> resultString
+                resultString.length > 200 -> resultString.substring(0, 200) + "..."
+                else -> resultString
+            }
+            Log.d(TAG, "Sync result preview: $resultPreview")
             
             if (resultString != "ERROR" && !resultString.startsWith("AUTH_ERROR")) {
                 processSyncResult(resultString)
+                val time = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date())
+                updateNotification("Monitoring active (Last sync: $time)")
             } else {
                 Log.w(TAG, "Sync failed or requires auth: $resultString")
+                updateNotification("Monitoring active (Sync failed)")
             }
             
         } catch (e: Exception) {
             Log.e(TAG, "Error during sync task", e)
+            updateNotification("Monitoring active (Error occurred)")
         } finally {
             if (wakeLock?.isHeld == true) {
                 wakeLock?.release()
@@ -109,6 +167,7 @@ class SyncService : Service() {
         if (resultString == "NO_TOKENS" || resultString == "ERROR" || 
             resultString.startsWith("AUTH_ERROR") || resultString.startsWith("INVALID") ||
             resultString == "NO_PERSON_ID") {
+            Log.w(TAG, "processSyncResult: skipping due to error status: $resultString")
             return
         }
         
@@ -120,6 +179,14 @@ class SyncService : Service() {
             val assignments = syncData.optJSONArray("assignments") ?: JSONArray()
             val calendar = syncData.optJSONArray("calendar") ?: JSONArray()
             
+            Log.d(TAG, "processSyncResult: messages=${messages.length()}, grades=${grades.length()}, assignments=${assignments.length()}, calendar=${calendar.length()}")
+            
+            // Log first message id for debugging
+            if (messages.length() > 0) {
+                val firstMsg = messages.getJSONObject(0)
+                Log.d(TAG, "processSyncResult: first message id=${firstMsg.optLong("id")}, subject=${firstMsg.optString("onderwerp")}")
+            }
+            
             val changes = SyncStateManager.detectChanges(
                 this,
                 messages,
@@ -127,6 +194,8 @@ class SyncService : Service() {
                 assignments,
                 calendar
             )
+            
+            Log.d(TAG, "processSyncResult: detected changes - newMessages=${changes.newMessages.size}, newGrades=${changes.newGrades.size}, deadlines=${changes.upcomingDeadlines.size}, calendar=${changes.calendarChanges.size}")
             
             sendChangeNotifications(changes)
             
@@ -141,8 +210,7 @@ class SyncService : Service() {
     }
 
     private fun sendChangeNotifications(changes: SyncStateManager.SyncChanges) {
-        // Reuse logic from SyncWorker or just implement here
-        // For simplicity and consistency, I'll copy the logic from SyncWorker.kt
+        Log.d(TAG, "sendChangeNotifications called")
         
         // New Messages
         if (changes.newMessages.isNotEmpty() && SyncStateManager.isNotificationEnabled(this, "messages")) {
@@ -150,7 +218,11 @@ class SyncService : Service() {
             val firstMsg = changes.newMessages.first()
             val title = if (count == 1) "Nieuw bericht" else "$count nieuwe berichten"
             val message = if (count == 1) "${firstMsg.senderName}: ${firstMsg.subject}" else "Van: ${firstMsg.senderName} en ${count - 1} andere(n)"
+            Log.d(TAG, "Showing message notification: $title - $message")
             NotificationHelper.showMessageNotification(this, title, message, firstMsg.senderName)
+        } else {
+            if (changes.newMessages.isEmpty()) Log.d(TAG, "No new messages detected")
+            else Log.d(TAG, "Message notifications disabled in prefs")
         }
         
         // New Grades
@@ -159,12 +231,14 @@ class SyncService : Service() {
             val firstGrade = changes.newGrades.first()
             val title = if (count == 1) "Nieuw cijfer" else "$count nieuwe cijfers"
             val message = if (count == 1) "${firstGrade.courseName}: ${firstGrade.grade}" else "Laatste: ${firstGrade.courseName} (${firstGrade.grade})"
+            Log.d(TAG, "Showing grade notification: $title")
             NotificationHelper.showGradeNotification(this, title, message, firstGrade.id.toString())
         }
         
         // Deadlines
         if (changes.upcomingDeadlines.isNotEmpty() && SyncStateManager.isNotificationEnabled(this, "deadlines")) {
             val deadline = changes.upcomingDeadlines.first()
+            Log.d(TAG, "Showing deadline notification: ${deadline.title}")
             NotificationHelper.showDeadlineNotification(this, "Deadline nabij", deadline.title, deadline.id.toString())
         }
         
@@ -174,6 +248,7 @@ class SyncService : Service() {
             val firstEvent = changes.calendarChanges.first()
             val title = if (count == 1) "Nieuwe afspraak" else "$count nieuwe afspraken"
             val message = if (count == 1) firstEvent.title else "${firstEvent.title} en ${count - 1} andere(n)"
+            Log.d(TAG, "Showing calendar notification: $title")
             NotificationHelper.showCalendarNotification(this, title, message, firstEvent.id.toString())
         }
     }
@@ -190,7 +265,7 @@ class SyncService : Service() {
         }
     }
 
-    private fun createNotification(): Notification {
+    private fun createNotification(contentText: String = "Checking for updates in background..."): Notification {
         val notificationIntent = Intent(this, MainActivity::class.java)
         val pendingIntent = PendingIntent.getActivity(
             this, 0, notificationIntent,
@@ -199,12 +274,18 @@ class SyncService : Service() {
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Friday Agenda Monitoring")
-            .setContentText("Checking for updates in background...")
+            .setContentText(contentText)
             .setSmallIcon(com.joris.friday.R.drawable.ic_notification)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
+    }
+
+    private fun updateNotification(text: String) {
+        val notification = createNotification(text)
+        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        notificationManager.notify(NOTIFICATION_ID, notification)
     }
 
     override fun onDestroy() {

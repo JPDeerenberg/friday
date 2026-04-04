@@ -72,7 +72,16 @@ export async function createCalendarEvent(params: {
   inhoud?: string;
   eventType?: number;
 }): Promise<void> {
-  return invoke('create_calendar_event', params);
+  return invoke('create_calendar_event', {
+    personId: params.personId,
+    start: params.start,
+    einde: params.einde,
+    duurtHeleDag: params.duurtHeleDag,
+    omschrijving: params.omschrijving,
+    lokatie: params.lokatie,
+    inhoud: params.inhoud,
+    eventType: params.eventType
+  });
 }
 
 export async function updateCalendarEvent(selfUrl: string, eventJson: string): Promise<void> {
@@ -81,6 +90,14 @@ export async function updateCalendarEvent(selfUrl: string, eventJson: string): P
 
 export async function deleteCalendarEvent(selfUrl: string): Promise<void> {
   return invoke('delete_calendar_event', { selfUrl });
+}
+
+export async function toggleCalendarEventDone(event: any): Promise<void> {
+  const updatedEvent = { ...event, Afgerond: !event.Afgerond };
+  // Ensure we have a selfUrl
+  const url = event.self_url || (event.Links?.find((l: any) => l.Rel === 'Self')?.Href.replace('/api/', ''));
+  if (!url) throw new Error('No selfUrl found for event');
+  return updateCalendarEvent(url, JSON.stringify(updatedEvent));
 }
 
 // === Grades ===
@@ -259,6 +276,22 @@ export async function triggerSync(): Promise<void> {
     return invoke('trigger_sync');
 }
 
+export async function getDebugInfo(): Promise<string> {
+    return invoke('get_debug_info');
+}
+
+export async function getSyncStateDebug(): Promise<string> {
+    return invoke('get_sync_state_debug');
+}
+
+export async function clearSyncState(): Promise<string> {
+    return invoke('clear_sync_state');
+}
+
+export async function setSyncInterval(seconds: number): Promise<string> {
+    return invoke('set_sync_interval', { seconds });
+}
+
 export async function syncNotificationPreferences(
     notifyMessages: boolean,
     notifyGrades: boolean,
@@ -276,7 +309,20 @@ export async function syncNotificationPreferences(
 }
 
 // === Helpers ===
-export function formatDate(date: Date): string {
+export function formatDate(date: Date | string): string {
+  if (!date) return '';
+  if (typeof date === 'string') {
+    // If it's already a YYYY-MM-DD string, return as is
+    if (/^\d{4}-\d{2}-\d{2}$/.test(date)) return date;
+    // If it's a longer ISO string, take the first 10 characters
+    if (date.length >= 10 && /^\d{4}-\d{2}-\d{2}/.test(date)) return date.substring(0, 10);
+    // Otherwise try to parse it
+    const parsed = new Date(date);
+    if (!isNaN(parsed.getTime())) {
+      return parsed.toISOString().split('T')[0];
+    }
+    return date;
+  }
   return date.toISOString().split('T')[0];
 }
 

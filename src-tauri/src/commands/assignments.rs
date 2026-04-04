@@ -13,10 +13,13 @@ pub async fn get_assignments(
 ) -> Result<Vec<Assignment>, String> {
     let mut c = client.lock().await;
 
+    let start_date = if start.len() >= 10 { &start[0..10] } else { &start };
+    let end_date = if end.len() >= 10 { &end[0..10] } else { &end };
+
+    let url = format!("personen/{person_id}/opdrachten?van={start_date}&tot={end_date}");
+
     let data = c
-        .get(&format!(
-            "personen/{person_id}/opdrachten?einddatum={end}&startdatum={start}"
-        ))
+        .get(&url)
         .await
         .map_err(|e| e.to_string())?;
 

@@ -176,6 +176,7 @@ impl MagisterClient {
         if !resp.status().is_success() {
             let status = resp.status().as_u16();
             let text = resp.text().await.unwrap_or_default();
+            eprintln!("API Error (GET): URL={}, Status={}, Body={}", url, status, text);
             return Err(ClientError::ApiError(status, text));
         }
 
@@ -213,7 +214,7 @@ impl MagisterClient {
         if !resp.status().is_success() {
             let status = resp.status().as_u16();
             let text = resp.text().await.unwrap_or_default();
-            println!("API Bytes Error {}: {}", status, text);
+            eprintln!("API Error (BYTES): URL={}, Status={}, Body={}", url, status, text);
             return Err(ClientError::ApiError(status, text));
         }
 
@@ -257,6 +258,7 @@ impl MagisterClient {
         if !resp.status().is_success() {
             let status = resp.status().as_u16();
             let text = resp.text().await.unwrap_or_default();
+            eprintln!("API Error (POST): URL={}, Status={}, Body={}", url, status, text);
             return Err(ClientError::ApiError(status, text));
         }
 
@@ -296,6 +298,7 @@ impl MagisterClient {
         if !resp.status().is_success() {
             let status = resp.status().as_u16();
             let text = resp.text().await.unwrap_or_default();
+            eprintln!("API Error (PUT): URL={}, Status={}, Body={}", url, status, text);
             return Err(ClientError::ApiError(status, text));
         }
         Ok(())
@@ -338,6 +341,7 @@ impl MagisterClient {
         if !resp.status().is_success() {
             let status = resp.status().as_u16();
             let text = resp.text().await.unwrap_or_default();
+            eprintln!("API Error (DELETE): URL={}, Status={}, Body={}", url, status, text);
             return Err(ClientError::ApiError(status, text));
         }
         Ok(())
@@ -370,6 +374,7 @@ impl MagisterClient {
         if !resp.status().is_success() {
             let status = resp.status().as_u16();
             let text = resp.text().await.unwrap_or_default();
+            eprintln!("API Error (PATCH): URL={}, Status={}, Body={}", url, status, text);
             return Err(ClientError::ApiError(status, text));
         }
         Ok(())

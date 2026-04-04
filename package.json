@@ -1,6 +1,6 @@
 {
   "name": "friday",
-  "version": "0.2.0",
+  "version": "1.0.0",
   "description": "",
   "type": "module",
   "scripts": {
@@ -25,6 +25,7 @@
     "@tailwindcss/cli": "^4.2.2",
     "@tailwindcss/vite": "^4.2.2",
     "@tauri-apps/cli": "^2",
+    "@types/node": "^25.5.2",
     "autoprefixer": "^10.4.27",
     "svelte": "^5.0.0",
     "svelte-check": "^4.0.0",

@@ -26,8 +26,10 @@ class SyncWorker(appContext: Context, workerParams: WorkerParameters) :
         }
     }
     override suspend fun doWork(): Result {
-        val dataDir = applicationContext.filesDir.absolutePath
-        Log.d(TAG, "Starting background sync...")
+        // Tauri saves tokens.json to the PARENT of filesDir (app_data_dir)
+        val dataDir = applicationContext.filesDir.parentFile?.absolutePath 
+            ?: applicationContext.filesDir.absolutePath
+        Log.d(TAG, "Starting background sync... dataDir=$dataDir")
         
         val resultString = try {
             runSync(dataDir)
@@ -36,7 +38,7 @@ class SyncWorker(appContext: Context, workerParams: WorkerParameters) :
             "ERROR"
         }
 
-        Log.d(TAG, "Sync result: ${if (resultString.length > 50) resultString.substring(0, 50) + "..." else resultString}")
+        Log.d(TAG, "Sync result: ${if (resultString.length > 50 && !resultString.startsWith("ERROR") && !resultString.startsWith("AUTH_ERROR")) resultString.substring(0, 50) + "..." else resultString}")
 
         // Process the sync result and detect changes
         if (resultString == "ERROR" || resultString.startsWith("AUTH_ERROR")) {
@@ -85,6 +87,7 @@ class SyncWorker(appContext: Context, workerParams: WorkerParameters) :
             }
             
         } catch (e: Exception) {
+            Log.e(TAG, "Failed to process sync result: $resultString", e)
             e.printStackTrace()
         }
     }

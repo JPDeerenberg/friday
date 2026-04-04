@@ -283,6 +283,85 @@ pub fn sync_notification_preferences(
     Ok(())
 }
 
+/// Delete the sync_state.json file so the next background sync creates a fresh baseline.
+/// After calling this, the next sync will save current state as "previous" (no notifications),
+/// and the sync AFTER that will detect newly arrived items and send notifications.
+#[tauri::command]
+pub fn clear_sync_state(app: AppHandle) -> Result<String, String> {
+    let _ = &app;
+    #[cfg(target_os = "android")]
+    {
+        let window = app.get_webview_window("main")
+            .or_else(|| app.webview_windows().values().next().cloned())
+            .ok_or_else(|| "No active window found for JNI access".to_string())?;
+
+        window.with_webview(move |webview| {
+            #[cfg(target_os = "android")]
+            {
+                let _ = webview.jni_handle().exec(move |env, activity, _webview| {
+                    let class = match find_app_class(env, &activity, "com.joris.friday.SyncStateManager") {
+                        Ok(c) => c,
+                        Err(e) => {
+                            let _ = env.exception_clear();
+                            eprintln!("JNI ERROR: Failed to find SyncStateManager: {:?}", e);
+                            return;
+                        }
+                    };
+                    // Call clearState(context) on the SyncStateManager singleton
+                    let res = env.call_static_method(
+                        &class,
+                        "clearState",
+                        "(Landroid/content/Context;)V",
+                        &[jni::objects::JValue::from(&activity)],
+                    );
+                    if let Err(_) = res {
+                        if let Ok(true) = env.exception_check() {
+                            let _ = env.exception_clear();
+                        }
+                    }
+                });
+            }
+        }).map_err(|e| e.to_string())?;
+        
+        return Ok("Sync state cleared — next sync will establish new baseline".to_string());
+    }
+    #[cfg(not(target_os = "android"))]
+    Ok("clear_sync_state is only supported on Android".to_string())
+}
+
+/// Read and return the raw sync state file for debugging purposes.
+/// SyncStateManager writes to context.filesDir = app_data_dir/files/sync_state.json
+#[tauri::command]
+pub fn get_sync_state_debug(app: AppHandle) -> Result<String, String> {
+    let _ = &app;
+    #[cfg(target_os = "android")]
+    {
+        use tauri::Manager;
+        let data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+        // SyncStateManager (Kotlin) writes to context.filesDir which is app_data_dir/files/
+        let candidates = vec![
+            data_dir.join("files").join("sync_state.json"),  // correct: filesDir
+            data_dir.join("sync_state.json"),                // fallback: app_data_dir root
+        ];
+        for state_file in &candidates {
+            if state_file.exists() {
+                let content = std::fs::read_to_string(state_file).map_err(|e| e.to_string())?;
+                let preview = if content.len() > 2000 {
+                    format!("{}...[truncated]", &content[..2000])
+                } else {
+                    content
+                };
+                return Ok(format!("// Path: {}\n{}", state_file.display(), preview));
+            }
+        }
+        Ok(format!("STATE_FILE_NOT_FOUND\nChecked:\n{}",
+            candidates.iter().map(|p| format!("  - {}", p.display())).collect::<Vec<_>>().join("\n")
+        ))
+    }
+    #[cfg(not(target_os = "android"))]
+    Ok("get_sync_state_debug is only supported on Android".to_string())
+}
+
 #[tauri::command]
 pub fn open_notification_policy_settings(app: AppHandle) -> Result<(), String> {
     let _ = &app;
@@ -339,4 +418,94 @@ pub fn open_notification_policy_settings(app: AppHandle) -> Result<(), String> {
     }
     
     Ok(())
+}
+
+/// Returns a JSON string with debug information about the sync service state.
+#[tauri::command]
+pub fn get_debug_info(app: AppHandle) -> Result<String, String> {
+    use tauri::Manager;
+    use serde_json::json;
+
+    let data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let token_path = data_dir.join("tokens.json");
+    let files_dir = data_dir.join("files");
+    let state_path = files_dir.join("sync_state.json");
+
+    // Check token file
+    let token_exists = token_path.exists();
+    let token_size = token_path.metadata().map(|m| m.len()).unwrap_or(0);
+
+    // Check state file
+    let state_exists = state_path.exists();
+    let state_summary = if state_exists {
+        match std::fs::read_to_string(&state_path) {
+            Ok(content) => {
+                // Count message IDs in state
+                let msg_count = content.matches("\"id\"").count();
+                format!("exists ({} id refs, {} bytes)", msg_count, content.len())
+            }
+            Err(e) => format!("read error: {}", e),
+        }
+    } else {
+        // Also check directly in app_data_dir (alternative path)
+        let alt_state = data_dir.join("sync_state.json");
+        if alt_state.exists() {
+            "exists (in app_data_dir, not files/)".to_string()
+        } else {
+            "not found".to_string()
+        }
+    };
+
+    let info = json!({
+        "dataDir": data_dir.to_string_lossy(),
+        "tokenFile": {
+            "exists": token_exists,
+            "sizeBytes": token_size,
+            "path": token_path.to_string_lossy()
+        },
+        "stateFile": {
+            "summary": state_summary,
+            "path": state_path.to_string_lossy()
+        },
+        "platform": std::env::consts::OS,
+        "buildTime": env!("CARGO_PKG_VERSION"),
+    });
+
+    Ok(serde_json::to_string_pretty(&info).unwrap_or_else(|_| "{}".to_string()))
+}
+
+/// Set the background sync interval in seconds. Calls SyncService.setSyncIntervalSeconds via JNI (Android only).
+#[tauri::command]
+pub fn set_sync_interval(app: AppHandle, seconds: i64) -> Result<String, String> {
+    let _ = &app;
+    #[cfg(target_os = "android")]
+    {
+        let window = app.get_webview_window("main")
+            .or_else(|| app.webview_windows().values().next().cloned())
+            .ok_or_else(|| "No active window found".to_string())?;
+
+        window.with_webview(move |webview| {
+            #[cfg(target_os = "android")]
+            {
+                let _ = webview.jni_handle().exec(move |env, activity, _webview| {
+                    // Call MainActivity.setSyncInterval(seconds)
+                    let res = env.call_method(
+                        &activity,
+                        "setSyncInterval",
+                        "(J)V",
+                        &[jni::objects::JValue::Long(seconds)],
+                    );
+                    if let Err(_) = res {
+                        if let Ok(true) = env.exception_check() {
+                            let _ = env.exception_clear();
+                        }
+                    }
+                });
+            }
+        }).map_err(|e| e.to_string())?;
+
+        return Ok(format!("Sync interval set to {} seconds", seconds));
+    }
+    #[cfg(not(target_os = "android"))]
+    Ok(format!("set_sync_interval({}) is only supported on Android", seconds))
 }

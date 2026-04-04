@@ -1,6 +1,7 @@
 package com.joris.friday
 
 import android.content.Context
+import android.util.Log
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -93,11 +94,21 @@ object SyncStateManager {
         currentCalendar: JSONArray
     ): SyncChanges {
         val previousState = loadState(context) ?: JSONObject()
+        val hasPreviousState = previousState.length() > 0
         
-        val newMessages = detectNewMessages(previousState.optJSONArray("messages"), currentMessages)
-        val newGrades = detectNewGrades(previousState.optJSONArray("grades"), currentGrades)
-        val upcomingDeadlines = detectAssignmentChanges(previousState.optJSONArray("assignments"), currentAssignments)
-        val calendarChanges = detectCalendarChanges(previousState.optJSONArray("calendar"), currentCalendar)
+        Log.d("SyncStateManager", "detectChanges: hasPreviousState=$hasPreviousState, currentMessages=${currentMessages.length()}")
+        
+        val prevMessages = previousState.optJSONArray("messages")
+        val prevGrades = previousState.optJSONArray("grades")
+        val prevAssignments = previousState.optJSONArray("assignments")
+        val prevCalendar = previousState.optJSONArray("calendar")
+        
+        Log.d("SyncStateManager", "detectChanges: prevMessages=${prevMessages?.length() ?: "null"}, prevGrades=${prevGrades?.length() ?: "null"}")
+        
+        val newMessages = detectNewMessages(prevMessages, currentMessages)
+        val newGrades = detectNewGrades(prevGrades, currentGrades)
+        val upcomingDeadlines = detectAssignmentChanges(prevAssignments, currentAssignments)
+        val calendarChanges = detectCalendarChanges(prevCalendar, currentCalendar)
         
         // Save new state
         val newState = JSONObject().apply {
@@ -118,28 +129,39 @@ object SyncStateManager {
     }
     
     private fun detectNewMessages(previous: JSONArray?, current: JSONArray): List<MessageInfo> {
-        if (current.length() == 0 || previous == null) return emptyList()
+        if (current.length() == 0) return emptyList()
+        // When previous is null (first sync), save state but don't fire notifications
+        // so we don't spam the user on first run. Return empty for first sync.
+        if (previous == null) {
+            Log.d("SyncStateManager", "detectNewMessages: first sync, no previous state - skipping notifications")
+            return emptyList()
+        }
         
         val previousIds = mutableSetOf<Long>()
-        previous?.let {
-            for (i in 0 until it.length()) {
-                it.getJSONObject(i).optLong("id").takeIf { id -> id > 0 }?.let { id -> previousIds.add(id) }
-            }
+        for (i in 0 until previous.length()) {
+            previous.getJSONObject(i).optLong("id").takeIf { id -> id > 0 }?.let { id -> previousIds.add(id) }
+        }
+        
+        Log.d("SyncStateManager", "detectNewMessages: previousIds count=${previousIds.size}, current count=${current.length()}")
+        if (previousIds.isNotEmpty()) {
+            Log.d("SyncStateManager", "detectNewMessages: previousIds sample=${previousIds.take(3)}")
         }
         
         val newMessages = mutableListOf<MessageInfo>()
         for (i in 0 until minOf(10, current.length())) { // Check last 10 messages
             val msg = current.getJSONObject(i)
             val id = msg.optLong("id")
+            Log.d("SyncStateManager", "detectNewMessages: checking msg id=$id, inPrevious=${id in previousIds}")
             if (id > 0 && id !in previousIds) {
                 newMessages.add(MessageInfo(
                     id = id,
                     subject = msg.optString("onderwerp", ""),
                     senderName = extractSenderName(msg),
-                    timestamp = msg.optString("datum", "")
+                    timestamp = msg.optString("verzondenOp", msg.optString("datum", ""))
                 ))
             }
         }
+        Log.d("SyncStateManager", "detectNewMessages: found ${newMessages.size} new messages")
         return newMessages
     }
     
@@ -166,24 +188,24 @@ object SyncStateManager {
     }
     
     private fun detectNewGrades(previous: JSONArray?, current: JSONArray): List<GradeInfo> {
-        if (current.length() == 0 || previous == null) return emptyList()
+        if (current.length() == 0) return emptyList()
+        // When previous is null (first sync), save state but don't fire notifications
+        if (previous == null) return emptyList()
         
         val previousIds = mutableSetOf<Long>()
-        previous?.let {
-            for (i in 0 until it.length()) {
-                it.getJSONObject(i).optLong("id").takeIf { id -> id > 0 }?.let { id -> previousIds.add(id) }
-            }
+        for (i in 0 until previous.length()) {
+            previous.getJSONObject(i).optLong("CijferId").takeIf { id -> id > 0 }?.let { id -> previousIds.add(id) }
         }
         
         val newGrades = mutableListOf<GradeInfo>()
         for (i in 0 until current.length()) {
             val grade = current.getJSONObject(i)
-            val id = grade.optLong("id")
+            val id = grade.optLong("CijferId")
             if (id > 0 && id !in previousIds) {
                 newGrades.add(GradeInfo(
                     id = id,
-                    description = grade.optString("omschrijving", ""),
-                    grade = grade.optString("waarde", ""),
+                    description = grade.optJSONObject("CijferKolom")?.optString("KolomOmschrijving") ?: grade.optString("omschrijving", ""),
+                    grade = grade.optString("CijferStr", ""),
                     courseName = extractCourseName(grade)
                 ))
             }
@@ -192,35 +214,36 @@ object SyncStateManager {
     }
     
     private fun extractCourseName(grade: JSONObject): String {
-        val vak = grade.optJSONObject("vak")
+        val vak = grade.optJSONObject("Vak")
         if (vak != null) {
-            return vak.optString("naam", "")
+            return vak.optString("Omschrijving", vak.optString("Afkorting", ""))
         }
         return grade.optString("vakNaam", "")
     }
     
     private fun detectAssignmentChanges(previous: JSONArray?, current: JSONArray): List<DeadlineInfo> {
+        if (current.length() == 0) return emptyList()
+        // When previous is null (first sync), save state but don't fire notifications
+        if (previous == null) return emptyList()
         val changes = mutableListOf<DeadlineInfo>()
         val now = System.currentTimeMillis()
         val oneDayMs = 24 * 60 * 60 * 1000L
         
         val previousIds = mutableSetOf<Long>()
-        previous?.let {
-            for (i in 0 until it.length()) {
-                it.getJSONObject(i).optLong("id").takeIf { id -> id > 0 }?.let { id -> previousIds.add(id) }
-            }
+        for (i in 0 until previous.length()) {
+            previous.getJSONObject(i).optLong("Id").takeIf { id -> id > 0 }?.let { id -> previousIds.add(id) }
         }
         
         for (i in 0 until current.length()) {
             val assignment = current.getJSONObject(i)
-            val id = assignment.optLong("id")
-            val deadline = assignment.optString("deadline", "")
+            val id = assignment.optLong("Id")
+            val deadline = assignment.optString("InleverenVoor", "")
             
             // 1. Detect New Assignments
             if (id > 0 && id !in previousIds) {
                 changes.add(DeadlineInfo(
                     id = id,
-                    title = "Nieuwe opdracht: " + assignment.optString("titel", "Opdracht"),
+                    title = "Nieuwe opdracht: " + assignment.optString("Titel", "Opdracht"),
                     deadline = deadline
                 ))
                 continue // Don't add twice if it's also a near deadline
@@ -235,7 +258,7 @@ object SyncStateManager {
                     if (deadlineMs > now && deadlineMs <= now + oneDayMs) {
                         changes.add(DeadlineInfo(
                             id = id,
-                            title = "Deadline nabij: " + assignment.optString("titel", "Opdracht"),
+                            title = "Deadline nabij: " + assignment.optString("Titel", "Opdracht"),
                             deadline = deadline
                         ))
                     }
@@ -248,24 +271,24 @@ object SyncStateManager {
     }
     
     private fun detectCalendarChanges(previous: JSONArray?, current: JSONArray): List<CalendarChangeInfo> {
-        if (current.length() == 0 || previous == null) return emptyList()
+        if (current.length() == 0) return emptyList()
+        // When previous is null (first sync), save state but don't fire notifications
+        if (previous == null) return emptyList()
         
         val previousIds = mutableSetOf<Long>()
-        previous?.let {
-            for (i in 0 until it.length()) {
-                it.getJSONObject(i).optLong("id").takeIf { id -> id > 0 }?.let { id -> previousIds.add(id) }
-            }
+        for (i in 0 until previous.length()) {
+            previous.getJSONObject(i).optLong("Id").takeIf { id -> id > 0 }?.let { id -> previousIds.add(id) }
         }
         
         val changes = mutableListOf<CalendarChangeInfo>()
         for (i in 0 until minOf(20, current.length())) {
             val event = current.getJSONObject(i)
-            val id = event.optLong("id")
+            val id = event.optLong("Id")
             if (id > 0 && id !in previousIds) {
                 changes.add(CalendarChangeInfo(
                     id = id,
-                    title = event.optString("omschrijving", ""),
-                    startTime = event.optString("start", "")
+                    title = event.optString("Omschrijving", ""),
+                    startTime = event.optString("Start", "")
                 ))
             }
         }
@@ -283,9 +306,9 @@ object SyncStateManager {
         for (i in 0 until currentCalendar.length()) {
             try {
                 val event = currentCalendar.getJSONObject(i)
-                val startTime = event.optString("start", "")
-                val endTime = event.optString("einde", "")
-                val status = event.optInt("status", 0)
+                val startTime = event.optString("Start", "")
+                val endTime = event.optString("Einde", "")
+                val status = event.optInt("Status", 0)
                 
                 // Check if it's a scheduled event (usually type 16, but we'll check status)
                 // status 4 and 5 are cancelled.

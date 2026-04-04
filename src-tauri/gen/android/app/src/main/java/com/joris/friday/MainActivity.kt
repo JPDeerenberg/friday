@@ -31,8 +31,6 @@ class MainActivity : TauriActivity() {
             startService(serviceIntent)
         }
         
-        // Remove old WorkManager periodic task if it exists
-        WorkManager.getInstance(this).cancelUniqueWork("FridaySync")
     }
   
     override fun onResume() {
@@ -44,14 +42,38 @@ class MainActivity : TauriActivity() {
                 ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.POST_NOTIFICATIONS), 101)
             }
         }
+
+        // Ensure notification preferences are initialized for background sync
+        SyncStateManager.syncPreferencesFromFrontend(
+            this,
+            true, true, true, true, false
+        )
     }
 
   /**
-   * Manually trigger a sync
+   * Manually trigger a sync via WorkManager (one-shot)
    */
   fun triggerManualSync() {
     val workRequest = androidx.work.OneTimeWorkRequestBuilder<SyncWorker>()
         .build()
     WorkManager.getInstance(this).enqueue(workRequest)
+    // Also immediately trigger via SyncService if running
+    val intent = Intent(this, SyncService::class.java).apply {
+        action = SyncService.ACTION_FORCE_SYNC
+    }
+    startService(intent)
+  }
+
+  /**
+   * Update the sync interval for the running SyncService.
+   * intervalSeconds: minimum 60, maximum 3600
+   */
+  fun setSyncInterval(intervalSeconds: Long) {
+    val clamped = intervalSeconds.coerceIn(60L, 3600L)
+    val intent = Intent(this, SyncService::class.java).apply {
+        action = SyncService.ACTION_SET_INTERVAL
+        putExtra(SyncService.EXTRA_INTERVAL_SECONDS, clamped)
+    }
+    startService(intent)
   }
 }

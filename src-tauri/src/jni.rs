@@ -244,11 +244,15 @@ async fn do_sync(data_dir: &str) -> String {
 
     let dir = PathBuf::from(data_dir);
     
-    // Potential token paths (Tauri 2 may use subdirectories on some devices)
+    // Token search paths - ordered by likelihood:
+    // Path 1: app_data_dir/tokens.json (Tauri 2 default — caller should pass this)
+    // Path 2: app_data_dir/files/tokens.json (if caller passes filesDir by mistake)
+    // Path 3: parent of caller dir + tokens.json (extra fallback)
     let paths = vec![
         dir.join("tokens.json"),
-        dir.join("com.joris.friday/tokens.json"), // potential subfolder
-        dir.parent().unwrap_or(Path::new("/")).join("tokens.json"), // fallback to parent
+        dir.join("files/tokens.json"),
+        dir.join("com.joris.friday/tokens.json"),
+        dir.parent().unwrap_or(Path::new("/")).join("tokens.json"),
     ];
 
     let mut token_data = None;
@@ -298,8 +302,8 @@ async fn do_sync(data_dir: &str) -> String {
 
     // Fetch all data (serially because client is mut)
     let messages_result = fetch_messages(&mut client).await;
-    let grades_result = fetch_recent_grades(&mut client).await;
-    let assignments_result = fetch_assignments(&mut client).await;
+    let grades_result = fetch_recent_grades(&mut client, person_id).await;
+    let assignments_result = fetch_assignments(&mut client, person_id).await;
     let calendar_result = fetch_calendar(&mut client, person_id, &today_string(), &tomorrow_string()).await;
 
     // Build JSON result with all data for change detection
@@ -324,16 +328,19 @@ fn tomorrow_string() -> String {
 
 async fn fetch_messages(client: &mut MagisterClient) -> serde_json::Value {
     match client.get("berichten/mappen/1/berichten?top=10&skip=0").await {
-        Ok(data) => data,
+        Ok(data) => {
+            if let Some(items) = data.get("items").filter(|v| v.is_array()) {
+                items.clone()
+            } else {
+                data
+            }
+        },
         Err(_) => serde_json::json!([])
     }
 }
 
-async fn fetch_recent_grades(client: &mut MagisterClient) -> serde_json::Value {
-    // Try to get grades from the last 30 days
-    let thirty_days_ago = (Utc::now() - chrono::Duration::days(30)).format("%Y-%m-%d").to_string();
-    let today = Utc::now().format("%Y-%m-%d").to_string();
-    let url = format!("resultaten?van={}&tot={}&top=50", thirty_days_ago, today);
+async fn fetch_recent_grades(client: &mut MagisterClient, person_id: i64) -> serde_json::Value {
+    let url = format!("personen/{}/cijfers/laatste?top=50&skip=0", person_id);
     match client.get(&url).await {
         Ok(data) => {
             // Extract items from the response
@@ -347,11 +354,11 @@ async fn fetch_recent_grades(client: &mut MagisterClient) -> serde_json::Value {
     }
 }
 
-async fn fetch_assignments(client: &mut MagisterClient) -> serde_json::Value {
+async fn fetch_assignments(client: &mut MagisterClient, person_id: i64) -> serde_json::Value {
     // Get assignments for next 14 days
     let today = Utc::now().format("%Y-%m-%d").to_string();
     let two_weeks = (Utc::now() + chrono::Duration::days(14)).format("%Y-%m-%d").to_string();
-    let url = format!("opdrachten?van={}&tot={}&top=50", today, two_weeks);
+    let url = format!("personen/{}/opdrachten?einddatum={}&startdatum={}&top=50", person_id, two_weeks, today);
     match client.get(&url).await {
         Ok(data) => {
             if let Some(items) = data.get("items").filter(|v| v.is_array()) {
