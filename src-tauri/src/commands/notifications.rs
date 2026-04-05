@@ -119,6 +119,9 @@ pub fn show_notification(
     extra: Option<String>,
 ) -> Result<(), String> {
     let _ = &app;
+    let _ = &message;
+    let _ = &extra;
+
     #[cfg(target_os = "android")]
     {
         use jni::objects::JValue;
@@ -236,6 +239,12 @@ pub fn sync_notification_preferences(
     notify_auto_dnd: bool,
 ) -> Result<(), String> {
     let _ = &app;
+    let _ = notify_messages;
+    let _ = notify_grades;
+    let _ = notify_deadlines;
+    let _ = notify_calendar;
+    let _ = notify_auto_dnd;
+
     #[cfg(target_os = "android")]
     {
         let window = app.get_webview_window("main")

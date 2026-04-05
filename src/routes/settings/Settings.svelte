@@ -161,6 +161,9 @@
       title: 'Agenda',
       settings: [
         { id: 'showWeekend', label: 'Toon Weekend', description: 'Laat zaterdag en zondag zien in de agenda.', type: 'toggle' },
+        { id: 'hideCancelled', label: 'Uitgevallen lessen verbergen', description: 'Verberg lessen die als uitgevallen zijn gemarkeerd.', type: 'toggle' },
+        { id: 'combineLessons', label: 'Lessen combineren', description: 'Combineer opeenvolgende lessen van hetzelfde vak.', type: 'toggle' },
+        { id: 'showBreakSeparator', label: 'Pauze indicatie', description: 'Toon pauzes tussen lessen met hun duur.', type: 'toggle' },
       ]
     },
     {

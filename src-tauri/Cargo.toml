@@ -35,6 +35,7 @@ mime_guess = "2.0.5"
 tauri-plugin-dialog = "2"
 tauri-plugin-deep-link = "2"
 jni = "0.21.1"
+dirs = "5"
 
 [profile.release]
 opt-level = 3

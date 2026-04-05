@@ -56,6 +56,7 @@ pub fn run() {
             commands::calendar::create_calendar_event,
             commands::calendar::update_calendar_event,
             commands::calendar::delete_calendar_event,
+            commands::calendar::download_file,
             // Grades
             commands::grades::get_schoolyears,
             commands::grades::get_grades,

@@ -62,6 +62,11 @@ export async function getCalendarEvent(personId: number, eventId: number): Promi
   return invoke('get_calendar_event', { personId, eventId });
 }
 
+export async function downloadFile(url: string, filename: string): Promise<string> {
+  return invoke('download_file', { url, filename });
+}
+
+
 export async function createCalendarEvent(params: {
   personId: number;
   start: string;

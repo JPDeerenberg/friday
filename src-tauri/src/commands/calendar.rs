@@ -163,3 +163,35 @@ pub async fn get_absences(
     })?;
     Ok(res.items)
 }
+
+#[tauri::command]
+pub async fn download_file(
+    client: State<'_, SharedClient>,
+    url: String,
+    filename: String,
+) -> Result<String, String> {
+    use std::io::Write;
+    let mut c = client.lock().await;
+
+    // Get the standard downloads directory
+    let download_dir = dirs::download_dir()
+        .or_else(|| dirs::home_dir().map(|h| h.join("Downloads")))
+        .ok_or_else(|| "Could not find downloads directory".to_string())?;
+
+    if !download_dir.exists() {
+        std::fs::create_dir_all(&download_dir).map_err(|e| e.to_string())?;
+    }
+
+    let save_path = download_dir.join(&filename);
+
+    // Fetch the file
+    let url = url.replace("/api/", "");
+    let bytes = c.get_bytes(&url).await.map_err(|e: crate::client::ClientError| e.to_string())?
+        .ok_or_else(|| "File not found".to_string())?;
+    
+    let mut file = std::fs::File::create(&save_path).map_err(|e: std::io::Error| e.to_string())?;
+    file.write_all(&bytes).map_err(|e: std::io::Error| e.to_string())?;
+
+    Ok(save_path.to_string_lossy().to_string())
+}
+

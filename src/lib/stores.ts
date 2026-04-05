@@ -52,6 +52,9 @@ const DEFAULT_SETTINGS = {
   notifyDeadlines: true,
   notifyCalendar: true,
   notifyAutoDnd: false,
+  hideCancelled: false,
+  combineLessons: false,
+  showBreakSeparator: false,
 };
 
 // Load settings from localStorage

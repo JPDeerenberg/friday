@@ -1,6 +1,8 @@
 <script lang="ts">
   import { personId, userSettings } from '$lib/stores';
-  import { getCalendarEvents, formatDate, getCalendarEvent, toggleCalendarEventDone } from '$lib/api';
+  import { getCalendarEvents, formatDate, getCalendarEvent, toggleCalendarEventDone, downloadFile } from '$lib/api';
+  let downloadingFile = $state<string | null>(null);
+
   import HtmlRenderer from '$lib/components/HtmlRenderer.svelte';
   import { onMount } from 'svelte';
   import { fade, fly, slide, scale } from 'svelte/transition';
@@ -8,6 +10,7 @@
   let appointments = $state<any[]>([]);
   let selectedDate = $state(new Date());
   let loading = $state(true);
+  let showDetail = $state(false);
   let selectedAppointment = $state<any>(null);
   let loadingDetail = $state(false);
   let editMode = $state(false);
@@ -53,18 +56,84 @@
     }
   }
 
-  const dayAppointments = $derived(
-    appointments.filter(a => {
+  const dayAppointments = $derived.by(() => {
+    let filtered = appointments.filter(a => {
       const d = new Date(a.Start);
       return d.toDateString() === selectedDate.toDateString();
-    })
-    .sort((a, b) => a.Start.localeCompare(b.Start))
-    .map(a => ({
-      ...a,
-      Inhoud: localOverrides[a.Id] || a.Inhoud,
-      Lesuur: a.LesuurVan || '—'
-    }))
-  );
+    });
+
+    // 1. Filter cancelled if setting is on
+    if ($userSettings.hideCancelled) {
+      filtered = filtered.filter(a => a.Status !== 4 && a.Status !== 5);
+    }
+
+    filtered.sort((a, b) => a.Start.localeCompare(b.Start));
+
+    let processed: any[] = [];
+
+    // 2. Combine lessons if setting is on
+    if ($userSettings.combineLessons) {
+      for (const app of filtered) {
+        const last = processed[processed.length - 1];
+        
+        // Match same subject, teacher, location and exact consecutive timing
+        const isSameSubject = last && 
+                             (last.Vakken?.[0]?.Omschrijving === app.Vakken?.[0]?.Omschrijving) &&
+                             (last.Docenten?.[0]?.Naam === app.Docenten?.[0]?.Naam) &&
+                             (last.Lokatie === app.Lokatie);
+        const isConsecutive = last && last.Einde === app.Start;
+
+        if (isSameSubject && isConsecutive) {
+          last.Einde = app.Einde;
+          last.LesuurTotMet = app.LesuurTotMet || app.LesuurVan;
+          last.IsCombined = true;
+        } else {
+          processed.push({ ...app });
+        }
+      }
+    } else {
+      processed = [...filtered];
+    }
+
+    // 3. Add break separators if setting is on
+    if ($userSettings.showBreakSeparator) {
+      const withBreaks: any[] = [];
+      for (let i = 0; i < processed.length; i++) {
+        const current = processed[i];
+        if (i > 0) {
+          const prev = processed[i - 1];
+          const prevEnd = new Date(prev.Einde);
+          const currStart = new Date(current.Start);
+          const diffMs = currStart.getTime() - prevEnd.getTime();
+          const diffMin = Math.round(diffMs / 60000);
+
+          if (diffMin > 0 && diffMin < 240) { // Only show breaks shorter than 4 hours
+            withBreaks.push({
+              id: `break-${i}`,
+              displayType: 'break',
+              Duration: diffMin,
+              Start: prev.Einde,
+              Einde: current.Start
+            });
+          }
+        }
+        withBreaks.push(current);
+      }
+      processed = withBreaks;
+    }
+
+    return processed.map(a => {
+      if (a.displayType === 'break') return a;
+      return {
+        ...a,
+        Inhoud: localOverrides[a.Id] || a.Inhoud,
+        Lesuur: a.IsCombined 
+          ? `${a.LesuurVan}–${a.LesuurTotMet || a.LesuurVan}`
+          : (a.LesuurVan || '—')
+      };
+    });
+  });
+
 
   function nextDay() {
     selectedDate = new Date(selectedDate.setDate(selectedDate.getDate() + 1));
@@ -89,8 +158,25 @@
     loadAppointments();
   }
 
+  async function handleDownload(bijlage: any) {
+    if (downloadingFile) return;
+    try {
+      const url = bijlage.Links.find((l: any) => l.Rel === 'Self')?.Href;
+      if (!url) return;
+      downloadingFile = bijlage.Naam;
+      const path = await downloadFile(url, bijlage.Naam);
+      alert(`Bestand gedownload naar: ${path}`);
+    } catch (e) {
+      alert(`Download mislukt: ${e}`);
+    } finally {
+      downloadingFile = null;
+    }
+  }
+
   async function openDetail(app: any) {
+    if (app.displayType === 'break') return;
     loadingDetail = true;
+    showDetail = true;
     try {
       const pid = $personId;
       const eventId = app.Id;
@@ -112,6 +198,7 @@
       loadingDetail = false;
     }
   }
+
 
   function saveLocalOverride() {
     if (!selectedAppointment) return;
@@ -232,9 +319,21 @@
         <h1 class="text-xl font-black text-white italic tracking-tighter">Agenda</h1>
         <button
           onclick={() => { appointments = []; loadAppointments(); }}
-          class="p-1.5 text-gray-500 hover:text-primary-400 transition-all hover:rotate-180 duration-500"
+          class="p-1.5 text-gray-400 hover:text-primary-400 transition-all hover:rotate-180 duration-500"
+          title="Verversen"
         >
           <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
+        </button>
+        <button
+          onclick={() => $userSettings.hideCancelled = !$userSettings.hideCancelled}
+          class="p-1.5 {$userSettings.hideCancelled ? 'text-gray-600' : 'text-primary-400'} hover:text-primary-300 transition-all"
+          title={$userSettings.hideCancelled ? 'Uitgevallen lessen tonen' : 'Uitgevallen lessen verbergen'}
+        >
+          {#if $userSettings.hideCancelled}
+            <svg class="w-4.5 h-4.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68M6.61 6.61A13.52 13.52 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61M2 2l20 20"/></svg>
+          {:else}
+            <svg class="w-4.5 h-4.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+          {/if}
         </button>
       </div>
 
@@ -327,92 +426,131 @@
       </div>
     {:else}
       {#each dayAppointments as app}
-        <button
-          onclick={() => openDetail(app)}
-          class="w-full text-left glass rounded-3xl p-4 flex gap-4 transition-all active:scale-[0.98] group relative overflow-hidden
-                 {app.InfoType === 1 && !app.Afgerond ? 'border-primary-500/30' : ''}
-                 {app.Afgerond ? 'opacity-60' : ''}"
-        >
-          <!-- Background accent -->
-          <div class="absolute inset-0 bg-gradient-to-r from-primary-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
-          {#if app.InfoType === 1 && !app.Afgerond}
-            <div class="absolute top-0 right-0 w-32 h-32 bg-primary-500/5 blur-3xl -mr-16 -mt-16"></div>
-          {/if}
-          
-          <!-- Time/Period -->
-          <div class="flex flex-col items-center justify-center min-w-[42px] gap-0.5 relative z-10">
-            <span class="text-[9px] font-black text-gray-600 uppercase tracking-tight">Les</span>
-            <span class="text-xl font-black text-white italic leading-none">{app.Lesuur}</span>
-            <div class="h-px w-5 bg-surface-700 my-1"></div>
-            <span class="text-[9px] font-bold text-gray-500">{formatTime(app.Start)}</span>
-          </div>
-
-          <!-- Vertical Divider -->
-          <div class="w-px bg-surface-800/80 my-1"></div>
-
-          <!-- Info -->
-          <div class="flex-1 min-w-0 flex flex-col justify-center relative z-10">
-            <div class="flex items-center justify-between gap-2 mb-1">
-              <span class="text-sm font-black text-primary-400 uppercase tracking-tight truncate">
-                {app.Vakken?.[0]?.Omschrijving || app.Omschrijving || 'Vrij'}
+        {#if app.displayType === 'break'}
+          <div class="flex items-center gap-4 px-6 py-2 opacity-40 group hover:opacity-100 transition-opacity">
+            <div class="w-10 flex flex-col items-center">
+              <div class="h-4 w-0.5 bg-surface-700"></div>
+            </div>
+            <div class="flex-1 flex items-center gap-3">
+              <div class="h-[1px] flex-1 bg-gradient-to-r from-surface-800 to-transparent"></div>
+              <span class="text-[9px] font-black uppercase tracking-[0.2em] text-gray-500 whitespace-nowrap">
+                {app.Duration} min pauze
               </span>
-              {#if app.Docenten?.[0]}
-                <span class="text-[9px] font-bold text-gray-600 shrink-0 bg-surface-900/50 px-1.5 py-0.5 rounded-md border border-white/5">
-                  {app.Docenten[0].Naam}
+              <div class="h-[1px] flex-1 bg-gradient-to-l from-surface-800 to-transparent"></div>
+            </div>
+          </div>
+        {:else}
+          <div
+            role="button"
+            tabindex="0"
+            onclick={() => openDetail(app)}
+            onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDetail(app); } }}
+            class="w-full text-left glass rounded-3xl p-4 flex gap-4 transition-all active:scale-[0.98] group relative overflow-hidden cursor-pointer
+                   {app.InfoType === 1 && !app.Afgerond ? 'border-primary-500/30' : ''}
+                   {app.Status === 4 || app.Status === 5 ? 'border-red-500/40 bg-red-500/5' : ''}
+                   {app.Afgerond ? 'opacity-60' : ''}"
+          >
+            <!-- Background accent -->
+            {#if app.Status === 4 || app.Status === 5}
+              <div class="absolute inset-0 bg-gradient-to-r from-red-500/10 to-transparent opacity-100 transition-opacity"></div>
+            {:else}
+              <div class="absolute inset-0 bg-gradient-to-r from-primary-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+            {/if}
+
+            {#if app.InfoType === 1 && !app.Afgerond}
+              <div class="absolute top-0 right-0 w-32 h-32 bg-primary-500/5 blur-3xl -mr-16 -mt-16"></div>
+            {/if}
+            
+            <!-- Time/Period -->
+            <div class="flex flex-col items-center justify-center min-w-[42px] gap-0.5 relative z-10">
+              <span class="text-[9px] font-black {app.Status === 4 || app.Status === 5 ? 'text-red-400' : 'text-gray-600'} uppercase tracking-tight">
+                {app.IsCombined ? 'Uren' : 'Les'}
+              </span>
+              <span class="text-xl font-black {app.Status === 4 || app.Status === 5 ? 'text-red-400' : 'text-white'} italic leading-none">{app.Lesuur}</span>
+              <div class="h-px w-5 {app.Status === 4 || app.Status === 5 ? 'bg-red-500/30' : 'bg-surface-700'} my-1"></div>
+              <span class="text-[9px] font-bold {app.Status === 4 || app.Status === 5 ? 'text-red-400/70' : 'text-gray-500'}">{formatTime(app.Start)}</span>
+            </div>
+
+            <!-- Vertical Divider -->
+            <div class="w-px {app.Status === 4 || app.Status === 5 ? 'bg-red-500/20' : 'bg-surface-800/80'} my-1"></div>
+
+            <!-- Info -->
+            <div class="flex-1 min-w-0 flex flex-col justify-center relative z-10">
+              <div class="flex items-center justify-between gap-2 mb-1">
+                <span class="text-sm font-black {app.Status === 4 || app.Status === 5 ? 'text-red-400 line-through' : 'text-primary-400'} uppercase tracking-tight truncate">
+                  {app.Vakken?.[0]?.Omschrijving || app.Omschrijving || 'Vrij'}
                 </span>
+                {#if app.Docenten?.[0]}
+                  <span class="text-[9px] font-bold {app.Status === 4 || app.Status === 5 ? 'text-red-400/60' : 'text-gray-600'} shrink-0 bg-surface-900/50 px-1.5 py-0.5 rounded-md border border-white/5">
+                    {app.Docenten[0].Naam}
+                  </span>
+                {/if}
+              </div>
+
+              <div class="flex items-center gap-3 text-[10px] font-bold {app.Status === 4 || app.Status === 5 ? 'text-red-400/60' : 'text-gray-500'}">
+                <div class="flex items-center gap-1">
+                  <svg class="w-3 h-3 currentcolor" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
+                  <span class="truncate">{app.Lokatie || '—'}</span>
+                </div>
+                <div class="flex items-center gap-1">
+                  <svg class="w-3 h-3 currentcolor" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+                  <span>Tot {formatTime(app.Einde)}</span>
+                </div>
+              </div>
+
+              {#if app.Status === 4 || app.Status === 5}
+                <div class="mt-2 flex">
+                  <span class="px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest border border-red-500/40 text-red-400 bg-red-500/10">
+                    Uitgevallen
+                  </span>
+                </div>
+              {:else if app.InfoType && app.InfoType !== 0}
+                <div class="mt-2 flex">
+                  <span class="px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest border {getInfoColor(app.InfoType)}">
+                    {getInfoLabel(app.InfoType)}
+                  </span>
+                </div>
+              {/if}
+
+              {#if app.Aantekening}
+                <div class="mt-2 text-[10px] text-gray-600 italic bg-surface-900/40 p-1.5 rounded-lg border border-white/5 line-clamp-1">
+                  {app.Aantekening}
+                </div>
               {/if}
             </div>
 
-            <div class="flex items-center gap-3 text-[10px] font-bold text-gray-500">
-              <div class="flex items-center gap-1">
-                <svg class="w-3 h-3 text-gray-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
-                <span class="truncate">{app.Lokatie || '—'}</span>
-              </div>
-              <div class="flex items-center gap-1">
-                <svg class="w-3 h-3 text-gray-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
-                <span>Tot {formatTime(app.Einde)}</span>
-              </div>
+            <!-- Status Indicators -->
+            <div class="flex flex-col items-center justify-center gap-1.5 shrink-0 relative z-10">
+              {#if app.InfoType === 1}
+                <button 
+                  onclick={(e) => { e.stopPropagation(); toggleDone(app); }}
+                  class="w-8 h-8 rounded-full border-2 transition-all flex items-center justify-center
+                         {app.Afgerond 
+                           ? 'bg-emerald-500 border-emerald-400 text-white' 
+                           : 'bg-surface-900 border-surface-700 text-transparent hover:border-primary-500 focus:scale-110'}"
+                >
+                  <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="4"><path d="M20 6L9 17L4 12"/></svg>
+                </button>
+              {:else if app.Status === 4 || app.Status === 5} <!-- Cancelled -->
+                <div class="w-7 h-7 rounded-full bg-red-500 border border-red-400 flex items-center justify-center text-white shadow-lg shadow-red-500/20 animate-pulse">
+                  <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="4"><path d="M18 6 6 18M6 6l12 12"/></svg>
+                </div>
+              {:else if app.Inhoud || app.HeeftBijlagen} <!-- Content or Attachments present -->
+                 <div class="w-7 h-7 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-gray-500">
+                  <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                    {#if app.HeeftBijlagen}
+                      <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.51a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+                    {:else}
+                      <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/>
+                    {/if}
+                  </svg>
+                </div>
+              {/if}
             </div>
-
-            {#if app.InfoType && app.InfoType !== 0}
-              <div class="mt-2 flex">
-                <span class="px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest border {getInfoColor(app.InfoType)}">
-                  {getInfoLabel(app.InfoType)}
-                </span>
-              </div>
-            {/if}
-
-            {#if app.Aantekening}
-              <div class="mt-2 text-[10px] text-gray-600 italic bg-surface-900/40 p-1.5 rounded-lg border border-white/5 line-clamp-1">
-                {app.Aantekening}
-              </div>
-            {/if}
           </div>
-
-          <!-- Status Indicators -->
-          <div class="flex flex-col items-center justify-center gap-1.5 shrink-0 relative z-10">
-            {#if app.InfoType === 1}
-              <button 
-                onclick={(e) => { e.stopPropagation(); toggleDone(app); }}
-                class="w-8 h-8 rounded-full border-2 transition-all flex items-center justify-center
-                       {app.Afgerond 
-                         ? 'bg-emerald-500 border-emerald-400 text-white' 
-                         : 'bg-surface-900 border-surface-700 text-transparent hover:border-primary-500 focus:scale-110'}"
-              >
-                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="4"><path d="M20 6L9 17L4 12"/></svg>
-              </button>
-            {:else if app.Status === 4} <!-- Cancelled -->
-              <div class="w-7 h-7 rounded-full bg-red-500/10 border border-red-500/20 flex items-center justify-center text-red-500">
-                <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M18 6 6 18M6 6l12 12"/></svg>
-              </div>
-            {:else if app.Inhoud} <!-- Content present -->
-               <div class="w-7 h-7 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-gray-500">
-                <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>
-              </div>
-            {/if}
-          </div>
-        </button>
+        {/if}
       {/each}
+
     {/if}
   </main>
 </div>
@@ -535,12 +673,46 @@
             </div>
           </div>
         {/if}
+        {#if selectedAppointment.Bijlagen && selectedAppointment.Bijlagen.length > 0}
+          <div class="space-y-3 pb-4">
+            <h3 class="text-[10px] font-black text-gray-100 uppercase tracking-widest flex items-center gap-2">
+              <div class="w-1 h-3 bg-blue-500 rounded-full"></div>
+              Bijlagen ({selectedAppointment.Bijlagen.length})
+            </h3>
+            <div class="grid gap-2">
+              {#each selectedAppointment.Bijlagen as bijlage}
+                <div class="flex items-center justify-between p-3 rounded-2xl bg-surface-950 border border-white/5 transition-all hover:border-white/10 group">
+                  <div class="flex items-center gap-3 overflow-hidden">
+                    <div class="w-8 h-8 rounded-lg bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400 shrink-0">
+                      <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.51a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+                    </div>
+                    <div class="flex flex-col min-w-0">
+                      <span class="text-xs font-bold text-gray-200 truncate">{bijlage.Naam}</span>
+                      <span class="text-[10px] text-gray-600 font-medium">{bijlage.Grootte ? Math.round(bijlage.Grootte / 1024) + ' KB' : '—'}</span>
+                    </div>
+                  </div>
+                  <button 
+                    onclick={() => handleDownload(bijlage)}
+                    disabled={downloadingFile === bijlage.Naam}
+                    class="p-2.5 rounded-xl bg-surface-800 text-gray-400 hover:text-white hover:bg-surface-700 disabled:opacity-50 transition-all active:scale-90"
+                  >
+                    {#if downloadingFile === bijlage.Naam}
+                      <svg class="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+                    {:else}
+                      <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+                    {/if}
+                  </button>
+                </div>
+              {/each}
+            </div>
+          </div>
+        {/if}
       </div>
       
       <!-- Footer Button (Close) -->
       <div class="p-4 pt-0 shrink-0 md:hidden">
         <button 
-          onclick={() => { selectedAppointment = null; editMode = false; }}
+          onclick={() => { showDetail = false; selectedAppointment = null; editMode = false; }}
           class="w-full py-3 rounded-xl bg-surface-800 text-white text-xs font-black uppercase tracking-tight hover:bg-surface-700 transition-all"
         >
           Sluiten
@@ -549,6 +721,7 @@
     </div>
   </div>
 {/if}
+
 
 <!-- New Appointment Modal -->
 {#if isCreating}
