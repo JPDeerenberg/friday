@@ -144,13 +144,19 @@ class SyncService : Service() {
             }
             Log.d(TAG, "Sync result preview: $resultPreview")
             
-            if (resultString != "ERROR" && !resultString.startsWith("AUTH_ERROR")) {
+            if (resultString != "ERROR" && !resultString.startsWith("ERROR:") && !resultString.startsWith("AUTH_ERROR:")) {
                 processSyncResult(resultString)
                 val time = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date())
-                updateNotification("Monitoring active (Last sync: $time)")
+                updateNotification("Monitoring actief (Laatste sync: $time)")
             } else {
-                Log.w(TAG, "Sync failed or requires auth: $resultString")
-                updateNotification("Monitoring active (Sync failed)")
+                Log.w(TAG, "Sync failed: $resultString")
+                val errorMsg = when {
+                    resultString.startsWith("AUTH_ERROR:") -> "Inloggen vereist"
+                    resultString.contains("NO_TOKENS") -> "Sessie verlopen"
+                    resultString.contains("FETCH_") -> "Netwerkfout"
+                    else -> "Sync mislukt"
+                }
+                updateNotification("Monitoring actief ($errorMsg)")
             }
             
         } catch (e: Exception) {

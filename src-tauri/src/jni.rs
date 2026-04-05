@@ -271,7 +271,7 @@ async fn do_sync(data_dir: &str) -> String {
         Some(data) => data,
         None => {
             eprintln!("FridaySyncWorker (Rust): Could not find tokens.json in any location: {:?}", paths);
-            return "NO_TOKENS".to_string()
+            return "ERROR: NO_TOKENS".to_string()
         },
     };
 
@@ -279,7 +279,7 @@ async fn do_sync(data_dir: &str) -> String {
         Ok(ts) => ts,
         Err(e) => {
             eprintln!("FridaySyncWorker (Rust): Failed to parse tokens: {}", e);
-            return "INVALID_TOKENS".to_string()
+            return "ERROR: INVALID_TOKENS".to_string()
         },
     };
 
@@ -297,14 +297,26 @@ async fn do_sync(data_dir: &str) -> String {
 
     let person_id = match client.token_set.as_ref().unwrap().person_id {
         Some(id) => id,
-        None => return "NO_PERSON_ID".to_string(),
+        None => return "ERROR: NO_PERSON_ID".to_string(),
     };
 
-    // Fetch all data (serially because client is mut)
-    let messages_result = fetch_messages(&mut client).await;
-    let grades_result = fetch_recent_grades(&mut client, person_id).await;
-    let assignments_result = fetch_assignments(&mut client, person_id).await;
-    let calendar_result = fetch_calendar(&mut client, person_id, &today_string(), &tomorrow_string()).await;
+    // Fetch all data (return early on critical API errors)
+    let messages_result = match fetch_messages(&mut client).await {
+        Ok(v) => v,
+        Err(e) => return format!("ERROR: FETCH_MESSAGES: {}", e),
+    };
+    let grades_result = match fetch_recent_grades(&mut client, person_id).await {
+        Ok(v) => v,
+        Err(e) => return format!("ERROR: FETCH_GRADES: {}", e),
+    };
+    let assignments_result = match fetch_assignments(&mut client, person_id).await {
+        Ok(v) => v,
+        Err(e) => return format!("ERROR: FETCH_ASSIGNMENTS: {}", e),
+    };
+    let calendar_result = match fetch_calendar(&mut client, person_id, &today_string(), &tomorrow_string()).await {
+        Ok(v) => v,
+        Err(e) => return format!("ERROR: FETCH_CALENDAR: {}", e),
+    };
 
     // Build JSON result with all data for change detection
     let sync_data = serde_json::json!({
@@ -326,35 +338,35 @@ fn tomorrow_string() -> String {
     (Utc::now() + chrono::Duration::days(1)).format("%Y-%m-%d").to_string()
 }
 
-async fn fetch_messages(client: &mut MagisterClient) -> serde_json::Value {
+async fn fetch_messages(client: &mut MagisterClient) -> Result<serde_json::Value, String> {
     match client.get("berichten/mappen/1/berichten?top=10&skip=0").await {
         Ok(data) => {
             if let Some(items) = data.get("items").filter(|v| v.is_array()) {
-                items.clone()
+                Ok(items.clone())
             } else {
-                data
+                Ok(data)
             }
         },
-        Err(_) => serde_json::json!([])
+        Err(e) => Err(e.to_string())
     }
 }
 
-async fn fetch_recent_grades(client: &mut MagisterClient, person_id: i64) -> serde_json::Value {
+async fn fetch_recent_grades(client: &mut MagisterClient, person_id: i64) -> Result<serde_json::Value, String> {
     let url = format!("personen/{}/cijfers/laatste?top=50&skip=0", person_id);
     match client.get(&url).await {
         Ok(data) => {
             // Extract items from the response
             if let Some(items) = data.get("items").filter(|v| v.is_array()) {
-                items.clone()
+                Ok(items.clone())
             } else {
-                data
+                Ok(data)
             }
         },
-        Err(_) => serde_json::json!([])
+        Err(e) => Err(e.to_string())
     }
 }
 
-async fn fetch_assignments(client: &mut MagisterClient, person_id: i64) -> serde_json::Value {
+async fn fetch_assignments(client: &mut MagisterClient, person_id: i64) -> Result<serde_json::Value, String> {
     // Get assignments for next 14 days
     let today = Utc::now().format("%Y-%m-%d").to_string();
     let two_weeks = (Utc::now() + chrono::Duration::days(14)).format("%Y-%m-%d").to_string();
@@ -362,25 +374,25 @@ async fn fetch_assignments(client: &mut MagisterClient, person_id: i64) -> serde
     match client.get(&url).await {
         Ok(data) => {
             if let Some(items) = data.get("items").filter(|v| v.is_array()) {
-                items.clone()
+                Ok(items.clone())
             } else {
-                data
+                Ok(data)
             }
         },
-        Err(_) => serde_json::json!([])
+        Err(e) => Err(e.to_string())
     }
 }
 
-async fn fetch_calendar(client: &mut MagisterClient, person_id: i64, from: &str, to: &str) -> serde_json::Value {
+async fn fetch_calendar(client: &mut MagisterClient, person_id: i64, from: &str, to: &str) -> Result<serde_json::Value, String> {
     let url = format!("personen/{}/afspraken?van={}&tot={}", person_id, from, to);
     match client.get(&url).await {
         Ok(data) => {
             if let Some(items) = data.get("items").filter(|v| v.is_array()) {
-                items.clone()
+                Ok(items.clone())
             } else {
-                data
+                Ok(data)
             }
         },
-        Err(_) => serde_json::json!([])
+        Err(e) => Err(e.to_string())
     }
 }
