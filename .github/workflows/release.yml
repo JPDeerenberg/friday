@@ -74,7 +74,7 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.settings.is-android && 'aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android' || 'x86_64-unknown-linux-gnu' }}
+          targets: ${{ matrix.settings.is-android && 'aarch64-linux-android' || 'x86_64-unknown-linux-gnu' }}
 
       - name: Rust Cache
         uses: swatinem/rust-cache@v2
@@ -116,9 +116,9 @@ jobs:
         with:
           releaseId: ${{ needs.create-release.outputs.release_id }}
 
-      - name: Build Android App (Universal APK)
+      - name: Build Android App (Aarch64 APK)
         if: ${{ matrix.settings.is-android }}
-        run: pnpm tauri android build --apk
+        run: pnpm tauri android build --apk --target aarch64-linux-android
 
       - name: Install Build Tools for Signing
         if: ${{ matrix.settings.is-android }}
@@ -129,7 +129,7 @@ jobs:
         uses: r0adkll/sign-android-release@v1
         id: sign_app
         with:
-          releaseDirectory: src-tauri/gen/android/app/build/outputs/apk/universal/release
+          releaseDirectory: src-tauri/gen/android/app/build/outputs/apk/arm64-v8a/release
           signingKeyBase64: ${{ secrets.ANDROID_SIGNING_KEY }}
           alias: ${{ secrets.ANDROID_KEY_ALIAS }}
           keyStorePassword: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}

@@ -243,6 +243,7 @@ async fn do_sync(data_dir: &str) -> String {
     use std::path::{Path, PathBuf};
 
     let dir = PathBuf::from(data_dir);
+    eprintln!("FridaySync (Rust): do_sync started for dir: {:?}", dir);
     
     // Token search paths - ordered by likelihood:
     // Path 1: app_data_dir/tokens.json (Tauri 2 default — caller should pass this)
@@ -258,9 +259,9 @@ async fn do_sync(data_dir: &str) -> String {
     let mut token_data = None;
     let mut successful_path = None;
     for path in &paths {
-        println!("FridaySyncWorker (Rust): Checking for tokens at {:?}", path);
+        eprintln!("FridaySync (Rust): Checking for tokens at {:?}", path);
         if let Ok(data) = std::fs::read_to_string(path) {
-            println!("FridaySyncWorker (Rust): Found tokens at {:?}", path);
+            eprintln!("FridaySync (Rust): Found tokens at {:?}", path);
             token_data = Some(data);
             successful_path = Some(path.clone());
             break;

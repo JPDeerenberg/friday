@@ -114,13 +114,14 @@ class SyncService : Service() {
     }
 
     private fun performSync() {
-        val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
-        wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Friday::SyncWakeLock")
-        
         try {
             updateNotification("Syncing now...")
+            
+            val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+            wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Friday::SyncWakeLock")
             wakeLock?.acquire(10 * 60 * 1000L /*10 minutes max*/)
-            Log.d(TAG, "=== Starting background sync ===")
+            
+            Log.d(TAG, "=== Starting background sync task ===")
             
             // Tauri saves tokens.json to app_data_dir which is the PARENT of filesDir.
             // filesDir = /data/user/0/com.joris.friday/files
@@ -137,8 +138,8 @@ class SyncService : Service() {
 
             val resultPreview = when {
                 resultString.startsWith("ERROR") || resultString.startsWith("AUTH_ERROR") ||
-                resultString == "NO_TOKENS" || resultString == "INVALID_TOKENS" ||
-                resultString == "NO_PERSON_ID" -> resultString
+                resultString.contains("NO_TOKENS") || resultString.contains("INVALID_TOKENS") ||
+                resultString.contains("NO_PERSON_ID") -> resultString
                 resultString.length > 200 -> resultString.substring(0, 200) + "..."
                 else -> resultString
             }
@@ -152,11 +153,13 @@ class SyncService : Service() {
                 Log.w(TAG, "Sync failed: $resultString")
                 val errorMsg = when {
                     resultString.startsWith("AUTH_ERROR:") -> "Inloggen vereist"
-                    resultString.contains("NO_TOKENS") -> "Sessie verlopen"
-                    resultString.contains("FETCH_") -> "Netwerkfout"
-                    else -> "Sync mislukt"
+                    resultString.contains("NO_TOKENS") -> "Geen sessie"
+                    resultString.contains("FETCH_") -> "Magister fout"
+                    resultString.contains("timeout") || resultString.contains("timed out") -> "Time-out"
+                    else -> "Contact verloren"
                 }
-                updateNotification("Monitoring actief ($errorMsg)")
+                val time = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date())
+                updateNotification("Monitoring actief ($errorMsg @ $time)")
             }
             
         } catch (e: Exception) {

@@ -46,7 +46,10 @@ pub struct MagisterClient {
 impl MagisterClient {
     pub fn new() -> Self {
         Self {
-            http: reqwest::Client::new(),
+            http: reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(30))
+                .build()
+                .unwrap_or_else(|_| reqwest::Client::new()),
             token_set: None,
             auth_flow: None,
         }
