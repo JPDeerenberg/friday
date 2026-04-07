@@ -19,13 +19,13 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_opener::init())
-        .setup(|app| {
+        .setup(|_app| {
             #[cfg(mobile)]
             {
                 use tauri::Emitter;
                 use tauri_plugin_deep_link::DeepLinkExt;
-                let app_handle = app.handle().clone();
-                app.deep_link().on_open_url(move |event| {
+                let app_handle = _app.handle().clone();
+                _app.deep_link().on_open_url(move |event| {
                     for url in event.urls() {
                         if url.scheme() == "m6loapp" {
                             app_handle.emit("auth-callback", url.as_str()).ok();

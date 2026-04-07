@@ -243,7 +243,8 @@ async fn do_sync(data_dir: &str) -> String {
     use std::path::{Path, PathBuf};
 
     let dir = PathBuf::from(data_dir);
-    eprintln!("FridaySync (Rust): do_sync started for dir: {:?}", dir);
+    eprintln!("=== FridaySync (Rust): do_sync started ===");
+    eprintln!("FridaySync (Rust): app_data_dir: {:?}", dir);
     
     // Token search paths - ordered by likelihood:
     // Path 1: app_data_dir/tokens.json (Tauri 2 default — caller should pass this)
@@ -258,28 +259,46 @@ async fn do_sync(data_dir: &str) -> String {
 
     let mut token_data = None;
     let mut successful_path = None;
-    for path in &paths {
-        eprintln!("FridaySync (Rust): Checking for tokens at {:?}", path);
-        if let Ok(data) = std::fs::read_to_string(path) {
-            eprintln!("FridaySync (Rust): Found tokens at {:?}", path);
-            token_data = Some(data);
-            successful_path = Some(path.clone());
-            break;
+    
+    for (idx, path) in paths.iter().enumerate() {
+        let exists = path.exists();
+        eprintln!("FridaySync (Rust): Path {}: {:?} - exists: {}", idx + 1, path, exists);
+        if exists {
+            match std::fs::read_to_string(path) {
+                Ok(data) => {
+                    eprintln!("FridaySync (Rust): ✓ Successfully read tokens from path {}", idx + 1);
+                    token_data = Some(data);
+                    successful_path = Some(path.clone());
+                    break;
+                }
+                Err(e) => {
+                    eprintln!("FridaySync (Rust): Failed to read from {:?}: {}", path, e);
+                }
+            }
         }
     }
 
     let token_content = match token_data {
-        Some(data) => data,
+        Some(data) => {
+            eprintln!("FridaySync (Rust): Token content loaded: {} bytes", data.len());
+            data
+        },
         None => {
-            eprintln!("FridaySyncWorker (Rust): Could not find tokens.json in any location: {:?}", paths);
+            eprintln!("FridaySyncWorker (Rust): ERROR: Could not find tokens.json in any of these locations:");
+            for (idx, path) in paths.iter().enumerate() {
+                eprintln!("  Path {}: {:?}", idx + 1, path);
+            }
             return "ERROR: NO_TOKENS".to_string()
         },
     };
 
     let token_set: TokenSet = match serde_json::from_str(&token_content) {
-        Ok(ts) => ts,
+        Ok(ts) => {
+            eprintln!("FridaySync (Rust): ✓ Tokens parsed successfully");
+            ts
+        },
         Err(e) => {
-            eprintln!("FridaySyncWorker (Rust): Failed to parse tokens: {}", e);
+            eprintln!("FridaySyncWorker (Rust): ERROR: Failed to parse tokens: {}", e);
             return "ERROR: INVALID_TOKENS".to_string()
         },
     };
@@ -287,20 +306,31 @@ async fn do_sync(data_dir: &str) -> String {
     let mut client = MagisterClient::new();
     client.token_set = Some(token_set.clone());
 
+    eprintln!("FridaySync (Rust): Ensuring valid token...");
     if let Err(e) = client.ensure_valid_token().await {
+        eprintln!("FridaySync (Rust): ERROR: Token validation failed: {}", e);
         return format!("AUTH_ERROR: {}", e);
     }
+    eprintln!("FridaySync (Rust): ✓ Token is valid");
 
     // Save refreshed token if needed
     if let (Some(path), Ok(new_data)) = (successful_path, serde_json::to_string_pretty(&client.token_set)) {
         let _ = std::fs::write(path, new_data);
+        eprintln!("FridaySync (Rust): Token refreshed and saved");
     }
 
     let person_id = match client.token_set.as_ref().unwrap().person_id {
-        Some(id) => id,
-        None => return "ERROR: NO_PERSON_ID".to_string(),
+        Some(id) => {
+            eprintln!("FridaySync (Rust): Person ID: {}", id);
+            id
+        },
+        None => {
+            eprintln!("FridaySync (Rust): ERROR: No person_id in token");
+            return "ERROR: NO_PERSON_ID".to_string()
+        }
     };
 
+    eprintln!("FridaySync (Rust): Fetching data from Magister...");
     // Fetch all data (don't return early to allow partial syncs)
     let messages_result = fetch_messages(&mut client).await.unwrap_or_else(|e| {
         eprintln!("FridaySync (Rust): fetch_messages failed: {}", e);
@@ -319,6 +349,14 @@ async fn do_sync(data_dir: &str) -> String {
         serde_json::json!([])
     });
 
+    let msg_count = messages_result.as_array().map(|a| a.len()).unwrap_or(0);
+    let grades_count = grades_result.as_array().map(|a| a.len()).unwrap_or(0);
+    let assignments_count = assignments_result.as_array().map(|a| a.len()).unwrap_or(0);
+    let calendar_count = calendar_result.as_array().map(|a| a.len()).unwrap_or(0);
+
+    eprintln!("FridaySync (Rust): Data fetched - messages: {}, grades: {}, assignments: {}, calendar: {}", 
+        msg_count, grades_count, assignments_count, calendar_count);
+
     // Build JSON result with all data for change detection
     let sync_data = serde_json::json!({
         "messages": messages_result,
@@ -328,6 +366,7 @@ async fn do_sync(data_dir: &str) -> String {
         "syncTimestamp": chrono::Utc::now().timestamp()
     });
 
+    eprintln!("FridaySync (Rust): ✓ Sync completed successfully");
     serde_json::to_string(&sync_data).unwrap_or_else(|_| "SYNC_SUCCESS".to_string())
 }
 

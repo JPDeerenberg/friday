@@ -48,6 +48,14 @@ class MainActivity : TauriActivity() {
             this,
             true, true, true, true, false
         )
+        
+        // Restart sync service to ensure it's running
+        val serviceIntent = Intent(this, SyncService::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(serviceIntent)
+        } else {
+            startService(serviceIntent)
+        }
     }
 
   /**

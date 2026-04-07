@@ -7,6 +7,7 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
@@ -29,6 +30,7 @@ class SyncService : Service() {
     private var scheduler: ScheduledExecutorService? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private var syncIntervalMinutes: Long = 5L
+    private var isServiceRunning = false
 
     // Declare the native method
     private external fun runSync(dataDir: String): String
@@ -50,35 +52,73 @@ class SyncService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        Log.d(TAG, "SyncService created")
+        Log.d(TAG, "=== SyncService created ===")
         createNotificationChannel()
+        
         // Restore saved interval
         val prefs = getSharedPreferences("friday_prefs", Context.MODE_PRIVATE)
         syncIntervalMinutes = prefs.getLong(PREF_SYNC_INTERVAL, 5L)
         Log.d(TAG, "Sync interval restored: ${syncIntervalMinutes}m")
+        
+        // Initialize notification preferences with defaults
+        if (!prefs.contains("notifyMessages")) {
+            Log.d(TAG, "First run - initializing preferences with defaults")
+            prefs.edit().apply {
+                putBoolean("notifyMessages", true)
+                putBoolean("notifyGrades", true)
+                putBoolean("notifyDeadlines", true)
+                putBoolean("notifyCalendar", true)
+                putBoolean("autoDnd", false)
+                apply()
+            }
+        }
+        
+        // Register battery receiver to monitor power state
+        try {
+            val filter = IntentFilter().apply {
+                addAction(Intent.ACTION_BATTERY_CHANGED)
+                addAction(Intent.ACTION_DEVICE_STORAGE_LOW)
+                addAction(Intent.ACTION_DEVICE_STORAGE_OK)
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                registerReceiver(BatteryReceiver(), filter, Context.RECEIVER_NOT_EXPORTED)
+            } else {
+                registerReceiver(BatteryReceiver(), filter)
+            }
+            Log.d(TAG, "Battery receiver registered")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to register battery receiver", e)
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        Log.d(TAG, "SyncService onStartCommand: action=${intent?.action}")
+        Log.d(TAG, "=== SyncService onStartCommand ===")
+        Log.d(TAG, "Intent action: ${intent?.action}, scheduler running: ${scheduler?.isShutdown == false}")
 
         // Start as foreground service
         val notification = createNotification()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
-        } else {
-            startForeground(NOTIFICATION_ID, notification)
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+            } else {
+                startForeground(NOTIFICATION_ID, notification)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to start foreground: ${e.message}")
         }
 
         when (intent?.action) {
             ACTION_FORCE_SYNC -> {
                 // Immediately run a sync on a background thread
-                Log.d(TAG, "Force sync requested")
-                Executors.newSingleThreadExecutor().execute { performSync() }
+                Log.d(TAG, ">>> Force sync requested")
+                Executors.newSingleThreadExecutor().execute {
+                    performSync()
+                }
             }
             ACTION_SET_INTERVAL -> {
                 val seconds = intent.getLongExtra(EXTRA_INTERVAL_SECONDS, 300L)
                 val minutes = (seconds / 60L).coerceAtLeast(1L)
-                Log.d(TAG, "Interval update requested: ${seconds}s -> ${minutes}m")
+                Log.d(TAG, ">>> Interval update requested: ${seconds}s -> ${minutes}m")
                 syncIntervalMinutes = minutes
                 // Persist
                 getSharedPreferences("friday_prefs", Context.MODE_PRIVATE)
@@ -88,8 +128,14 @@ class SyncService : Service() {
             }
             else -> {
                 // Normal start — setup scheduler if not already running
-                if (scheduler == null) {
+                if (scheduler == null || scheduler?.isShutdown == true) {
+                    Log.d(TAG, ">>> Starting scheduler (was null or shut down)")
                     startScheduler()
+                } else {
+                    Log.d(TAG, ">>> Scheduler already running, performing immediate sync")
+                    Executors.newSingleThreadExecutor().execute {
+                        performSync()
+                    }
                 }
             }
         }
@@ -99,76 +145,118 @@ class SyncService : Service() {
     }
 
     private fun startScheduler() {
-        scheduler = Executors.newSingleThreadScheduledExecutor()
-        Log.d(TAG, "Scheduler starting: every ${syncIntervalMinutes} minute(s)")
-        scheduler?.scheduleAtFixedRate({
-            performSync()
-        }, 0, syncIntervalMinutes, TimeUnit.MINUTES)
+        try {
+            scheduler = Executors.newSingleThreadScheduledExecutor { runnable ->
+                Thread(runnable, "FridaySync-Scheduler").apply {
+                    isDaemon = false  // Important: prevent scheduler from becoming daemon
+                }
+            }
+            Log.d(TAG, ">>> Scheduler started: every ${syncIntervalMinutes} minute(s)")
+            
+            // Run first sync immediately after a short delay to allow initialization
+            scheduler?.schedule({
+                Log.d(TAG, ">>> Running immediate first sync")
+                performSync()
+            }, 5, TimeUnit.SECONDS)
+            
+            // Then schedule regular syncs
+            scheduler?.scheduleAtFixedRate({
+                Log.d(TAG, ">>> Running scheduled sync")
+                performSync()
+            }, syncIntervalMinutes, syncIntervalMinutes, TimeUnit.MINUTES)
+        } catch (e: Exception) {
+            Log.e(TAG, "ERROR: Failed to start scheduler", e)
+            scheduler = null
+        }
     }
 
     private fun restartScheduler() {
-        Log.d(TAG, "Restarting scheduler with new interval: ${syncIntervalMinutes}m")
-        scheduler?.shutdownNow()
+        try {
+            Log.d(TAG, ">>> Restarting scheduler with new interval: ${syncIntervalMinutes}m")
+            scheduler?.shutdown()
+            // Give it time to shut down
+            Thread.sleep(500)
+        } catch (e: Exception) {
+            Log.e(TAG, "ERROR: Error during scheduler shutdown", e)
+        }
         scheduler = null
         startScheduler()
     }
 
     private fun performSync() {
+        var syncStartTime = System.currentTimeMillis()
+        
+        // Check if sync is paused due to storage issues
+        val prefs = getSharedPreferences("friday_prefs", Context.MODE_PRIVATE)
+        if (prefs.getBoolean("sync_paused_storage", false)) {
+            Log.w(TAG, "Sync paused: storage full or low")
+            updateNotification("Monitoring actief (Opslag vol)")
+            return
+        }
+        
         try {
-            updateNotification("Syncing now...")
+            // Get data directory - where Tauri stores tokens.json
+            val dataDir = filesDir.parentFile?.absolutePath ?: filesDir.absolutePath
             
+            // Acquire wakelockfor sync operation (2 minute max)
             val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
             wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Friday::SyncWakeLock")
-            wakeLock?.acquire(10 * 60 * 1000L /*10 minutes max*/)
+            wakeLock?.acquire(2 * 60 * 1000L) // 2 minutes max
             
-            Log.d(TAG, "=== Starting background sync task ===")
-            
-            // Tauri saves tokens.json to app_data_dir which is the PARENT of filesDir.
-            // filesDir = /data/user/0/com.joris.friday/files
-            // app_data_dir = /data/user/0/com.joris.friday  <-- tokens.json is here
-            val dataDir = filesDir.parentFile?.absolutePath ?: filesDir.absolutePath
-            Log.d(TAG, "Data dir: $dataDir")
+            Log.d(TAG, "=== Starting background sync (dataDir=$dataDir) ===")
+            updateNotification("Syncing now...")
             
             val resultString = try {
                 runSync(dataDir)
             } catch (e: Exception) {
-                Log.e(TAG, "Native runSync crashed", e)
-                "ERROR"
+                Log.e(TAG, "ERROR: Native runSync crashed", e)
+                e.printStackTrace()
+                "ERROR: ${e.javaClass.simpleName}: ${e.message}"
             }
 
             val resultPreview = when {
-                resultString.startsWith("ERROR") || resultString.startsWith("AUTH_ERROR") ||
-                resultString.contains("NO_TOKENS") || resultString.contains("INVALID_TOKENS") ||
-                resultString.contains("NO_PERSON_ID") -> resultString
-                resultString.length > 200 -> resultString.substring(0, 200) + "..."
+                resultString.startsWith("ERROR:") || resultString.startsWith("AUTH_ERROR:") -> resultString.take(100)
+                resultString.length > 100 -> resultString.substring(0, 100) + "..."
                 else -> resultString
             }
-            Log.d(TAG, "Sync result preview: $resultPreview")
             
-            if (resultString != "ERROR" && !resultString.startsWith("ERROR:") && !resultString.startsWith("AUTH_ERROR:")) {
-                processSyncResult(resultString)
-                val time = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date())
-                updateNotification("Monitoring actief (Laatste sync: $time)")
-            } else {
+            val syncDurationMs = System.currentTimeMillis() - syncStartTime
+            Log.d(TAG, "Sync completed in ${syncDurationMs}ms")
+            Log.d(TAG, "Sync result: $resultPreview")
+            
+            if (resultString.startsWith("ERROR:") || resultString.startsWith("AUTH_ERROR:")) {
                 Log.w(TAG, "Sync failed: $resultString")
                 val errorMsg = when {
                     resultString.startsWith("AUTH_ERROR:") -> "Inloggen vereist"
                     resultString.contains("NO_TOKENS") -> "Geen sessie"
                     resultString.contains("FETCH_") -> "Magister fout"
                     resultString.contains("timeout") || resultString.contains("timed out") -> "Time-out"
-                    else -> "Contact verloren"
+                    else -> resultString.take(50)
                 }
                 val time = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date())
                 updateNotification("Monitoring actief ($errorMsg @ $time)")
+            } else {
+                // Process successful sync result
+                processSyncResult(resultString)
+                val time = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date())
+                updateNotification("Monitoring actief (Sync: $time)")
             }
             
         } catch (e: Exception) {
-            Log.e(TAG, "Error during sync task", e)
-            updateNotification("Monitoring active (Error occurred)")
+            Log.e(TAG, "ERROR: Unexpected error during sync task", e)
+            e.printStackTrace()
+            updateNotification("Monitoring active (Fout)")
         } finally {
             if (wakeLock?.isHeld == true) {
-                wakeLock?.release()
+                try {
+                    wakeLock?.release()
+                    Log.d(TAG, "Wakelock released")
+                } catch (e: Exception) {
+                    Log.e(TAG, "ERROR: Failed to release wakelock", e)
+                }
             }
+            val totalMs = System.currentTimeMillis() - syncStartTime
+            Log.d(TAG, "=== Sync task finished (total time: ${totalMs}ms) ===")
         }
     }
 

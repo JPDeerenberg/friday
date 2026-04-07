@@ -434,6 +434,7 @@ pub fn open_notification_policy_settings(app: AppHandle) -> Result<(), String> {
 pub fn get_debug_info(app: AppHandle) -> Result<String, String> {
     use tauri::Manager;
     use serde_json::json;
+    use std::time::SystemTime;
 
     let data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
     let token_path = data_dir.join("tokens.json");
@@ -442,42 +443,111 @@ pub fn get_debug_info(app: AppHandle) -> Result<String, String> {
 
     // Check token file
     let token_exists = token_path.exists();
-    let token_size = token_path.metadata().map(|m| m.len()).unwrap_or(0);
+    let (token_size, token_modified) = token_path.metadata()
+        .map(|m| (m.len(), m.modified().ok()))
+        .unwrap_or((0, None));
 
     // Check state file
     let state_exists = state_path.exists();
-    let state_summary = if state_exists {
+    let (state_summary, state_modified) = if state_exists {
         match std::fs::read_to_string(&state_path) {
             Ok(content) => {
-                // Count message IDs in state
-                let msg_count = content.matches("\"id\"").count();
-                format!("exists ({} id refs, {} bytes)", msg_count, content.len())
+                // Parse state JSON to get diagnostic info
+                match serde_json::from_str::<serde_json::Value>(&content) {
+                    Ok(state_obj) => {
+                        let msg_count = state_obj.get("messages")
+                            .and_then(|v| v.as_array())
+                            .map(|arr| arr.len())
+                            .unwrap_or(0);
+                        let grades_count = state_obj.get("grades")
+                            .and_then(|v| v.as_array())
+                            .map(|arr| arr.len())
+                            .unwrap_or(0);
+                        let assignments_count = state_obj.get("assignments")
+                            .and_then(|v| v.as_array())
+                            .map(|arr| arr.len())
+                            .unwrap_or(0);
+                        let calendar_count = state_obj.get("calendar")
+                            .and_then(|v| v.as_array())
+                            .map(|arr| arr.len())
+                            .unwrap_or(0);
+                        let _last_sync = state_obj.get("lastSync")
+                            .and_then(|v| v.as_i64())
+                            .map(|ts| format!("{}", ts))
+                            .unwrap_or_else(|| "unknown".to_string());
+                        
+                        (
+                            format!("messages: {}, grades: {}, assignments: {}, calendar: {}", 
+                                msg_count, grades_count, assignments_count, calendar_count),
+                            state_path.metadata().ok().and_then(|m| m.modified().ok())
+                        )
+                    },
+                    Err(e) => (format!("parse error: {}", e), None),
+                }
             }
-            Err(e) => format!("read error: {}", e),
+            Err(e) => (format!("read error: {}", e), None),
         }
     } else {
         // Also check directly in app_data_dir (alternative path)
         let alt_state = data_dir.join("sync_state.json");
         if alt_state.exists() {
-            "exists (in app_data_dir, not files/)".to_string()
+            (
+                "exists (at app_data_dir, not files/)".to_string(),
+                alt_state.metadata().ok().and_then(|m| m.modified().ok())
+            )
         } else {
-            "not found".to_string()
+            ("not found".to_string(), None)
+        }
+    };
+
+    // Format timestamps
+    let format_time = |time: Option<SystemTime>| -> String {
+        match time {
+            Some(t) => match t.duration_since(SystemTime::UNIX_EPOCH) {
+                Ok(duration) => {
+                    let secs = duration.as_secs();
+                    let days_ago = (SystemTime::now()
+                        .duration_since(SystemTime::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs() - secs) / 86400;
+                    if days_ago == 0 {
+                        "today".to_string()
+                    } else if days_ago == 1 {
+                        "yesterday".to_string()
+                    } else {
+                        format!("{} days ago", days_ago)
+                    }
+                }
+                Err(_) => "unknown".to_string(),
+            },
+            None => "not available".to_string(),
         }
     };
 
     let info = json!({
+        "diagnostic": "Background Sync Status",
         "dataDir": data_dir.to_string_lossy(),
         "tokenFile": {
             "exists": token_exists,
             "sizeBytes": token_size,
+            "modified": format_time(token_modified),
             "path": token_path.to_string_lossy()
         },
         "stateFile": {
+            "exists": state_exists,
             "summary": state_summary,
+            "modified": format_time(state_modified),
             "path": state_path.to_string_lossy()
         },
         "platform": std::env::consts::OS,
-        "buildTime": env!("CARGO_PKG_VERSION"),
+        "version": env!("CARGO_PKG_VERSION"),
+        "status": if token_exists && state_exists {
+            "✓ Ready (tokens found, state synchronized)"
+        } else if token_exists {
+            "⚠ First sync pending (tokens found, no local state yet)"
+        } else {
+            "✗ Not ready (no tokens - authentication required)"
+        }
     });
 
     Ok(serde_json::to_string_pretty(&info).unwrap_or_else(|_| "{}".to_string()))
