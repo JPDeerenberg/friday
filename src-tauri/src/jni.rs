@@ -301,23 +301,23 @@ async fn do_sync(data_dir: &str) -> String {
         None => return "ERROR: NO_PERSON_ID".to_string(),
     };
 
-    // Fetch all data (return early on critical API errors)
-    let messages_result = match fetch_messages(&mut client).await {
-        Ok(v) => v,
-        Err(e) => return format!("ERROR: FETCH_MESSAGES: {}", e),
-    };
-    let grades_result = match fetch_recent_grades(&mut client, person_id).await {
-        Ok(v) => v,
-        Err(e) => return format!("ERROR: FETCH_GRADES: {}", e),
-    };
-    let assignments_result = match fetch_assignments(&mut client, person_id).await {
-        Ok(v) => v,
-        Err(e) => return format!("ERROR: FETCH_ASSIGNMENTS: {}", e),
-    };
-    let calendar_result = match fetch_calendar(&mut client, person_id, &today_string(), &tomorrow_string()).await {
-        Ok(v) => v,
-        Err(e) => return format!("ERROR: FETCH_CALENDAR: {}", e),
-    };
+    // Fetch all data (don't return early to allow partial syncs)
+    let messages_result = fetch_messages(&mut client).await.unwrap_or_else(|e| {
+        eprintln!("FridaySync (Rust): fetch_messages failed: {}", e);
+        serde_json::json!([])
+    });
+    let grades_result = fetch_recent_grades(&mut client, person_id).await.unwrap_or_else(|e| {
+        eprintln!("FridaySync (Rust): fetch_recent_grades failed: {}", e);
+        serde_json::json!([])
+    });
+    let assignments_result = fetch_assignments(&mut client, person_id).await.unwrap_or_else(|e| {
+        eprintln!("FridaySync (Rust): fetch_assignments failed: {}", e);
+        serde_json::json!([])
+    });
+    let calendar_result = fetch_calendar(&mut client, person_id, &today_string(), &tomorrow_string()).await.unwrap_or_else(|e| {
+        eprintln!("FridaySync (Rust): fetch_calendar failed: {}", e);
+        serde_json::json!([])
+    });
 
     // Build JSON result with all data for change detection
     let sync_data = serde_json::json!({
@@ -342,7 +342,7 @@ fn tomorrow_string() -> String {
 async fn fetch_messages(client: &mut MagisterClient) -> Result<serde_json::Value, String> {
     match client.get("berichten/mappen/1/berichten?top=10&skip=0").await {
         Ok(data) => {
-            if let Some(items) = data.get("items").filter(|v| v.is_array()) {
+            if let Some(items) = data.get("items").or(data.get("Items")).filter(|v| v.is_array()) {
                 Ok(items.clone())
             } else {
                 Ok(data)
@@ -357,7 +357,7 @@ async fn fetch_recent_grades(client: &mut MagisterClient, person_id: i64) -> Res
     match client.get(&url).await {
         Ok(data) => {
             // Extract items from the response
-            if let Some(items) = data.get("items").filter(|v| v.is_array()) {
+            if let Some(items) = data.get("items").or(data.get("Items")).filter(|v| v.is_array()) {
                 Ok(items.clone())
             } else {
                 Ok(data)
@@ -374,7 +374,7 @@ async fn fetch_assignments(client: &mut MagisterClient, person_id: i64) -> Resul
     let url = format!("personen/{}/opdrachten?einddatum={}&startdatum={}&top=50", person_id, two_weeks, today);
     match client.get(&url).await {
         Ok(data) => {
-            if let Some(items) = data.get("items").filter(|v| v.is_array()) {
+            if let Some(items) = data.get("items").or(data.get("Items")).filter(|v| v.is_array()) {
                 Ok(items.clone())
             } else {
                 Ok(data)
@@ -388,7 +388,7 @@ async fn fetch_calendar(client: &mut MagisterClient, person_id: i64, from: &str,
     let url = format!("personen/{}/afspraken?van={}&tot={}", person_id, from, to);
     match client.get(&url).await {
         Ok(data) => {
-            if let Some(items) = data.get("items").filter(|v| v.is_array()) {
+            if let Some(items) = data.get("items").or(data.get("Items")).filter(|v| v.is_array()) {
                 Ok(items.clone())
             } else {
                 Ok(data)
