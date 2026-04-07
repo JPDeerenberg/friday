@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="logo.png" width="180" alt="Friday Logo">
+  <img src="newlogo.png" width="180" alt="Friday Logo">
 </p>
 
 # Friday
