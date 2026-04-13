@@ -145,11 +145,12 @@ jobs:
 
       - name: Checkout GitHub Pages (For F-Droid History)
         if: ${{ matrix.settings.is-android }}
+        continue-on-error: true
         uses: actions/checkout@v4
         with:
           ref: gh-pages
           path: gh-pages
-          continue-on-error: true
+          fetch-depth: 1
 
       - name: Build F-Droid Repository
         if: ${{ matrix.settings.is-android }}
