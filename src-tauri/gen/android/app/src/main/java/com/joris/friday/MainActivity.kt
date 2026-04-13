@@ -43,13 +43,11 @@ class MainActivity : TauriActivity() {
             }
         }
 
-        // Ensure notification preferences are initialized for background sync
-        SyncStateManager.syncPreferencesFromFrontend(
-            this,
-            true, true, true, true, false
-        )
-        
-        // Restart sync service to ensure it's running
+        // NOTE: Do NOT overwrite stored notification preferences here.
+        // They are set by the frontend via Tauri's sync_notification_preferences command.
+        // Initialise defaults only on the very first launch (handled in SyncService.onCreate).
+
+        // Ensure the sync service is still running (it may have been killed by the OS).
         val serviceIntent = Intent(this, SyncService::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             startForegroundService(serviceIntent)

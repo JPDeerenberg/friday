@@ -68,7 +68,7 @@ class SyncService : Service() {
                 putBoolean("notifyGrades", true)
                 putBoolean("notifyDeadlines", true)
                 putBoolean("notifyCalendar", true)
-                putBoolean("autoDnd", false)
+                putBoolean("notifyAutoDnd", false)
                 apply()
             }
         }

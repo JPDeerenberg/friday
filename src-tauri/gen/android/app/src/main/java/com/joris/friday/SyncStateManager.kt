@@ -13,6 +13,10 @@ import java.io.File
 object SyncStateManager {
     
     private const val STATE_FILE = "sync_state.json"
+    /** Tracks which deadline IDs we have already sent notifications for, with a timestamp. */
+    private const val NOTIFIED_DEADLINES_FILE = "notified_deadlines.json"
+    /** Keep deadline notification records for 7 days so they don't repeat. */
+    private const val DEADLINE_TTL_MS = 7 * 24 * 60 * 60 * 1000L
     
     private var cachedState: JSONObject? = null
     
@@ -81,7 +85,36 @@ object SyncStateManager {
             e.printStackTrace()
         }
     }
-    
+
+    // ── Notified-deadline tracking ────────────────────────────────────────────
+
+    /** Load the map of deadline-id → timestamp when we notified the user. */
+    private fun loadNotifiedDeadlines(context: Context): JSONObject {
+        return try {
+            val file = File(context.filesDir, NOTIFIED_DEADLINES_FILE)
+            if (file.exists()) JSONObject(file.readText()) else JSONObject()
+        } catch (e: Exception) {
+            JSONObject()
+        }
+    }
+
+    /** Persist the notified-deadline map and also prune entries older than TTL. */
+    private fun saveNotifiedDeadlines(context: Context, map: JSONObject) {
+        try {
+            val now = System.currentTimeMillis()
+            val pruned = JSONObject()
+            map.keys().forEach { key ->
+                val ts = map.optLong(key, 0L)
+                if (now - ts < DEADLINE_TTL_MS) pruned.put(key, ts)
+            }
+            File(context.filesDir, NOTIFIED_DEADLINES_FILE).writeText(pruned.toString())
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    // ── detectChanges ─────────────────────────────────────────────────────────
+
     /**
      * Detect changes between current data and previous state.
      * Returns a SyncChanges object with all detected changes.
@@ -107,7 +140,7 @@ object SyncStateManager {
         
         val newMessages = detectNewMessages(prevMessages, currentMessages)
         val newGrades = detectNewGrades(prevGrades, currentGrades)
-        val upcomingDeadlines = detectAssignmentChanges(prevAssignments, currentAssignments)
+        val upcomingDeadlines = detectAssignmentChanges(context, prevAssignments, currentAssignments)
         val calendarChanges = detectCalendarChanges(prevCalendar, currentCalendar)
         
         // Save new state
@@ -221,52 +254,85 @@ object SyncStateManager {
         return grade.optString("vakNaam", "")
     }
     
-    private fun detectAssignmentChanges(previous: JSONArray?, current: JSONArray): List<DeadlineInfo> {
+    /**
+     * Detect assignment changes.
+     *
+     * Two cases produce notifications:
+     *  1. A truly *new* assignment ID (not seen before) → fire once.
+     *  2. An existing assignment whose deadline is within the next 24 h
+     *     AND we have not already sent a deadline notification for it.
+     *     The notification is remembered in notified_deadlines.json for 7 days
+     *     so it won't re-fire on every subsequent sync.
+     */
+    private fun detectAssignmentChanges(
+        context: Context,
+        previous: JSONArray?,
+        current: JSONArray
+    ): List<DeadlineInfo> {
         if (current.length() == 0) return emptyList()
         // When previous is null (first sync), save state but don't fire notifications
         if (previous == null) return emptyList()
+
         val changes = mutableListOf<DeadlineInfo>()
         val now = System.currentTimeMillis()
         val oneDayMs = 24 * 60 * 60 * 1000L
-        
+
         val previousIds = mutableSetOf<Long>()
         for (i in 0 until previous.length()) {
             previous.getJSONObject(i).optLong("Id").takeIf { id -> id > 0 }?.let { id -> previousIds.add(id) }
         }
-        
+
+        // Load (and later update) the set of deadline IDs we've already notified the user about.
+        val notifiedDeadlines = loadNotifiedDeadlines(context)
+        var notifiedDirty = false
+
         for (i in 0 until current.length()) {
             val assignment = current.getJSONObject(i)
             val id = assignment.optLong("Id")
             val deadline = assignment.optString("InleverenVoor", "")
-            
-            // 1. Detect New Assignments
+
+            // 1. Detect NEW assignments (never seen before)
             if (id > 0 && id !in previousIds) {
                 changes.add(DeadlineInfo(
                     id = id,
                     title = "Nieuwe opdracht: " + assignment.optString("Titel", "Opdracht"),
                     deadline = deadline
                 ))
-                continue // Don't add twice if it's also a near deadline
+                // Also immediately record it so we don't re-fire the 24h-deadline alarm
+                // if it happens to have a near deadline as well.
+                notifiedDeadlines.put(id.toString(), now)
+                notifiedDirty = true
+                continue // Don't add twice
             }
-            
-            // 2. Detect Upcoming Deadlines (within 24h)
-            if (deadline.isNotEmpty()) {
+
+            // 2. Detect UPCOMING deadlines (within 24h) that we haven't notified about yet.
+            if (id > 0 && deadline.isNotEmpty()) {
                 try {
                     val deadlineMs = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US)
                         .parse(deadline)?.time ?: continue
-                    
+
                     if (deadlineMs > now && deadlineMs <= now + oneDayMs) {
-                        changes.add(DeadlineInfo(
-                            id = id,
-                            title = "Deadline nabij: " + assignment.optString("Titel", "Opdracht"),
-                            deadline = deadline
-                        ))
+                        val key = id.toString()
+                        if (!notifiedDeadlines.has(key)) {
+                            changes.add(DeadlineInfo(
+                                id = id,
+                                title = "Deadline nabij: " + assignment.optString("Titel", "Opdracht"),
+                                deadline = deadline
+                            ))
+                            notifiedDeadlines.put(key, now)
+                            notifiedDirty = true
+                        }
                     }
                 } catch (e: Exception) {
                     // Skip malformed dates
                 }
             }
         }
+
+        if (notifiedDirty) {
+            saveNotifiedDeadlines(context, notifiedDeadlines)
+        }
+
         return changes
     }
     
@@ -341,40 +407,46 @@ object SyncStateManager {
     }
     
     /**
-     * Check if notification type is enabled in preferences
-     * Reads from file created by frontend
+     * Check if notification type is enabled in preferences.
+     * Always reads from SharedPreferences which is kept in sync by syncPreferencesFromFrontend.
      */
     fun isNotificationEnabled(context: Context, type: String): Boolean {
-        // First try SharedPreferences (fallback)
         val prefs = context.getSharedPreferences("friday_prefs", Context.MODE_PRIVATE)
-        if (!prefs.contains("initialized")) {
-            // Try reading from frontend's localStorage file
-            try {
-                val prefsFile = File(context.filesDir, "notification_prefs.json")
-                if (prefsFile.exists()) {
-                    val content = prefsFile.readText()
-                    val json = JSONObject(content)
-                    return when (type) {
-                        "messages" -> json.optBoolean("notifyMessages", true)
-                        "grades" -> json.optBoolean("notifyGrades", true)
-                        "deadlines" -> json.optBoolean("notifyDeadlines", true)
-                        "calendar" -> json.optBoolean("notifyCalendar", true)
-                        "autoDnd" -> json.optBoolean("notifyAutoDnd", false)
-                        else -> true
-                    }
-                }
-            } catch (e: Exception) {
-                // Ignore, use defaults
+
+        // If we have been initialised by the frontend, use SharedPreferences directly.
+        if (prefs.getBoolean("initialized", false)) {
+            return when (type) {
+                "messages"  -> prefs.getBoolean("notifyMessages", true)
+                "grades"    -> prefs.getBoolean("notifyGrades", true)
+                "deadlines" -> prefs.getBoolean("notifyDeadlines", true)
+                "calendar"  -> prefs.getBoolean("notifyCalendar", true)
+                "autoDnd"   -> prefs.getBoolean("notifyAutoDnd", false)
+                else        -> true
             }
         }
-        
+
+        // Fallback: read from the JSON file written by the frontend.
+        try {
+            val prefsFile = File(context.filesDir, "notification_prefs.json")
+            if (prefsFile.exists()) {
+                val json = JSONObject(prefsFile.readText())
+                return when (type) {
+                    "messages"  -> json.optBoolean("notifyMessages", true)
+                    "grades"    -> json.optBoolean("notifyGrades", true)
+                    "deadlines" -> json.optBoolean("notifyDeadlines", true)
+                    "calendar"  -> json.optBoolean("notifyCalendar", true)
+                    "autoDnd"   -> json.optBoolean("notifyAutoDnd", false)
+                    else        -> true
+                }
+            }
+        } catch (e: Exception) {
+            // Ignore, use defaults below
+        }
+
+        // Final defaults (not yet initialised)
         return when (type) {
-            "messages" -> prefs.getBoolean("notifyMessages", true)
-            "grades" -> prefs.getBoolean("notifyGrades", true)
-            "deadlines" -> prefs.getBoolean("notifyDeadlines", true)
-            "calendar" -> prefs.getBoolean("notifyCalendar", true)
-            "autoDnd" -> prefs.getBoolean("notifyAutoDnd", false)
-            else -> true
+            "autoDnd" -> false
+            else      -> true
         }
     }
     
@@ -401,7 +473,7 @@ object SyncStateManager {
 
     /**
      * Called from Rust JNI to sync notification preferences directly.
-     * signature: (Landroid/content/Context;ZZZZ)V
+     * signature: (Landroid/content/Context;ZZZZZ)V
      */
     @JvmStatic
     fun syncPreferencesFromFrontend(
