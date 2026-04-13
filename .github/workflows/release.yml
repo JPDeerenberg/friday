@@ -118,7 +118,7 @@ jobs:
       - name: Build Android App (Aarch64 APK)
         if: ${{ matrix.settings.is-android }}
         run: |
-          # Back to your preferred lean build
+          # Your preferred lean build
           pnpm tauri android build --apk --target aarch64 --split-per-abi
           ls -la src-tauri/gen/android/app/build/outputs/apk || true
 
@@ -162,11 +162,13 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Prevent apt-get from hanging and fetch the modern F-Droid PPA
+          # Ditch the broken PPA. Install apksigner via apt, and fdroidserver via pipx
           export DEBIAN_FRONTEND=noninteractive
-          sudo add-apt-repository -y ppa:fdroid/fdroidserver
           sudo apt-get update
-          sudo -E apt-get install -y fdroidserver apksigner unzip
+          sudo -E apt-get install -y apksigner unzip
+          
+          # Install modern F-Droid server via Python
+          pipx install fdroidserver
           
           # Ensure the repo directory exists
           mkdir -p gh-pages/fdroid/repo
