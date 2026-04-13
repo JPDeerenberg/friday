@@ -193,8 +193,8 @@ jobs:
           cd gh-pages/fdroid
           
           # Copy fastlane metadata for F-Droid
-          mkdir -p fastlane/metadata/android/com.joris.friday
-          cp -r ../../src-tauri/gen/android/fastlane/metadata/android/* fastlane/metadata/android/com.joris.friday/
+          mkdir -p metadata/com.joris.friday
+          cp -r ../../src-tauri/gen/android/fastlane/metadata/android/* metadata/com.joris.friday/
 
           
           # Decode your existing Android keystore
