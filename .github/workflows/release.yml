@@ -219,8 +219,8 @@ jobs:
             fi
           done
           
-          # Build the F-Droid repository metadata explicitly and pipe 'yes' to squash any interactive prompts
-          yes | fdroid update --create-metadata
+          # Build the F-Droid repository metadata explicitly
+          fdroid update --create-metadata
           
           # Clean up the git directory
           rm -rf ../.git || true
