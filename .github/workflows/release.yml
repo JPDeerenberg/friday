@@ -117,11 +117,14 @@ jobs:
 
       - name: Build Android App (Aarch64 APK)
         if: ${{ matrix.settings.is-android }}
-        run: pnpm tauri android build --apk --target aarch64 --split-per-abi
+        run: |
+          # Back to your preferred lean build
+          pnpm tauri android build --apk --target aarch64 --split-per-abi
+          ls -la src-tauri/gen/android/app/build/outputs/apk || true
 
-      - name: Install Build Tools for Signing
+      - name: Install Build Tools & Platforms for Signing
         if: ${{ matrix.settings.is-android }}
-        run: echo "y" | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "build-tools;29.0.3"
+        run: echo "y" | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "build-tools;29.0.3" "platform-tools" "platforms;android-36" "platforms;android-28"
 
       - name: Sign Android APK
         if: ${{ matrix.settings.is-android }}
@@ -157,22 +160,40 @@ jobs:
         env:
           KEYSTORE_BASE64: ${{ secrets.ANDROID_SIGNING_KEY }}
         run: |
+          set -euo pipefail
+
+          # Prevent apt-get from hanging and fetch the modern F-Droid PPA
+          export DEBIAN_FRONTEND=noninteractive
+          sudo add-apt-repository -y ppa:fdroid/fdroidserver
           sudo apt-get update
-          # Forcing apksigner installation so F-Droid doesn't have an existential crisis
-          sudo apt-get install -y fdroidserver apksigner
+          sudo -E apt-get install -y fdroidserver apksigner unzip
           
-          # Ensure the repo directory exists in case this is the first run
+          # Ensure the repo directory exists
           mkdir -p gh-pages/fdroid/repo
           
-          # Copy the freshly minted APK into the F-Droid repo
-          cp ${{ steps.sign_app.outputs.signedReleaseFile }} gh-pages/fdroid/repo/
+          # Copy signed APK(s) into the F-Droid repo safely
+          if [ -z "${{ steps.sign_app.outputs.signedReleaseFile }}" ]; then
+            echo "ERROR: sign_app output 'signedReleaseFile' is empty. Build failed or path changed."
+            ls -la src-tauri/gen/android/app/build/outputs/apk/arm64/release || true
+            exit 1
+          fi
+
+          for f in ${{ steps.sign_app.outputs.signedReleaseFile }}; do
+            if [ ! -f "$f" ]; then
+              echo "ERROR: signed file not found: $f"
+              ls -la "$(dirname "$f")" || true
+              exit 1
+            fi
+            echo "Copying signed APK: $f"
+            cp "$f" gh-pages/fdroid/repo/
+          done
           
           cd gh-pages/fdroid
           
-          # Decode your existing Android keystore to reuse it for signing the F-Droid repo
-          echo $KEYSTORE_BASE64 | base64 --decode > repo.jks
+          # Decode your existing Android keystore
+          echo "$KEYSTORE_BASE64" | base64 --decode > repo.jks
           
-          # Generate F-Droid config dynamically, now with explicit SDK paths
+          # Generate F-Droid config dynamically
           cat <<EOF > config.yml
           sdk_path: "$ANDROID_HOME"
           repo_url: "https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/fdroid/repo"
@@ -183,12 +204,24 @@ jobs:
           keystorepass: "${{ secrets.ANDROID_KEYSTORE_PASSWORD }}"
           keypass: "${{ secrets.ANDROID_KEY_PASSWORD }}"
           EOF
+
+          # Validate the APK before handing it over to fdroid
+          for apk in repo/*.apk; do
+            echo "Validating $apk"
+            if unzip -l "$apk" | grep -q "AndroidManifest.xml" && unzip -l "$apk" | grep -q "resources.arsc"; then
+              echo "$apk looks valid."
+            else
+              echo "ERROR: $apk is missing AndroidManifest.xml or resources.arsc. Aborting."
+              unzip -l "$apk" || true
+              exit 1
+            fi
+          done
           
-          # Build the F-Droid repository metadata explicitly
-          fdroid update --create-metadata
+          # Build the F-Droid repository metadata explicitly and pipe 'yes' to squash any interactive prompts
+          yes | fdroid update --create-metadata
           
-          # Clean up the git directory so the deployment action doesn't trigger a recursive nightmare
-          rm -rf ../.git
+          # Clean up the git directory
+          rm -rf ../.git || true
 
       - name: Deploy F-Droid Repo to GitHub Pages
         if: ${{ matrix.settings.is-android }}
