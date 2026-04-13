@@ -2,7 +2,7 @@
   "METADATA_VERSION": 20002,
   "allow_disabled_algorithms": false,
   "app-arm64-release-unsigned-signed.apk": {
-    "hash": "6badfdbae945164e26cf1e60197a9e19c421537968550f17ec8f22257b5df377",
+    "hash": "a8293e8ffa117379fbd7abe5681b1d49a402997e67be9b5b80d038ff7dd755fe",
     "hashType": "sha256",
     "uses-permission": [
       [
@@ -64,6 +64,6 @@
     "signer": "a78c487208a97ffb2dadf9a69bdec2a6c0050b2f99ef528ed43a01dd5c5687a3",
     "size": 11032777,
     "apkName": "app-arm64-release-unsigned-signed.apk",
-    "added": 1776076413.20664
+    "added": 1776076413.0
   }
 }

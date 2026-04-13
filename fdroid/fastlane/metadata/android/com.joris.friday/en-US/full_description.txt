@@ -1,0 +1,9 @@
+Friday is a high-performance, cross-platform agenda and school management application for Magister built with Tauri v2 and Svelte 5. Designed specifically for students, it provides a seamless and lightweight experience for managing academic schedules, assignments, and grades.
+
+Key Features:
+- Build for Dutch students working with Magister.
+- Native Performance: Lightning-fast experience on all platforms thanks to the Rust backend.
+- Multi-Platform Support: Native builds for Windows, Linux, and Android.
+- Academic Hub: Comprehensive tools for managing activities, assignments, grades, and messages.
+- Modern UI: Fluid, responsive interface built with Svelte 5 and Tailwind CSS.
+- Deep Link Integration: Seamless authentication and redirects via custom URI schemes.
