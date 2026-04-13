@@ -7,7 +7,6 @@ on:
       - 'v*'
   workflow_dispatch:
 
-
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -143,3 +142,56 @@ jobs:
         with:
           tag_name: v${{ needs.create-release.outputs.app_version }}
           files: ${{ steps.sign_app.outputs.signedReleaseFile }}
+
+      - name: Checkout GitHub Pages (For F-Droid History)
+        if: ${{ matrix.settings.is-android }}
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: gh-pages
+          continue-on-error: true
+
+      - name: Build F-Droid Repository
+        if: ${{ matrix.settings.is-android }}
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_SIGNING_KEY }}
+        run: |
+          sudo apt-get update
+          # Forcing apksigner installation so F-Droid doesn't have an existential crisis
+          sudo apt-get install -y fdroidserver apksigner
+          
+          # Ensure the repo directory exists in case this is the first run
+          mkdir -p gh-pages/fdroid/repo
+          
+          # Copy the freshly minted APK into the F-Droid repo
+          cp ${{ steps.sign_app.outputs.signedReleaseFile }} gh-pages/fdroid/repo/
+          
+          cd gh-pages/fdroid
+          
+          # Decode your existing Android keystore to reuse it for signing the F-Droid repo
+          echo $KEYSTORE_BASE64 | base64 --decode > repo.jks
+          
+          # Generate F-Droid config dynamically, now with explicit SDK paths
+          cat <<EOF > config.yml
+          sdk_path: "$ANDROID_HOME"
+          repo_url: "https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/fdroid/repo"
+          repo_name: "${{ github.event.repository.name }} Repository"
+          repo_description: "Automated F-Droid repository because Tony Stark abhors manual labor."
+          repo_keyalias: "${{ secrets.ANDROID_KEY_ALIAS }}"
+          keystore: "repo.jks"
+          keystorepass: "${{ secrets.ANDROID_KEYSTORE_PASSWORD }}"
+          keypass: "${{ secrets.ANDROID_KEY_PASSWORD }}"
+          EOF
+          
+          # Build the F-Droid repository metadata explicitly
+          fdroid update --create-metadata
+          
+          # Clean up the git directory so the deployment action doesn't trigger a recursive nightmare
+          rm -rf ../.git
+
+      - name: Deploy F-Droid Repo to GitHub Pages
+        if: ${{ matrix.settings.is-android }}
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./gh-pages
