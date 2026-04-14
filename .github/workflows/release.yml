@@ -205,7 +205,7 @@ jobs:
           sdk_path: "$ANDROID_HOME"
           repo_url: "https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/fdroid/repo"
           repo_name: "${{ github.event.repository.name }} Repository"
-          repo_description: "Automated F-Droid repository because Tony Stark abhors manual labor."
+          repo_description: "Automated F-Droid repository for Friday by Joris."
           repo_keyalias: "${{ secrets.ANDROID_KEY_ALIAS }}"
           keystore: "repo.jks"
           keystorepass: "${{ secrets.ANDROID_KEYSTORE_PASSWORD }}"
