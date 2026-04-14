@@ -153,6 +153,16 @@
     }
   }
 
+  function nextWeek() {
+    selectedDate = new Date(selectedDate.setDate(selectedDate.getDate() + 7));
+    loadAppointments();
+  }
+
+  function prevWeek() {
+    selectedDate = new Date(selectedDate.setDate(selectedDate.getDate() - 7));
+    loadAppointments();
+  }
+
   function goToToday() {
     selectedDate = new Date();
     loadAppointments();
@@ -365,23 +375,35 @@
 
     <!-- Date Display & Navigation -->
     <div class="mt-3 flex items-center justify-between">
-      <div class="flex flex-col">
-        <p class="text-[10px] font-black text-primary-400 uppercase tracking-[0.2em]">
+      <label class="flex flex-col relative cursor-pointer group">
+        <input 
+          type="date" 
+          class="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+          style="color-scheme: dark;"
+          value={selectedDate.toISOString().split('T')[0]}
+          onchange={(e) => { 
+            if (e.currentTarget.value) {
+              selectedDate = new Date(e.currentTarget.value); 
+              loadAppointments(); 
+            }
+          }}
+        />
+        <p class="text-[10px] font-black text-primary-400 uppercase tracking-[0.2em] group-hover:text-primary-300 transition-colors">
           {selectedDate.toLocaleDateString('nl-NL', { month: 'short', year: 'numeric' })}
         </p>
-        <h2 class="text-xl font-black text-white italic tracking-tighter leading-tight">
+        <h2 class="text-xl font-black text-white italic tracking-tighter leading-tight group-hover:text-gray-200 transition-colors">
           {selectedDate.toLocaleDateString('nl-NL', { weekday: 'short', day: 'numeric' })}
         </h2>
-      </div>
+      </label>
 
       <!-- Compact Navigation Arrows -->
       <div class="flex items-center bg-surface-900 rounded-xl p-0.5 border border-white/5">
-        <button onclick={prevDay} class="p-2 text-gray-500 hover:text-white transition-colors">
-          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="m15 18-6-6 6-6"/></svg>
+        <button onclick={prevWeek} class="p-2 text-gray-500 hover:text-white transition-colors" title="Vorige week">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m11 17-5-5 5-5M18 17l-5-5 5-5"/></svg>
         </button>
         <div class="h-4 w-px bg-surface-700 mx-0.5"></div>
-        <button onclick={nextDay} class="p-2 text-gray-500 hover:text-white transition-colors">
-          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="m9 18 6-6-6-6"/></svg>
+        <button onclick={nextWeek} class="p-2 text-gray-500 hover:text-white transition-colors" title="Volgende week">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m13 17 5-5-5-5M6 17l5-5-5-5"/></svg>
         </button>
       </div>
     </div>
