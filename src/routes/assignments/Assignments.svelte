@@ -263,7 +263,7 @@
     </aside>
 
     <!-- Content Pane -->
-    <section class="flex-1 overflow-y-auto bg-surface-950 p-4 md:p-8 custom-scrollbar relative">
+    <section class="{!selectedAssignment ? 'hidden md:block' : 'block'} flex-1 overflow-y-auto bg-surface-950 p-4 md:p-8 custom-scrollbar relative">
       {#if loadingDetail}
         <div class="absolute inset-0 flex items-center justify-center bg-surface-950/60 backdrop-blur-sm z-20">
           <div class="w-10 h-10 border-4 border-primary-500 border-t-transparent rounded-full animate-spin"></div>
