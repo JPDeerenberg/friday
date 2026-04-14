@@ -284,33 +284,33 @@
                 <p class="text-[11px] text-gray-500 mt-5 font-bold uppercase tracking-widest italic max-w-xs leading-relaxed">Je hebt vandaag geen geplande lessen. Geniet van je vrije tijd of bereid je voor op morgen.</p>
               </div>
             {:else}
-              <div class="space-y-5 relative z-10 w-full px-2">
+              <div class="space-y-4 md:space-y-5 relative z-10 w-full px-1 md:px-2">
                 {#each todayEvents as event, i (event.Id || i)}
                   <button 
                     onclick={() => currentPage.set('calendar')}
                     in:fly={{ x: -30, delay: i * 100, duration: 600 }}
-                    class="w-full flex items-center gap-7 p-6 md:p-7 rounded-[3rem] bg-surface-900/40 border border-white/5 group/event transition-all hover:bg-surface-800/90 hover:border-primary-500/40 hover:scale-[1.02] active:scale-95 shadow-lg"
+                    class="w-full flex flex-row items-center gap-4 md:gap-7 p-4 sm:p-6 md:p-7 rounded-[2rem] sm:rounded-[3rem] bg-surface-900/40 border border-white/5 group/event transition-all hover:bg-surface-800/90 hover:border-primary-500/40 hover:scale-[1.02] active:scale-95 shadow-lg"
                   >
-                    <div class="flex flex-col items-center justify-center min-w-[85px] py-5 rounded-[2.5rem] bg-surface-950 border border-surface-700/50 group-hover/event:border-primary-500/60 transition-all duration-500 shadow-2xl relative overflow-hidden">
+                    <div class="flex flex-col items-center justify-center min-w-[70px] md:min-w-[85px] py-3 md:py-5 rounded-[1.5rem] sm:rounded-[2.5rem] bg-surface-950 border border-surface-700/50 group-hover/event:border-primary-500/60 transition-all duration-500 shadow-2xl relative overflow-hidden shrink-0">
                       <div class="absolute inset-0 bg-primary-500/5 opacity-0 group-hover/event:opacity-100 transition-opacity"></div>
-                      <span class="text-3xl font-black text-primary-400 italic leading-none relative z-10">{event.LesuurVan || '—'}</span>
-                      <span class="text-[10px] font-black text-gray-600 mt-2.5 uppercase tracking-tighter relative z-10">{formatTime(event.Start)}</span>
+                      <span class="text-2xl md:text-3xl font-black text-primary-400 italic leading-none relative z-10">{event.LesuurVan || '—'}</span>
+                      <span class="text-[9px] md:text-[10px] font-black text-gray-600 mt-1.5 md:mt-2.5 uppercase tracking-tighter relative z-10">{formatTime(event.Start)}</span>
                     </div>
                     <div class="flex-1 min-w-0 text-left">
-                      <p class="text-xl font-black text-gray-100 truncate group-hover/event:text-primary-400 transition-colors uppercase tracking-tight italic">
+                      <p class="text-lg md:text-xl font-black text-gray-100 truncate group-hover/event:text-primary-400 transition-colors uppercase tracking-tight italic">
                         {event.Vakken?.[0]?.Naam ?? event.Omschrijving ?? 'Afspraak'}
                       </p>
-                      <div class="flex items-center gap-5 mt-4">
-                        <span class="flex items-center gap-2.5 text-[10px] font-black text-gray-400 uppercase tracking-widest px-4 py-2 rounded-2xl bg-surface-800/80 border border-white/5 shadow-inner">
-                          <svg class="w-3.5 h-3.5 text-primary-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
+                      <div class="flex flex-wrap md:flex-nowrap items-center gap-2 md:gap-5 mt-2 md:mt-4">
+                        <span class="flexitems-center gap-1.5 md:gap-2.5 text-[9px] md:text-[10px] font-black text-gray-400 uppercase tracking-widest px-3 md:px-4 py-1.5 md:py-2 rounded-xl sm:rounded-2xl bg-surface-800/80 border border-white/5 shadow-inner">
+                          <svg class="w-3 md:w-3.5 h-3 md:h-3.5 text-primary-500 inline-block mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
                           {event.Lokalen?.[0]?.Naam ?? '??'}
                         </span>
-                        <span class="text-[11px] font-bold text-gray-500 uppercase tracking-tight truncate opacity-80 group-hover/event:opacity-100 transition-opacity bg-white/5 px-3 py-1.5 rounded-xl">{formatTeacherName(event.Docenten?.[0]?.Naam) ?? 'Geen docent'}</span>
+                        <span class="text-[9px] md:text-[11px] font-bold text-gray-500 uppercase tracking-tight truncate opacity-80 group-hover/event:opacity-100 transition-opacity bg-white/5 px-2.5 md:px-3 py-1 md:py-1.5 rounded-lg sm:rounded-xl">{formatTeacherName(event.Docenten?.[0]?.Naam) ?? 'Geen docent'}</span>
                       </div>
                     </div>
                     {#if event.Inhoud}
-                      <div class="w-14 h-14 rounded-full flex items-center justify-center bg-primary-500/10 text-primary-400 shrink-0 opacity-40 group-hover/event:opacity-100 transition-all border border-primary-500/20 group-hover/event:rotate-90 group-hover/event:scale-110 shadow-lg">
-                        <svg class="w-7 h-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5"><path d="M12 5v14M5 12h14"/></svg>
+                      <div class="w-10 h-10 md:w-14 md:h-14 rounded-full flex items-center justify-center bg-primary-500/10 text-primary-400 shrink-0 opacity-40 group-hover/event:opacity-100 transition-all border border-primary-500/20 group-hover/event:rotate-90 group-hover/event:scale-110 shadow-lg">
+                        <svg class="w-5 h-5 md:w-7 md:h-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5"><path d="M12 5v14M5 12h14"/></svg>
                       </div>
                     {/if}
                   </button>
@@ -321,28 +321,28 @@
         </section>
 
         <!-- Middle Section: Recent Grades -->
-        <section in:fly={{ y: 30, delay: 200, duration: 800 }} class="space-y-10">
+        <section in:fly={{ y: 30, delay: 200, duration: 800 }} class="space-y-6 md:space-y-10">
           <div class="flex items-center justify-between px-2">
-            <h2 class="text-3xl font-black text-white italic tracking-tighter flex items-center gap-4">
-              <div class="w-2.5 h-10 bg-accent-500 rounded-full shadow-[0_0_25px_rgba(200,100,255,0.7)]"></div>
-              Nieuwe Resultaten
+            <h2 class="text-2xl md:text-3xl font-black text-white italic tracking-tighter flex items-center gap-3 md:gap-4">
+              <div class="w-2 md:w-2.5 h-8 md:h-10 bg-accent-500 rounded-full shadow-[0_0_25px_rgba(200,100,255,0.7)]"></div>
+              Resultaten
             </h2>
             <button 
               onclick={() => currentPage.set('grades')}
-              class="text-[11px] font-black text-accent-400 hover:text-accent-300 uppercase tracking-[0.3em] transition-all hover:gap-4 flex items-center gap-3 group/grades bg-accent-500/5 px-5 py-2.5 rounded-full border border-accent-500/10 hover:border-accent-500/30"
+              class="text-[9px] md:text-[11px] font-black text-accent-400 hover:text-accent-300 uppercase tracking-widest md:tracking-[0.3em] transition-all hover:gap-3 md:hover:gap-4 flex items-center gap-2 md:gap-3 group/grades bg-accent-500/5 px-4 md:px-5 py-2 md:py-2.5 rounded-full border border-accent-500/10 hover:border-accent-500/30"
             >
-              Alle cijfers <svg class="w-4 h-4 group-hover/grades:translate-x-1 transition-transform" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="m9 18 6-6-6-6"/></svg>
+              Alle cijfers <svg class="w-3.5 h-3.5 md:w-4 md:h-4 group-hover/grades:translate-x-1 transition-transform" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="m9 18 6-6-6-6"/></svg>
             </button>
           </div>
           
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-8">
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 md:gap-8">
             {#if loadingGrades}
                {#each Array(4) as _}
-                 <div class="p-8 rounded-[3.5rem] glass animate-pulse border border-white/5 h-32 flex items-center gap-6">
-                    <div class="w-16 h-16 rounded-3xl bg-surface-800"></div>
-                    <div class="flex-1 space-y-3">
-                       <div class="h-5 bg-surface-800 rounded-full w-2/3"></div>
-                       <div class="h-4 bg-surface-800/50 rounded-full w-1/3"></div>
+                 <div class="p-5 md:p-8 rounded-[2rem] sm:rounded-[3.5rem] glass animate-pulse border border-white/5 h-24 md:h-32 flex items-center gap-4 md:gap-6">
+                    <div class="w-12 h-12 md:w-16 md:h-16 rounded-2xl md:rounded-3xl bg-surface-800"></div>
+                    <div class="flex-1 space-y-2 md:space-y-3">
+                       <div class="h-4 md:h-5 bg-surface-800 rounded-full w-2/3"></div>
+                       <div class="h-3 md:h-4 bg-surface-800/50 rounded-full w-1/3"></div>
                     </div>
                  </div>
                {/each}
@@ -351,27 +351,27 @@
                 <button
                   onclick={() => currentPage.set('grades')}
                   in:scale={{ delay: i * 120, duration: 600, start: 0.9 }}
-                  class="flex items-center justify-between p-8 rounded-[3.5rem] glass border border-white/5 hover:scale-[1.05] hover:border-accent-500/40 transition-all group/grade active:scale-95 shadow-3xl relative overflow-hidden"
+                  class="flex items-center justify-between p-5 md:p-8 rounded-[2rem] sm:rounded-[3.5rem] glass border border-white/5 hover:scale-[1.05] hover:border-accent-500/40 transition-all group/grade active:scale-95 shadow-2xl md:shadow-3xl relative overflow-hidden"
                 >
-                  <div class="absolute -right-6 -bottom-6 w-32 h-32 bg-accent-500/5 blur-3xl rounded-full group-hover:bg-accent-500/15 transition-all duration-700"></div>
-                  <div class="flex items-center gap-7 min-w-0 relative z-10">
-                    <div class="w-18 h-18 rounded-[2rem] bg-surface-900 border border-surface-700/40 flex items-center justify-center text-primary-400 shrink-0 shadow-2xl group-hover/grade:border-accent-500/60 transition-all duration-700 group-hover/grade:bg-surface-800 group-hover/grade:rotate-12 group-hover/grade:scale-110">
+                  <div class="absolute -right-6 -bottom-6 w-24 h-24 md:w-32 md:h-32 bg-accent-500/5 blur-3xl rounded-full group-hover:bg-accent-500/15 transition-all duration-700"></div>
+                  <div class="flex items-center gap-4 md:gap-7 min-w-0 relative z-10 w-full pr-4">
+                    <div class="w-12 h-12 md:w-16 md:h-16 rounded-xl md:rounded-[2rem] bg-surface-900 border border-surface-700/40 flex items-center justify-center text-primary-400 shrink-0 shadow-lg md:shadow-2xl group-hover/grade:border-accent-500/60 transition-all duration-700 group-hover/grade:bg-surface-800 group-hover/grade:rotate-12 group-hover/grade:scale-110">
                       {@html getSubjectIcon(grade.Vak?.Omschrijving ?? '')}
                     </div>
-                    <div class="min-w-0 text-left">
-                      <p class="text-xl font-black text-gray-100 truncate italic tracking-tighter uppercase leading-tight group-hover/grade:text-accent-400 transition-colors">{grade.Vak?.Omschrijving ?? 'Onbekend'}</p>
-                      <p class="text-[10px] text-gray-500 font-black uppercase tracking-widest mt-3 truncate group-hover/grade:text-gray-300 transition-colors bg-white/5 px-2 py-1 rounded-md inline-block">{formatDate(grade.DatumIngevoerd || '')}</p>
+                    <div class="min-w-0 text-left flex-1">
+                      <p class="text-lg md:text-xl font-black text-gray-100 truncate italic tracking-tighter uppercase leading-tight group-hover/grade:text-accent-400 transition-colors">{grade.Vak?.Omschrijving ?? 'Onbekend'}</p>
+                      <p class="text-[9px] md:text-[10px] text-gray-500 font-black uppercase tracking-widest mt-1.5 md:mt-3 truncate group-hover/grade:text-gray-300 transition-colors bg-white/5 px-2 py-1 rounded inline-block">{formatDate(grade.DatumIngevoerd || '')}</p>
                     </div>
                   </div>
-                  <div class="text-right ml-4 relative z-10 shrink-0">
-                    <span class="text-5xl md:text-6xl font-extrabold italic tracking-tighter drop-shadow-3xl transition-transform group-hover/grade:scale-110 block {$userSettings.highlightFailing && !isVoldoende(grade) ? 'text-red-500' : 'text-transparent bg-clip-text bg-gradient-to-br from-accent-400 via-accent-300 to-accent-600 animate-gradient-y'}">
+                  <div class="text-right shrink-0 relative z-10 pl-2">
+                    <span class="text-4xl md:text-6xl font-extrabold italic tracking-tighter drop-shadow-2xl md:drop-shadow-3xl transition-transform group-hover/grade:scale-110 block {$userSettings.highlightFailing && !isVoldoende(grade) ? 'text-red-500' : 'text-transparent bg-clip-text bg-gradient-to-br from-accent-400 via-accent-300 to-accent-600 animate-gradient-y'}">
                       {grade.CijferStr}
                     </span>
                   </div>
                 </button>
               {:else}
-                <div class="sm:col-span-2 py-24 glass rounded-[4rem] flex flex-col items-center justify-center text-center opacity-50 border-dashed border-2 border-white/10 shadow-inner" in:fade>
-                   <p class="text-[13px] font-black text-gray-400 uppercase tracking-[0.4em] italic mb-2">Radiostilte...</p>
+                <div class="sm:col-span-2 py-16 md:py-24 glass rounded-[3rem] md:rounded-[4rem] flex flex-col items-center justify-center text-center opacity-50 border-dashed border-2 border-white/10 shadow-inner" in:fade>
+                   <p class="text-[11px] md:text-[13px] font-black text-gray-400 uppercase tracking-widest md:tracking-[0.4em] italic mb-2">Radiostilte...</p>
                 </div>
               {/each}
             {/if}
@@ -380,47 +380,45 @@
       </div>
 
       <!-- Right Column: Assignments & Motivation -->
-      <div class="lg:col-span-5 space-y-16">
-        <section in:fly={{ x: 30, delay: 400, duration: 800 }} class="space-y-10">
-          <h2 class="text-3xl font-black text-white italic tracking-tighter flex items-center gap-4 px-2">
-            <div class="w-2.5 h-10 bg-red-500 rounded-full shadow-[0_0_25px_rgba(239,68,68,0.7)] animate-pulse"></div>
+      <div class="lg:col-span-5 space-y-10 md:space-y-16">
+        <section in:fly={{ x: 30, delay: 400, duration: 800 }} class="space-y-6 md:space-y-10">
+          <h2 class="text-2xl md:text-3xl font-black text-white italic tracking-tighter flex items-center gap-3 md:gap-4 px-2">
+            <div class="w-2 md:w-2.5 h-8 md:h-10 bg-red-500 rounded-full shadow-[0_0_25px_rgba(239,68,68,0.7)] animate-pulse"></div>
             Deadlines
           </h2>
           
-          <div class="glass rounded-[4rem] p-4 md:p-8 shadow-3xl relative overflow-hidden group border-white/5 flex flex-col min-h-[450px]">
+          <div class="glass rounded-[2.5rem] md:rounded-[4rem] p-4 md:p-8 shadow-2xl md:shadow-3xl relative overflow-hidden group border-white/5 flex flex-col min-h-[350px] md:min-h-[450px]">
             <div class="absolute inset-0 bg-gradient-to-br from-red-500/10 via-transparent to-transparent opacity-40 group-hover:opacity-60 transition-opacity duration-700"></div>
             
             {#if loadingAssignments}
-               <div class="space-y-6 relative z-10 w-full p-4">
+               <div class="space-y-4 md:space-y-6 relative z-10 w-full p-2 md:p-4">
                   {#each Array(3) as _}
-                    <div class="p-8 rounded-[3rem] bg-surface-900/30 animate-pulse border border-white/10 h-32"></div>
+                    <div class="p-6 md:p-8 rounded-[2rem] sm:rounded-[3rem] bg-surface-900/30 animate-pulse border border-white/10 h-24 md:h-32"></div>
                   {/each}
                </div>
             {:else if upcomingAssignments.length === 0}
-              <div class="flex-1 flex flex-col items-center justify-center text-center opacity-70 py-24 px-8" in:fade>
-                  <div class="w-36 h-36 rounded-[3.5rem] bg-surface-900/80 flex items-center justify-center mb-10 text-gray-500 border border-white/10 shadow-3xl group-hover:scale-110 transition-all duration-700 relative">
+              <div class="flex-1 flex flex-col items-center justify-center text-center opacity-70 py-16 md:py-24 px-4 md:px-8" in:fade>
+                  <div class="w-24 h-24 md:w-36 md:h-36 rounded-[2.5rem] sm:rounded-[3.5rem] bg-surface-900/80 flex items-center justify-center mb-6 md:mb-10 text-gray-500 border border-white/10 shadow-2xl md:shadow-3xl group-hover:scale-110 transition-all duration-700 relative">
                       <div class="absolute inset-0 bg-emerald-500/5 blur-3xl rounded-full animate-pulse"></div>
-                      <svg class="w-16 h-16 text-emerald-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                      <svg class="w-10 h-10 md:w-16 md:h-16 text-emerald-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
                   </div>
-                  <p class="text-lg font-black text-emerald-400/80 uppercase tracking-[0.4em] mb-4 italic">Helemaal Bij!</p>
+                  <p class="text-base md:text-lg font-black text-emerald-400/80 uppercase tracking-widest md:tracking-[0.4em] mb-4 italic">Helemaal Bij!</p>
               </div>
             {:else}
-              <div class="space-y-6 mb-12 relative z-10 p-2">
+              <div class="space-y-4 md:space-y-6 mb-8 md:mb-12 relative z-10 p-1 md:p-2">
                 {#each upcomingAssignments as assignment, i (assignment.Id || i)}
                   <button 
                     onclick={() => currentPage.set('assignments')}
                     in:fly={{ x: 30, delay: i * 150, duration: 600 }}
-                    class="w-full p-8 rounded-[3rem] bg-surface-900/50 border border-white/5 group/assign transition-all hover:bg-surface-800/90 hover:border-red-500/40 text-left shadow-2xl overflow-hidden relative active:scale-95 hover:scale-[1.02]"
+                    class="w-full p-5 md:p-8 rounded-[2rem] sm:rounded-[3rem] bg-surface-900/50 border border-white/5 group/assign transition-all hover:bg-surface-800/90 hover:border-red-500/40 text-left shadow-xl md:shadow-2xl overflow-hidden relative active:scale-95 hover:scale-[1.02] flex flex-col sm:flex-row justify-between sm:items-center gap-4 sm:gap-8"
                   >
-                    <div class="absolute -right-3 -top-3 w-20 h-20 bg-red-500/10 blur-2xl rounded-full group-hover/assign:bg-red-500/20 transition-all duration-700"></div>
-                    <div class="flex justify-between items-start gap-8 relative z-10">
-                      <div class="min-w-0">
-                        <p class="text-xl font-black text-gray-100 truncate group-hover/assign:text-red-400 transition-colors uppercase tracking-tight italic leading-tight">{assignment.Titel}</p>
-                        <p class="text-[11px] text-gray-500 font-black mt-3.5 uppercase tracking-[0.25em] bg-red-500/5 px-2 py-1 rounded inline-block">{assignment.Vak ?? 'Algemeen'}</p>
-                      </div>
-                      <div class="shrink-0 px-5 py-3 rounded-[1.5rem] bg-red-500/15 border border-red-500/30 text-[12px] font-black text-red-500 uppercase tracking-tighter shadow-xl group-hover/assign:scale-110 group-hover/assign:-rotate-2 transition-all">
-                        {new Date(assignment.InleverenVoor).toLocaleDateString('nl-NL', { day: 'numeric', month: 'short' })}
-                      </div>
+                    <div class="absolute -right-3 -top-3 w-16 h-16 md:w-20 md:h-20 bg-red-500/10 blur-2xl rounded-full group-hover/assign:bg-red-500/20 transition-all duration-700"></div>
+                    <div class="min-w-0 relative z-10">
+                      <p class="text-lg md:text-xl font-black text-gray-100 truncate group-hover/assign:text-red-400 transition-colors uppercase tracking-tight italic leading-tight">{assignment.Titel}</p>
+                      <p class="text-[9px] md:text-[11px] text-gray-500 font-black mt-2 md:mt-3.5 uppercase tracking-widest md:tracking-[0.25em] bg-red-500/5 px-2 py-1 rounded inline-block">{assignment.Vak ?? 'Algemeen'}</p>
+                    </div>
+                    <div class="align-self-start sm:align-self-auto shrink-0 px-3 md:px-5 py-2 md:py-3 rounded-xl sm:rounded-[1.5rem] bg-red-500/15 border border-red-500/30 text-[10px] md:text-[12px] font-black text-red-500 uppercase tracking-tighter shadow-xl group-hover/assign:scale-110 group-hover/assign:-rotate-2 transition-all relative z-10">
+                      {new Date(assignment.InleverenVoor).toLocaleDateString('nl-NL', { day: 'numeric', month: 'short' })}
                     </div>
                   </button>
                 {/each}
@@ -429,7 +427,7 @@
             
             <button 
               onclick={() => currentPage.set('assignments')}
-              class="w-full py-7 rounded-[3rem] bg-gradient-to-r from-primary-600 to-primary-400 text-white font-black text-[14px] uppercase tracking-[0.4em] shadow-3xl shadow-primary-500/40 hover:scale-[1.03] hover:brightness-110 transition-all active:scale-95 border border-white/20 ring-8 ring-primary-500/10 italic relative overflow-hidden group/btn mt-auto"
+              class="w-full py-5 md:py-7 rounded-[2rem] sm:rounded-[3rem] bg-gradient-to-r from-primary-600 to-primary-400 text-white font-black text-[12px] md:text-[14px] uppercase tracking-widest md:tracking-[0.4em] shadow-2xl md:shadow-3xl shadow-primary-500/40 hover:scale-[1.03] hover:brightness-110 transition-all active:scale-95 border border-white/20 ring-[6px] md:ring-8 ring-primary-500/10 italic relative overflow-hidden group/btn mt-auto"
             >
               <div class="absolute inset-0 bg-white/20 translate-x-[-100%] group-hover/btn:translate-x-[100%] transition-transform duration-1000 skew-x-12"></div>
               <span class="relative z-10 flex items-center justify-center gap-4">

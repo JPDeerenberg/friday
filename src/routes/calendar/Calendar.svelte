@@ -38,16 +38,34 @@
     await loadAppointments();
   });
 
-  async function loadAppointments() {
+  // Track the date range we have data for
+  let loadedStart = $state<Date | null>(null);
+  let loadedEnd = $state<Date | null>(null);
+
+  async function loadAppointments(force = false) {
     const pid = $personId;
     if (!pid) return;
+
+    // Check if selectedDate is within already-loaded range (with 3-day buffer)
+    if (!force && loadedStart && loadedEnd) {
+      const bufferStart = new Date(loadedStart);
+      bufferStart.setDate(bufferStart.getDate() + 3);
+      const bufferEnd = new Date(loadedEnd);
+      bufferEnd.setDate(bufferEnd.getDate() - 3);
+      if (selectedDate >= bufferStart && selectedDate <= bufferEnd) {
+        // We have the data, no need to reload
+        return;
+      }
+    }
+
     loading = true;
     try {
       const start = new Date(selectedDate);
-      start.setDate(start.getDate() - 7);
+      start.setDate(start.getDate() - 14);
       const end = new Date(selectedDate);
-      end.setDate(end.getDate() + 7);
-      
+      end.setDate(end.getDate() + 14);
+      loadedStart = start;
+      loadedEnd = end;
       appointments = await getCalendarEvents(pid, formatDate(start), formatDate(end));
     } catch (e) {
       console.error('Error loading appointments:', e);
@@ -135,37 +153,53 @@
   });
 
 
+  // Swipe animation state
+  let swipeOffset = $state(0);
+  let isAnimating = $state(false);
+  let swipeDirection = $state(0); // -1 = left (next), 1 = right (prev)
+  let dayKey = $state(0); // increment to trigger card re-animation
+
+  async function navigateToDay(newDate: Date) {
+    if (isAnimating) return;
+    selectedDate = newDate;
+    dayKey++;
+    await loadAppointments();
+  }
+
   function nextDay() {
-    selectedDate = new Date(selectedDate.setDate(selectedDate.getDate() + 1));
-    if (!$userSettings.showWeekend && (selectedDate.getDay() === 0 || selectedDate.getDay() === 6)) {
-        nextDay();
-    } else {
-        loadAppointments();
+    if (isAnimating) return;
+    const next = new Date(selectedDate);
+    next.setDate(next.getDate() + 1);
+    if (!$userSettings.showWeekend && (next.getDay() === 0 || next.getDay() === 6)) {
+      next.setDate(next.getDate() + (next.getDay() === 6 ? 2 : 1));
     }
+    navigateToDay(next);
   }
 
   function prevDay() {
-    selectedDate = new Date(selectedDate.setDate(selectedDate.getDate() - 1));
-    if (!$userSettings.showWeekend && (selectedDate.getDay() === 0 || selectedDate.getDay() === 6)) {
-        prevDay();
-    } else {
-        loadAppointments();
+    if (isAnimating) return;
+    const prev = new Date(selectedDate);
+    prev.setDate(prev.getDate() - 1);
+    if (!$userSettings.showWeekend && (prev.getDay() === 0 || prev.getDay() === 6)) {
+      prev.setDate(prev.getDate() - (prev.getDay() === 0 ? 2 : 1));
     }
+    navigateToDay(prev);
   }
 
   function nextWeek() {
-    selectedDate = new Date(selectedDate.setDate(selectedDate.getDate() + 7));
-    loadAppointments();
+    const next = new Date(selectedDate);
+    next.setDate(next.getDate() + 7);
+    navigateToDay(next);
   }
 
   function prevWeek() {
-    selectedDate = new Date(selectedDate.setDate(selectedDate.getDate() - 7));
-    loadAppointments();
+    const prev = new Date(selectedDate);
+    prev.setDate(prev.getDate() - 7);
+    navigateToDay(prev);
   }
 
   function goToToday() {
-    selectedDate = new Date();
-    loadAppointments();
+    navigateToDay(new Date());
   }
 
   async function handleDownload(bijlage: any) {
@@ -318,27 +352,71 @@
     }).length;
   });
 
-  // Swipe handling
+  // Swipe handling with live drag tracking
   let touchStartX = 0;
-  function handleTouchStart(e: TouchEvent) { touchStartX = e.touches[0].clientX; }
-  function handleTouchEnd(e: TouchEvent) {
-    const touchEndX = e.changedTouches[0].clientX;
-    const diff = touchStartX - touchEndX;
-    if (Math.abs(diff) > 70) {
-      if (diff > 0) nextDay(); else prevDay();
+  let touchStartY = 0;
+  let isDragging = $state(false);
+  let isHorizontalSwipe = false;
+
+  function handleTouchStart(e: TouchEvent) {
+    touchStartX = e.touches[0].clientX;
+    touchStartY = e.touches[0].clientY;
+    isDragging = false;
+    isHorizontalSwipe = false;
+  }
+
+  function handleTouchMove(e: TouchEvent) {
+    const dx = e.touches[0].clientX - touchStartX;
+    const dy = e.touches[0].clientY - touchStartY;
+    
+    // Determine swipe axis on first significant movement
+    if (!isDragging && Math.hypot(dx, dy) > 8) {
+      isHorizontalSwipe = Math.abs(dx) > Math.abs(dy);
+      isDragging = true;
     }
+
+    if (isHorizontalSwipe) {
+      e.preventDefault();
+      // Add resistance at the edges
+      swipeOffset = dx * 0.85;
+    }
+  }
+
+  function handleTouchEnd(e: TouchEvent) {
+    const dx = e.changedTouches[0].clientX - touchStartX;
+    if (isHorizontalSwipe && Math.abs(dx) > 55) {
+      // Slide all the way out
+      swipeOffset = dx > 0 ? window.innerWidth : -window.innerWidth;
+      isAnimating = true;
+      // Navigate while off-screen, then snap back from opposite side
+      setTimeout(() => {
+        if (dx > 0) prevDay(); else nextDay();
+        // Jump to opposite side (no transition) then spring back to center
+        requestAnimationFrame(() => {
+          swipeOffset = dx > 0 ? -window.innerWidth * 0.3 : window.innerWidth * 0.3;
+          requestAnimationFrame(() => {
+            swipeOffset = 0;
+            isAnimating = false;
+          });
+        });
+      }, 200);
+    } else {
+      // Spring back
+      swipeOffset = 0;
+    }
+    isDragging = false;
   }
 
 </script>
 
-<div class="flex flex-col h-full bg-surface-950" ontouchstart={handleTouchStart} ontouchend={handleTouchEnd}>
+<div class="flex flex-col h-full bg-surface-950" ontouchstart={handleTouchStart} ontouchmove={handleTouchMove} ontouchend={handleTouchEnd}>
   <!-- Header Section -->
   <header class="sticky top-0 z-20 bg-surface-950/95 backdrop-blur-xl border-b border-surface-800/50 px-4 py-3">
     <div class="flex items-center justify-between gap-4">
       <div class="flex items-center gap-2">
         <h1 class="text-xl font-black text-white italic tracking-tighter">Agenda</h1>
         <button
-          onclick={() => { appointments = []; loadAppointments(); }}
+          onclick={() => { appointments = []; loadedStart = null; loadedEnd = null; loadAppointments(true); }}
           class="p-1.5 text-gray-400 hover:text-primary-400 transition-all hover:rotate-180 duration-500"
           title="Verversen"
         >
@@ -438,7 +516,10 @@
   </header>
 
   <!-- Main Content -->
-  <main class="flex-1 overflow-y-auto p-3 space-y-3 custom-scrollbar">
+  <main 
+    class="flex-1 overflow-y-auto p-3 space-y-3 custom-scrollbar"
+    style="transform: translateX({swipeOffset}px); transition: {isDragging ? 'none' : 'transform 0.35s cubic-bezier(0.25, 0.46, 0.45, 0.94)'}; will-change: transform; touch-action: pan-y;" 
+  >
     {#if hiddenCancelledCount > 0 && !loading}
       <div class="glass p-3 rounded-3xl flex items-center justify-between border-red-500/10 bg-red-500/5 mb-3" transition:slide>
         <div class="flex items-center gap-3">
@@ -477,7 +558,7 @@
         </div>
       </div>
     {:else}
-      {#each dayAppointments as app}
+      {#each dayAppointments as app, i}
         {#if app.displayType === 'break'}
           <div class="flex items-center gap-4 px-6 py-2 opacity-40 group hover:opacity-100 transition-opacity">
             <div class="w-10 flex flex-col items-center">
@@ -497,6 +578,7 @@
             tabindex="0"
             onclick={() => openDetail(app)}
             onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDetail(app); } }}
+            in:fly={{ y: 16, duration: 300, delay: i * 45, easing: (t) => 1 - Math.pow(1-t, 3) }}
             class="w-full text-left glass rounded-3xl p-4 flex gap-4 transition-all active:scale-[0.98] group relative overflow-hidden cursor-pointer
                    {app.InfoType === 1 && !app.Afgerond ? 'border-primary-500/30' : ''}
                    {app.Status === 4 || app.Status === 5 ? 'border-red-500/40 bg-red-500/5' : ''}
