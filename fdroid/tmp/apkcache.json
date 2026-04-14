@@ -2,7 +2,7 @@
   "METADATA_VERSION": 20002,
   "allow_disabled_algorithms": false,
   "app-arm64-release-unsigned-signed.apk": {
-    "hash": "8a13a3d1eaa18e73d8f58ab0fc3d79e6292df2c87a5defd85fd235d546c6d81d",
+    "hash": "5b942fb7b5e36efe6836646578f285c26d5c2f6d21e22de853f0e35c59362e97",
     "hashType": "sha256",
     "uses-permission": [
       [

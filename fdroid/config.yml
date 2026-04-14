@@ -1,7 +1,7 @@
 sdk_path: "/usr/local/lib/android/sdk"
 repo_url: "https://JPDeerenberg.github.io/friday/fdroid/repo"
 repo_name: "friday Repository"
-repo_description: "Automated F-Droid repository because Tony Stark abhors manual labor."
+repo_description: "Automated F-Droid repository for Friday by Joris."
 repo_keyalias: "friday-key"
 keystore: "repo.jks"
 keystorepass: "Till5-Manhood2-Impart3-Slouching3-Taking6"
