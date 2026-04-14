@@ -4,7 +4,6 @@
   import { isLoggedIn, personId, accountInfo, profilePicture } from '$lib/stores';
   import { startLoginFlow, getPersonId, getProfilePicture, handleAuthCallback } from '$lib/api';
 
-  let tenant = $state('');
   let loading = $state(false);
   let error = $state('');
   let unlistenSuccess: UnlistenFn | null = null;
@@ -67,14 +66,11 @@
   });
 
   async function startLogin() {
-    if (!tenant.includes('.magister.net')) {
-      tenant = tenant.trim() + '.magister.net';
-    }
     loading = true;
     error = '';
 
     try {
-      await startLoginFlow(tenant);
+      await startLoginFlow();
       // We stay in the loading state until the auth-success or auth-error event fires
     } catch (e: any) {
       error = e?.toString() ?? 'Inloggen mislukt';
@@ -118,24 +114,11 @@
     <!-- Login card -->
     <div class="glass rounded-2xl p-6 space-y-5">
       {#if !loading}
-        <div>
-          <label for="tenant" class="block text-sm font-medium text-gray-300 mb-2">School</label>
-          <input
-            id="tenant"
-            type="text"
-            bind:value={tenant}
-            placeholder="jouwschool.magister.net"
-            class="w-full px-4 py-3 rounded-xl bg-surface-800 border border-surface-700 text-gray-100 placeholder-gray-600 focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500/50 text-sm"
-            onkeydown={(e) => e.key === 'Enter' && startLogin()}
-          />
-        </div>
-
         <button
           onclick={startLogin}
-          disabled={!tenant.trim()}
-          class="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-primary-500 to-primary-600 text-white font-semibold text-sm hover:from-primary-400 hover:to-primary-500 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-primary-500/20 active:scale-[0.98]"
+          class="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-primary-500 to-primary-600 text-white font-semibold text-sm hover:from-primary-400 hover:to-primary-500 shadow-lg shadow-primary-500/20 active:scale-[0.98]"
         >
-          Inloggen via Magister
+          Inloggen bij Friday
         </button>
       {:else}
         <div class="text-center space-y-4 py-4">

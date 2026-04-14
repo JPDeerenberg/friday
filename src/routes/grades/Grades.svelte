@@ -14,6 +14,35 @@
   let activeSnapshot = $state<any | null>(null);
   let errorMessage = $state<string | null>(null);
 
+  // Subject Sort Filter
+  let subjectSortMode = $state<'alfabetisch' | 'nieuwste' | 'hoogste' | 'laagste' | 'meeste'>('alfabetisch');
+
+  function getSortedSubjects() {
+    let sorted = [...subjects];
+    switch (subjectSortMode) {
+      case 'alfabetisch':
+        sorted.sort((a, b) => a.name.localeCompare(b.name));
+        break;
+      case 'nieuwste':
+        sorted.sort((a, b) => {
+          const aDate = a.grades[0]?.DatumIngevoerd ?? '';
+          const bDate = b.grades[0]?.DatumIngevoerd ?? '';
+          return bDate.localeCompare(aDate);
+        });
+        break;
+      case 'hoogste':
+        sorted.sort((a, b) => (b.avg || 0) - (a.avg || 0));
+        break;
+      case 'laagste':
+        sorted.sort((a, b) => (a.avg || 0) - (b.avg || 0));
+        break;
+      case 'meeste':
+        sorted.sort((a, b) => b.grades.length - a.grades.length);
+        break;
+    }
+    return sorted;
+  }
+
   // Recent tab filter
   let recentFilter = $state<'today' | 'week' | 'all'>('all');
 
@@ -293,6 +322,62 @@
     if (required > 10) return null; // Pass impossible
     return required.toFixed(1);
   }
+
+  function getNewOverallAverage(subject: any): string {
+    const validSubjects = subjects.filter((s: any) => s.avg > 0);
+    if (validSubjects.length === 0) return getPredictedAverage(subject);
+    let totalAverages = 0;
+    for (const sub of validSubjects) {
+      if (sub.name === subject.name) {
+         totalAverages += parseFloat(getPredictedAverage(subject));
+      } else {
+         totalAverages += sub.avg;
+      }
+    }
+    return (totalAverages / validSubjects.length).toFixed($userSettings.decimalPoints);
+  }
+
+  let historicalAverages = $state<{ year: string; avg: number; id: number }[]>([]);
+  let loadingHistory = $state(false);
+
+  async function loadHistoricalAverages() {
+    if (historicalAverages.length > 0) return; // Already loaded
+    if (!$personId) return; // Needs personId
+    loadingHistory = true;
+    const results = [];
+    try {
+        for (const year of schoolyears) {
+            if (!year.einde) continue;
+            const peildatum = year.einde.split('T')[0];
+            const fetchedGrades = await getGrades($personId, year.id, peildatum);
+            
+            const subMap = new Map<string, { totalP: number, totalW: number }>();
+            for (const grade of fetchedGrades) {
+               if (!grade.Vak || grade.CijferKolom?.KolomSoort !== 1 || !grade.CijferStr || !grade.TeltMee) continue;
+               const val = parseFloat(grade.CijferStr.replace(',', '.'));
+               const w = typeof grade.Weging === 'number' ? grade.Weging : 1;
+               if (!isNaN(val)) {
+                   const s = subMap.get(grade.Vak.Omschrijving) || { totalP: 0, totalW: 0 };
+                   s.totalP += val * w;
+                   s.totalW += w;
+                   subMap.set(grade.Vak.Omschrijving, s);
+               }
+            }
+            let validAvgCount = 0, sumAvgs = 0;
+            for (const s of subMap.values()) {
+                if (s.totalW > 0) {
+                    sumAvgs += s.totalP / s.totalW;
+                    validAvgCount++;
+                }
+            }
+            if (validAvgCount > 0) {
+                results.push({ id: year.id, year: year.groep?.code ?? year.studie?.code ?? '?', avg: sumAvgs / validAvgCount });
+            }
+        }
+    } catch(e) { console.error(e); }
+    historicalAverages = results.sort((a,b) => a.id - b.id);
+    loadingHistory = false;
+  }
 </script>
 
 <div class="flex flex-col bg-surface-950">
@@ -392,7 +477,8 @@
         <!-- Overall trend graph -->
         {#if subjects.length > 0}
           {@const path = getOverallTrendPath()}
-          {@const overallAvg = subjects.reduce((a, b) => a + (b.avg || 0), 0) / subjects.length || 0}
+          {@const validSubjects = subjects.filter(s => s.avg > 0)}
+          {@const overallAvg = validSubjects.length > 0 ? validSubjects.reduce((a, b) => a + b.avg, 0) / validSubjects.length : 0}
           <div class="glass p-6 rounded-[2rem] space-y-4 overflow-hidden relative shadow-2xl">
             <div class="absolute inset-0 bg-gradient-to-br from-primary-500/15 via-transparent to-accent-500/8"></div>
             <div class="flex items-center justify-between relative z-10">
@@ -437,9 +523,21 @@
           </div>
         {/if}
 
+        <!-- Subject Filters -->
+        <div class="flex items-center justify-between mb-4 mt-6">
+          <h3 class="text-xs font-black text-white uppercase tracking-widest">Alle Vakken</h3>
+          <select bind:value={subjectSortMode} class="bg-surface-800 border border-white/10 rounded-xl px-3 py-1.5 text-xs text-gray-300 focus:outline-none focus:border-primary-500 font-bold block appearance-none text-right">
+            <option value="alfabetisch">Op Alfabet (A-Z)</option>
+            <option value="nieuwste">Nieuwste Cijfers</option>
+            <option value="hoogste">Hoogste Gemiddelde</option>
+            <option value="laagste">Laagste Gemiddelde</option>
+            <option value="meeste">Meeste Cijfers</option>
+          </select>
+        </div>
+
         <!-- Subject list -->
         <div class="space-y-2.5">
-          {#each subjects as subject}
+          {#each getSortedSubjects() as subject}
             {@const minForPass = getMinGradeForPass(subject)}
             <div class="glass rounded-2xl overflow-hidden">
               <button
@@ -484,8 +582,34 @@
               </button>
 
               {#if selectedSubject === subject.name}
-                <div class="border-t border-surface-700/50 p-4 space-y-2">
-                  {#each subject.grades as grade}
+                <div class="border-t border-surface-700/50 p-4 space-y-4">
+                  
+                  <!-- Detailed Subject Graph -->
+                  {#if getTrendPath(subject)}
+                    {@const chronoG = [...subject.grades].filter(g => g.CijferStr && g.TeltMee && !isNaN(getNumericValue(g.CijferStr))).sort((a,b) => (a.DatumIngevoerd ?? '').localeCompare(b.DatumIngevoerd ?? ''))}
+                    {@const chronoVals = chronoG.map(g => getNumericValue(g.CijferStr))}
+                    {@const minY = $userSettings.zoomGraph ? Math.max(1, Math.min(...chronoVals) - 0.5) : 1}
+                    {@const maxY = $userSettings.zoomGraph ? Math.min(10, Math.max(...chronoVals) + 0.5) : 10}
+                    <div class="h-32 w-full relative bg-surface-900/50 rounded-xl p-3 border border-white/5">
+                      <p class="absolute top-2 left-3 text-[9px] font-black uppercase text-gray-500">Cijferverloop</p>
+                      <svg viewBox="0 0 100 40" class="w-full h-full overflow-visible mt-2" preserveAspectRatio="none">
+                        
+                        <path d={getTrendPath(subject)} fill="none" stroke="var(--color-primary-400)" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linecap="round" stroke-linejoin="round" />
+                        
+                        {#each chronoVals as gVal, idx}
+                          {@const cx = (idx / (chronoVals.length - 1)) * 100 || 50}
+                          {@const cy = 40 - ((gVal - minY) / (maxY - minY)) * 40}
+                          <circle cx={cx} cy={cy} r="1.5" fill="var(--color-primary-500)" stroke="var(--color-surface-900)" stroke-width="0.5" />
+                          {#if idx === chronoVals.length - 1}
+                             <text x={cx} y={cy - 4} text-anchor="middle" class="text-[5px] font-black fill-white italic tracking-tighter">{gVal.toFixed(1)}</text>
+                          {/if}
+                        {/each}
+                      </svg>
+                    </div>
+                  {/if}
+
+                  <div class="space-y-2">
+                    {#each subject.grades as grade}
                     <div class="flex items-center justify-between p-3 rounded-xl bg-surface-800/50 border border-white/4">
                       <div class="min-w-0 flex-1">
                         <p class="text-sm text-gray-300 font-medium">
@@ -508,6 +632,7 @@
                       </span>
                     </div>
                   {/each}
+                  </div>
                 </div>
               {/if}
             </div>
@@ -639,11 +764,20 @@
                         style="width: {getProgressPercent(s)}%"
                       ></div>
                     </div>
-                    <div class="text-center">
-                      <span class="text-4xl font-black italic tracking-tighter {parseFloat(getPredictedAverage(s)) >= $userSettings.insufficientThreshold ? 'text-white' : 'text-red-400'} drop-shadow-[0_0_20px_rgba(var(--color-primary-500),0.3)]">
-                        {getPredictedAverage(s)}
-                      </span>
-                      <p class="text-[9px] text-gray-600 font-black uppercase tracking-[0.2em] mt-0.5">Nieuw Voorspeld Gemiddelde</p>
+                    
+                    <div class="grid grid-cols-2 gap-4 mt-4 pt-2 border-t border-white/5">
+                      <div class="bg-surface-800/30 rounded-2xl p-4 flex flex-col items-center justify-center">
+                         <span class="text-3xl font-black italic tracking-tighter drop-shadow-md {parseFloat(getPredictedAverage(s)) >= $userSettings.insufficientThreshold ? 'text-white' : 'text-red-400'}">
+                           {getPredictedAverage(s)}
+                         </span>
+                         <p class="text-[8px] text-gray-500 font-black uppercase tracking-widest mt-1 text-center">Nieuw Vak Gem.</p>
+                      </div>
+                      <div class="bg-surface-800/30 rounded-2xl p-4 flex flex-col items-center justify-center shadow-inner">
+                         <span class="text-3xl font-black italic tracking-tighter drop-shadow-md text-primary-300">
+                           {getNewOverallAverage(s)}
+                         </span>
+                         <p class="text-[8px] text-gray-500 font-black uppercase tracking-widest mt-1 text-center">Nieuw Totaal Gem.</p>
+                      </div>
                     </div>
                   </div>
 
@@ -687,6 +821,45 @@
                     </div>
                   </div>
                 {/if}
+              {/if}
+            </div>
+          </div>
+
+          <div class="h-px w-3/4 mx-auto bg-gradient-to-r from-transparent via-surface-600 to-transparent"></div>
+
+          <!-- Vergelijk Schooljaren -->
+          <div>
+            <div class="flex items-center justify-between mb-4">
+              <div class="flex items-center gap-3">
+                <div class="w-8 h-8 rounded-xl bg-accent-500/15 flex items-center justify-center text-accent-400">
+                  <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20V10M18 20V4M6 20v-4"/></svg>
+                </div>
+                <h2 class="text-xl font-black text-white italic tracking-tighter">Voortgang Jaren</h2>
+              </div>
+              {#if historicalAverages.length === 0}
+                <button onclick={loadHistoricalAverages} disabled={loadingHistory} class="px-4 py-2 bg-surface-800 text-xs font-black text-gray-300 uppercase tracking-widest rounded-xl hover:bg-surface-700 hover:text-white transition active:scale-95 disabled:opacity-50 disabled:active:scale-100">
+                  {loadingHistory ? 'Laden...' : 'Laad Data'}
+                </button>
+              {/if}
+            </div>
+
+            <div class="glass p-5 rounded-3xl min-h-[160px] flex flex-col justify-center">
+              {#if historicalAverages.length === 0}
+                 <p class="text-center text-xs text-gray-500 font-bold max-w-xs mx-auto">Krijg een compleet totaaloverzicht van je prestaties door de jaren heen.</p>
+              {:else}
+                 {@const maxAvg = Math.max(...historicalAverages.map(h => h.avg), 7)}
+                 {@const minAvg = Math.min(...historicalAverages.map(h => h.avg), 5)}
+                 <div class="flex items-end justify-between gap-2 h-32 pt-4 px-2">
+                   
+                   {#each historicalAverages as hist}
+                     {@const heightPct = Math.max(10, ((hist.avg - minAvg + 0.5) / (maxAvg - minAvg + 1)) * 100)}
+                     <div class="flex flex-col items-center flex-1 group">
+                       <span class="text-xs font-black text-white mb-2 opacity-0 group-hover:opacity-100 transition duration-300">{hist.avg.toFixed(2)}</span>
+                       <div class="w-full max-w-[40px] bg-gradient-to-t from-primary-600/50 to-primary-400 rounded-t-xl transition-all duration-700 hover:brightness-125" style="height: {heightPct}%"></div>
+                       <span class="text-[9px] font-black uppercase tracking-tighter text-gray-400 mt-3 truncate w-full text-center">{hist.year}</span>
+                     </div>
+                   {/each}
+                 </div>
               {/if}
             </div>
           </div>

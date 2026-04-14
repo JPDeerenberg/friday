@@ -308,8 +308,7 @@ object SyncStateManager {
             // 2. Detect UPCOMING deadlines (within 24h) that we haven't notified about yet.
             if (id > 0 && deadline.isNotEmpty()) {
                 try {
-                    val deadlineMs = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US)
-                        .parse(deadline)?.time ?: continue
+                    val deadlineMs = parseMagisterDate(deadline) ?: continue
 
                     if (deadlineMs > now && deadlineMs <= now + oneDayMs) {
                         val key = id.toString()
@@ -367,7 +366,6 @@ object SyncStateManager {
      */
     fun isAnyLessonActive(currentCalendar: JSONArray): Boolean {
         val now = System.currentTimeMillis()
-        val dateFormat = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US)
         
         for (i in 0 until currentCalendar.length()) {
             try {
@@ -381,8 +379,8 @@ object SyncStateManager {
                 if (status == 4 || status == 5) continue
                 
                 if (startTime.isNotEmpty() && endTime.isNotEmpty()) {
-                    val startMs = dateFormat.parse(startTime)?.time ?: continue
-                    val endMs = dateFormat.parse(endTime)?.time ?: continue
+                    val startMs = parseMagisterDate(startTime) ?: continue
+                    val endMs = parseMagisterDate(endTime) ?: continue
                     
                     if (now in startMs..endMs) {
                         return true
@@ -393,6 +391,26 @@ object SyncStateManager {
             }
         }
         return false
+    }
+
+    private fun parseMagisterDate(dateStr: String): Long? {
+        try {
+            var s = dateStr.replace(Regex("\\.\\d+"), "")
+            s = s.replace("Z", "+0000")
+            val colonIdx = s.lastIndexOf(":")
+            if (colonIdx > s.length - 4 && (s.contains("+") || s.contains("-")) && s.indexOf('T') > -1) {
+                s = s.substring(0, colonIdx) + s.substring(colonIdx + 1)
+            }
+            val format = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssZ", java.util.Locale.US)
+            return format.parse(s)?.time
+        } catch (e: Exception) {
+            try {
+                val format = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US)
+                return format.parse(dateStr)?.time
+            } catch (ex: Exception) {
+                return null
+            }
+        }
     }
     
     /**
