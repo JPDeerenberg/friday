@@ -1,6 +1,6 @@
 <script lang="ts">
   import { personId, userSettings } from '$lib/stores';
-  import { getCalendarEvents, formatDate, getCalendarEvent, toggleCalendarEventDone, downloadFile } from '$lib/api';
+  import { getCalendarEvents, formatDate, getCalendarEvent, toggleCalendarEventDone, downloadFile, createCalendarEvent, deleteCalendarEvent } from '$lib/api';
   let downloadingFile = $state<string | null>(null);
 
   import HtmlRenderer from '$lib/components/HtmlRenderer.svelte';
@@ -254,32 +254,91 @@
     appointments = appointments.map(a => a.Id === selectedAppointment.Id ? {...a, Inhoud: editContent} : a);
   }
 
+  let createError = $state('');
+
   async function createAppointment() {
     const pid = $personId;
     if (!pid) return;
-    try {
-      // Set times relative to selectedDate
-      const start = new Date(selectedDate);
-      const [sh, sm] = newApp.start.split(':').map(Number);
-      start.setHours(sh || 9, sm || 0, 0, 0);
+    createError = '';
 
-      const end = new Date(selectedDate);
-      const [eh, em] = newApp.einde.split(':').map(Number);
-      end.setHours(eh || 10, em || 0, 0, 0);
+    if (!newApp.omschrijving.trim()) {
+      createError = 'Vul een omschrijving in.';
+      return;
+    }
+
+    try {
+      // Build start datetime: parse HH:MM or default to 09:00
+      const startDate = new Date(selectedDate);
+      startDate.setSeconds(0, 0);
+      if (newApp.start && /^\d{2}:\d{2}$/.test(newApp.start)) {
+        const [sh, sm] = newApp.start.split(':').map(Number);
+        startDate.setHours(sh, sm);
+      } else {
+        startDate.setHours(9, 0);
+      }
+
+      const endDate = new Date(selectedDate);
+      endDate.setSeconds(0, 0);
+      if (newApp.einde && /^\d{2}:\d{2}$/.test(newApp.einde)) {
+        const [eh, em] = newApp.einde.split(':').map(Number);
+        endDate.setHours(eh, em);
+      } else {
+        endDate.setHours(startDate.getHours() + 1, startDate.getMinutes());
+      }
+
+      if (endDate <= startDate) {
+        createError = 'Eindtijd moet na begintijd liggen.';
+        return;
+      }
 
       await createCalendarEvent({
         personId: pid,
-        start: start.toISOString(),
-        einde: end.toISOString(),
+        start: startDate.toISOString(),
+        einde: endDate.toISOString(),
         duurtHeleDag: newApp.duurtHeleDag,
-        omschrijving: newApp.omschrijving,
-        lokatie: newApp.lokatie,
-        inhoud: newApp.inhoud
+        omschrijving: newApp.omschrijving.trim(),
+        lokatie: newApp.lokatie || undefined,
+        inhoud: newApp.inhoud || undefined,
+        eventType: 1 // Personal appointment
       });
+
+      // Reset form
+      newApp = { omschrijving: '', lokatie: '', inhoud: '', start: '', einde: '', duurtHeleDag: false };
       isCreating = false;
-      await loadAppointments();
+
+      // Force a full reload so the new event appears
+      loadedStart = null;
+      loadedEnd = null;
+      await loadAppointments(true);
     } catch (e) {
       console.error('Error creating appointment:', e);
+      createError = `Fout bij aanmaken: ${e}`;
+    }
+  }
+
+  let deletingAppointment = $state(false);
+
+  async function deleteAppointment() {
+    if (!selectedAppointment) return;
+    const selfUrl = selectedAppointment.SelfUrl
+      || selectedAppointment.self_url
+      || selectedAppointment.Links?.find((l: any) => l.Rel === 'Self')?.Href?.replace('/api/', '');
+    if (!selfUrl) {
+      alert('Kan afspraak niet verwijderen: geen Self-URL gevonden.');
+      return;
+    }
+    if (!confirm(`"${selectedAppointment.Omschrijving || 'Afspraak'}" verwijderen?`)) return;
+    deletingAppointment = true;
+    try {
+      await deleteCalendarEvent(selfUrl);
+      // Remove from local list immediately
+      appointments = appointments.filter(a => a.Id !== selectedAppointment!.Id);
+      selectedAppointment = null;
+      editMode = false;
+    } catch (e) {
+      alert(`Verwijderen mislukt: ${e}`);
+    } finally {
+      deletingAppointment = false;
     }
   }
 
@@ -718,6 +777,20 @@
               >
                 <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>
               </button>
+              {#if selectedAppointment.Type === 1}
+                <button 
+                  onclick={deleteAppointment}
+                  disabled={deletingAppointment}
+                  class="p-2 rounded-xl bg-red-500/10 text-red-400 hover:bg-red-500/20 hover:text-red-300 transition-colors disabled:opacity-50"
+                  title="Afspraak verwijderen"
+                >
+                  {#if deletingAppointment}
+                    <svg class="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+                  {:else}
+                    <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M3 6h18M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6M10 11v6M14 11v6M9 6V4h6v2"/></svg>
+                  {/if}
+                </button>
+              {/if}
               <button onclick={() => { selectedAppointment = null; editMode = false; }} class="p-2 text-gray-500 hover:text-white transition-colors">
                 <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M18 6 6 18M6 6l12 12"/></svg>
               </button>
@@ -926,11 +999,14 @@
           </div>
         </div>
 
+        {#if createError}
+          <p class="text-xs text-red-400 font-bold bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3">{createError}</p>
+        {/if}
         <button 
           onclick={createAppointment}
           class="w-full py-4 rounded-2xl bg-primary-500 text-white font-black uppercase tracking-widest hover:bg-primary-400 transition-all shadow-lg shadow-primary-500/25 active:scale-[0.98]"
         >
-          Toevoegen & Synchroniseren
+          Toevoegen
         </button>
       </div>
     </div>
