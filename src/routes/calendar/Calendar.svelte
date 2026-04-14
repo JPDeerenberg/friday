@@ -298,6 +298,16 @@
     });
   });
 
+  const hiddenCancelledCount = $derived.by(() => {
+    if (!$userSettings.hideCancelled) return 0;
+    const currentDayStr = selectedDate.toDateString();
+    return appointments.filter(a => {
+      const isToday = new Date(a.Start).toDateString() === currentDayStr;
+      const isCancelled = a.Status === 4 || a.Status === 5;
+      return isToday && isCancelled;
+    }).length;
+  });
+
   // Swipe handling
   let touchStartX = 0;
   function handleTouchStart(e: TouchEvent) { touchStartX = e.touches[0].clientX; }
@@ -393,7 +403,7 @@
           
           <div class="flex gap-0.5 mt-1">
             {#if hasTest}
-              <div class="w-1 h-1 rounded-full bg-red-500 shadow-[0_0_5px_rgba(239,68,68,0.5)]"></div>
+               <div class="w-1 h-1 rounded-full bg-red-500 shadow-[0_0_5px_rgba(239,68,68,0.5)]"></div>
             {:else if hasHomework}
               <div class="w-1 h-1 rounded-full bg-blue-400 shadow-[0_0_5px_rgba(96,165,250,0.5)]"></div>
             {:else if isToday && !isSelected}
@@ -407,6 +417,26 @@
 
   <!-- Main Content -->
   <main class="flex-1 overflow-y-auto p-3 space-y-3 custom-scrollbar">
+    {#if hiddenCancelledCount > 0 && !loading}
+      <div class="glass p-3 rounded-3xl flex items-center justify-between border-red-500/10 bg-red-500/5 mb-3" transition:slide>
+        <div class="flex items-center gap-3">
+          <div class="w-8 h-8 rounded-full bg-red-500/20 text-red-400 flex items-center justify-center">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M18 6 6 18M6 6l12 12"/></svg>
+          </div>
+          <div>
+            <p class="text-xs font-black text-red-400 uppercase tracking-widest">{hiddenCancelledCount} les{hiddenCancelledCount !== 1 ? 'sen' : ''} uitgevallen</p>
+            <p class="text-[9px] text-gray-500 font-bold">Zijn momenteel verborgen</p>
+          </div>
+        </div>
+        <button 
+          onclick={() => $userSettings.hideCancelled = false}
+          class="px-3 py-1.5 rounded-xl bg-surface-800 text-[10px] font-black text-gray-300 hover:text-white hover:bg-surface-700 transition-all uppercase tracking-widest"
+        >
+          Tonen
+        </button>
+      </div>
+    {/if}
+
     {#if loading}
       <div class="flex flex-col items-center justify-center py-24 gap-4">
         <div class="w-12 h-12 border-4 border-primary-500 border-t-transparent rounded-full animate-spin shadow-[0_0_20px_rgba(var(--color-primary-500),0.3)]"></div>
