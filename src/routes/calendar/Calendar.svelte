@@ -76,8 +76,9 @@
 
   const dayAppointments = $derived.by(() => {
     let filtered = appointments.filter(a => {
+      if (!a.Start) return false;
       const d = new Date(a.Start);
-      return d.toDateString() === selectedDate.toDateString();
+      return !isNaN(d.getTime()) && d.toDateString() === selectedDate.toDateString();
     });
 
     // 1. Filter cancelled if setting is on
@@ -85,7 +86,7 @@
       filtered = filtered.filter(a => a.Status !== 4 && a.Status !== 5);
     }
 
-    filtered.sort((a, b) => a.Start.localeCompare(b.Start));
+    filtered.sort((a, b) => (a.Start ?? '').localeCompare(b.Start ?? ''));
 
     let processed: any[] = [];
 
@@ -99,7 +100,7 @@
                              (last.Vakken?.[0]?.Omschrijving === app.Vakken?.[0]?.Omschrijving) &&
                              (last.Docenten?.[0]?.Naam === app.Docenten?.[0]?.Naam) &&
                              (last.Lokatie === app.Lokatie);
-        const isConsecutive = last && last.Einde === app.Start;
+        const isConsecutive = last && last.Einde && app.Start && last.Einde === app.Start;
 
         if (isSameSubject && isConsecutive) {
           last.Einde = app.Einde;
@@ -120,6 +121,10 @@
         const current = processed[i];
         if (i > 0) {
           const prev = processed[i - 1];
+          if (!prev.Einde || !current.Start) {
+            withBreaks.push(current);
+            continue;
+          }
           const prevEnd = new Date(prev.Einde);
           const currStart = new Date(current.Start);
           const diffMs = currStart.getTime() - prevEnd.getTime();
@@ -360,8 +365,11 @@
     }
   }
 
-  function formatTime(iso: string) {
-    return new Date(iso).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' });
+  function formatTime(iso: string | null | undefined): string {
+    if (!iso) return '—';
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return '—';
+    return d.toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' });
   }
 
   function getInfoColor(info: number) {
@@ -379,7 +387,7 @@
     return 'Afspraak';
   }
 
-  const weekData = $derived(() => {
+  const weekData = $derived.by(() => {
     const d = new Date(selectedDate);
     const day = d.getDay();
     const diff = d.getDate() - day + (day === 0 ? -6 : 1); // Monday
@@ -390,7 +398,12 @@
       const date = new Date(monday);
       date.setDate(date.getDate() + i);
       const dayStr = date.toDateString();
-      const dayApps = appointments.filter(a => new Date(a.Start).toDateString() === dayStr);
+      
+      const dayApps = appointments.filter(a => {
+        if (!a.Start) return false;
+        const ad = new Date(a.Start);
+        return !isNaN(ad.getTime()) && ad.toDateString() === dayStr;
+      });
       
       return {
         date,
@@ -406,7 +419,9 @@
     if (!$userSettings.hideCancelled) return 0;
     const currentDayStr = selectedDate.toDateString();
     return appointments.filter(a => {
-      const isToday = new Date(a.Start).toDateString() === currentDayStr;
+      if (!a.Start) return false;
+      const d = new Date(a.Start);
+      const isToday = !isNaN(d.getTime()) && d.toDateString() === currentDayStr;
       const isCancelled = a.Status === 4 || a.Status === 5;
       return isToday && isCancelled;
     }).length;
@@ -552,7 +567,7 @@
 
     <!-- Quick Week Picker (Horizontal) -->
     <div class="mt-4 flex justify-between gap-1.5 overflow-x-auto no-scrollbar pb-1">
-      {#each weekData() as { date, isToday, isSelected, hasTest, hasHomework }}
+      {#each weekData as { date, isToday, isSelected, hasTest, hasHomework }}
         <button
           onclick={() => { selectedDate = new Date(date); loadAppointments(); }}
           class="flex-1 flex flex-col items-center py-2 px-1 rounded-xl transition-all border min-w-[45px] relative

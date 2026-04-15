@@ -4,6 +4,15 @@
   import { onMount } from 'svelte';
   import { fade, fly, slide } from 'svelte/transition';
 
+  /** Find the href from a Links array using multiple possible Rel values. */
+  function findLink(links: any[], ...rels: string[]): string | undefined {
+    for (const rel of rels) {
+      const found = links?.find((l: any) => l.Rel?.toLowerCase() === rel.toLowerCase());
+      if (found?.Href) return found.Href;
+    }
+    return undefined;
+  }
+
   let sources = $state<any[]>([]);
   let currentItems = $state<any[]>([]);
   let loading = $state(true);
@@ -14,8 +23,15 @@
     if (!pid) return;
     try {
       sources = await getExternalBronSources(pid);
+      console.log('[Bronnen] External sources:', JSON.stringify(sources));
       if (sources.length > 0) {
-        enterSource(sources[0]);
+        // Try each source until we find one with items
+        let loaded = false;
+        for (const src of sources) {
+          await enterSource(src);
+          if (currentItems.length > 0) { loaded = true; break; }
+        }
+        if (!loaded) loading = false;
       } else {
         loading = false;
       }
@@ -27,21 +43,30 @@
 
   async function enterSource(source: any) {
     loading = true;
-    const path = source.Links.find((l: any) => l.Rel === 'items')?.Href;
+    // Try multiple rel names — Magister uses different ones per API version
+    const path = findLink(source.Links, 'items', 'self', 'content', 'children');
+    console.log('[Bronnen] enterSource', source.Naam, 'path =', path, 'links =', JSON.stringify(source.Links));
     if (path) {
       try {
         currentItems = await getBronnen(path);
+        console.log('[Bronnen] items loaded:', currentItems.length);
         pathHistory = [{ Naam: source.Naam, Href: path }];
       } catch (e) {
         console.error('Error entering source:', e);
+        currentItems = [];
+        pathHistory = [{ Naam: source.Naam, Href: path }];
       }
+    } else {
+      console.warn('[Bronnen] No usable link found in source links:', JSON.stringify(source.Links));
+      currentItems = [];
+      pathHistory = [{ Naam: source.Naam, Href: '' }];
     }
     loading = false;
   }
 
   async function enterFolder(folder: any) {
     loading = true;
-    const path = folder.Links.find((l: any) => l.Rel === 'items')?.Href;
+    const path = findLink(folder.Links, 'items', 'self', 'content', 'children');
     if (path) {
       try {
         currentItems = await getBronnen(path);
@@ -144,16 +169,24 @@
       {:else}
         <div class="grid grid-cols-1 divide-y divide-white/[0.03] glass rounded-[2.5rem] overflow-hidden shadow-2xl border-white/5">
           {#each currentItems as item, i}
-            <div in:fly={{ y: 10, delay: i * 20 }} class="group flex items-center gap-5 p-5 hover:bg-surface-800/40 transition-all cursor-pointer">
+            <div 
+              in:fly={{ y: 10, delay: i * 20 }} 
+              class="group flex items-center gap-5 p-5 hover:bg-surface-800/40 transition-all cursor-pointer relative"
+              role="button"
+              tabindex="0"
+              onclick={() => item.BronSoort === 0 ? enterFolder(item) : null}
+              onkeydown={(e) => { 
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  if (item.BronSoort === 0) enterFolder(item);
+                }
+              }}
+            >
               <div class="w-12 h-12 rounded-2xl bg-surface-950 flex items-center justify-center text-primary-400 group-hover:bg-primary-500/10 group-hover:scale-105 transition-all shadow-inner border border-white/5">
                 {@html getFileIcon(item)}
               </div>
               
-              <button 
-                type="button"
-                class="flex-1 min-w-0 text-left" 
-                onclick={() => item.BronSoort === 0 ? enterFolder(item) : null}
-              >
+              <div class="flex-1 min-w-0">
                 <h3 class="text-sm font-black text-gray-200 truncate group-hover:text-white transition-colors italic uppercase tracking-tighter">
                   {item.Naam}
                 </h3>

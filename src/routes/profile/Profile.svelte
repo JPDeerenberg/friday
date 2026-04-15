@@ -1,6 +1,6 @@
 <script lang="ts">
   import { personId } from '$lib/stores';
-  import { getProfileInfo, getProfileAddresses, getCareerInfo, getProfilePicture } from '$lib/api';
+  import { getProfileInfo, getProfileAddresses, getCareerInfo, getProfilePicture, getAccount } from '$lib/api';
   import { onMount } from 'svelte';
   import { fade, fly, slide } from 'svelte/transition';
 
@@ -8,6 +8,7 @@
   let addresses = $state<any[]>([]);
   let career = $state<any>(null);
   let profilePic = $state<string | null>(null);
+  let account = $state<any>(null);
   let loading = $state(true);
   let error = $state<string | null>(null);
 
@@ -25,25 +26,75 @@
       getProfileInfo(pid).then(r => info = r).catch(e => console.error('Info fail:', e)),
       getProfileAddresses(pid).then(r => addresses = r).catch(e => console.error('Addr fail:', e)),
       getCareerInfo(pid).then(r => career = r).catch(e => console.error('Career fail:', e)),
-      getProfilePicture(pid).then(r => profilePic = r).catch(e => console.error('Pic fail:', e))
+      getProfilePicture(pid).then(r => profilePic = r).catch(e => console.error('Pic fail:', e)),
+      getAccount().then(r => account = r).catch(e => console.error('Account fail:', e)),
     ];
 
     try {
-      const results = await Promise.allSettled(tasks);
-      const infoPromise = results[0];
-      const careerPromise = results[2];
-
-      if (!info && !career) {
-         const firstError = results.find(r => r.status === 'rejected') as PromiseRejectedResult | undefined;
-         error = firstError ? String(firstError.reason) : "Kon profielgegevens niet inladen.";
+      await Promise.allSettled(tasks);
+      if (!info && !career && !account) {
+        error = 'Kon profielgegevens niet inladen.';
       }
     } catch (e) {
       console.error('Profile load error:', e);
-      error = "Er is iets misgegaan: " + String(e);
+      error = 'Er is iets misgegaan: ' + String(e);
     } finally {
       loading = false;
     }
   }
+
+  // ── Derived getters ──────────────────────────────────────────────────────
+
+  const displayName = $derived.by(() => {
+    const persoon = account?.Persoon ?? account?.persoon;
+    const roepnaam = persoon?.Roepnaam ?? info?.Roepnaam ?? '';
+    const achternaam = persoon?.Achternaam ?? info?.Achternaam ?? '';
+    return { roepnaam, achternaam };
+  });
+
+  /** Calculate age from YYYY-MM-DD birthdate string. */
+  function calcAge(birthdateStr: string | null | undefined): number | null {
+    if (!birthdateStr) return null;
+    const birth = new Date(birthdateStr);
+    if (isNaN(birth.getTime())) return null;
+    const today = new Date();
+    let age = today.getFullYear() - birth.getFullYear();
+    const m = today.getMonth() - birth.getMonth();
+    if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--;
+    return age;
+  }
+
+  /** Format a YYYY-MM-DD date as Dutch locale string. */
+  function formatDate(dateStr: string | null | undefined): string {
+    if (!dateStr) return '—';
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return '—';
+    return d.toLocaleDateString('nl-NL', { day: 'numeric', month: 'long', year: 'numeric' });
+  }
+
+  /** Returns how many days into the current school year we are (school year starts ~Aug 1). */
+  function schoolYearProgress(): { daysIn: number; totalDays: number; percent: number; yearLabel: string } {
+    const now = new Date();
+    const yr = now.getMonth() >= 7 ? now.getFullYear() : now.getFullYear() - 1;
+    const start = new Date(yr, 7, 1); // Aug 1
+    const end = new Date(yr + 1, 5, 30); // Jun 30 next year
+    const daysIn = Math.max(0, Math.floor((now.getTime() - start.getTime()) / 86400000));
+    const totalDays = Math.floor((end.getTime() - start.getTime()) / 86400000);
+    const percent = Math.min(100, Math.round((daysIn / totalDays) * 100));
+    return { daysIn, totalDays, percent, yearLabel: `${yr}–${yr + 1}` };
+  }
+
+  const age = $derived.by(() => {
+    const persoon = account?.Persoon ?? account?.persoon;
+    return calcAge(persoon?.Geboortedatum ?? persoon?.geboortedatum);
+  });
+
+  const birthdate = $derived.by(() => {
+    const persoon = account?.Persoon ?? account?.persoon;
+    return formatDate(persoon?.Geboortedatum ?? persoon?.geboortedatum);
+  });
+
+  const progress = $derived(schoolYearProgress());
 </script>
 
 <div class="flex flex-col bg-surface-950 min-h-full">
@@ -100,18 +151,43 @@
 
           <div class="mt-10 space-y-3">
             <h2 class="text-3xl md:text-4xl font-black text-white italic tracking-tighter uppercase leading-none">
-               {info?.Roepnaam || 'Gebruiker'} {info?.Achternaam || ''}
+               {displayName.roepnaam || info?.Roepnaam || 'Gebruiker'} {displayName.achternaam || info?.Achternaam || ''}
             </h2>
             <div class="flex flex-wrap items-center justify-center gap-3">
                <div class="px-4 py-1.5 rounded-full glass border-primary-500/30 text-primary-400 text-[10px] font-black uppercase tracking-[0.2em] shadow-sm">
-                  {career?.Studie || 'Opleiding'}
+                  {career?.Studie || career?.opleiding || 'Opleiding'}
                </div>
                <div class="px-4 py-1.5 rounded-full glass border-accent-500/30 text-accent-400 text-[10px] font-black uppercase tracking-[0.2em] shadow-sm">
-                  Klas {career?.Klas || '—'}
+                  Klas {career?.Klas || career?.groep || '—'}
                </div>
+               {#if age}
+                 <div class="px-4 py-1.5 rounded-full glass border-surface-700/50 text-gray-400 text-[10px] font-black uppercase tracking-[0.2em] shadow-sm">
+                   {age} jaar
+                 </div>
+               {/if}
             </div>
           </div>
         </section>
+
+        <!-- School year progress bar -->
+        {#if progress.daysIn > 0}
+          <div in:fly={{ y: 20, delay: 80 }} class="glass p-6 rounded-[2rem] border-white/5 shadow-xl space-y-3">
+            <div class="flex items-center justify-between mb-1">
+              <span class="text-[9px] font-black text-gray-500 uppercase tracking-[0.25em]">Schooljaar {progress.yearLabel}</span>
+              <span class="text-[9px] font-black text-primary-400 uppercase tracking-widest">{progress.percent}%</span>
+            </div>
+            <div class="relative h-2 bg-surface-800 rounded-full overflow-hidden">
+              <div
+                class="absolute inset-y-0 left-0 bg-gradient-to-r from-primary-500 to-accent-500 rounded-full transition-all duration-1000"
+                style="width: {progress.percent}%"
+              ></div>
+            </div>
+            <div class="flex justify-between text-[9px] font-bold text-gray-600 uppercase tracking-wider">
+              <span>Dag {progress.daysIn}</span>
+              <span>{progress.totalDays - progress.daysIn} dagen resterend</span>
+            </div>
+          </div>
+        {/if}
 
         <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
           <div in:fly={{ y: 20, delay: 100 }} class="glass p-8 rounded-[2.5rem] border-white/5 shadow-2xl space-y-8 group hover:bg-surface-800/40 transition-all">
@@ -124,12 +200,18 @@
             <div class="grid gap-6">
               <div class="space-y-1.5 px-2 border-l-2 border-primary-500/20">
                 <span class="text-[9px] font-black text-primary-400 uppercase tracking-widest block opacity-70">Privé E-mail</span>
-                <p class="text-gray-100 font-black tracking-tight break-all text-sm">{info?.EmailAdres || 'Niet ingevuld'}</p>
+                <p class="text-gray-100 font-black tracking-tight break-all text-sm">{info?.EmailAdres || info?.email || 'Niet ingevuld'}</p>
               </div>
               <div class="space-y-1.5 px-2 border-l-2 border-primary-500/20">
                 <span class="text-[9px] font-black text-primary-400 uppercase tracking-widest block opacity-70">Telefoonnummer</span>
-                <p class="text-gray-100 font-black tracking-tight text-sm italic">{info?.Mobiel || 'Niet beschikbaar'}</p>
+                <p class="text-gray-100 font-black tracking-tight text-sm italic">{info?.Mobiel || info?.mobiel || 'Niet beschikbaar'}</p>
               </div>
+              {#if birthdate !== '—'}
+                <div class="space-y-1.5 px-2 border-l-2 border-primary-500/20">
+                  <span class="text-[9px] font-black text-primary-400 uppercase tracking-widest block opacity-70">Geboortedatum</span>
+                  <p class="text-gray-100 font-black tracking-tight text-sm">{birthdate}{age ? ` (${age} jaar)` : ''}</p>
+                </div>
+              {/if}
             </div>
           </div>
 
@@ -143,14 +225,21 @@
             <div class="grid gap-6">
               <div class="space-y-1.5 px-2 border-l-2 border-accent-500/20">
                 <span class="text-[9px] font-black text-accent-400 uppercase tracking-widest block opacity-70">Stamnummer</span>
-                <p class="text-gray-100 font-black tracking-tighter text-sm italic">{career?.StamNr || 'Onbekend'}</p>
+                <p class="text-gray-100 font-black tracking-tighter text-sm italic">{career?.StamNr || career?.stamnummer || 'Onbekend'}</p>
               </div>
+              {#if career?.Klas || career?.groep}
+                <div class="space-y-1.5 px-2 border-l-2 border-accent-500/20">
+                  <span class="text-[9px] font-black text-accent-400 uppercase tracking-widest block opacity-70">Klas</span>
+                  <p class="text-gray-100 font-black tracking-tighter text-sm">{career?.Klas || career?.groep}</p>
+                </div>
+              {/if}
               <div class="space-y-1.5 px-2 border-l-2 border-accent-500/20">
                 <span class="text-[9px] font-black text-accent-400 uppercase tracking-widest block opacity-70">Status</span>
                 <p class="text-emerald-400 font-black text-[10px] uppercase tracking-[0.2em] bg-emerald-500/10 px-3 py-1 rounded-lg w-fit mt-1 border border-emerald-500/20">Ingeschreven</p>
               </div>
             </div>
           </div>
+
 
           <div in:fly={{ y: 20, delay: 300 }} class="md:col-span-2 glass p-10 rounded-[3rem] border-white/5 shadow-2xl space-y-10 group">
             <div class="flex items-center gap-5">
