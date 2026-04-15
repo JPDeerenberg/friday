@@ -2,7 +2,7 @@
   "METADATA_VERSION": 20002,
   "allow_disabled_algorithms": false,
   "app-arm64-release-unsigned-signed.apk": {
-    "hash": "5b942fb7b5e36efe6836646578f285c26d5c2f6d21e22de853f0e35c59362e97",
+    "hash": "6e92ceed8bebfb9fc0ab01cd413e91541c8c95ab96376828543dc5fa170e81e5",
     "hashType": "sha256",
     "uses-permission": [
       [
@@ -52,9 +52,9 @@
     "icons": {},
     "antiFeatures": {},
     "packageName": "com.joris.friday",
-    "versionCode": 1002005,
+    "versionCode": 1002006,
     "name": "Friday",
-    "versionName": "1.2.5",
+    "versionName": "1.2.6",
     "minSdkVersion": 24,
     "targetSdkVersion": 36,
     "nativecode": [
