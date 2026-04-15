@@ -156,34 +156,35 @@
   // Swipe animation state
   let swipeOffset = $state(0);
   let isAnimating = $state(false);
+  let noTransition = $state(false);
   let swipeDirection = $state(0); // -1 = left (next), 1 = right (prev)
   let dayKey = $state(0); // increment to trigger card re-animation
 
-  async function navigateToDay(newDate: Date) {
-    if (isAnimating) return;
+  async function navigateToDay(newDate: Date, force = false) {
+    if (isAnimating && !force) return;
     selectedDate = newDate;
     dayKey++;
     await loadAppointments();
   }
 
-  function nextDay() {
-    if (isAnimating) return;
+  function nextDay(force = false) {
+    if (isAnimating && !force) return;
     const next = new Date(selectedDate);
     next.setDate(next.getDate() + 1);
     if (!$userSettings.showWeekend && (next.getDay() === 0 || next.getDay() === 6)) {
       next.setDate(next.getDate() + (next.getDay() === 6 ? 2 : 1));
     }
-    navigateToDay(next);
+    navigateToDay(next, force);
   }
 
-  function prevDay() {
-    if (isAnimating) return;
+  function prevDay(force = false) {
+    if (isAnimating && !force) return;
     const prev = new Date(selectedDate);
     prev.setDate(prev.getDate() - 1);
     if (!$userSettings.showWeekend && (prev.getDay() === 0 || prev.getDay() === 6)) {
       prev.setDate(prev.getDate() - (prev.getDay() === 0 ? 2 : 1));
     }
-    navigateToDay(prev);
+    navigateToDay(prev, force);
   }
 
   function nextWeek() {
@@ -436,24 +437,28 @@
 
     if (isHorizontalSwipe) {
       e.preventDefault();
-      // Add resistance at the edges
-      swipeOffset = dx * 0.85;
+      swipeOffset = dx;
     }
   }
 
   function handleTouchEnd(e: TouchEvent) {
     const dx = e.changedTouches[0].clientX - touchStartX;
-    if (isHorizontalSwipe && Math.abs(dx) > 55) {
+    if (isHorizontalSwipe && Math.abs(dx) > 40) {
       // Slide all the way out
       swipeOffset = dx > 0 ? window.innerWidth : -window.innerWidth;
       isAnimating = true;
       // Navigate while off-screen, then snap back from opposite side
       setTimeout(() => {
-        if (dx > 0) prevDay(); else nextDay();
-        // Jump to opposite side (no transition) then spring back to center
+        if (dx > 0) prevDay(true); else nextDay(true);
+
+        // Disable transitions for the jump to the opposite side
+        noTransition = true;
+        swipeOffset = dx > 0 ? -window.innerWidth * 0.3 : window.innerWidth * 0.3;
+
+        // Re-enable transitions and spring back in
         requestAnimationFrame(() => {
-          swipeOffset = dx > 0 ? -window.innerWidth * 0.3 : window.innerWidth * 0.3;
           requestAnimationFrame(() => {
+            noTransition = false;
             swipeOffset = 0;
             isAnimating = false;
           });
@@ -577,7 +582,7 @@
   <!-- Main Content -->
   <main 
     class="flex-1 overflow-y-auto p-3 space-y-3 custom-scrollbar"
-    style="transform: translateX({swipeOffset}px); transition: {isDragging ? 'none' : 'transform 0.35s cubic-bezier(0.25, 0.46, 0.45, 0.94)'}; will-change: transform; touch-action: pan-y;" 
+    style="transform: translateX({swipeOffset}px); transition: {isDragging || noTransition ? 'none' : 'transform 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94)'}; will-change: transform; touch-action: pan-y;"
   >
     {#if hiddenCancelledCount > 0 && !loading}
       <div class="glass p-3 rounded-3xl flex items-center justify-between border-red-500/10 bg-red-500/5 mb-3" transition:slide>
@@ -637,7 +642,7 @@
             tabindex="0"
             onclick={() => openDetail(app)}
             onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDetail(app); } }}
-            in:fly={{ y: 16, duration: 300, delay: i * 45, easing: (t) => 1 - Math.pow(1-t, 3) }}
+            in:fly={{ y: 16, duration: 200, delay: i * 25, easing: (t) => 1 - Math.pow(1-t, 3) }}
             class="w-full text-left glass rounded-3xl p-4 flex gap-4 transition-all active:scale-[0.98] group relative overflow-hidden cursor-pointer
                    {app.InfoType === 1 && !app.Afgerond ? 'border-primary-500/30' : ''}
                    {app.Status === 4 || app.Status === 5 ? 'border-red-500/40 bg-red-500/5' : ''}
