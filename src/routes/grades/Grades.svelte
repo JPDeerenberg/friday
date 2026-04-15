@@ -55,8 +55,10 @@
   function getOverallTrendPath() {
     const chrono = getChronologicalGrades();
     if (chrono.length < 2) return '';
+    const padDivisor = Math.max(chrono.length - 1, 5);
+    const offset = (300 - ((chrono.length - 1) / padDivisor) * 300) / 2;
     const points = chrono.map((g, i) => ({
-      x: (i / (chrono.length - 1)) * 300,
+      x: (i / padDivisor) * 300 + offset,
       y: 100 - ((getNumericValue(g.CijferStr) - 1) / 9) * 100
     }));
     
@@ -242,8 +244,10 @@
       minY = Math.max(1, Math.min(...chronoGrades) - 0.5);
       maxY = Math.min(10, Math.max(...chronoGrades) + 0.5);
     }
+    const padDivisor = Math.max(chronoGrades.length - 1, 5);
+    const offset = (w - ((chronoGrades.length - 1) / padDivisor) * w) / 2;
     const points = chronoGrades.map((g, i) => ({
-      x: (i / (chronoGrades.length - 1)) * w,
+      x: (i / padDivisor) * w + offset,
       y: h - ((g - minY) / (maxY - minY)) * h
     }));
     if ($userSettings.roundedGraphs) {
@@ -498,23 +502,14 @@
                     <stop offset="0%" style="stop-color:var(--color-primary-500);stop-opacity:0.2" />
                     <stop offset="100%" style="stop-color:var(--color-primary-500);stop-opacity:0" />
                   </linearGradient>
+                  <linearGradient id="lineGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                    <stop offset="0%" style="stop-color:var(--color-primary-400)" />
+                    <stop offset="100%" style="stop-color:var(--color-accent-400)" />
+                  </linearGradient>
                 </defs>
                 {#if path}
                   <path d="{path} V 100 H 0 Z" fill="url(#gradeGrad)" />
-                  <path d={path} fill="none" stroke="var(--color-primary-400)" stroke-width="3" vector-effect="non-scaling-stroke" stroke-linecap="round" stroke-linejoin="round" />
-                  {#each getChronologicalGrades().slice(-10) as g, i}
-                    {@const chrono = getChronologicalGrades()}
-                    {@const total = chrono.length}
-                    {@const idx = total > 10 ? total - 10 + i : i}
-                    {@const x = (idx / (total - 1)) * 300}
-                    {@const y = 100 - ((getNumericValue(g.CijferStr) - 1) / 9) * 100}
-                    <circle cx={x} cy={y} r="3" fill="var(--color-primary-500)" stroke="white" stroke-width="1.5" />
-                    {#if i === (total > 10 ? 9 : total - 1)}
-                       <text x={x} y={y - 8} text-anchor="end" class="text-[8px] font-black fill-white italic uppercase tracking-tighter">
-                          {g.CijferStr}
-                       </text>
-                    {/if}
-                  {/each}
+                  <path d={path} fill="none" stroke="url(#lineGrad)" stroke-width="3" vector-effect="non-scaling-stroke" stroke-linecap="round" stroke-linejoin="round" style="filter: drop-shadow(0px 4px 6px rgba(192, 132, 252, 0.4));" />
                   <!-- Average line -->
                   <line x1="0" y1={100 - ((overallAvg - 1) / 9) * 100} x2="300" y2={100 - ((overallAvg - 1) / 9) * 100} stroke="white" stroke-width="0.5" stroke-dasharray="4 4" opacity="0.3" />
                 {/if}
@@ -565,10 +560,19 @@
                     {@const minY = $userSettings.zoomGraph ? Math.max(1, Math.min(...chrono) - 0.5) : 1}
                     {@const maxY = $userSettings.zoomGraph ? Math.min(10, Math.max(...chrono) + 0.5) : 10}
                     {@const lastY = 40 - ((lastVal - minY) / (maxY - minY)) * 40}
+                    {@const padDivisor = Math.max(chrono.length - 1, 5)}
+                    {@const offset = (100 - ((chrono.length - 1) / padDivisor) * 100) / 2}
+                    {@const lastX = ((chrono.length - 1) / padDivisor) * 100 + offset}
                     <div class="w-16 h-8 hidden sm:block shrink-0">
                       <svg viewBox="0 0 100 40" class="w-full h-full overflow-visible" preserveAspectRatio="none">
-                        <path d={getTrendPath(subject)} fill="none" stroke="var(--color-primary-400)" stroke-width="3" vector-effect="non-scaling-stroke" stroke-linecap="round" stroke-linejoin="round" />
-                        <circle cx="100" cy={lastY} r="2.5" fill="var(--color-primary-400)" />
+                        <defs>
+                          <linearGradient id="lineGradSmall" x1="0%" y1="0%" x2="100%" y2="0%">
+                            <stop offset="0%" style="stop-color:var(--color-primary-400)" />
+                            <stop offset="100%" style="stop-color:var(--color-accent-400)" />
+                          </linearGradient>
+                        </defs>
+                        <path d={getTrendPath(subject)} fill="none" stroke="url(#lineGradSmall)" stroke-width="3" vector-effect="non-scaling-stroke" stroke-linecap="round" stroke-linejoin="round" style="filter: drop-shadow(0px 2px 4px rgba(192, 132, 252, 0.4));" />
+                        <circle cx={lastX} cy={lastY} r="2.5" fill="var(--color-primary-400)" />
                       </svg>
                     </div>
                   {/if}
@@ -593,11 +597,18 @@
                     <div class="h-32 w-full relative bg-surface-900/50 rounded-xl p-3 border border-white/5">
                       <p class="absolute top-2 left-3 text-[9px] font-black uppercase text-gray-500">Cijferverloop</p>
                       <svg viewBox="0 0 100 40" class="w-full h-full overflow-visible mt-2" preserveAspectRatio="none">
-                        
-                        <path d={getTrendPath(subject)} fill="none" stroke="var(--color-primary-400)" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linecap="round" stroke-linejoin="round" />
+                        <defs>
+                          <linearGradient id="lineGradDetailed" x1="0%" y1="0%" x2="100%" y2="0%">
+                            <stop offset="0%" style="stop-color:var(--color-primary-400)" />
+                            <stop offset="100%" style="stop-color:var(--color-accent-400)" />
+                          </linearGradient>
+                        </defs>
+                        <path d={getTrendPath(subject)} fill="none" stroke="url(#lineGradDetailed)" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linecap="round" stroke-linejoin="round" style="filter: drop-shadow(0px 3px 5px rgba(192, 132, 252, 0.4));" />
                         
                         {#each chronoVals as gVal, idx}
-                          {@const cx = (idx / (chronoVals.length - 1)) * 100 || 50}
+                          {@const padDivisor = Math.max(chronoVals.length - 1, 5)}
+                          {@const offset = (100 - ((chronoVals.length - 1) / padDivisor) * 100) / 2}
+                          {@const cx = (idx / padDivisor) * 100 + offset}
                           {@const cy = 40 - ((gVal - minY) / (maxY - minY)) * 40}
                           <circle cx={cx} cy={cy} r="1.5" fill="var(--color-primary-500)" stroke="var(--color-surface-900)" stroke-width="0.5" />
                           {#if idx === chronoVals.length - 1}
