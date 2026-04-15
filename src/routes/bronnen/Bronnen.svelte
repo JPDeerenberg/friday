@@ -197,7 +197,7 @@
                      <span class="text-[9px] font-black text-gray-500 uppercase tabular-nums">{formatSize(item.Grootte)}</span>
                    {/if}
                 </div>
-              </button>
+              </div>
 
               <div class="flex items-center gap-3">
                 {#if item.BronSoort === 3}
