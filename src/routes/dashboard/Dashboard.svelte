@@ -444,7 +444,7 @@
                   <div class="absolute inset-0 bg-primary-400/20 blur-2xl animate-pulse"></div>
                   <svg class="w-12 h-12 text-primary-400 relative z-10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg>
               </div>
-              <h3 class="text-4xl font-black text-white italic tracking-tighter uppercase mb-6 leading-none animate-float">Blijf Strijden!</h3>
+              <h3 class="text-4xl font-black text-white italic tracking-tighter uppercase mb-6 leading-none animate-float">Investeer in jezelf!</h3>
               <p class="text-[13px] text-primary-200/80 font-bold uppercase tracking-[0.35em] max-w-[320px] leading-loose italic opacity-90">
                 Jouw inzet bepaalt de uitkomst. Maak er een legendarische dag van!
               </p>
