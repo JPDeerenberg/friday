@@ -365,8 +365,8 @@
   }
 
   function getInfoColor(info: number) {
-    if (info === 1) return 'border-blue-500/40 text-blue-400 bg-blue-500/10';
-    if ([2, 3, 4, 5].includes(info)) return 'border-red-500/40 text-red-400 bg-red-500/10';
+    if (info === 1) return 'border-primary-400/50 text-primary-300 bg-primary-500/15';
+    if ([2, 3, 4, 5].includes(info)) return 'border-red-400/60 text-red-300 bg-red-500/20';
     return 'border-surface-700 text-gray-400 bg-surface-800/40';
   }
 
@@ -567,11 +567,11 @@
           
           <div class="flex gap-0.5 mt-1">
             {#if hasTest}
-               <div class="w-1 h-1 rounded-full bg-red-500 shadow-[0_0_5px_rgba(239,68,68,0.5)]"></div>
+               <div class="w-1 h-1 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.6)]"></div>
             {:else if hasHomework}
-              <div class="w-1 h-1 rounded-full bg-blue-400 shadow-[0_0_5px_rgba(96,165,250,0.5)]"></div>
+              <div class="w-1 h-1 rounded-full bg-primary-400 shadow-[0_0_8px_rgba(var(--color-primary-400),0.6)]"></div>
             {:else if isToday && !isSelected}
-              <div class="w-1 h-1 rounded-full bg-primary-500 animate-pulse"></div>
+              <div class="w-1 h-1 rounded-full bg-primary-500 animate-pulse shadow-[0_0_8px_rgba(var(--color-primary-500),0.6)]"></div>
             {/if}
           </div>
         </button>
@@ -643,8 +643,8 @@
             onclick={() => openDetail(app)}
             onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDetail(app); } }}
             in:fly={{ y: 16, duration: 200, delay: i * 25, easing: (t) => 1 - Math.pow(1-t, 3) }}
-            class="w-full text-left glass rounded-3xl p-4 flex gap-4 transition-all active:scale-[0.98] group relative overflow-hidden cursor-pointer
-                   {app.InfoType === 1 && !app.Afgerond ? 'border-primary-500/30' : ''}
+            class="w-full text-left glass rounded-3xl p-4 flex gap-4 transition-all active:scale-[0.98] hover:scale-[1.01] hover:bg-surface-900/60 hover:border-white/20 group relative overflow-hidden cursor-pointer
+                   {app.InfoType === 1 && !app.Afgerond ? 'border-primary-400/60' : ''}
                    {app.Status === 4 || app.Status === 5 ? 'border-red-500/40 bg-red-500/5' : ''}
                    {app.Afgerond ? 'opacity-60' : ''}"
           >
@@ -661,16 +661,16 @@
             
             <!-- Time/Period -->
             <div class="flex flex-col items-center justify-center min-w-[42px] gap-0.5 relative z-10">
-              <span class="text-[9px] font-black {app.Status === 4 || app.Status === 5 ? 'text-red-400' : 'text-gray-600'} uppercase tracking-tight">
+              <span class="text-[9px] font-black {app.Status === 4 || app.Status === 5 ? 'text-red-400' : 'text-primary-400/90'} uppercase tracking-tight">
                 {app.IsCombined ? 'Uren' : 'Les'}
               </span>
               <span class="text-xl font-black {app.Status === 4 || app.Status === 5 ? 'text-red-400' : 'text-white'} italic leading-none">{app.Lesuur}</span>
               <div class="h-px w-5 {app.Status === 4 || app.Status === 5 ? 'bg-red-500/30' : 'bg-surface-700'} my-1"></div>
-              <span class="text-[9px] font-bold {app.Status === 4 || app.Status === 5 ? 'text-red-400/70' : 'text-gray-500'}">{formatTime(app.Start)}</span>
+              <span class="text-[9px] font-bold {app.Status === 4 || app.Status === 5 ? 'text-red-400/70' : 'text-primary-300/80'}">{formatTime(app.Start)}</span>
             </div>
 
             <!-- Vertical Divider -->
-            <div class="w-px {app.Status === 4 || app.Status === 5 ? 'bg-red-500/20' : 'bg-surface-800/80'} my-1"></div>
+            <div class="w-px {app.Status === 4 || app.Status === 5 ? 'bg-red-500/20' : 'bg-surface-700/60'} my-1"></div>
 
             <!-- Info -->
             <div class="flex-1 min-w-0 flex flex-col justify-center relative z-10">
