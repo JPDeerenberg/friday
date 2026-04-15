@@ -1,23 +1,28 @@
 package com.joris.friday
 
+import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
+import android.provider.Settings
+import android.Manifest
 import androidx.activity.enableEdgeToEdge
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import androidx.work.Constraints
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import java.util.concurrent.TimeUnit
-import android.Manifest
-import android.content.Intent
-import android.content.pm.PackageManager
-import android.os.Build
-import androidx.core.app.ActivityCompat
-import androidx.core.content.ContextCompat
 
 class MainActivity : TauriActivity() {
     // State variable to track if we've asked for permissions this session
     private var hasPromptedPermissions = false
+    private var hasPromptedBatteryOpt = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
@@ -30,7 +35,21 @@ class MainActivity : TauriActivity() {
         } else {
             startService(serviceIntent)
         }
-        
+
+        // Schedule a guaranteed periodic sync via WorkManager as a backup to SyncService.
+        // WorkManager is OS-managed and survives service kills, Doze mode, and reboots.
+        // 15 minutes is the minimum interval WorkManager allows.
+        val constraints = Constraints.Builder()
+            .setRequiredNetworkType(NetworkType.CONNECTED)
+            .build()
+        val periodicSync = PeriodicWorkRequestBuilder<SyncWorker>(15, TimeUnit.MINUTES)
+            .setConstraints(constraints)
+            .build()
+        WorkManager.getInstance(this).enqueueUniquePeriodicWork(
+            "FridayPeriodicSync",
+            ExistingPeriodicWorkPolicy.KEEP,
+            periodicSync
+        )
     }
   
     override fun onResume() {
@@ -40,6 +59,24 @@ class MainActivity : TauriActivity() {
             hasPromptedPermissions = true
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
                 ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.POST_NOTIFICATIONS), 101)
+            }
+        }
+
+        // Request battery optimisation exemption once per session.
+        // Without this, Android Doze mode will kill the SyncService and block network access
+        // in the background, making notifications unreliable on most devices.
+        if (!hasPromptedBatteryOpt && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            hasPromptedBatteryOpt = true
+            val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+            if (!pm.isIgnoringBatteryOptimizations(packageName)) {
+                try {
+                    val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                        data = Uri.parse("package:$packageName")
+                    }
+                    startActivity(intent)
+                } catch (e: Exception) {
+                    // Some OEMs don't support this intent; ignore gracefully.
+                }
             }
         }
 
