@@ -19,20 +19,32 @@
   let pathHistory = $state<any[]>([]); // To support back navigation
 
   onMount(async () => {
+    const cachedSources = localStorage.getItem('bronnen_sources');
+    const cachedItems = localStorage.getItem('bronnen_current_items');
+    const cachedHistory = localStorage.getItem('bronnen_path_history');
+    if (cachedSources) {
+      try {
+        sources = JSON.parse(cachedSources);
+        if (cachedItems) currentItems = JSON.parse(cachedItems);
+        if (cachedHistory) pathHistory = JSON.parse(cachedHistory);
+        loading = false;
+      } catch (e) { console.error(e); }
+    }
     const pid = $personId;
     if (!pid) return;
     try {
       sources = await getExternalBronSources(pid);
+      localStorage.setItem('bronnen_sources', JSON.stringify(sources));
       console.log('[Bronnen] External sources:', JSON.stringify(sources));
-      if (sources.length > 0) {
-        // Try each source until we find one with items
+      if (sources.length > 0 && currentItems.length === 0) {
+        // Try each source until we find one with items if not loaded from cache
         let loaded = false;
         for (const src of sources) {
           await enterSource(src);
           if (currentItems.length > 0) { loaded = true; break; }
         }
         if (!loaded) loading = false;
-      } else {
+      } else if (sources.length === 0) {
         loading = false;
       }
     } catch (e) {
@@ -49,8 +61,10 @@
     if (path) {
       try {
         currentItems = await getBronnen(path);
+        localStorage.setItem('bronnen_current_items', JSON.stringify(currentItems));
         console.log('[Bronnen] items loaded:', currentItems.length);
         pathHistory = [{ Naam: source.Naam, Href: path }];
+        localStorage.setItem('bronnen_path_history', JSON.stringify(pathHistory));
       } catch (e) {
         console.error('Error entering source:', e);
         currentItems = [];
@@ -70,7 +84,9 @@
     if (path) {
       try {
         currentItems = await getBronnen(path);
+        localStorage.setItem('bronnen_current_items', JSON.stringify(currentItems));
         pathHistory = [...pathHistory, { Naam: folder.Naam, Href: path }];
+        localStorage.setItem('bronnen_path_history', JSON.stringify(pathHistory));
       } catch (e) {
         console.error('Error entering folder:', e);
       }
@@ -85,7 +101,9 @@
     const last = newHistory[newHistory.length - 1];
     try {
       currentItems = await getBronnen(last.Href);
+      localStorage.setItem('bronnen_current_items', JSON.stringify(currentItems));
       pathHistory = newHistory;
+      localStorage.setItem('bronnen_path_history', JSON.stringify(pathHistory));
     } catch (e) {
       console.error('Error going back:', e);
     }

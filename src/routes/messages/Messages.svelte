@@ -42,10 +42,30 @@
   let composeSending = $state(false);
 
   onMount(async () => {
+    const cachedFolders = localStorage.getItem('messages_folders');
+    if (cachedFolders) {
+      try {
+        folders = JSON.parse(cachedFolders);
+        if (folders.length > 0) {
+          selectedFolder = folders[0];
+          const cachedMessages = localStorage.getItem(`messages_cache_${selectedFolder.id}`);
+          if (cachedMessages) {
+            messages = JSON.parse(cachedMessages);
+            loadingMessages = false;
+          }
+        }
+        loading = false;
+      } catch (e) { console.error(e); }
+    }
+
     try {
       folders = await getMessageFolders();
+      localStorage.setItem('messages_folders', JSON.stringify(folders));
       if (folders.length > 0) {
-        selectedFolder = folders[0];
+        // If selectedFolder was not set by cache or doesn't match new folders, set to first
+        if (!selectedFolder || !folders.find(f => f.id === selectedFolder.id)) {
+          selectedFolder = folders[0];
+        }
         await loadMessages();
       }
     } catch (e) {
@@ -56,9 +76,10 @@
 
   async function loadMessages() {
     if (!selectedFolder?.links?.berichten?.href) return;
-    loadingMessages = true;
+    if (messages.length === 0) loadingMessages = true;
     try {
       messages = await getMessages(selectedFolder.links.berichten.href, 50, 0);
+      localStorage.setItem(`messages_cache_${selectedFolder.id}`, JSON.stringify(messages));
     } catch (e) {
       console.error('Error loading messages:', e);
     }

@@ -29,18 +29,26 @@
     const mq = window.matchMedia('(max-width: 767px)');
     isMobile = mq.matches;
     mq.addEventListener('change', (e) => isMobile = e.matches);
+    const cached = localStorage.getItem('assignments_cache');
+    if (cached) {
+      try {
+        assignments = JSON.parse(cached);
+        loadingList = false;
+      } catch (e) { console.error(e); }
+    }
     await loadAssignments();
   });
 
   async function loadAssignments() {
     const pid = get(personId);
     if (!pid) return;
-    loadingList = true;
+    if (assignments.length === 0) loadingList = true;
     try {
       const start = '2013-01-01';
       const end = formatDate(new Date(Date.now() + 365 * 86400000));
       const raw = await getAssignments(pid, start, end);
       assignments = raw.sort((a, b) => b.InleverenVoor.localeCompare(a.InleverenVoor));
+      localStorage.setItem('assignments_cache', JSON.stringify(assignments));
     } catch (e) {
       console.error('Error loading assignments:', e);
     } finally {

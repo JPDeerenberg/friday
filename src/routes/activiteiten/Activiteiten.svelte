@@ -11,10 +11,18 @@
   let elementsLoading = $state(false);
 
   onMount(async () => {
+    const cached = localStorage.getItem('activiteiten_cache');
+    if (cached) {
+      try {
+        activities = JSON.parse(cached);
+        loading = false;
+      } catch (e) { console.error(e); }
+    }
     const pid = $personId;
     if (!pid) return;
     try {
       activities = await getActivities(pid);
+      localStorage.setItem('activiteiten_cache', JSON.stringify(activities));
     } catch (e) {
       console.error('Error loading activities:', e);
     }

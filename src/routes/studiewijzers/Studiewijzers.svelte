@@ -13,17 +13,26 @@
   let error = $state<string | null>(null);
 
   onMount(async () => {
+    const cached = localStorage.getItem('studiewijzers_cache');
+    if (cached) {
+      try {
+        studiewijzers = JSON.parse(cached);
+        loading = false;
+      } catch (e) { console.error(e); }
+    }
     await loadInitialData();
   });
 
   async function loadInitialData() {
     const pid = get(personId);
     if (!pid) return;
-    loading = true;
+    if (studiewijzers.length === 0) loading = true;
     error = null;
     try {
-      studiewijzers = await getStudiewijzers(pid);
-      studiewijzers.sort((a, b) => a.Titel.localeCompare(b.Titel));
+      const raw = await getStudiewijzers(pid);
+      raw.sort((a, b) => a.Titel.localeCompare(b.Titel));
+      studiewijzers = raw;
+      localStorage.setItem('studiewijzers_cache', JSON.stringify(studiewijzers));
     } catch (e) {
       console.error('Error loading studiewijzers:', e);
       error = 'Kon studiewijzers niet laden.';
