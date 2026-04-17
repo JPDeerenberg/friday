@@ -98,7 +98,12 @@ pub fn run() {
             commands::notifications::clear_sync_state,
             commands::notifications::get_sync_state_debug,
             commands::notifications::get_debug_info,
+            commands::notifications::get_sync_interval,
             commands::notifications::set_sync_interval,
+            commands::notifications::get_night_sleep_config,
+            commands::notifications::set_night_sleep_config,
+            commands::notifications::get_disable_all_notifications,
+            commands::notifications::set_disable_all_notifications,
         ])
         .plugin(tauri_plugin_dialog::init())
         .run(tauri::generate_context!())

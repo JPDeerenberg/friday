@@ -119,4 +119,44 @@ class MainActivity : TauriActivity() {
     }
     startService(intent)
   }
+
+  /**
+   * Get the current sync interval in seconds.
+   */
+  fun getSyncInterval(): Long {
+    val prefs = getSharedPreferences("friday_prefs", Context.MODE_PRIVATE)
+    val minutes = prefs.getLong(SyncService.PREF_SYNC_INTERVAL, 5L)
+    return minutes * 60L
+  }
+
+  fun getNightSleepConfig(): String {
+      val prefs = getSharedPreferences("friday_prefs", Context.MODE_PRIVATE)
+      val enabled = prefs.getBoolean("disableSyncAtNight", false)
+      val startHour = prefs.getInt("disableSyncAtNightStart", 22)
+      val endHour = prefs.getInt("disableSyncAtNightEnd", 7)
+      return "{\"enabled\":$enabled,\"startHour\":$startHour,\"endHour\":$endHour}"
+  }
+
+  fun setNightSleepConfig(enabled: Boolean, startHour: Int, endHour: Int) {
+      val prefs = getSharedPreferences("friday_prefs", Context.MODE_PRIVATE)
+      prefs.edit().apply {
+          putBoolean("disableSyncAtNight", enabled)
+          putInt("disableSyncAtNightStart", startHour)
+          putInt("disableSyncAtNightEnd", endHour)
+          apply()
+      }
+  }
+
+  fun getDisableAllNotifications(): Boolean {
+      val prefs = getSharedPreferences("friday_prefs", Context.MODE_PRIVATE)
+      return prefs.getBoolean("disableAllNotifications", false)
+  }
+
+  fun setDisableAllNotifications(enabled: Boolean) {
+      val prefs = getSharedPreferences("friday_prefs", Context.MODE_PRIVATE)
+      prefs.edit().apply {
+          putBoolean("disableAllNotifications", enabled)
+          apply()
+      }
+  }
 }
