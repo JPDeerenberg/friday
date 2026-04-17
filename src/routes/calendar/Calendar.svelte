@@ -31,9 +31,16 @@
   let localOverrides = $state<Record<string, string>>({});
 
   onMount(async () => {
-    const saved = localStorage.getItem('calendar_overrides');
-    if (saved) {
-      try { localOverrides = JSON.parse(saved); } catch (e) { console.error(e); }
+    const savedOverrides = localStorage.getItem('calendar_overrides');
+    if (savedOverrides) {
+      try { localOverrides = JSON.parse(savedOverrides); } catch (e) { console.error(e); }
+    }
+    const cachedAppointments = localStorage.getItem('calendar_appointments');
+    if (cachedAppointments) {
+      try {
+        appointments = JSON.parse(cachedAppointments);
+        loading = false;
+      } catch (e) { console.error(e); }
     }
     await loadAppointments();
   });
@@ -67,6 +74,7 @@
       loadedStart = start;
       loadedEnd = end;
       appointments = await getCalendarEvents(pid, formatDate(start), formatDate(end));
+      localStorage.setItem('calendar_appointments', JSON.stringify(appointments));
     } catch (e) {
       console.error('Error loading appointments:', e);
     } finally {

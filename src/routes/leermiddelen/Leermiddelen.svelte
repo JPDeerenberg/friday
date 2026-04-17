@@ -12,16 +12,24 @@
   let error = $state<string | null>(null);
 
   onMount(async () => {
+    const cached = localStorage.getItem('leermiddelen_cache');
+    if (cached) {
+      try {
+        leermiddelen = JSON.parse(cached);
+        loading = false;
+      } catch (e) { console.error(e); }
+    }
     await loadData();
   });
 
   async function loadData() {
     const pid = get(personId);
     if (!pid) return;
-    loading = true;
+    if (leermiddelen.length === 0) loading = true;
     error = null;
     try {
       leermiddelen = await getLeermiddelen(pid);
+      localStorage.setItem('leermiddelen_cache', JSON.stringify(leermiddelen));
     } catch (e) {
       console.error('Error loading leermiddelen:', e);
       error = 'Kon leermiddelen niet laden.';

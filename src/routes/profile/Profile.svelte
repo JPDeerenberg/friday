@@ -13,13 +13,25 @@
   let error = $state<string | null>(null);
 
   onMount(async () => {
+    const cached = localStorage.getItem('profile_cache');
+    if (cached) {
+      try {
+        const parsed = JSON.parse(cached);
+        info = parsed.info;
+        addresses = parsed.addresses;
+        career = parsed.career;
+        profilePic = parsed.profilePic;
+        account = parsed.account;
+        loading = false;
+      } catch (e) { console.error(e); }
+    }
     await loadProfile();
   });
 
   async function loadProfile() {
     const pid = $personId;
     if (!pid) return;
-    loading = true;
+    if (!info) loading = true;
     error = null;
 
     const tasks = [
@@ -34,6 +46,10 @@
       await Promise.allSettled(tasks);
       if (!info && !career && !account) {
         error = 'Kon profielgegevens niet inladen.';
+      } else {
+        localStorage.setItem('profile_cache', JSON.stringify({
+          info, addresses, career, profilePic, account
+        }));
       }
     } catch (e) {
       console.error('Profile load error:', e);
