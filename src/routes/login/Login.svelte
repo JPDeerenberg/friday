@@ -1,68 +1,71 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount } from 'svelte';
   import { listen, type UnlistenFn } from '@tauri-apps/api/event';
   import { isLoggedIn, personId, accountInfo, profilePicture } from '$lib/stores';
   import { startLoginFlow, getPersonId, getProfilePicture, handleAuthCallback } from '$lib/api';
 
   let loading = $state(false);
   let error = $state('');
-  let unlistenSuccess: UnlistenFn | null = null;
-  let unlistenError: UnlistenFn | null = null;
-  let unlistenCallback: UnlistenFn | null = null;
 
-  onMount(async () => {
-    // Listen for deep-link auth callback (Android fallback when using external browser)
-    unlistenCallback = await listen('auth-callback', async (event: any) => {
-      const redirectUrl = event.payload as string;
-      if (!redirectUrl) return;
-      error = '';
-      try {
-        const account = await handleAuthCallback(redirectUrl);
+  onMount(() => {
+    let unlistenSuccess: UnlistenFn;
+    let unlistenError: UnlistenFn;
+    let unlistenCallback: UnlistenFn;
+
+    (async () => {
+      // Listen for deep-link auth callback (Android fallback when using external browser)
+      unlistenCallback = await listen('auth-callback', async (event: any) => {
+        const redirectUrl = event.payload as string;
+        if (!redirectUrl) return;
+        error = '';
+        try {
+          const account = await handleAuthCallback(redirectUrl);
+          accountInfo.set(account);
+          const pid = await getPersonId();
+          personId.set(pid);
+          isLoggedIn.set(true);
+          try {
+            const pic = await getProfilePicture(pid);
+            profilePicture.set(pic);
+          } catch (_) {}
+        } catch (e: any) {
+          error = e?.toString() ?? 'Login via deep link mislukt';
+          loading = false;
+        }
+      });
+
+      // Listen for successful authentication from the Tauri backend
+      unlistenSuccess = await listen('auth-success', async (event: any) => {
+        const account = event.payload;
         accountInfo.set(account);
-        const pid = await getPersonId();
-        personId.set(pid);
-        isLoggedIn.set(true);
-        try {
-          const pic = await getProfilePicture(pid);
-          profilePicture.set(pic);
-        } catch (_) {}
-      } catch (e: any) {
-        error = e?.toString() ?? 'Login via deep link mislukt';
-        loading = false;
-      }
-    });
-
-    // Listen for successful authentication from the Tauri backend
-    unlistenSuccess = await listen('auth-success', async (event: any) => {
-      const account = event.payload;
-      accountInfo.set(account);
-
-      try {
-        const pid = await getPersonId();
-        personId.set(pid);
-        isLoggedIn.set(true);
 
         try {
-          const pic = await getProfilePicture(pid);
-          profilePicture.set(pic);
-        } catch (_) {}
-      } catch (e: any) {
-        error = e?.toString() ?? 'Failed to complete login setup';
+          const pid = await getPersonId();
+          personId.set(pid);
+          isLoggedIn.set(true);
+
+          try {
+            const pic = await getProfilePicture(pid);
+            profilePicture.set(pic);
+          } catch (_) {}
+        } catch (e: any) {
+          error = e?.toString() ?? 'Failed to complete login setup';
+          loading = false;
+        }
+      });
+
+      // Listen for authentication errors from the Tauri backend
+      unlistenError = await listen('auth-error', (event: any) => {
+        error = event.payload?.toString() ?? 'Login failed';
         loading = false;
-      }
-    });
+      });
+    })();
 
-    // Listen for authentication errors from the Tauri backend
-    unlistenError = await listen('auth-error', (event: any) => {
-      error = event.payload?.toString() ?? 'Login failed';
-      loading = false;
-    });
-  });
-
-  onDestroy(() => {
-    if (unlistenSuccess) unlistenSuccess();
-    if (unlistenError) unlistenError();
-    if (unlistenCallback) unlistenCallback();
+    return () => {
+      if (unlistenSuccess) unlistenSuccess();
+      if (unlistenError) unlistenError();
+      if (unlistenCallback) unlistenCallback();
+    };
   });
 
   async function startLogin() {
@@ -84,7 +87,6 @@
     if (!manualUrl.trim()) return;
     error = '';
     try {
-      const { handleAuthCallback } = await import('$lib/api');
       const account = await handleAuthCallback(manualUrl.trim());
       accountInfo.set(account);
       const pid = await getPersonId();
