@@ -344,10 +344,9 @@
     if (historicalAverages.length > 0) return; // Already loaded
     if (!$personId) return; // Needs personId
     loadingHistory = true;
-    const results = [];
     try {
-        for (const year of schoolyears) {
-            if (!year.einde) continue;
+        const promises = schoolyears.map(async (year) => {
+            if (!year.einde) return null;
             const peildatum = year.einde.split('T')[0];
             const fetchedGrades = await getGrades($personId, year.id, peildatum);
             
@@ -371,11 +370,15 @@
                 }
             }
             if (validAvgCount > 0) {
-                results.push({ id: year.id, year: year.groep?.code ?? year.studie?.code ?? '?', avg: sumAvgs / validAvgCount });
+                return { id: year.id, year: year.groep?.code ?? year.studie?.code ?? '?', avg: sumAvgs / validAvgCount };
             }
-        }
+            return null;
+        });
+
+        const results = await Promise.all(promises);
+        historicalAverages = (results.filter(r => r !== null) as any[])
+            .sort((a,b) => a.id - b.id);
     } catch(e) { console.error(e); }
-    historicalAverages = results.sort((a,b) => a.id - b.id);
     loadingHistory = false;
   }
 </script>
