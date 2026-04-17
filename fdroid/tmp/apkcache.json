@@ -2,7 +2,7 @@
   "METADATA_VERSION": 20002,
   "allow_disabled_algorithms": false,
   "app-arm64-release-unsigned-signed.apk": {
-    "hash": "6e92ceed8bebfb9fc0ab01cd413e91541c8c95ab96376828543dc5fa170e81e5",
+    "hash": "d961cb87f9d2ba86b3f79c621df0e156c5ab88f83e8e7f387b3511d49b4ef5e0",
     "hashType": "sha256",
     "uses-permission": [
       [
@@ -38,6 +38,10 @@
         null
       ],
       [
+        "android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS",
+        null
+      ],
+      [
         "android.permission.ACCESS_NETWORK_STATE",
         null
       ],
@@ -52,9 +56,9 @@
     "icons": {},
     "antiFeatures": {},
     "packageName": "com.joris.friday",
-    "versionCode": 1002006,
+    "versionCode": 1002007,
     "name": "Friday",
-    "versionName": "1.2.6",
+    "versionName": "1.2.7",
     "minSdkVersion": 24,
     "targetSdkVersion": 36,
     "nativecode": [
@@ -62,7 +66,7 @@
     ],
     "sig": "4ce727eccd89c0bef16a0dfad1f8fe33",
     "signer": "a78c487208a97ffb2dadf9a69bdec2a6c0050b2f99ef528ed43a01dd5c5687a3",
-    "size": 11036873,
+    "size": 11020489,
     "apkName": "app-arm64-release-unsigned-signed.apk",
     "added": 1776076413.0
   }
