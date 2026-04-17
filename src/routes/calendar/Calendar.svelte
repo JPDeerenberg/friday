@@ -426,13 +426,21 @@
   const hiddenCancelledCount = $derived.by(() => {
     if (!$userSettings.hideCancelled) return 0;
     const currentDayStr = selectedDate.toDateString();
-    return appointments.filter(a => {
-      if (!a.Start) return false;
+    let count = 0;
+    for (let i = 0; i < appointments.length; i++) {
+      const a = appointments[i];
+      if (!a.Start) continue;
+
+      const isCancelled = a.Status === 4 || a.Status === 5;
+      if (!isCancelled) continue;
+
       const d = new Date(a.Start);
       const isToday = !isNaN(d.getTime()) && d.toDateString() === currentDayStr;
-      const isCancelled = a.Status === 4 || a.Status === 5;
-      return isToday && isCancelled;
-    }).length;
+      if (isToday) {
+        count++;
+      }
+    }
+    return count;
   });
 
   // Swipe handling with live drag tracking
