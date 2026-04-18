@@ -474,3 +474,143 @@ impl AppHandlePathResolver for tauri::AppHandle {
         self.path().app_data_dir().map_err(|e| e.to_string())
     }
 }
+#[cfg(test)]
+mod tests {
+    use crate::client::{ClientError, MagisterClient, TokenSet};
+    use chrono::{Duration, Utc};
+    use wiremock::matchers::{header, method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    fn create_mock_token_set(endpoint: &str) -> TokenSet {
+        TokenSet {
+            access_token: "mock_access_token".to_string(),
+            id_token: "mock_id_token".to_string(),
+            refresh_token: "mock_refresh_token".to_string(),
+            expires_at: Utc::now() + Duration::seconds(3600),
+            api_endpoint: endpoint.to_string(),
+            person_id: Some(123),
+            account_uuid: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn test_get_success() {
+        let mock_server = MockServer::start().await;
+
+        let expected_body = serde_json::json!({"data": "success"});
+
+        Mock::given(method("GET"))
+            .and(path("/api/test"))
+            .and(header("Authorization", "Bearer mock_access_token"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(&expected_body))
+            .mount(&mock_server)
+            .await;
+
+        let mut client = MagisterClient::new();
+        client.token_set = Some(create_mock_token_set(&mock_server.uri()));
+
+        let result = client.get("/api/test").await.expect("Expected successful get");
+        assert_eq!(result, expected_body);
+    }
+
+    #[tokio::test]
+    async fn test_get_unauthorized() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path("/api/test"))
+            .respond_with(ResponseTemplate::new(401).set_body_string("Unauthorized"))
+            .mount(&mock_server)
+            .await;
+
+        let mut client = MagisterClient::new();
+        client.token_set = Some(create_mock_token_set(&mock_server.uri()));
+
+        let result = client.get("/api/test").await;
+        match result {
+            Err(ClientError::Unauthorized(text)) => {
+                assert_eq!(text, "Unauthorized");
+            }
+            _ => panic!("Expected Unauthorized, got {:?}", result),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_get_not_found() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path("/api/test"))
+            .respond_with(ResponseTemplate::new(404).set_body_string("Not Found"))
+            .mount(&mock_server)
+            .await;
+
+        let mut client = MagisterClient::new();
+        client.token_set = Some(create_mock_token_set(&mock_server.uri()));
+
+        let result = client.get("/api/test").await;
+        match result {
+            Err(ClientError::ApiError(status, text)) => {
+                assert_eq!(status, 404);
+                assert_eq!(text, "Not Found");
+            }
+            _ => panic!("Expected ApiError(404, 'Not Found'), got {:?}", result),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_get_rate_limited() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path("/api/test"))
+            .respond_with(ResponseTemplate::new(429).set_body_string("Rate Limited"))
+            .mount(&mock_server)
+            .await;
+
+        let mut client = MagisterClient::new();
+        client.token_set = Some(create_mock_token_set(&mock_server.uri()));
+
+        let result = client.get("/api/test").await;
+        match result {
+            Err(ClientError::RateLimited) => {} // we will probably have to update this test depending on whether it returns ApiError or RateLimited
+            Err(ClientError::ApiError(status, text)) => {
+                assert_eq!(status, 429);
+                assert_eq!(text, "Rate Limited");
+            }
+            _ => panic!("Expected RateLimited or ApiError(429), got {:?}", result),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_get_invalid_json() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path("/api/test"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("not valid json"))
+            .mount(&mock_server)
+            .await;
+
+        let mut client = MagisterClient::new();
+        client.token_set = Some(create_mock_token_set(&mock_server.uri()));
+
+        let result = client.get("/api/test").await;
+        match result {
+            Err(ClientError::ParseFailed(_)) => {}
+            _ => panic!("Expected ParseFailed, got {:?}", result),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_get_not_authenticated() {
+        let mut client = MagisterClient::new();
+        // token_set is None
+
+        let result = client.get("/api/test").await;
+        match result {
+            Err(ClientError::NotAuthenticated) => {}
+            _ => panic!("Expected NotAuthenticated, got {:?}", result),
+        }
+    }
+}
