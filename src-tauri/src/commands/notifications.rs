@@ -271,11 +271,11 @@ pub fn sync_notification_preferences(
                         "(Landroid/content/Context;ZZZZZ)V",
                         &[
                             jni::objects::JValue::from(&activity),
-                            jni::objects::JValue::Bool(if notify_messages { 1u8 } else { 0u8 }),
-                            jni::objects::JValue::Bool(if notify_grades { 1u8 } else { 0u8 }),
-                            jni::objects::JValue::Bool(if notify_deadlines { 1u8 } else { 0u8 }),
-                            jni::objects::JValue::Bool(if notify_calendar { 1u8 } else { 0u8 }),
-                            jni::objects::JValue::Bool(if notify_auto_dnd { 1u8 } else { 0u8 }),
+                            jni::objects::JValueGen::Bool(if notify_messages { 1u8 } else { 0u8 }),
+                            jni::objects::JValueGen::Bool(if notify_grades { 1u8 } else { 0u8 }),
+                            jni::objects::JValueGen::Bool(if notify_deadlines { 1u8 } else { 0u8 }),
+                            jni::objects::JValueGen::Bool(if notify_calendar { 1u8 } else { 0u8 }),
+                            jni::objects::JValueGen::Bool(if notify_auto_dnd { 1u8 } else { 0u8 }),
                         ],
                     );
                     
@@ -567,7 +567,7 @@ pub fn get_sync_interval(app: AppHandle) -> Result<i64, String> {
         window.with_webview(move |webview| {
             #[cfg(target_os = "android")]
             {
-                let res = webview.jni_handle().exec(move |env, activity, _webview| {
+                let _res = webview.jni_handle().exec(move |env, activity, _webview| {
                     let res = env.call_method(
                         &activity,
                         "getSyncInterval",
@@ -577,7 +577,7 @@ pub fn get_sync_interval(app: AppHandle) -> Result<i64, String> {
 
                     let mut result_seconds = 300; // default 5 mins
 
-                    if let Ok(jni::objects::JValue::Long(seconds)) = res {
+                    if let Ok(jni::objects::JValueGen::Long(seconds)) = res {
                         result_seconds = seconds;
                     } else if let Err(_) = res {
                         if let Ok(true) = env.exception_check() {
@@ -623,12 +623,10 @@ pub fn get_night_sleep_config(app: AppHandle) -> Result<serde_json::Value, Strin
 
                     let mut result_str = "{\"enabled\":false,\"startHour\":22,\"endHour\":7}".to_string();
 
-                    if let Ok(jni::objects::JValue::Object(obj)) = res {
+                    if let Ok(jni::objects::JValueGen::Object(obj)) = res {
                         if !obj.is_null() {
                             let jstring = jni::objects::JString::from(obj);
-                            if let Ok(s) = env.get_string(&jstring) {
-                                result_str = s.into();
-                            }
+                            if let Ok(s) = env.get_string(&jstring) { result_str = s.into(); };
                         }
                     } else if let Err(_) = res {
                         if let Ok(true) = env.exception_check() {
@@ -672,7 +670,7 @@ pub fn set_night_sleep_config(app: AppHandle, enabled: bool, start_hour: i32, en
                         "setNightSleepConfig",
                         "(ZII)V",
                         &[
-                            jni::objects::JValue::Bool(if enabled { 1 } else { 0 }),
+                            jni::objects::JValueGen::Bool(if enabled { 1 } else { 0 }),
                             jni::objects::JValue::Int(start_hour),
                             jni::objects::JValue::Int(end_hour),
                         ],
@@ -716,7 +714,7 @@ pub fn get_disable_all_notifications(app: AppHandle) -> Result<bool, String> {
 
                     let mut result = false;
 
-                    if let Ok(jni::objects::JValue::Bool(b)) = res {
+                    if let Ok(jni::objects::JValueGen::Bool(b)) = res {
                         result = b != 0;
                     } else if let Err(_) = res {
                         if let Ok(true) = env.exception_check() {
@@ -756,7 +754,7 @@ pub fn set_disable_all_notifications(app: AppHandle, enabled: bool) -> Result<St
                         &activity,
                         "setDisableAllNotifications",
                         "(Z)V",
-                        &[jni::objects::JValue::Bool(if enabled { 1 } else { 0 })],
+                        &[jni::objects::JValueGen::Bool(if enabled { 1 } else { 0 })],
                     );
                     if let Err(_) = res {
                         if let Ok(true) = env.exception_check() {
@@ -792,7 +790,7 @@ pub fn set_sync_interval(app: AppHandle, seconds: i64) -> Result<String, String>
                         &activity,
                         "setSyncInterval",
                         "(J)V",
-                        &[jni::objects::JValue::Long(seconds)],
+                        &[jni::objects::JValueGen::Long(seconds)],
                     );
                     if let Err(_) = res {
                         if let Ok(true) = env.exception_check() {
