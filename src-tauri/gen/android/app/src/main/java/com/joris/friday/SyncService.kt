@@ -186,14 +186,35 @@ class SyncService : Service() {
     private fun performSync() {
         var syncStartTime = System.currentTimeMillis()
         
-        // Check if sync is paused due to storage issues
         val prefs = getSharedPreferences("friday_prefs", Context.MODE_PRIVATE)
+
+        // Check if sync is paused due to storage issues
         if (prefs.getBoolean("sync_paused_storage", false)) {
             Log.w(TAG, "Sync paused: storage full or low")
             updateNotification("Monitoring actief (Opslag vol)")
             return
         }
         
+        // Check if night sleep is active
+        val nightSleepActive = prefs.getBoolean("disableSyncAtNight", false)
+        if (nightSleepActive) {
+            val startHour = prefs.getInt("disableSyncAtNightStart", 22)
+            val endHour = prefs.getInt("disableSyncAtNightEnd", 7)
+            val currentHour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
+
+            val isNightTime = if (startHour <= endHour) {
+                currentHour >= startHour && currentHour < endHour
+            } else {
+                currentHour >= startHour || currentHour < endHour
+            }
+
+            if (isNightTime) {
+                Log.w(TAG, "Sync skipped: Night sleep is active")
+                updateNotification("Monitoring actief (Nachtrust)")
+                return
+            }
+        }
+
         try {
             // Get data directory - where Tauri stores tokens.json
             val dataDir = filesDir.parentFile?.absolutePath ?: filesDir.absolutePath
@@ -309,6 +330,12 @@ class SyncService : Service() {
     private fun sendChangeNotifications(changes: SyncStateManager.SyncChanges) {
         Log.d(TAG, "sendChangeNotifications called")
         
+        val prefs = getSharedPreferences("friday_prefs", Context.MODE_PRIVATE)
+        if (prefs.getBoolean("disableAllNotifications", false)) {
+            Log.d(TAG, "All notifications are disabled")
+            return
+        }
+
         // New Messages
         if (changes.newMessages.isNotEmpty() && SyncStateManager.isNotificationEnabled(this, "messages")) {
             val count = changes.newMessages.size

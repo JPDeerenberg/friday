@@ -553,6 +553,226 @@ pub fn get_debug_info(app: AppHandle) -> Result<String, String> {
     Ok(serde_json::to_string_pretty(&info).unwrap_or_else(|_| "{}".to_string()))
 }
 
+#[tauri::command]
+pub fn get_sync_interval(app: AppHandle) -> Result<i64, String> {
+    let _ = &app;
+    #[cfg(target_os = "android")]
+    {
+        let window = app.get_webview_window("main")
+            .or_else(|| app.webview_windows().values().next().cloned())
+            .ok_or_else(|| "No active window found".to_string())?;
+
+        let (tx, rx) = std::sync::mpsc::channel();
+
+        window.with_webview(move |webview| {
+            #[cfg(target_os = "android")]
+            {
+                let res = webview.jni_handle().exec(move |env, activity, _webview| {
+                    let res = env.call_method(
+                        &activity,
+                        "getSyncInterval",
+                        "()J",
+                        &[],
+                    );
+
+                    let mut result_seconds = 300; // default 5 mins
+
+                    if let Ok(jni::objects::JValue::Long(seconds)) = res {
+                        result_seconds = seconds;
+                    } else if let Err(_) = res {
+                        if let Ok(true) = env.exception_check() {
+                            let _ = env.exception_clear();
+                        }
+                    }
+                    let _ = tx.send(result_seconds);
+                });
+            }
+        }).map_err(|e| e.to_string())?;
+
+        if let Ok(val) = rx.recv() {
+            return Ok(val);
+        } else {
+            return Ok(300);
+        }
+    }
+    #[cfg(not(target_os = "android"))]
+    Ok(300)
+}
+
+#[tauri::command]
+pub fn get_night_sleep_config(app: AppHandle) -> Result<serde_json::Value, String> {
+    let _ = &app;
+    #[cfg(target_os = "android")]
+    {
+        let window = app.get_webview_window("main")
+            .or_else(|| app.webview_windows().values().next().cloned())
+            .ok_or_else(|| "No active window found".to_string())?;
+
+        let (tx, rx) = std::sync::mpsc::channel();
+
+        window.with_webview(move |webview| {
+            #[cfg(target_os = "android")]
+            {
+                let _ = webview.jni_handle().exec(move |env, activity, _webview| {
+                    let res = env.call_method(
+                        &activity,
+                        "getNightSleepConfig",
+                        "()Ljava/lang/String;",
+                        &[],
+                    );
+
+                    let mut result_str = "{\"enabled\":false,\"startHour\":22,\"endHour\":7}".to_string();
+
+                    if let Ok(jni::objects::JValue::Object(obj)) = res {
+                        if !obj.is_null() {
+                            let jstring = jni::objects::JString::from(obj);
+                            if let Ok(s) = env.get_string(&jstring) {
+                                result_str = s.into();
+                            }
+                        }
+                    } else if let Err(_) = res {
+                        if let Ok(true) = env.exception_check() {
+                            let _ = env.exception_clear();
+                        }
+                    }
+                    let _ = tx.send(result_str);
+                });
+            }
+        }).map_err(|e| e.to_string())?;
+
+        if let Ok(res_json) = rx.recv() {
+            let val: serde_json::Value = serde_json::from_str(&res_json).unwrap_or(serde_json::json!({"enabled":false,"startHour":22,"endHour":7}));
+            return Ok(val);
+        } else {
+            return Ok(serde_json::json!({"enabled":false,"startHour":22,"endHour":7}));
+        }
+    }
+    #[cfg(not(target_os = "android"))]
+    Ok(serde_json::json!({"enabled":false,"startHour":22,"endHour":7}))
+}
+
+#[tauri::command]
+pub fn set_night_sleep_config(app: AppHandle, enabled: bool, start_hour: i32, end_hour: i32) -> Result<String, String> {
+    let _ = enabled;
+    let _ = start_hour;
+    let _ = end_hour;
+    let _ = &app;
+    #[cfg(target_os = "android")]
+    {
+        let window = app.get_webview_window("main")
+            .or_else(|| app.webview_windows().values().next().cloned())
+            .ok_or_else(|| "No active window found".to_string())?;
+
+        window.with_webview(move |webview| {
+            #[cfg(target_os = "android")]
+            {
+                let _ = webview.jni_handle().exec(move |env, activity, _webview| {
+                    let res = env.call_method(
+                        &activity,
+                        "setNightSleepConfig",
+                        "(ZII)V",
+                        &[
+                            jni::objects::JValue::Bool(if enabled { 1 } else { 0 }),
+                            jni::objects::JValue::Int(start_hour),
+                            jni::objects::JValue::Int(end_hour),
+                        ],
+                    );
+                    if let Err(_) = res {
+                        if let Ok(true) = env.exception_check() {
+                            let _ = env.exception_clear();
+                        }
+                    }
+                });
+            }
+        }).map_err(|e| e.to_string())?;
+
+        return Ok(format!("Night sleep config set: {} {}-{}", enabled, start_hour, end_hour));
+    }
+    #[cfg(not(target_os = "android"))]
+    Ok(format!("set_night_sleep_config is only supported on Android"))
+}
+
+#[tauri::command]
+pub fn get_disable_all_notifications(app: AppHandle) -> Result<bool, String> {
+    let _ = &app;
+    #[cfg(target_os = "android")]
+    {
+        let window = app.get_webview_window("main")
+            .or_else(|| app.webview_windows().values().next().cloned())
+            .ok_or_else(|| "No active window found".to_string())?;
+
+        let (tx, rx) = std::sync::mpsc::channel();
+
+        window.with_webview(move |webview| {
+            #[cfg(target_os = "android")]
+            {
+                let _ = webview.jni_handle().exec(move |env, activity, _webview| {
+                    let res = env.call_method(
+                        &activity,
+                        "getDisableAllNotifications",
+                        "()Z",
+                        &[],
+                    );
+
+                    let mut result = false;
+
+                    if let Ok(jni::objects::JValue::Bool(b)) = res {
+                        result = b != 0;
+                    } else if let Err(_) = res {
+                        if let Ok(true) = env.exception_check() {
+                            let _ = env.exception_clear();
+                        }
+                    }
+                    let _ = tx.send(result);
+                });
+            }
+        }).map_err(|e| e.to_string())?;
+
+        if let Ok(is_disabled) = rx.recv() {
+            return Ok(is_disabled);
+        } else {
+            return Ok(false);
+        }
+    }
+    #[cfg(not(target_os = "android"))]
+    Ok(false)
+}
+
+#[tauri::command]
+pub fn set_disable_all_notifications(app: AppHandle, enabled: bool) -> Result<String, String> {
+    let _ = enabled;
+    let _ = &app;
+    #[cfg(target_os = "android")]
+    {
+        let window = app.get_webview_window("main")
+            .or_else(|| app.webview_windows().values().next().cloned())
+            .ok_or_else(|| "No active window found".to_string())?;
+
+        window.with_webview(move |webview| {
+            #[cfg(target_os = "android")]
+            {
+                let _ = webview.jni_handle().exec(move |env, activity, _webview| {
+                    let res = env.call_method(
+                        &activity,
+                        "setDisableAllNotifications",
+                        "(Z)V",
+                        &[jni::objects::JValue::Bool(if enabled { 1 } else { 0 })],
+                    );
+                    if let Err(_) = res {
+                        if let Ok(true) = env.exception_check() {
+                            let _ = env.exception_clear();
+                        }
+                    }
+                });
+            }
+        }).map_err(|e| e.to_string())?;
+
+        return Ok(format!("Disable all notifications set to {}", enabled));
+    }
+    #[cfg(not(target_os = "android"))]
+    Ok(format!("set_disable_all_notifications is only supported on Android"))
+}
+
 /// Set the background sync interval in seconds. Calls SyncService.setSyncIntervalSeconds via JNI (Android only).
 #[tauri::command]
 pub fn set_sync_interval(app: AppHandle, seconds: i64) -> Result<String, String> {

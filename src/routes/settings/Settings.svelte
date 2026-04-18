@@ -2,7 +2,7 @@
   import { userSettings } from '$lib/stores';
   import { currentPage } from '$lib/stores';
   import { triggerTestNotification, notifyNewMessage, notifyNewGrade, notifyDeadline, notifyCalendarChange,
-           triggerSync, getDebugInfo, getSyncStateDebug, clearSyncState, setSyncInterval } from '$lib/api';
+           triggerSync, getDebugInfo, getSyncStateDebug, clearSyncState, setSyncInterval, getSyncInterval, getNightSleepConfig, setNightSleepConfig, getDisableAllNotifications, setDisableAllNotifications } from '$lib/api';
   import { fade, fly, slide } from 'svelte/transition';
   import { onMount } from 'svelte';
 
@@ -19,6 +19,10 @@
   let forceSyncBusy = $state(false);
   let intervalSeconds = $state(300); // 5 min default
   let intervalResult = $state<string | null>(null);
+  let disableSyncAtNight = $state(false);
+  let disableSyncAtNightStart = $state(22);
+  let disableSyncAtNightEnd = $state(7);
+  let disableAllNotifications = $state(false);
   let logs = $state<{ time: string; level: 'info' | 'warn' | 'error'; msg: string }[]>([]);
 
   function addLog(level: 'info' | 'warn' | 'error', msg: string) {
@@ -26,8 +30,35 @@
     logs = [{ time, level, msg }, ...logs].slice(0, 50);
   }
 
+
+
   onMount(() => {
     isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+
+    // Load sync interval from native
+    getSyncInterval().then((interval) => {
+        if (interval && interval > 0) {
+            intervalSeconds = interval;
+        }
+    }).catch(e => {
+        console.error("Failed to load sync interval", e);
+    });
+
+    getNightSleepConfig().then((config) => {
+        if (config) {
+            disableSyncAtNight = config.enabled;
+            disableSyncAtNightStart = config.startHour;
+            disableSyncAtNightEnd = config.endHour;
+        }
+    }).catch(e => {
+        console.error("Failed to load night sleep config", e);
+    });
+
+    getDisableAllNotifications().then((disabled) => {
+        disableAllNotifications = disabled;
+    }).catch(e => {
+        console.error("Failed to load disable all notifications config", e);
+    });
   });
 
   function goBack() {
@@ -148,6 +179,26 @@
     } catch (e) {
       intervalResult = `Error: ${e}`;
       addLog('error', `Set interval failed: ${e}`);
+    }
+  }
+
+  async function applyNightSleep() {
+    addLog('info', `Setting night sleep to ${disableSyncAtNight} (${disableSyncAtNightStart}-${disableSyncAtNightEnd})...`);
+    try {
+      const result = await setNightSleepConfig(disableSyncAtNight, disableSyncAtNightStart, disableSyncAtNightEnd);
+      addLog('info', `Night sleep set: ${result}`);
+    } catch (e) {
+      addLog('error', `Set night sleep failed: ${e}`);
+    }
+  }
+
+  async function applyDisableAllNotifications() {
+    addLog('info', `Setting disable all notifications to ${disableAllNotifications}...`);
+    try {
+      const result = await setDisableAllNotifications(disableAllNotifications);
+      addLog('info', `Disable notifications set: ${result}`);
+    } catch (e) {
+      addLog('error', `Set disable notifications failed: ${e}`);
     }
   }
 
@@ -428,6 +479,44 @@
             {/if}
           </div>
 
+          <!-- Night Sleep & Notifications -->
+          <div class="debug-card rounded-3xl p-6 space-y-6">
+            <div class="space-y-4">
+                <div class="flex items-center justify-between">
+                  <p class="debug-label">Nachtrust</p>
+                  <label class="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" bind:checked={disableSyncAtNight} onchange={applyNightSleep} class="sr-only peer">
+                    <div class="w-11 h-6 bg-surface-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-500"></div>
+                  </label>
+                </div>
+                {#if disableSyncAtNight}
+                  <div class="flex gap-4 items-center" transition:slide>
+                      <div class="flex-1 space-y-2">
+                          <label class="text-[10px] font-black text-gray-500 uppercase tracking-widest">Start Uur</label>
+                          <input type="number" min="0" max="23" bind:value={disableSyncAtNightStart} onchange={applyNightSleep} class="w-full bg-surface-800 text-gray-300 rounded-xl p-2 text-center text-sm font-bold border border-white/5" />
+                      </div>
+                      <div class="flex-1 space-y-2">
+                          <label class="text-[10px] font-black text-gray-500 uppercase tracking-widest">Eind Uur</label>
+                          <input type="number" min="0" max="23" bind:value={disableSyncAtNightEnd} onchange={applyNightSleep} class="w-full bg-surface-800 text-gray-300 rounded-xl p-2 text-center text-sm font-bold border border-white/5" />
+                      </div>
+                  </div>
+                {/if}
+            </div>
+
+            <div class="w-full h-[1px] bg-white/5"></div>
+
+            <div class="flex items-center justify-between">
+                <div>
+                    <p class="debug-label">Notificaties Uitzetten</p>
+                    <p class="text-[9px] text-red-400 font-bold mt-1 max-w-[200px]">Stopt alle achtergrond notificaties volledig</p>
+                </div>
+                <label class="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" bind:checked={disableAllNotifications} onchange={applyDisableAllNotifications} class="sr-only peer">
+                    <div class="w-11 h-6 bg-surface-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-red-500"></div>
+                </label>
+            </div>
+          </div>
+
           <!-- Actions row -->
           <div class="grid grid-cols-2 gap-3">
             <button
@@ -494,7 +583,7 @@
 
     <div class="pt-10 flex flex-col items-center gap-2">
       <div class="w-10 h-[1px] bg-surface-800"></div>
-      <p class="text-[9px] text-gray-600 font-black uppercase tracking-[0.4em] text-center">Version 1.2.0 • Friday App</p>
+      <p class="text-[9px] text-gray-600 font-black uppercase tracking-[0.4em] text-center">Version 1.2.8 • Friday App</p>
     </div>
   </main>
 </div>

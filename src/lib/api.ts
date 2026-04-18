@@ -293,8 +293,28 @@ export async function clearSyncState(): Promise<string> {
     return invoke('clear_sync_state');
 }
 
+export async function getSyncInterval(): Promise<number> {
+    return invoke('get_sync_interval');
+}
+
 export async function setSyncInterval(seconds: number): Promise<string> {
     return invoke('set_sync_interval', { seconds });
+}
+
+export async function getNightSleepConfig(): Promise<any> {
+    return invoke('get_night_sleep_config');
+}
+
+export async function setNightSleepConfig(enabled: boolean, startHour: number, endHour: number): Promise<string> {
+    return invoke('set_night_sleep_config', { enabled, startHour, endHour });
+}
+
+export async function getDisableAllNotifications(): Promise<boolean> {
+    return invoke('get_disable_all_notifications');
+}
+
+export async function setDisableAllNotifications(enabled: boolean): Promise<string> {
+    return invoke('set_disable_all_notifications', { enabled });
 }
 
 export async function syncNotificationPreferences(

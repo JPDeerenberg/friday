@@ -95,6 +95,12 @@ class SyncWorker(appContext: Context, workerParams: WorkerParameters) :
     private fun sendChangeNotifications(changes: SyncStateManager.SyncChanges) {
         val context = applicationContext
         
+        val prefs = context.getSharedPreferences("friday_prefs", Context.MODE_PRIVATE)
+        if (prefs.getBoolean("disableAllNotifications", false)) {
+            Log.d("FridaySyncWorker", "All notifications are disabled")
+            return
+        }
+
         // New Messages Notification
         if (changes.newMessages.isNotEmpty() && 
             SyncStateManager.isNotificationEnabled(context, "messages")) {
