@@ -16,6 +16,15 @@ class BootReceiver : BroadcastReceiver() {
             } else {
                 context.startService(serviceIntent)
             }
+
+            // Re-schedule DND alarms from cached calendar data
+            // (AlarmManager alarms are lost on reboot)
+            try {
+                DndScheduler.rescheduleFromCache(context)
+                Log.d("FridayBootReceiver", "DND alarms rescheduled from cache")
+            } catch (e: Exception) {
+                Log.e("FridayBootReceiver", "Failed to reschedule DND alarms", e)
+            }
         }
     }
 }

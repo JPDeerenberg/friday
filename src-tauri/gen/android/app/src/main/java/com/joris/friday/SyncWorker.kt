@@ -80,11 +80,9 @@ class SyncWorker(appContext: Context, workerParams: WorkerParameters) :
             // Send notifications for detected changes
             sendChangeNotifications(changes)
             
-            // Handle Automatic Do Not Disturb
-            if (SyncStateManager.isNotificationEnabled(applicationContext, "autoDnd")) {
-                val isAnyActive = SyncStateManager.isAnyLessonActive(calendar)
-                NotificationHelper.updateDndStatus(applicationContext, isAnyActive)
-            }
+            // Schedule precise DND alarms based on today's lessons
+            // (DndScheduler internally checks if autoDnd is enabled)
+            DndScheduler.scheduleFromCalendar(applicationContext, calendar)
             
         } catch (e: Exception) {
             Log.e(TAG, "Failed to process sync result: $resultString", e)

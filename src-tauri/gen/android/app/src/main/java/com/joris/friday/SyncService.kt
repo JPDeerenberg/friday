@@ -317,10 +317,9 @@ class SyncService : Service() {
             
             sendChangeNotifications(changes)
             
-            if (SyncStateManager.isNotificationEnabled(this, "autoDnd")) {
-                val isAnyActive = SyncStateManager.isAnyLessonActive(calendar)
-                NotificationHelper.updateDndStatus(this, isAnyActive)
-            }
+            // Schedule precise DND alarms based on today's lessons
+            // (DndScheduler internally checks if autoDnd is enabled)
+            DndScheduler.scheduleFromCalendar(this, calendar)
             
         } catch (e: Exception) {
             Log.e(TAG, "Failed to process sync result", e)
