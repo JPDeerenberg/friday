@@ -158,9 +158,17 @@
       return {
         ...a,
         Inhoud: localOverrides[a.Id] || a.Inhoud,
-        Lesuur: a.IsCombined 
-          ? `${a.LesuurVan}–${a.LesuurTotMet || a.LesuurVan}`
-          : (a.LesuurVan || '—')
+        Lesuur: (() => {
+          const lv = a.LesuurVan ?? null;
+          const lt = a.LesuurTotMet ?? null;
+          if (a.IsCombined) {
+            if (lv && lt) return `${lv}–${lt}`;
+            if (lv) return `${lv}`;
+            if (lt) return `${lt}`;
+            return '—';
+          }
+          return lv || '—';
+        })()
       };
     });
   });
