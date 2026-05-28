@@ -824,7 +824,7 @@
                                 class="w-full bg-surface-800 border border-surface-700 rounded-lg px-2 py-1.5 text-sm text-white font-bold focus:outline-none focus:border-primary-500" />
                             </div>
                           </div>
-                          <button onclick={() => removeSimulationGrade(idx)} class="p-2 text-red-500 hover:bg-red-500/10 rounded-lg transition-colors mt-4">
+                          <button onclick={() => removeSimulationGrade(idx)} aria-label="Verwijder" class="p-2 text-red-500 hover:bg-red-500/10 rounded-lg transition-colors mt-4">
                             <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M3 6h18m-2 0v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6m3 0V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
                           </button>
                         </div>
