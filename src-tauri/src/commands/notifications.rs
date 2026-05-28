@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
 #[cfg(target_os = "android")]
 use tauri::Manager;
+use std::sync::{Arc, Mutex};
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[repr(i32)]
@@ -251,19 +252,25 @@ pub fn sync_notification_preferences(
             .or_else(|| app.webview_windows().values().next().cloned())
             .ok_or_else(|| "No active window found for JNI access".to_string())?;
 
+        // Shared holder for any JNI-side error message captured inside the exec closure.
+        let err_holder: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+        let err_clone = err_holder.clone();
+
         window.with_webview(move |webview| {
             #[cfg(target_os = "android")]
             {
+                let err_inner = err_clone.clone();
                 let _ = webview.jni_handle().exec(move |env, activity, _webview| {
                     let class = match find_app_class(env, &activity, "com.joris.friday.SyncStateManager") {
                         Ok(c) => c,
                         Err(e) => {
                             let _ = env.exception_clear();
-                            eprintln!("JNI ERROR: Failed to find SyncStateManager: {:?}", e);
+                            let mut g = err_inner.lock().unwrap();
+                            *g = Some(format!("JNI ERROR: Failed to find SyncStateManager: {:?}", e));
                             return;
                         }
                     };
-                    
+
                     // Call the static method that accepts context and five booleans
                     let res = env.call_static_method(
                         &class,
@@ -278,15 +285,23 @@ pub fn sync_notification_preferences(
                             jni::objects::JValueGen::Bool(if notify_auto_dnd { 1u8 } else { 0u8 }),
                         ],
                     );
-                    
-                    if let Err(_) = res {
+
+                    if let Err(e) = res {
                         if let Ok(true) = env.exception_check() {
                             let _ = env.exception_clear();
                         }
+                        let mut g = err_inner.lock().unwrap();
+                        *g = Some(format!("JNI call error: {:?}", e));
+                        return;
                     }
                 });
             }
         }).map_err(|e| e.to_string())?;
+
+        // If the JNI closure recorded an error, return it to the caller so the frontend can retry or surface it.
+        if let Some(msg) = err_holder.lock().unwrap().clone() {
+            return Err(msg);
+        }
     }
     
     Ok(())

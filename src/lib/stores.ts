@@ -100,16 +100,42 @@ function syncPreferencesToAndroid(settings: any) {
   
   // Also sync via Tauri command
   if (typeof window !== 'undefined' && (window as any).__TAURI__) {
-    import('./api').then(api => {
-      api.syncNotificationPreferences(
-        settings.notifyMessages ?? true,
-        settings.notifyGrades ?? true,
-        settings.notifyDeadlines ?? true,
-        settings.notifyCalendar ?? true,
-        settings.notifyAutoDnd ?? false
-      ).catch(() => {
-        // Ignore errors - preferences will still be read from localStorage by Android
-      });
+    import('./api').then(async (api) => {
+      const params = {
+        notifyMessages: settings.notifyMessages ?? true,
+        notifyGrades: settings.notifyGrades ?? true,
+        notifyDeadlines: settings.notifyDeadlines ?? true,
+        notifyCalendar: settings.notifyCalendar ?? true,
+        notifyAutoDnd: settings.notifyAutoDnd ?? false,
+      };
+
+      const maxAttempts = 3;
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+          await api.syncNotificationPreferences(
+            params.notifyMessages,
+            params.notifyGrades,
+            params.notifyDeadlines,
+            params.notifyCalendar,
+            params.notifyAutoDnd
+          );
+
+          // After successfully syncing preferences, trigger an immediate background sync
+          // so the Android SyncService can re-evaluate DND scheduling.
+          try { await api.triggerSync(); } catch (e) { console.warn('triggerSync failed', e); }
+          return;
+        } catch (e) {
+          console.warn(`syncNotificationPreferences attempt ${attempt} failed`, e);
+          if (attempt < maxAttempts) {
+            // exponential-ish backoff
+            await new Promise(res => setTimeout(res, attempt * 300));
+            continue;
+          }
+          console.error('Failed to sync notification preferences after retries', e);
+        }
+      }
+    }).catch((e) => {
+      console.error('Failed to import api for notification sync', e);
     });
   }
 }
