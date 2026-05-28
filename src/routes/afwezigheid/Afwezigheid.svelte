@@ -122,7 +122,7 @@
                 class="appearance-none bg-surface-900 border border-white/5 rounded-2xl px-4 py-2 pr-9 text-[10px] font-black uppercase tracking-widest text-gray-300 focus:outline-none focus:border-primary-500 transition-all cursor-pointer shadow-lg"
               >
                 {#each schoolyears as year}
-                  <option value={year.id}>{year.groep.code} — {year.studie.code}</option>
+                  <option value={year.id}>{year.groep.code}{year.groep.omschrijving ? ' — ' + year.groep.omschrijving : ''}</option>
                 {/each}
               </select>
               <div class="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-600 text-[10px]">▼</div>
@@ -194,16 +194,10 @@
               {@const type = getAbsenceType(absence.Verantwoordingtype, absence.Code)}
               {@const subject = getSubjectName(absence)}
               <div 
-                in:fly={{ y: 15, delay: i * 30 }}
-                class="glass p-4 rounded-[2rem] border-white/5 hover:bg-surface-800/40 hover:border-primary-500/20 transition-all flex items-center gap-5 group shadow-lg"
-              >
-                <!-- Date -->
-                <div class="w-14 h-14 rounded-2xl bg-surface-950 flex flex-col items-center justify-center border border-white/5 shrink-0 group-hover:scale-105 transition-transform shadow-inner text-center">
-                  <span class="text-[8px] font-black text-gray-600 uppercase leading-none mb-1">{absence.Start ? new Date(absence.Start).toLocaleString('nl-NL', { month: 'short' }) : '?'}</span>
-                  <span class="text-xl font-black text-white italic leading-none">{absence.Start ? new Date(absence.Start).getDate() : '?'}</span>
-                </div>
-                
-                <div class="flex-1 min-w-0">
+                  in:fly={{ y: 15, delay: i * 30 }}
+                  class="glass p-4 rounded-[2rem] border-white/5 hover:bg-surface-800/40 hover:border-primary-500/20 transition-all flex items-center gap-5 group shadow-lg"
+                >
+                  <div class="flex-1 min-w-0">
                   <div class="flex items-center gap-2 mb-2 overflow-hidden">
                     <span class="px-2.5 py-1 rounded-xl text-[8px] font-black uppercase tracking-widest border transition-colors {type.color} flex items-center gap-1.5 shadow-sm shrink-0">
                       {@html type.icon}
