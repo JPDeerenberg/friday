@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
 #[cfg(target_os = "android")]
 use tauri::Manager;
+#[cfg(target_os = "android")]
 use std::sync::{Arc, Mutex};
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -299,7 +300,8 @@ pub fn sync_notification_preferences(
         }).map_err(|e| e.to_string())?;
 
         // If the JNI closure recorded an error, return it to the caller so the frontend can retry or surface it.
-        if let Some(msg) = err_holder.lock().unwrap().clone() {
+        let err_msg = err_holder.lock().unwrap().clone();
+        if let Some(msg) = err_msg {
             return Err(msg);
         }
     }
@@ -592,7 +594,7 @@ pub fn get_sync_interval(app: AppHandle) -> Result<i64, String> {
 
                     let mut result_seconds = 300; // default 5 mins
 
-                    if let Ok(jni::objects::JValue::Long(seconds)) = res {
+                    if let Ok(jni::objects::JValueGen::Long(seconds)) = res {
                         result_seconds = seconds;
                     } else if let Err(_) = res {
                         if let Ok(true) = env.exception_check() {
@@ -638,9 +640,9 @@ pub fn get_night_sleep_config(app: AppHandle) -> Result<serde_json::Value, Strin
 
                     let mut result_str = "{\"enabled\":false,\"startHour\":22,\"endHour\":7}".to_string();
 
-                    if let Ok(jni::objects::JValue::Object(obj)) = res {
+                    if let Ok(jni::objects::JValueGen::Object(obj)) = res {
                         if !obj.is_null() {
-                            let jstring = jni::objects::JString::from(obj);
+                            let jstring = unsafe { jni::objects::JString::from_raw(obj.into_raw() as jni::sys::jstring) };
                             if let Ok(s) = env.get_string(&jstring) { result_str = s.into(); };
                         }
                     } else if let Err(_) = res {
@@ -729,7 +731,7 @@ pub fn get_disable_all_notifications(app: AppHandle) -> Result<bool, String> {
 
                     let mut result = false;
 
-                    if let Ok(jni::objects::JValue::Bool(b)) = res {
+                    if let Ok(jni::objects::JValueGen::Bool(b)) = res {
                         result = b != 0;
                     } else if let Err(_) = res {
                         if let Ok(true) = env.exception_check() {
