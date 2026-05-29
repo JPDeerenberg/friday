@@ -389,36 +389,38 @@
     if (!$personId) return; // Needs personId
     loadingHistory = true;
     const results = [];
-    try {
-        for (const year of schoolyears) {
-            if (!year.einde) continue;
-            const peildatum = year.einde.split('T')[0];
-            const fetchedGrades = await getGrades($personId, year.id, peildatum);
-            
-            const subMap = new Map<string, { totalP: number, totalW: number }>();
-            for (const grade of fetchedGrades) {
-               if (!grade.Vak || grade.CijferKolom?.KolomSoort !== 1 || !grade.CijferStr || !grade.TeltMee) continue;
-               const val = parseFloat(grade.CijferStr.replace(',', '.'));
-               const w = typeof grade.Weging === 'number' ? grade.Weging : 1;
-               if (!isNaN(val)) {
-                   const s = subMap.get(grade.Vak.Omschrijving) || { totalP: 0, totalW: 0 };
-                   s.totalP += val * w;
-                   s.totalW += w;
-                   subMap.set(grade.Vak.Omschrijving, s);
-               }
-            }
-            let validAvgCount = 0, sumAvgs = 0;
-            for (const s of subMap.values()) {
-                if (s.totalW > 0) {
-                    sumAvgs += s.totalP / s.totalW;
-                    validAvgCount++;
-                }
-            }
-            if (validAvgCount > 0) {
-                results.push({ id: year.id, year: year.groep?.code ?? year.studie?.code ?? '?', avg: sumAvgs / validAvgCount });
+    for (const year of schoolyears) {
+      if (!year.einde) continue;
+      try {
+        const peildatum = year.einde.split('T')[0];
+        const fetchedGrades = await getGrades($personId, year.id, peildatum);
+        
+        const subMap = new Map<string, { totalP: number, totalW: number }>();
+        for (const grade of fetchedGrades) {
+           if (!grade.Vak || grade.CijferKolom?.KolomSoort !== 1 || !grade.CijferStr || !grade.TeltMee) continue;
+           const val = parseFloat(grade.CijferStr.replace(',', '.'));
+           const w = typeof grade.Weging === 'number' ? grade.Weging : 1;
+           if (!isNaN(val)) {
+               const s = subMap.get(grade.Vak.Omschrijving) || { totalP: 0, totalW: 0 };
+               s.totalP += val * w;
+               s.totalW += w;
+               subMap.set(grade.Vak.Omschrijving, s);
+           }
+        }
+        let validAvgCount = 0, sumAvgs = 0;
+        for (const s of subMap.values()) {
+            if (s.totalW > 0) {
+                sumAvgs += s.totalP / s.totalW;
+                validAvgCount++;
             }
         }
-    } catch(e) { console.error(e); }
+        if (validAvgCount > 0) {
+            results.push({ id: year.id, year: year.groep?.code ?? year.studie?.code ?? '?', avg: sumAvgs / validAvgCount });
+        }
+      } catch(e) {
+        console.warn(`Voortgang jaren: kon cijfers niet laden voor schooljaar ${year.groep?.code ?? year.id}`, e);
+      }
+    }
     historicalAverages = results.sort((a,b) => a.id - b.id);
     localStorage.setItem('grades_cache', JSON.stringify({ schoolyears, subjects, historicalAverages }));
     loadingHistory = false;

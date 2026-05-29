@@ -1,32 +1,49 @@
-[X] Zonder school-login (helemaal weg)
-[ ] Do not disturb werkend krijgen
-[X] Cijfers fixen zodat de berekeningen kloppen
-[X] Opdrachtenpagina zijkant telefoon fixen
-[X] Indicator voor uitgevallen lessen, zodat je weet dat er iets mist
-[X] Knop voor privéles toevoegen fixen
-[X] Dag in de maand kunnen selecteren
-[X] Ondersteuning voor null-null lessen, nu laat het null-null zien en dat moet dan gewoon verborgen worden
-[X] Automatisch de volledige week inladen bij de agenda zodat het swipen soepel gaat
-[X] Klaar huiswerk verbeteren
-[X] Tijden duidelijker maken
-[X] Meer cijfercalculators, grafieken per vak
-[ ] Datum weghalen bij absenties en de klassenselector fixen, we willen per klassenjaar
-[ ] Bronnen fixen, nu staat er niks
-[X] Homepage fixen zodat deze er goed uitziet op de telefoon
-[X] Tekst 'Blijf strijden' veranderen naar 'Investeer in jezelf!'
-[ ] Profiel fixen zodat alle info erop staat zoals waar je woont
-[ ] Animaties voor mooiere overgangen en meer 'pop'
-[ ] Zorg dat je niet gerate-limited wordt
-[ ] Verwijderknop voor snapshots zichtbaar maken, nu is het verborgen
-[ ] HTML-parser omgekeerd bij huiswerk, zodat je met opmaak huiswerk kan invoeren
-[ ] Export json bestanden (lessen, cijfers, etc)
-[ ] Maak alles wat kleiner zodat agenda overzichtelijker is; kleuren ook verbeteren zoals wanneer huiswerk is afgevinkt.
-[X] Een to-pack-for-tomorrow schema op home, alle lessen van morgen die voor de 1e pauze zijn en lessen die niet afgevinkt huiswerk hebben, zodat ik snel boeken kan inpakken
-[ ] Cijfers bij resultaten home fixen, nu staat er niks, alleen de vakken waarvan je cijfers hebt
-[ ] Alles in cache, zodat het niet steeds opnieuw ingeladen hoeft te worden; dat gebeurt stil in de achtergrond zodat je niet elke keer 2 seconden moet wachten ervoor
-[ ] cijfer calculator ook omgekeerd cijfers rekenen voor meer variatie
-[ ] cijfer lijst filters aanhouden bij app afsluiten, ook in de cache
-[ ] voortgang jaren fixen, nu staat er niks
-[ ] 'te laat' opdrachten bij filters opdrachten toevoegen als filter
-[ ] Notificaties robuust maken, werkt nu niet betrouwbaar
-[ ] log uit knop bij desktop versie
+# 📋 Friday — To-Do Lijst
+
+---
+
+## 🐛 Bugs
+
+- [ ] **Bronnen** — fixen, nu staat er niks
+- [ ] **Notificaties** — robuust maken, werkt nu niet betrouwbaar
+- [ ] **Rate limiting** — zorg dat je niet gerate-limited wordt
+
+## ✨ Features
+
+- [ ] **Exporteren** — JSON-bestanden exporteren (lessen, cijfers, etc.)
+- [ ] **HTML-parser (omgekeerd)** — bij huiswerk, zodat je met opmaak huiswerk kan invoeren
+- [ ] **'Te laat'-filter** — toevoegen bij opdrachten filters
+- [ ] **Animaties** — voor mooiere overgangen en meer 'pop'
+- [ ] **Do not disturb** — werkend krijgen
+- [ ] **Uitlogknop** — bij desktop versie
+
+## 🔧 Verbeteringen
+
+- [x] **Agenda verkleinen** — alles wat kleiner maken zodat het overzichtelijker is; kleuren verbeteren (o.a. bij afgevinkt huiswerk)
+- [ ] **Profiel** — fixen zodat alle info erop staat (zoals waar je woont)
+- [ ] **Cijferlijst filters** — aanhouden bij app afsluiten (in cache opslaan)
+- [ ] **Caching** — alles in cache, stil op de achtergrond verversen zodat je niet elke keer 2 seconden hoeft te wachten
+- [ ] **Absenties** — datum weghalen en klassenselector fixen (per klassenjaar)
+
+---
+
+## ✅ Voltooid
+
+- [x] Zonder school-login (helemaal weg)
+- [x] Cijfers fixen zodat de berekeningen kloppen
+- [x] Opdrachtenpagina zijkant telefoon fixen
+- [x] Indicator voor uitgevallen lessen, zodat je weet dat er iets mist
+- [x] Knop voor privéles toevoegen fixen
+- [x] Dag in de maand kunnen selecteren
+- [x] Ondersteuning voor null-null lessen (verborgen i.p.v. tonen)
+- [x] Automatisch volledige week inladen bij agenda voor soepel swipen
+- [x] Klaar huiswerk verbeteren
+- [x] Tijden duidelijker maken
+- [x] Meer cijfercalculators en grafieken per vak
+- [x] Homepage fixen zodat deze er goed uitziet op de telefoon
+- [x] Tekst 'Blijf strijden' → 'Investeer in jezelf!'
+- [x] To-pack-for-tomorrow schema op home (lessen morgen vóór 1e pauze + niet-afgevinkt huiswerk)
+- [x] Cijfer calculator — ook omgekeerd cijfers rekenen voor meer variatie
+- [X] Verwijderknop snapshots — zichtbaar maken, nu is het verborgen
+- [x] **Cijfers op home** — bij resultaten fixen, nu staat er niks (alleen vakken waar je cijfers van hebt)
+- [x] **Voortgang jaren** — fixen, nu staat er niks

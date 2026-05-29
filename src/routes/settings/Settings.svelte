@@ -583,7 +583,7 @@
 
     <div class="pt-10 flex flex-col items-center gap-2">
       <div class="w-10 h-[1px] bg-surface-800"></div>
-      <p class="text-[9px] text-gray-600 font-black uppercase tracking-[0.4em] text-center">Version 1.2.8 • Friday App</p>
+      <p class="text-[9px] text-gray-600 font-black uppercase tracking-[0.4em] text-center">Version 1.3.1 • Friday App</p>
     </div>
   </main>
 </div>

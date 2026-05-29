@@ -108,14 +108,20 @@
       })(),
 
       // 3. Grades — use the dedicated recent grades endpoint, fall back to
-      //    school-year lookup if it returns nothing (e.g. fresh account).
+      //    school-year lookup if it returns nothing or throws (e.g. fresh account).
       (async () => {
+        let recentGrades: any[] | null = null;
         try {
           const recent = await getRecentGrades(pid, 5);
           if (recent && recent.length > 0) {
-            latestGrades = recent.filter((g: any) => g.CijferStr);
-          } else {
-            // Fallback: fetch via school year
+            recentGrades = recent.filter((g: any) => g.CijferStr);
+          }
+        } catch (e) {
+          console.warn('Dashboard: getRecentGrades failed, trying fallback', e);
+        }
+        // Fallback: if recent endpoint returned nothing or errored, fetch via school year
+        if (!recentGrades || recentGrades.length === 0) {
+          try {
             const schoolyears = await getSchoolyears(pid, '2020-01-01', today);
             if (schoolyears.length > 0) {
               const currentYear = schoolyears.find((y: any) => {
@@ -124,18 +130,18 @@
               }) || schoolyears[schoolyears.length - 1];
               if (currentYear?.id) {
                 const fetchedGrades = await getGrades(pid, currentYear.id, currentYear.einde);
-                latestGrades = fetchedGrades
+                recentGrades = fetchedGrades
                   .filter((g: any) => g.CijferStr && g.CijferKolom?.KolomSoort === 1)
                   .sort((a: any, b: any) => (b.DatumIngevoerd ?? '').localeCompare(a.DatumIngevoerd ?? ''))
                   .slice(0, 5);
               }
             }
+          } catch (e) {
+            console.error('Dashboard: Grades fallback fetch failed', e);
           }
-        } catch (e) {
-          console.error('Dashboard: Grades fetch failed', e);
-        } finally {
-          loadingGrades = false;
         }
+        if (recentGrades) latestGrades = recentGrades;
+        loadingGrades = false;
       })(),
 
       // 5. Tomorrow's schedule + open assignments
