@@ -7,12 +7,12 @@
 - [ ] **Bronnen** — fixen, nu staat er niks
 - [ ] **Notificaties** — robuust maken, werkt nu niet betrouwbaar
 - [ ] **Rate limiting** — zorg dat je niet gerate-limited wordt
+- [ ] **'Te laat'-filter** — werkend krijgen bij opdrachten filters
 
 ## ✨ Features
 
 - [ ] **Exporteren** — JSON-bestanden exporteren (lessen, cijfers, etc.)
 - [ ] **HTML-parser (omgekeerd)** — bij huiswerk, zodat je met opmaak huiswerk kan invoeren
-- [ ] **'Te laat'-filter** — toevoegen bij opdrachten filters
 - [ ] **Animaties** — voor mooiere overgangen en meer 'pop'
 - [ ] **Do not disturb** — werkend krijgen
 - [ ] **Uitlogknop** — bij desktop versie
