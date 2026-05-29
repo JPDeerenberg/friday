@@ -299,7 +299,9 @@ pub fn sync_notification_preferences(
         }).map_err(|e| e.to_string())?;
 
         // If the JNI closure recorded an error, return it to the caller so the frontend can retry or surface it.
-        if let Some(msg) = err_holder.lock().unwrap().clone() {
+        // Extract the value into a local first so the MutexGuard drops before err_holder goes out of scope.
+        let maybe_err = err_holder.lock().unwrap().clone();
+        if let Some(msg) = maybe_err {
             return Err(msg);
         }
     }
