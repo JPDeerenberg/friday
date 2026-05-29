@@ -113,12 +113,28 @@
         try {
             const data = JSON.parse(cached); 
             schoolyears = data.schoolyears; 
-            subjects = data.subjects; 
+            subjects = data.subjects;
+            if (data.historicalAverages) historicalAverages = data.historicalAverages;
         } catch {}
+    }
+    // Restore persisted UI state
+    const savedFilters = localStorage.getItem('grades_ui_state');
+    if (savedFilters) {
+      try {
+        const ui = JSON.parse(savedFilters);
+        if (ui.recentFilter) recentFilter = ui.recentFilter;
+        if (ui.subjectSortMode) subjectSortMode = ui.subjectSortMode;
+        if (ui.currentTab) currentTab = ui.currentTab;
+      } catch {}
     }
     const savedSnapshots = localStorage.getItem('grade_snapshots');
     if (savedSnapshots) snapshots = JSON.parse(savedSnapshots);
     init();
+  });
+
+  // Persist UI filter state across sessions
+  $effect(() => {
+    localStorage.setItem('grades_ui_state', JSON.stringify({ recentFilter, subjectSortMode, currentTab }));
   });
 
   async function loadGrades() {
@@ -150,7 +166,9 @@
           grades = fetchedGrades; 
       }
       subjects = getSubjects();
-      localStorage.setItem('grades_cache', JSON.stringify({ schoolyears, subjects }));
+      localStorage.setItem('grades_cache', JSON.stringify({ schoolyears, subjects, historicalAverages }));
+      // Auto-load year progress in the background if not yet loaded
+      if (historicalAverages.length === 0) loadHistoricalAverages();
     } catch (e: any) { 
         console.error('Error loading grades:', e); 
         errorMessage = e.message || String(e);
@@ -281,6 +299,8 @@
   let calcSubjectName = $state('');
   let calcTargetAvg = $state(5.5);
   let calcWeight = $state(1);
+  let calcMode = $state<'forward' | 'reverse'>('forward');
+  let calcExpectedGrade = $state(7.0);
   let simulationGrades = $state<{ value: number; weight: number }[]>([]);
   let includeSimInAvg = $state(true);
 
@@ -341,6 +361,26 @@
     return (totalAverages / validSubjects.length).toFixed($userSettings.decimalPoints);
   }
 
+  /** Reverse mode: given a grade + weight, return the new subject average. */
+  function getAverageForGrade(subject: any): string {
+    const totalP = (subject.totalPoints || 0) + calcExpectedGrade * calcWeight;
+    const totalW = (subject.totalWeight || 0) + calcWeight;
+    return totalW > 0 ? (totalP / totalW).toFixed($userSettings.decimalPoints) : '0';
+  }
+
+  /** Reverse mode: new overall average given an expected grade. */
+  function getNewOverallForGrade(subject: any): string {
+    const validSubjects = subjects.filter((s: any) => s.avg > 0);
+    if (validSubjects.length === 0) return getAverageForGrade(subject);
+    let totalAverages = 0;
+    for (const sub of validSubjects) {
+      totalAverages += sub.name === subject.name
+        ? parseFloat(getAverageForGrade(subject))
+        : sub.avg;
+    }
+    return (totalAverages / validSubjects.length).toFixed($userSettings.decimalPoints);
+  }
+
   let historicalAverages = $state<{ year: string; avg: number; id: number }[]>([]);
   let loadingHistory = $state(false);
 
@@ -380,6 +420,7 @@
         }
     } catch(e) { console.error(e); }
     historicalAverages = results.sort((a,b) => a.id - b.id);
+    localStorage.setItem('grades_cache', JSON.stringify({ schoolyears, subjects, historicalAverages }));
     loadingHistory = false;
   }
 </script>
@@ -718,7 +759,18 @@
               <div class="w-8 h-8 rounded-xl bg-primary-500/15 flex items-center justify-center text-primary-400">
                 <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="16" height="20" x="4" y="2" rx="2"/><path d="M8 10h8M8 14h8M8 18h8M8 6h8"/></svg>
               </div>
-              <h2 class="text-xl font-black text-white italic tracking-tighter">Calculator</h2>
+              <h2 class="text-xl font-black text-white italic tracking-tighter flex-1">Calculator</h2>
+              <!-- Forward / Reverse toggle -->
+              <div class="flex items-center bg-surface-800 rounded-xl p-1 gap-1 border border-white/5">
+                <button
+                  onclick={() => calcMode = 'forward'}
+                  class="px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all {calcMode === 'forward' ? 'bg-primary-500 text-white shadow' : 'text-gray-500 hover:text-gray-300'}"
+                >Cijfer nodig</button>
+                <button
+                  onclick={() => calcMode = 'reverse'}
+                  class="px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all {calcMode === 'reverse' ? 'bg-primary-500 text-white shadow' : 'text-gray-500 hover:text-gray-300'}"
+                >Gemiddelde</button>
+              </div>
             </div>
 
             <div class="glass p-5 rounded-3xl space-y-5">
@@ -736,101 +788,161 @@
               {#if calcSubjectName}
                 {@const s = subjects.find(x => x.name === calcSubjectName)}
                 {#if s}
-                  <!-- Target + Weight inputs -->
-                  <div class="grid grid-cols-2 gap-4">
-                    <div class="bg-surface-800/40 border border-white/5 rounded-2xl p-3">
-                      <label for="calcTargetAvg" class="block text-[9px] text-gray-500 font-black uppercase tracking-widest mb-2 text-center">Doelgemiddelde</label>
-                      <input id="calcTargetAvg" type="number" step="0.1" min="1" max="10" bind:value={calcTargetAvg}
-                        class="w-full bg-surface-900 border border-primary-500/20 rounded-xl px-3 py-2 text-base font-black text-center text-primary-400 focus:outline-none focus:border-primary-500 transition-all" />
-                    </div>
-                    <div class="bg-surface-800/40 border border-white/5 rounded-2xl p-3">
-                      <label for="calcWeight" class="block text-[9px] text-gray-500 font-black uppercase tracking-widest mb-2 text-center">Toets weging (×{calcWeight})</label>
-                      <div class="flex items-center gap-2 px-1">
-                        <input id="calcWeight" type="range" min="1" max="5" step="1" bind:value={calcWeight}
-                          class="flex-1 accent-primary-500" />
+                  {#if calcMode === 'forward'}
+                    <!-- FORWARD MODE: target avg → required grade -->
+                    <!-- Target + Weight inputs -->
+                    <div class="grid grid-cols-2 gap-4">
+                      <div class="bg-surface-800/40 border border-white/5 rounded-2xl p-3">
+                        <label for="calcTargetAvg" class="block text-[9px] text-gray-500 font-black uppercase tracking-widest mb-2 text-center">Doelgemiddelde</label>
+                        <input id="calcTargetAvg" type="number" step="0.1" min="1" max="10" bind:value={calcTargetAvg}
+                          class="w-full bg-surface-900 border border-primary-500/20 rounded-xl px-3 py-2 text-base font-black text-center text-primary-400 focus:outline-none focus:border-primary-500 transition-all" />
+                      </div>
+                      <div class="bg-surface-800/40 border border-white/5 rounded-2xl p-3">
+                        <label for="calcWeight" class="block text-[9px] text-gray-500 font-black uppercase tracking-widest mb-2 text-center">Toets weging (×{calcWeight})</label>
+                        <div class="flex items-center gap-2 px-1">
+                          <input id="calcWeight" type="range" min="1" max="5" step="1" bind:value={calcWeight}
+                            class="flex-1 accent-primary-500" />
+                        </div>
                       </div>
                     </div>
-                  </div>
 
-                  <!-- Required grade result -->
-                  <div class="relative group">
-                    <div class="absolute -inset-0.5 bg-gradient-to-r from-primary-500 to-accent-500 rounded-3xl blur opacity-20 group-hover:opacity-40 transition duration-1000"></div>
-                    <div class="relative bg-surface-900 border border-white/10 rounded-3xl p-6 flex flex-col items-center justify-center shadow-2xl">
-                      <p class="text-[10px] text-gray-500 font-black uppercase tracking-[0.2em] mb-1">Cijfer nodig voor een {calcTargetAvg.toFixed(1)}</p>
-                      <span class="text-6xl font-black text-transparent bg-clip-text bg-gradient-to-br from-white via-primary-400 to-accent-400 italic italic tracking-tighter drop-shadow-sm">
-                        {getRequiredGrade(s)}
-                      </span>
-                    </div>
-                  </div>
-
-                  <!-- Progress bar: current → predicted -->
-                  <div class="space-y-2">
-                    <div class="flex items-center justify-between text-[10px] font-black uppercase tracking-widest">
-                      <span class="text-gray-500">Huidig: <span class="text-gray-300">{s.avg.toFixed($userSettings.decimalPoints)}</span></span>
-                      <span class="text-gray-500">Voorspeld: <span class="{parseFloat(getPredictedAverage(s)) >= $userSettings.insufficientThreshold ? 'text-accent-400' : 'text-red-400'}">{getPredictedAverage(s)}</span></span>
-                    </div>
-                    <div class="h-2 bg-surface-800 rounded-full overflow-hidden border border-surface-700/50">
-                      <div
-                        class="h-full rounded-full transition-all duration-500 {parseFloat(getPredictedAverage(s)) >= $userSettings.insufficientThreshold ? 'bg-gradient-to-r from-primary-600 to-accent-400' : 'bg-gradient-to-r from-red-600 to-red-400'}"
-                        style="width: {getProgressPercent(s)}%"
-                      ></div>
-                    </div>
-                    
-                    <div class="grid grid-cols-2 gap-4 mt-4 pt-2 border-t border-white/5">
-                      <div class="bg-surface-800/30 rounded-2xl p-4 flex flex-col items-center justify-center">
-                         <span class="text-3xl font-black italic tracking-tighter drop-shadow-md {parseFloat(getPredictedAverage(s)) >= $userSettings.insufficientThreshold ? 'text-white' : 'text-red-400'}">
-                           {getPredictedAverage(s)}
-                         </span>
-                         <p class="text-[8px] text-gray-500 font-black uppercase tracking-widest mt-1 text-center">Nieuw Vak Gem.</p>
-                      </div>
-                      <div class="bg-surface-800/30 rounded-2xl p-4 flex flex-col items-center justify-center shadow-inner">
-                         <span class="text-3xl font-black italic tracking-tighter drop-shadow-md text-primary-300">
-                           {getNewOverallAverage(s)}
-                         </span>
-                         <p class="text-[8px] text-gray-500 font-black uppercase tracking-widest mt-1 text-center">Nieuw Totaal Gem.</p>
+                    <!-- Required grade result -->
+                    <div class="relative group">
+                      <div class="absolute -inset-0.5 bg-gradient-to-r from-primary-500 to-accent-500 rounded-3xl blur opacity-20 group-hover:opacity-40 transition duration-1000"></div>
+                      <div class="relative bg-surface-900 border border-white/10 rounded-3xl p-6 flex flex-col items-center justify-center shadow-2xl">
+                        <p class="text-[10px] text-gray-500 font-black uppercase tracking-[0.2em] mb-1">Cijfer nodig voor een {calcTargetAvg.toFixed(1)}</p>
+                        <span class="text-6xl font-black text-transparent bg-clip-text bg-gradient-to-br from-white via-primary-400 to-accent-400 italic italic tracking-tighter drop-shadow-sm">
+                          {getRequiredGrade(s)}
+                        </span>
                       </div>
                     </div>
-                  </div>
 
-                  <div class="h-px bg-surface-700/40"></div>
-
-                  <!-- Simulation grades -->
-                  <div class="space-y-3">
-                    <div class="flex items-center justify-between">
-                      <span class="text-[10px] text-gray-500 font-black uppercase tracking-widest">Simulatie Cijfers</span>
-                      <div class="flex items-center gap-3">
-                        <label class="flex items-center gap-1.5 text-[10px] text-gray-500 font-bold cursor-pointer">
-                          <input type="checkbox" bind:checked={includeSimInAvg} class="accent-primary-500 rounded" />
-                          Meenemen in gem.
-                        </label>
-                        <button onclick={addSimulationGrade} class="flex items-center gap-1 text-[10px] font-black text-primary-400 hover:text-primary-300 uppercase tracking-widest">
-                          <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M12 5v14M5 12h14"/></svg>
-                          Voeg toe
-                        </button>
-                      </div>
-                    </div>
+                    <!-- Progress bar: current → predicted -->
                     <div class="space-y-2">
-                      {#each simulationGrades as sim, idx}
-                        <div class="flex items-center gap-2.5">
-                          <div class="flex-1 grid grid-cols-2 gap-2">
-                            <div>
-                              <label class="text-[9px] text-gray-600 font-black uppercase block mb-0.5">Cijfer</label>
-                              <input type="number" step="0.1" min="1" max="10" bind:value={sim.value}
-                                class="w-full bg-surface-800 border border-surface-700 rounded-lg px-2 py-1.5 text-sm text-white font-bold focus:outline-none focus:border-primary-500" />
-                            </div>
-                            <div>
-                              <label class="text-[9px] text-gray-600 font-black uppercase block mb-0.5">Weging</label>
-                              <input type="number" step="1" min="1" bind:value={sim.weight}
-                                class="w-full bg-surface-800 border border-surface-700 rounded-lg px-2 py-1.5 text-sm text-white font-bold focus:outline-none focus:border-primary-500" />
-                            </div>
-                          </div>
-                          <button onclick={() => removeSimulationGrade(idx)} aria-label="Verwijder" class="p-2 text-red-500 hover:bg-red-500/10 rounded-lg transition-colors mt-4">
-                            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M3 6h18m-2 0v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6m3 0V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+                      <div class="flex items-center justify-between text-[10px] font-black uppercase tracking-widest">
+                        <span class="text-gray-500">Huidig: <span class="text-gray-300">{s.avg.toFixed($userSettings.decimalPoints)}</span></span>
+                        <span class="text-gray-500">Voorspeld: <span class="{parseFloat(getPredictedAverage(s)) >= $userSettings.insufficientThreshold ? 'text-accent-400' : 'text-red-400'}">{getPredictedAverage(s)}</span></span>
+                      </div>
+                      <div class="h-2 bg-surface-800 rounded-full overflow-hidden border border-surface-700/50">
+                        <div
+                          class="h-full rounded-full transition-all duration-500 {parseFloat(getPredictedAverage(s)) >= $userSettings.insufficientThreshold ? 'bg-gradient-to-r from-primary-600 to-accent-400' : 'bg-gradient-to-r from-red-600 to-red-400'}"
+                          style="width: {getProgressPercent(s)}%"
+                        ></div>
+                      </div>
+                      
+                      <div class="grid grid-cols-2 gap-4 mt-4 pt-2 border-t border-white/5">
+                        <div class="bg-surface-800/30 rounded-2xl p-4 flex flex-col items-center justify-center">
+                           <span class="text-3xl font-black italic tracking-tighter drop-shadow-md {parseFloat(getPredictedAverage(s)) >= $userSettings.insufficientThreshold ? 'text-white' : 'text-red-400'}">
+                             {getPredictedAverage(s)}
+                           </span>
+                           <p class="text-[8px] text-gray-500 font-black uppercase tracking-widest mt-1 text-center">Nieuw Vak Gem.</p>
+                        </div>
+                        <div class="bg-surface-800/30 rounded-2xl p-4 flex flex-col items-center justify-center shadow-inner">
+                           <span class="text-3xl font-black italic tracking-tighter drop-shadow-md text-primary-300">
+                             {getNewOverallAverage(s)}
+                           </span>
+                           <p class="text-[8px] text-gray-500 font-black uppercase tracking-widest mt-1 text-center">Nieuw Totaal Gem.</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="h-px bg-surface-700/40"></div>
+
+                    <!-- Simulation grades -->
+                    <div class="space-y-3">
+                      <div class="flex items-center justify-between">
+                        <span class="text-[10px] text-gray-500 font-black uppercase tracking-widest">Simulatie Cijfers</span>
+                        <div class="flex items-center gap-3">
+                          <label class="flex items-center gap-1.5 text-[10px] text-gray-500 font-bold cursor-pointer">
+                            <input type="checkbox" bind:checked={includeSimInAvg} class="accent-primary-500 rounded" />
+                            Meenemen in gem.
+                          </label>
+                          <button onclick={addSimulationGrade} class="flex items-center gap-1 text-[10px] font-black text-primary-400 hover:text-primary-300 uppercase tracking-widest">
+                            <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M12 5v14M5 12h14"/></svg>
+                            Voeg toe
                           </button>
                         </div>
-                      {/each}
+                      </div>
+                      <div class="space-y-2">
+                        {#each simulationGrades as sim, idx}
+                          <div class="flex items-center gap-2.5">
+                            <div class="flex-1 grid grid-cols-2 gap-2">
+                              <div>
+                                <label class="text-[9px] text-gray-600 font-black uppercase block mb-0.5">Cijfer</label>
+                                <input type="number" step="0.1" min="1" max="10" bind:value={sim.value}
+                                  class="w-full bg-surface-800 border border-surface-700 rounded-lg px-2 py-1.5 text-sm text-white font-bold focus:outline-none focus:border-primary-500" />
+                              </div>
+                              <div>
+                                <label class="text-[9px] text-gray-600 font-black uppercase block mb-0.5">Weging</label>
+                                <input type="number" step="1" min="1" bind:value={sim.weight}
+                                  class="w-full bg-surface-800 border border-surface-700 rounded-lg px-2 py-1.5 text-sm text-white font-bold focus:outline-none focus:border-primary-500" />
+                              </div>
+                            </div>
+                            <button onclick={() => removeSimulationGrade(idx)} aria-label="Verwijder" class="p-2 text-red-500 hover:bg-red-500/10 rounded-lg transition-colors mt-4">
+                              <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M3 6h18m-2 0v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6m3 0V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+                            </button>
+                          </div>
+                        {/each}
+                      </div>
                     </div>
-                  </div>
+
+                  {:else}
+                    <!-- REVERSE MODE: expected grade → resulting average -->
+                    <div class="grid grid-cols-2 gap-4">
+                      <div class="bg-surface-800/40 border border-white/5 rounded-2xl p-3">
+                        <label for="calcExpectedGrade" class="block text-[9px] text-gray-500 font-black uppercase tracking-widest mb-2 text-center">Verwacht cijfer</label>
+                        <input id="calcExpectedGrade" type="number" step="0.1" min="1" max="10" bind:value={calcExpectedGrade}
+                          class="w-full bg-surface-900 border border-primary-500/20 rounded-xl px-3 py-2 text-base font-black text-center text-primary-400 focus:outline-none focus:border-primary-500 transition-all" />
+                      </div>
+                      <div class="bg-surface-800/40 border border-white/5 rounded-2xl p-3">
+                        <label for="calcWeightRev" class="block text-[9px] text-gray-500 font-black uppercase tracking-widest mb-2 text-center">Toets weging (×{calcWeight})</label>
+                        <div class="flex items-center gap-2 px-1">
+                          <input id="calcWeightRev" type="range" min="1" max="5" step="1" bind:value={calcWeight}
+                            class="flex-1 accent-primary-500" />
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- Result: new average -->
+                    <div class="relative group">
+                      <div class="absolute -inset-0.5 bg-gradient-to-r from-accent-500 to-primary-500 rounded-3xl blur opacity-20 group-hover:opacity-40 transition duration-1000"></div>
+                      <div class="relative bg-surface-900 border border-white/10 rounded-3xl p-6 flex flex-col items-center justify-center shadow-2xl">
+                        <p class="text-[10px] text-gray-500 font-black uppercase tracking-[0.2em] mb-1">Gemiddelde na een {calcExpectedGrade.toFixed(1)}</p>
+                        <span class="text-6xl font-black italic tracking-tighter drop-shadow-sm {parseFloat(getAverageForGrade(s)) >= $userSettings.insufficientThreshold ? 'text-transparent bg-clip-text bg-gradient-to-br from-white via-accent-400 to-primary-400' : 'text-red-400'}">
+                          {getAverageForGrade(s)}
+                        </span>
+                      </div>
+                    </div>
+
+                    <!-- Progress bar: current → new average -->
+                    <div class="space-y-2">
+                      <div class="flex items-center justify-between text-[10px] font-black uppercase tracking-widest">
+                        <span class="text-gray-500">Huidig: <span class="text-gray-300">{s.avg.toFixed($userSettings.decimalPoints)}</span></span>
+                        <span class="text-gray-500">Nieuw: <span class="{parseFloat(getAverageForGrade(s)) >= $userSettings.insufficientThreshold ? 'text-accent-400' : 'text-red-400'}">{getAverageForGrade(s)}</span></span>
+                      </div>
+                      <div class="h-2 bg-surface-800 rounded-full overflow-hidden border border-surface-700/50">
+                        <div
+                          class="h-full rounded-full transition-all duration-500 {parseFloat(getAverageForGrade(s)) >= $userSettings.insufficientThreshold ? 'bg-gradient-to-r from-accent-600 to-primary-400' : 'bg-gradient-to-r from-red-600 to-red-400'}"
+                          style="width: {Math.min(100, (parseFloat(getAverageForGrade(s)) / 10) * 100)}%"
+                        ></div>
+                      </div>
+
+                      <div class="grid grid-cols-2 gap-4 mt-4 pt-2 border-t border-white/5">
+                        <div class="bg-surface-800/30 rounded-2xl p-4 flex flex-col items-center justify-center">
+                          <span class="text-3xl font-black italic tracking-tighter drop-shadow-md {parseFloat(getAverageForGrade(s)) >= $userSettings.insufficientThreshold ? 'text-white' : 'text-red-400'}">
+                            {getAverageForGrade(s)}
+                          </span>
+                          <p class="text-[8px] text-gray-500 font-black uppercase tracking-widest mt-1 text-center">Nieuw Vak Gem.</p>
+                        </div>
+                        <div class="bg-surface-800/30 rounded-2xl p-4 flex flex-col items-center justify-center shadow-inner">
+                          <span class="text-3xl font-black italic tracking-tighter drop-shadow-md text-primary-300">
+                            {getNewOverallForGrade(s)}
+                          </span>
+                          <p class="text-[8px] text-gray-500 font-black uppercase tracking-widest mt-1 text-center">Nieuw Totaal Gem.</p>
+                        </div>
+                      </div>
+                    </div>
+                  {/if}
                 {/if}
               {/if}
             </div>

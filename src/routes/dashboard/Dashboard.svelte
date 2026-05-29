@@ -1,6 +1,6 @@
 <script lang="ts">
   import { personId, accountInfo, userSettings, currentPage } from '$lib/stores';
-  import { getCalendarEvents, getGrades, getSchoolyears, getMessageFolders, getAssignments, formatDate, formatTeacherName } from '$lib/api';
+  import { getCalendarEvents, getGrades, getSchoolyears, getRecentGrades, getMessageFolders, getAssignments, formatDate, formatTeacherName } from '$lib/api';
   import { onMount } from 'svelte';
   import { fade, fly, scale } from 'svelte/transition';
 
@@ -99,24 +99,28 @@
         }
       })(),
 
-      // 3. Grades (requires schoolyears first)
+      // 3. Grades — use the dedicated recent grades endpoint, fall back to
+      //    school-year lookup if it returns nothing (e.g. fresh account).
       (async () => {
         try {
-          const schoolyears = await getSchoolyears(pid, '2020-01-01', today);
-          if (schoolyears.length > 0) {
-            const currentYear = schoolyears.find(y => {
-              if (!y.begin || !y.einde) return false;
-              const b = new Date(y.begin);
-              const e = new Date(y.einde);
-              return b <= now && e >= now;
-            }) || schoolyears[schoolyears.length - 1];
-
-            if (currentYear?.id) {
-              const fetchedGrades = await getGrades(pid, currentYear.id, currentYear.einde);
-              latestGrades = fetchedGrades
-                .filter(g => g.CijferStr && g.CijferKolom?.KolomSoort === 1)
-                .sort((a, b) => (b.DatumIngevoerd ?? '').localeCompare(a.DatumIngevoerd ?? ''))
-                .slice(0, 5);
+          const recent = await getRecentGrades(pid, 5);
+          if (recent && recent.length > 0) {
+            latestGrades = recent.filter((g: any) => g.CijferStr);
+          } else {
+            // Fallback: fetch via school year
+            const schoolyears = await getSchoolyears(pid, '2020-01-01', today);
+            if (schoolyears.length > 0) {
+              const currentYear = schoolyears.find((y: any) => {
+                if (!y.begin || !y.einde) return false;
+                return new Date(y.begin) <= now && new Date(y.einde) >= now;
+              }) || schoolyears[schoolyears.length - 1];
+              if (currentYear?.id) {
+                const fetchedGrades = await getGrades(pid, currentYear.id, currentYear.einde);
+                latestGrades = fetchedGrades
+                  .filter((g: any) => g.CijferStr && g.CijferKolom?.KolomSoort === 1)
+                  .sort((a: any, b: any) => (b.DatumIngevoerd ?? '').localeCompare(a.DatumIngevoerd ?? ''))
+                  .slice(0, 5);
+              }
             }
           }
         } catch (e) {
