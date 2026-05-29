@@ -374,9 +374,15 @@ object SyncStateManager {
                 val endTime = event.optString("Einde", "")
                 val status = event.optInt("Status", 0)
                 
-                // Check if it's a scheduled event (usually type 16, but we'll check status)
-                // status 4 and 5 are cancelled.
+                // Skip cancelled events (status 4 = cancelled, status 5 = auto-cancelled)
                 if (status == 4 || status == 5) continue
+
+                // Only count scheduled lessons (Type 16 = "Rooster").
+                // Must match the filter used by DndScheduler.buildDndBlocks.
+                if (event.optInt("Type", 0) != 16) continue
+
+                // All-day events have no precise time — skip them.
+                if (event.optBoolean("DuurtHeleDag", false)) continue
                 
                 if (startTime.isNotEmpty() && endTime.isNotEmpty()) {
                     val startMs = parseMagisterDate(startTime) ?: continue

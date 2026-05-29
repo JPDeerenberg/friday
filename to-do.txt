@@ -1,5 +1,5 @@
 [X] Zonder school-login (helemaal weg)
-[ ] Do not disturb werkend krijgen
+[X] Do not disturb werkend krijgen
 [X] Cijfers fixen zodat de berekeningen kloppen
 [X] Opdrachtenpagina zijkant telefoon fixen
 [X] Indicator voor uitgevallen lessen, zodat je weet dat er iets mist

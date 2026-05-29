@@ -121,8 +121,16 @@ pub extern "system" fn Java_com_joris_friday_SyncWorker_showNotificationWithType
     }
 }
 
-// JNI function to sync notification preferences
+// NOTE: SyncStateManager.syncPreferencesFromFrontend is a regular @JvmStatic Kotlin method
+// (NOT declared as `external`), so this JNI export is never invoked by the JVM's native-method
+// lookup. The actual call path is: frontend → Tauri command `sync_notification_preferences`
+// (notifications.rs) → env.call_static_method → Kotlin bytecode.
+//
+// This function is kept here only as a reference / historical record and should NOT be relied
+// upon for functionality. It includes all five preference booleans to stay in sync with the
+// Kotlin method signature (Context, messages, grades, deadlines, calendar, autoDnd).
 #[cfg(target_os = "android")]
+#[allow(dead_code)]
 #[no_mangle]
 pub extern "system" fn Java_com_joris_friday_SyncStateManager_syncPreferencesFromFrontend<'local>(
     mut env: JNIEnv<'local>,
@@ -132,6 +140,7 @@ pub extern "system" fn Java_com_joris_friday_SyncStateManager_syncPreferencesFro
     notify_grades: jni::sys::jboolean,
     notify_deadlines: jni::sys::jboolean,
     notify_calendar: jni::sys::jboolean,
+    notify_auto_dnd: jni::sys::jboolean,   // previously missing — caused DND prefs to be lost
 ) {
     let prefs = match env.call_method(
         &context,
@@ -211,6 +220,17 @@ pub extern "system" fn Java_com_joris_friday_SyncStateManager_syncPreferencesFro
         &[
             jni::objects::JValue::from(&env.new_string("notifyCalendar").expect("Failed to create JString")),
             jni::objects::JValue::Bool(if notify_calendar != 0 { 1u8 } else { 0u8 }),
+        ],
+    );
+    
+    // Previously missing — notifyAutoDnd was never persisted, so DND was always disabled
+    let _ = env.call_method(
+        &editor,
+        "putBoolean",
+        "(Ljava/lang/String;Z)Landroid/content/SharedPreferences$Editor;",
+        &[
+            jni::objects::JValue::from(&env.new_string("notifyAutoDnd").expect("Failed to create JString")),
+            jni::objects::JValue::Bool(if notify_auto_dnd != 0 { 1u8 } else { 0u8 }),
         ],
     );
     

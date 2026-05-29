@@ -173,14 +173,27 @@ object DndScheduler {
                 // Skip cancelled events (status 4 = cancelled, status 5 = auto-cancelled)
                 if (status == 4 || status == 5) continue
 
+                // Only process scheduled lessons (Type 16 = "Rooster").
+                // Without this filter personal events, free periods, school-wide events and
+                // study-house slots all create unwanted DND blocks.
+                val type = event.optInt("Type", 0)
+                if (type != 16) continue
+
+                // Skip all-day events — they carry no precise start/end time and would
+                // create a block covering the whole day, keeping DND stuck ON.
+                if (event.optBoolean("DuurtHeleDag", false)) continue
+
                 if (startStr.isEmpty() || endStr.isEmpty()) continue
 
                 val startMs = parseMagisterDate(startStr) ?: continue
                 val endMs = parseMagisterDate(endStr) ?: continue
 
-                // Only consider events that are today and haven't ended yet
-                if (endMs < now) continue  // Already over
-                if (startMs >= todayEnd) continue  // Tomorrow or later
+                // Only consider events that are today and haven't ended yet.
+                // The todayStart guard also prevents yesterday's lessons from leaking in
+                // when the sync uses a UTC-based date that drifts near midnight CET.
+                if (startMs < todayStart) continue  // Before today (UTC drift guard)
+                if (endMs < now) continue            // Already over
+                if (startMs >= todayEnd) continue    // Tomorrow or later
 
                 intervals.add(Pair(startMs, endMs))
             } catch (e: Exception) {
