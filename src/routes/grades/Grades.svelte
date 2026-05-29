@@ -753,6 +753,80 @@
       {:else if currentTab === 'tools'}
         <div class="space-y-8 pb-10">
 
+          <!-- Export JSON -->
+          <div>
+            <div class="flex items-center gap-3 mb-4">
+              <div class="w-8 h-8 rounded-xl bg-emerald-500/15 flex items-center justify-center text-emerald-400">
+                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              </div>
+              <h2 class="text-xl font-black text-white italic tracking-tighter">Exporteren</h2>
+            </div>
+            <div class="glass p-5 rounded-3xl space-y-3">
+              <p class="text-[10px] text-gray-500 font-black uppercase tracking-widest">Download je gegevens als JSON</p>
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <button
+                  onclick={() => {
+                    const blob = new Blob([JSON.stringify(subjects, null, 2)], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url; a.download = 'cijfers.json'; a.click();
+                    URL.revokeObjectURL(url);
+                  }}
+                  disabled={subjects.length === 0}
+                  class="flex items-center justify-center gap-2 py-3 px-4 rounded-2xl bg-surface-800 border border-white/5 text-sm font-black text-gray-200 hover:bg-surface-700 hover:border-emerald-500/30 hover:text-emerald-400 transition-all active:scale-95 disabled:opacity-30 disabled:pointer-events-none shadow-sm"
+                >
+                  <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                  Cijfers & Vakken
+                </button>
+                <button
+                  onclick={() => {
+                    const flat = subjects.flatMap(s => s.grades.map((g: any) => ({ vak: s.name, afkorting: s.abbr, ...g })));
+                    const blob = new Blob([JSON.stringify(flat, null, 2)], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url; a.download = 'alle_cijfers.json'; a.click();
+                    URL.revokeObjectURL(url);
+                  }}
+                  disabled={subjects.length === 0}
+                  class="flex items-center justify-center gap-2 py-3 px-4 rounded-2xl bg-surface-800 border border-white/5 text-sm font-black text-gray-200 hover:bg-surface-700 hover:border-emerald-500/30 hover:text-emerald-400 transition-all active:scale-95 disabled:opacity-30 disabled:pointer-events-none shadow-sm"
+                >
+                  <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                  Alle losse cijfers
+                </button>
+                <button
+                  onclick={() => {
+                    const blob = new Blob([JSON.stringify(historicalAverages, null, 2)], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url; a.download = 'voortgang.json'; a.click();
+                    URL.revokeObjectURL(url);
+                  }}
+                  disabled={historicalAverages.length === 0}
+                  class="flex items-center justify-center gap-2 py-3 px-4 rounded-2xl bg-surface-800 border border-white/5 text-sm font-black text-gray-200 hover:bg-surface-700 hover:border-emerald-500/30 hover:text-emerald-400 transition-all active:scale-95 disabled:opacity-30 disabled:pointer-events-none shadow-sm"
+                >
+                  <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                  Voortgang jaren
+                </button>
+                <button
+                  onclick={() => {
+                    const blob = new Blob([JSON.stringify(schoolyears, null, 2)], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url; a.download = 'schooljaren.json'; a.click();
+                    URL.revokeObjectURL(url);
+                  }}
+                  disabled={schoolyears.length === 0}
+                  class="flex items-center justify-center gap-2 py-3 px-4 rounded-2xl bg-surface-800 border border-white/5 text-sm font-black text-gray-200 hover:bg-surface-700 hover:border-emerald-500/30 hover:text-emerald-400 transition-all active:scale-95 disabled:opacity-30 disabled:pointer-events-none shadow-sm"
+                >
+                  <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                  Schooljaren
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div class="h-px w-3/4 mx-auto bg-gradient-to-r from-transparent via-surface-600 to-transparent"></div>
+
           <!-- Calculator -->
           <div>
             <div class="flex items-center gap-3 mb-4">

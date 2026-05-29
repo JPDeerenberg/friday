@@ -10,8 +10,21 @@
   let loading = $state(true);
   let initialLoading = $state(true);
   
+  // Derived from selected school year — not manually editable
   let van = $state('');
   let tot = $state('');
+
+  function yearLabel(year: any): string {
+    const code = year?.groep?.code ?? year?.studie?.code ?? year?.Studie?.code ?? null;
+    const desc = year?.groep?.omschrijving ?? year?.studie?.omschrijving ?? null;
+    if (code && desc) return `${code} — ${desc}`;
+    if (code) return code;
+    if (year?.begin) {
+      const y = new Date(year.begin).getFullYear();
+      return `${y}–${y + 1}`;
+    }
+    return 'Schooljaar';
+  }
 
   onMount(async () => {
     if (!$personId) return;
@@ -122,7 +135,7 @@
                 class="appearance-none bg-surface-900 border border-white/5 rounded-2xl px-4 py-2 pr-9 text-[10px] font-black uppercase tracking-widest text-gray-300 focus:outline-none focus:border-primary-500 transition-all cursor-pointer shadow-lg"
               >
                 {#each schoolyears as year}
-                  <option value={year.id}>{year.groep.code}{year.groep.omschrijving ? ' — ' + year.groep.omschrijving : ''}</option>
+                  <option value={year.id}>{yearLabel(year)}</option>
                 {/each}
               </select>
               <div class="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-600 text-[10px]">▼</div>
@@ -131,20 +144,6 @@
         </div>
       </div>
 
-      <!-- Filters -->
-      <div class="flex flex-wrap items-center gap-2 overflow-x-auto no-scrollbar pb-1">
-        <div class="flex items-center gap-2 bg-surface-900/40 rounded-2xl p-1 border border-white/5 shadow-inner">
-          <div class="flex items-center gap-2 px-3 py-1.5 shrink-0">
-            <span class="text-[9px] font-black text-gray-600 uppercase tracking-widest">Van</span>
-            <input type="date" bind:value={van} onchange={loadAbsences} class="bg-transparent border-none text-[10px] font-black italic text-gray-200 focus:ring-0 cursor-pointer p-0 w-24" />
-          </div>
-          <div class="w-0.5 h-3 bg-surface-800 rounded-full opacity-50"></div>
-          <div class="flex items-center gap-2 px-3 py-1.5 shrink-0">
-            <span class="text-[9px] font-black text-gray-600 uppercase tracking-widest">Tot</span>
-            <input type="date" bind:value={tot} onchange={loadAbsences} class="bg-transparent border-none text-[10px] font-black italic text-gray-200 focus:ring-0 cursor-pointer p-0 w-24" />
-          </div>
-        </div>
-      </div>
     </div>
   </header>
 

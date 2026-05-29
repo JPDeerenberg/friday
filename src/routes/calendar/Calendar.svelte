@@ -15,6 +15,25 @@
   let loadingDetail = $state(false);
   let editMode = $state(false);
   let editContent = $state('');
+  let editorEl = $state<HTMLElement | null>(null);
+
+  // Populate the contenteditable div when edit mode opens
+  $effect(() => {
+    if (editMode && editorEl) {
+      editorEl.innerHTML = editContent;
+      editorEl.focus();
+    }
+  });
+
+  function formatText(cmd: string, value?: string) {
+    document.execCommand(cmd, false, value);
+    editorEl?.focus();
+  }
+
+  function saveRichContent() {
+    if (editorEl) editContent = editorEl.innerHTML;
+    saveLocalOverride();
+  }
   let isCreating = $state(false);
 
   // New appointment state
@@ -685,7 +704,7 @@
             class="w-full text-left glass rounded-3xl p-4 flex gap-4 transition-all active:scale-[0.98] hover:scale-[1.01] hover:bg-surface-900/60 hover:border-white/20 group relative overflow-hidden cursor-pointer
                    {app.InfoType === 1 && !app.Afgerond ? 'border-primary-400/60' : ''}
                    {app.Status === 4 || app.Status === 5 ? 'border-red-500/40 bg-red-500/5' : ''}
-                   {app.Afgerond ? 'opacity-60' : ''}"
+                   {app.Afgerond ? 'border-emerald-500/30 bg-emerald-500/[0.04] opacity-75' : ''}"
           >
             <!-- Background accent -->
             {#if app.Status === 4 || app.Status === 5}
@@ -873,14 +892,31 @@
             Huiswerk & Inhoud
           </h3>
           {#if editMode}
-            <div class="space-y-3" in:slide>
-              <textarea
-                bind:value={editContent}
-                class="w-full h-40 bg-surface-950 border border-primary-500/30 rounded-2xl p-4 text-sm text-gray-200 focus:outline-none focus:border-primary-500 transition-colors"
-                placeholder="Huiswerk bewerken..."
-              ></textarea>
+            <div class="space-y-2" in:slide>
+              <!-- Formatting toolbar -->
+              <div class="flex items-center gap-1 p-1.5 bg-surface-900 rounded-xl border border-white/5">
+                <button onclick={() => formatText('bold')} class="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-surface-800 transition-all font-black text-sm w-7 h-7 flex items-center justify-center" title="Vet"><b>B</b></button>
+                <button onclick={() => formatText('italic')} class="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-surface-800 transition-all italic text-sm w-7 h-7 flex items-center justify-center" title="Cursief"><i>I</i></button>
+                <button onclick={() => formatText('underline')} class="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-surface-800 transition-all underline text-sm w-7 h-7 flex items-center justify-center" title="Onderstrepen">U</button>
+                <div class="w-px h-4 bg-surface-700 mx-0.5"></div>
+                <button onclick={() => formatText('insertUnorderedList')} class="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-surface-800 transition-all w-7 h-7 flex items-center justify-center" title="Opsomming">
+                  <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="9" y1="6" x2="20" y2="6"/><line x1="9" y1="12" x2="20" y2="12"/><line x1="9" y1="18" x2="20" y2="18"/><circle cx="4" cy="6" r="1.5" fill="currentColor" stroke="none"/><circle cx="4" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="4" cy="18" r="1.5" fill="currentColor" stroke="none"/></svg>
+                </button>
+                <button onclick={() => formatText('insertOrderedList')} class="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-surface-800 transition-all w-7 h-7 flex items-center justify-center" title="Genummerde lijst">
+                  <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="10" y1="6" x2="21" y2="6"/><line x1="10" y1="12" x2="21" y2="12"/><line x1="10" y1="18" x2="21" y2="18"/><path d="M4 6h1v4" stroke-linecap="round"/><path d="M4 10h2" stroke-linecap="round"/><path d="M6 18H4c0-1 2-2 2-3s-1-1.5-2-1" stroke-linecap="round"/></svg>
+                </button>
+              </div>
+              <!-- Contenteditable rich editor -->
+              <div
+                bind:this={editorEl}
+                contenteditable="true"
+                class="w-full min-h-[120px] bg-surface-950 border border-primary-500/30 rounded-2xl p-4 text-sm text-gray-200 focus:outline-none focus:border-primary-500 transition-colors prose prose-sm prose-invert max-w-none"
+                role="textbox"
+                aria-multiline="true"
+                aria-label="Huiswerk bewerken"
+              ></div>
               <button
-                onclick={saveLocalOverride}
+                onclick={saveRichContent}
                 class="w-full py-3 rounded-xl bg-primary-500 text-white font-black text-xs uppercase tracking-widest hover:bg-primary-400 transition-all shadow-lg shadow-primary-500/20"
               >
                 Opslaan (Lokaal)
