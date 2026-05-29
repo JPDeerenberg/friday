@@ -179,36 +179,43 @@
       .sort((a: any, b: any) => a.DatumIngevoerd.localeCompare(b.DatumIngevoerd));
   }
 
-  function getOverallTrendPath() {
-    const chrono = getChronologicalGrades();
-    if (chrono.length < 2) return '';
-    const padDivisor = Math.max(chrono.length - 1, 5);
-    const offset = (300 - ((chrono.length - 1) / padDivisor) * 300) / 2;
-    const points = chrono.map((g, i) => ({
-      x: (i / padDivisor) * 300 + offset,
-      y: 100 - ((getNumericValue(g.CijferStr) - 1) / 9) * 100
-    }));
-    
+  /** Build a smooth SVG path from [x,y] points using monotone cubic interpolation */
+  function buildSmoothPath(points: { x: number; y: number }[]): string {
+    if (points.length === 0) return '';
+    if (points.length === 1) return `M ${points[0].x},${points[0].y}`;
     let d = `M ${points[0].x},${points[0].y}`;
-    if (points.length === 2) {
-      return `M ${points[0].x},${points[0].y} L ${points[1].x},${points[1].y}`;
-    }
-    
-    // Using a more robust Catmull-Rom to Cubic Bezier conversion for smoothness
     for (let i = 0; i < points.length - 1; i++) {
-      const p0 = points[i - 1] || points[i];
+      const p0 = points[Math.max(i - 1, 0)];
       const p1 = points[i];
       const p2 = points[i + 1];
-      const p3 = points[i + 2] || p2;
-      
-      const cp1x = p1.x + (p2.x - p0.x) / 6;
-      const cp1y = p1.y + (p2.y - p0.y) / 6;
-      const cp2x = p2.x - (p3.x - p1.x) / 6;
-      const cp2y = p2.y - (p3.y - p1.y) / 6;
-      
+      const p3 = points[Math.min(i + 2, points.length - 1)];
+      const tension = 0.3;
+      const cp1x = p1.x + (p2.x - p0.x) * tension;
+      const cp1y = p1.y + (p2.y - p0.y) * tension;
+      const cp2x = p2.x - (p3.x - p1.x) * tension;
+      const cp2y = p2.y - (p3.y - p1.y) * tension;
       d += ` C ${cp1x},${cp1y} ${cp2x},${cp2y} ${p2.x},${p2.y}`;
     }
     return d;
+  }
+
+  function getOverallTrendPath() {
+    const chrono = getChronologicalGrades();
+    if (chrono.length < 2) return '';
+    const values = chrono.map(g => getNumericValue(g.CijferStr));
+    const minVal = Math.max(1, Math.min(...values) - 0.5);
+    const maxVal = Math.min(10, Math.max(...values) + 0.5);
+    const range = maxVal - minVal || 1;
+    const count = chrono.length;
+    const w = 300, h = 100;
+    // Use the full width — no padding hack. Each point gets equal spacing.
+    const stepX = count > 1 ? w / (count - 1) : w / 2;
+    const offsetX = count > 1 ? 0 : w / 4;
+    const points = chrono.map((g, i) => ({
+      x: i * stepX + offsetX,
+      y: h - ((getNumericValue(g.CijferStr) - minVal) / range) * h
+    }));
+    return buildSmoothPath(points);
   }
 
   async function init() {
@@ -377,38 +384,32 @@
     return val >= $userSettings.insufficientThreshold;
   }
 
-  function getTrendPath(subject: any): string {
-    const chronoGrades = [...subject.grades]
-      .filter(g => g.CijferStr && g.TeltMee && !isNaN(getNumericValue(g.CijferStr)))
-      .sort((a, b) => (a.DatumIngevoerd ?? '').localeCompare(b.DatumIngevoerd ?? ''))
-      .map(g => getNumericValue(g.CijferStr));
-    if (chronoGrades.length < 2) return '';
+  /** Compute chart bounds and evenly-spaced points for a subject */
+  function getSubjectChartData(subject: any): { values: number[]; minY: number; maxY: number; points: { x: number; y: number }[]; w: number; h: number } | null {
+    const vals = [...subject.grades]
+      .filter((g: any) => g.CijferStr && g.TeltMee && !isNaN(getNumericValue(g.CijferStr)))
+      .sort((a: any, b: any) => (a.DatumIngevoerd ?? '').localeCompare(b.DatumIngevoerd ?? ''))
+      .map((g: any) => getNumericValue(g.CijferStr));
+    if (vals.length < 2) return null;
     const w = 100, h = 40;
     let minY = 1, maxY = 10;
     if ($userSettings.zoomGraph) {
-      minY = Math.max(1, Math.min(...chronoGrades) - 0.5);
-      maxY = Math.min(10, Math.max(...chronoGrades) + 0.5);
+      minY = Math.max(1, Math.min(...vals) - 0.5);
+      maxY = Math.min(10, Math.max(...vals) + 0.5);
     }
-    const padDivisor = Math.max(chronoGrades.length - 1, 5);
-    const offset = (w - ((chronoGrades.length - 1) / padDivisor) * w) / 2;
-    const points = chronoGrades.map((g, i) => ({
-      x: (i / padDivisor) * w + offset,
-      y: h - ((g - minY) / (maxY - minY)) * h
+    const range = maxY - minY || 1;
+    const stepX = vals.length > 1 ? w / (vals.length - 1) : w / 2;
+    const points = vals.map((v, i) => ({
+      x: i * stepX,
+      y: h - ((v - minY) / range) * h
     }));
-    if ($userSettings.roundedGraphs) {
-      let d = `M ${points[0].x},${points[0].y}`;
-      if (points.length === 2) {
-          return `M ${points[0].x},${points[0].y} L ${points[1].x},${points[1].y}`;
-      }
-      for (let i = 0; i < points.length - 1; i++) {
-        const p1 = points[i];
-        const p2 = points[i + 1];
-        const cp1x = p1.x + (p2.x - p1.x) / 2;
-        d += ` C ${cp1x},${p1.y} ${cp1x},${p2.y} ${p2.x},${p2.y}`;
-      }
-      return d;
-    }
-    return `M ${points.map(p => `${p.x},${p.y}`).join(' L ')}`;
+    return { values: vals, minY, maxY, points, w, h };
+  }
+
+  function getTrendPath(subject: any): string {
+    const data = getSubjectChartData(subject);
+    if (!data) return '';
+    return buildSmoothPath(data.points);
   }
 
   function viewSnapshot(snapshot: any) {
@@ -554,7 +555,7 @@
   }
 </script>
 
-<div class="flex flex-col bg-surface-950">
+<div class="flex flex-col bg-surface-950 overflow-x-hidden">
   <!-- Sticky Header -->
   <div class="sticky top-0 z-10 bg-surface-950/95 backdrop-blur border-b border-surface-800/50 px-4 py-3 pb-0">
     <div class="flex items-center justify-between mb-3">
@@ -605,7 +606,7 @@
     </div>
   </div>
 
-  <main class="flex-1 overflow-y-auto p-4 md:p-6 space-y-5">
+  <main class="flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-6 space-y-5">
     {#if activeSnapshot}
       <div class="bg-amber-500/10 border border-amber-500/30 rounded-3xl p-5 flex flex-col sm:flex-row items-center justify-between gap-4">
         <div class="flex items-center gap-4">
@@ -653,53 +654,82 @@
         {#if subjects.length > 0}
           {@const chronoAll = getAllChronologicalValues()}
           {@const path = getOverallTrendPath()}
+          {@const chronoValues = chronoAll.map(g => g.value)}
           {@const validSubjects = subjects.filter(s => s.avg > 0)}
           {@const overallAvg = validSubjects.length > 0 ? validSubjects.reduce((a, b) => a + b.avg, 0) / validSubjects.length : 0}
+          {@const gMin = Math.max(1, Math.min(...chronoValues) - 0.5)}
+          {@const gMax = Math.min(10, Math.max(...chronoValues) + 0.5)}
+          {@const gRange = gMax - gMin || 1}
           <div class="glass p-6 rounded-[2rem] space-y-4 overflow-hidden relative shadow-2xl">
             <div class="absolute inset-0 bg-gradient-to-br from-primary-500/15 via-transparent to-accent-500/8"></div>
             <div class="flex items-center justify-between relative z-10">
               <div>
                 <h2 class="text-xl font-black text-white italic tracking-tight">Cijferverloop</h2>
-                <p class="text-[10px] font-bold text-gray-500 uppercase tracking-widest mt-0.5">Chronologisch overzicht — {chronoAll.length} cijfers</p>
+                <p class="text-[10px] font-bold text-gray-500 uppercase tracking-widest mt-0.5">{chronoAll.length} cijfers — totaal gem. {overallAvg.toFixed(2)}</p>
               </div>
-              <div class="flex flex-col items-end">
-                <span class="text-3xl font-black italic {isVoldoende(overallAvg) ? 'text-primary-400' : 'text-red-400'}">{overallAvg.toFixed(2)}</span>
-                <span class="text-[9px] font-black text-gray-600 uppercase tracking-tight">Totaal Gem.</span>
+              <div class="flex items-center gap-2">
+                <span class="text-[10px] font-black text-gray-500 uppercase">{Math.round(overallAvg * 10) / 10}</span>
+                <div class="w-1.5 h-1.5 rounded-full {isVoldoende(overallAvg) ? 'bg-accent-400' : 'bg-red-400'}"></div>
               </div>
             </div>
-            <div class="h-40 w-full relative z-10 mt-2">
-              <svg viewBox="0 0 300 100" class="w-full h-full overflow-visible" preserveAspectRatio="none">
+            <div class="h-44 w-full relative z-10">
+              <svg viewBox="0 0 300 120" class="w-full h-full" preserveAspectRatio="xMidYMid meet">
                 <defs>
-                  <linearGradient id="gradeGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-                    <stop offset="0%" style="stop-color:var(--color-primary-500);stop-opacity:0.2" />
-                    <stop offset="100%" style="stop-color:var(--color-primary-500);stop-opacity:0" />
+                  <linearGradient id="gradeGrad" x1="0" y1="0" x2="0" y2="120" gradientUnits="userSpaceOnUse">
+                    <stop offset="0%" stop-color="var(--color-primary-500)" stop-opacity="0.25" />
+                    <stop offset="100%" stop-color="var(--color-primary-500)" stop-opacity="0" />
                   </linearGradient>
                   <linearGradient id="lineGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-                    <stop offset="0%" style="stop-color:var(--color-primary-400)" />
-                    <stop offset="100%" style="stop-color:var(--color-accent-400)" />
+                    <stop offset="0%" stop-color="var(--color-primary-400)" />
+                    <stop offset="100%" stop-color="var(--color-accent-400)" />
                   </linearGradient>
+                  <filter id="glow">
+                    <feGaussianBlur stdDeviation="2" result="blur"/>
+                    <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+                  </filter>
                 </defs>
+                
+                <!-- Grid lines -->
+                {#each [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as grade}
+                  {@const gy = 120 - ((grade - gMin) / gRange) * 120}
+                  {#if gy >= 0 && gy <= 120}
+                    <line x1="0" y1={gy} x2="300" y2={gy} stroke="var(--color-surface-700)" stroke-width="0.5" opacity="0.4" />
+                    <text x="298" y={gy + 3} text-anchor="end" class="text-[6px]" fill="var(--color-gray-600)" opacity="0.6">{grade.toFixed(0)}</text>
+                  {/if}
+                {/each}
+                
                 {#if path}
-                  <path d="{path} V 100 H 0 Z" fill="url(#gradeGrad)" />
-                  <path d={path} fill="none" stroke="url(#lineGrad)" stroke-width="3" vector-effect="non-scaling-stroke" stroke-linecap="round" stroke-linejoin="round" style="filter: drop-shadow(0px 4px 6px rgba(192, 132, 252, 0.4));" />
-                  <!-- Average line -->
-                  <line x1="0" y1={100 - ((overallAvg - 1) / 9) * 100} x2="300" y2={100 - ((overallAvg - 1) / 9) * 100} stroke="white" stroke-width="0.5" stroke-dasharray="4 4" opacity="0.3" />
+                  <!-- Average reference line -->
+                  {@const avgY = 120 - ((overallAvg - gMin) / gRange) * 120}
+                  <line x1="0" y1={avgY} x2="300" y2={avgY} stroke="var(--color-gray-400)" stroke-width="0.8" stroke-dasharray="5 4" opacity="0.5" />
                   
-                  <!-- Data points -->
+                  <!-- Fill under curve -->
+                  <path d="{path} V 120 H 0 Z" fill="url(#gradeGrad)" />
+                  
+                  <!-- Main line -->
+                  <path d={path} fill="none" stroke="url(#lineGrad)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" filter="url(#glow)" opacity="0.9" />
+                  
+                  <!-- Interactive hover areas (invisible wider paths for easier hitting) -->
                   {#each chronoAll as g, idx}
-                    {@const padDivisor = Math.max(chronoAll.length - 1, 5)}
-                    {@const offset = (300 - ((chronoAll.length - 1) / padDivisor) * 300) / 2}
-                    {@const cx = (idx / padDivisor) * 300 + offset}
-                    {@const cy = 100 - ((g.value - 1) / 9) * 100}
-                    <circle cx={cx} cy={cy} r="3" fill="var(--color-primary-500)" stroke="var(--color-surface-950)" stroke-width="1.5" opacity="0.8">
-                      <title>{g.subject}: {g.value.toFixed(1)} ({new Date(g.date).toLocaleDateString('nl-NL')})</title>
-                    </circle>
-                    {#if idx === chronoAll.length - 1}
-                      <text x={cx} y={cy - 8} text-anchor="middle" class="text-[8px] font-black fill-white italic">{g.value.toFixed(1)}</text>
-                    {/if}
+                    {@const step = chronoAll.length > 1 ? 300 / (chronoAll.length - 1) : 150}
+                    {@const cx = idx * step}
+                    {@const cy = 120 - ((g.value - gMin) / gRange) * 120}
+                    <!-- Invisible hover target -->
+                    <g class="group/point" style="cursor: pointer;">
+                      <line x1={cx} y1={cy - 10} x2={cx} y2={cy + 10} stroke="transparent" stroke-width="12" />
+                      <circle cx={cx} cy={cy} r="0" fill="var(--color-primary-400)" class="transition-all duration-200 group-hover/point:r-[4]" />
+                    </g>
                   {/each}
                 {/if}
               </svg>
+            </div>
+            <!-- Legend row -->
+            <div class="flex items-center justify-between text-[9px] text-gray-600 font-bold uppercase tracking-widest relative z-10">
+              <span>▸ {chronoAll[0]?.subject ?? ''}</span>
+              <span class="flex items-center gap-3">
+                <span class="flex items-center gap-1.5"><span class="w-2 h-0.5 rounded bg-gray-400"></span>Gem. {overallAvg.toFixed(1)}</span>
+                <span>▸ {chronoAll[chronoAll.length - 1]?.subject ?? ''}</span>
+              </span>
             </div>
           </div>
         {/if}
@@ -747,25 +777,21 @@
                 </div>
                 <div class="flex items-center gap-3">
                   {#if getTrendPath(subject)}
-                    {@const lastVal = chronoVals[chronoVals.length-1]}
-                    {@const minY = $userSettings.zoomGraph ? Math.max(1, Math.min(...chronoVals) - 0.5) : 1}
-                    {@const maxY = $userSettings.zoomGraph ? Math.min(10, Math.max(...chronoVals) + 0.5) : 10}
-                    {@const lastY = 40 - ((lastVal - minY) / (maxY - minY)) * 40}
-                    {@const padDivisor = Math.max(chronoVals.length - 1, 5)}
-                    {@const offset = (100 - ((chronoVals.length - 1) / padDivisor) * 100) / 2}
-                    {@const lastX = ((chronoVals.length - 1) / padDivisor) * 100 + offset}
-                    <div class="w-16 h-8 hidden sm:block shrink-0">
-                      <svg viewBox="0 0 100 40" class="w-full h-full overflow-visible" preserveAspectRatio="none">
-                        <defs>
-                          <linearGradient id="lineGradSmall" x1="0%" y1="0%" x2="100%" y2="0%">
-                            <stop offset="0%" style="stop-color:var(--color-primary-400)" />
-                            <stop offset="100%" style="stop-color:var(--color-accent-400)" />
-                          </linearGradient>
-                        </defs>
-                        <path d={getTrendPath(subject)} fill="none" stroke="url(#lineGradSmall)" stroke-width="3" vector-effect="non-scaling-stroke" stroke-linecap="round" stroke-linejoin="round" style="filter: drop-shadow(0px 2px 4px rgba(192, 132, 252, 0.4));" />
-                        <circle cx={lastX} cy={lastY} r="2.5" fill="var(--color-primary-400)" />
-                      </svg>
-                    </div>
+                    {@const chartData = getSubjectChartData(subject)}
+                    {#if chartData}
+                      {@const lastP = chartData.points[chartData.points.length - 1]}
+                      <div class="w-16 h-8 hidden sm:block shrink-0">
+                        <svg viewBox="0 0 100 40" class="w-full h-full" preserveAspectRatio="xMidYMid meet">
+                          <defs>
+                            <linearGradient id="lineGradSmall" x1="0%" y1="0%" x2="100%" y2="0%">
+                              <stop offset="0%" stop-color="var(--color-primary-400)" />
+                              <stop offset="100%" stop-color="var(--color-accent-400)" />
+                            </linearGradient>
+                          </defs>
+                          <path d={getTrendPath(subject)} fill="none" stroke="url(#lineGradSmall)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="filter: drop-shadow(0px 2px 4px rgba(192, 132, 252, 0.4));" />
+                        </svg>
+                      </div>
+                    {/if}
                   {/if}
                   {#if subject.avg > 0}
                     <span class="text-xl font-black {isVoldoende(subject.avg) ? 'text-accent-400' : 'text-red-400'}">
@@ -812,11 +838,14 @@
                       <div class="space-y-1">
                         {#each subDist as bucket}
                           <div class="flex items-center gap-2">
-                            <span class="text-[8px] font-black text-gray-600 w-6 text-right shrink-0">{bucket.label}</span>
-                            <div class="flex-1 h-3 bg-surface-800 rounded-full overflow-hidden">
-                              <div class="h-full rounded-full transition-all duration-700 {parseInt(bucket.label) >= $userSettings.insufficientThreshold ? 'bg-primary-500/60' : 'bg-red-500/40'}" style="width: {Math.max(bucket.pct, bucket.count > 0 ? 5 : 0)}%"></div>
+                            <span class="text-[8px] font-black text-gray-500 w-6 text-right shrink-0">{bucket.label}</span>
+                            <div class="flex-1 h-4 bg-surface-800 rounded-full overflow-hidden border border-surface-700/30">
+                              <div
+                                class="h-full rounded-full transition-all duration-700 {parseInt(bucket.label) >= $userSettings.insufficientThreshold ? 'bg-gradient-to-r from-primary-500 to-accent-400' : 'bg-gradient-to-r from-red-500 to-red-400'}"
+                                style="width: {Math.max(bucket.pct, bucket.count > 0 ? 4 : 0)}%"
+                              ></div>
                             </div>
-                            <span class="text-[8px] font-bold text-gray-600 w-4 text-right shrink-0">{bucket.count}</span>
+                            <span class="text-[9px] font-bold text-gray-400 w-5 text-right shrink-0">{bucket.count}</span>
                           </div>
                         {/each}
                       </div>
@@ -825,31 +854,40 @@
 
                   <!-- Detailed Subject Graph -->
                   {#if getTrendPath(subject)}
-                    {@const minY = $userSettings.zoomGraph ? Math.max(1, Math.min(...chronoVals) - 0.5) : 1}
-                    {@const maxY = $userSettings.zoomGraph ? Math.min(10, Math.max(...chronoVals) + 0.5) : 10}
-                    <div class="h-32 w-full relative bg-surface-900/50 rounded-xl p-3 border border-white/5">
-                      <p class="absolute top-2 left-3 text-[9px] font-black uppercase text-gray-500">Cijferverloop</p>
-                      <svg viewBox="0 0 100 40" class="w-full h-full overflow-visible mt-2" preserveAspectRatio="none">
-                        <defs>
-                          <linearGradient id="lineGradDetailed" x1="0%" y1="0%" x2="100%" y2="0%">
-                            <stop offset="0%" style="stop-color:var(--color-primary-400)" />
-                            <stop offset="100%" style="stop-color:var(--color-accent-400)" />
-                          </linearGradient>
-                        </defs>
-                        <path d={getTrendPath(subject)} fill="none" stroke="url(#lineGradDetailed)" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linecap="round" stroke-linejoin="round" style="filter: drop-shadow(0px 3px 5px rgba(192, 132, 252, 0.4));" />
-                        
-                        {#each chronoVals as gVal, idx}
-                          {@const padDivisor = Math.max(chronoVals.length - 1, 5)}
-                          {@const offset2 = (100 - ((chronoVals.length - 1) / padDivisor) * 100) / 2}
-                          {@const cx = (idx / padDivisor) * 100 + offset2}
-                          {@const cy = 40 - ((gVal - minY) / (maxY - minY)) * 40}
-                          <circle cx={cx} cy={cy} r="1.5" fill="var(--color-primary-500)" stroke="var(--color-surface-900)" stroke-width="0.5" />
-                          {#if idx === chronoVals.length - 1}
-                             <text x={cx} y={cy - 4} text-anchor="middle" class="text-[5px] font-black fill-white italic tracking-tighter">{gVal.toFixed(1)}</text>
-                          {/if}
-                        {/each}
-                      </svg>
-                    </div>
+                    {@const chartD = getSubjectChartData(subject)}
+                    {#if chartD}
+                      {@const subRange = chartD.maxY - chartD.minY || 1}
+                      <div class="h-32 w-full relative bg-surface-900/50 rounded-xl p-3 border border-white/5 overflow-hidden">
+                        <p class="absolute top-2 left-3 text-[9px] font-black uppercase text-gray-500 z-10">Cijferverloop</p>
+                        <!-- Value labels on right -->
+                        <div class="absolute top-2 right-3 text-[8px] text-gray-600 font-bold z-10 text-right">
+                          <span class="block">{chartD.maxY.toFixed(1)}</span>
+                          <span class="block mt-[78px]">{chartD.minY.toFixed(1)}</span>
+                        </div>
+                        <svg viewBox="0 0 100 40" class="w-full h-full" preserveAspectRatio="xMidYMid meet">
+                          <defs>
+                            <linearGradient id="lineGradDetailed" x1="0%" y1="0%" x2="100%" y2="0%">
+                              <stop offset="0%" stop-color="var(--color-primary-400)" />
+                              <stop offset="100%" stop-color="var(--color-accent-400)" />
+                            </linearGradient>
+                            <filter id="glowSub">
+                              <feGaussianBlur stdDeviation="1.5" result="blur"/>
+                              <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+                            </filter>
+                          </defs>
+                          
+                          <!-- Grid lines -->
+                          {#each [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as grade}
+                            {@const gy = 40 - ((grade - chartD.minY) / subRange) * 40}
+                            {#if gy >= 0 && gy <= 40}
+                              <line x1="0" y1={gy} x2="100" y2={gy} stroke="var(--color-surface-700)" stroke-width="0.3" opacity="0.3" />
+                            {/if}
+                          {/each}
+                          
+                          <path d={getTrendPath(subject)} fill="none" stroke="url(#lineGradDetailed)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" filter="url(#glowSub)" />
+                        </svg>
+                      </div>
+                    {/if}
                   {/if}
 
                   <div class="space-y-2">
@@ -1022,16 +1060,16 @@
               {#each overallDistribution() as bucket}
                 <div class="flex items-center gap-2 group cursor-pointer">
                   <span class="text-[9px] font-black text-gray-500 w-8 text-right shrink-0">{bucket.label}</span>
-                  <div class="flex-1 h-5 bg-surface-800 rounded-full overflow-hidden relative">
+                  <div class="flex-1 h-6 bg-surface-800 rounded-full overflow-hidden relative border border-surface-700/20">
                     <div
-                      class="h-full rounded-full transition-all duration-700 group-hover:brightness-125 {parseInt(bucket.label) >= $userSettings.insufficientThreshold ? 'bg-gradient-to-r from-primary-600 to-accent-400' : 'bg-gradient-to-r from-red-600 to-red-400'}"
-                      style="width: {Math.max(bucket.pct, bucket.count > 0 ? 3 : 0)}%"
+                      class="h-full rounded-full transition-all duration-700 group-hover:brightness-125 {parseInt(bucket.label) >= $userSettings.insufficientThreshold ? 'bg-gradient-to-r from-primary-500 to-accent-400' : 'bg-gradient-to-r from-red-500 to-red-400'}"
+                      style="width: {Math.max(bucket.pct, bucket.count > 0 ? 4 : 0)}%"
                     ></div>
                     {#if bucket.count > 0}
-                      <span class="absolute inset-0 flex items-center justify-start pl-2 text-[9px] font-black text-white/80 mix-blend-overlay">{bucket.count}</span>
+                      <span class="absolute inset-0 flex items-center justify-start pl-3 text-[10px] font-black text-white drop-shadow-lg">{bucket.count}</span>
                     {/if}
                   </div>
-                  <span class="text-[9px] font-black text-gray-500 w-8 text-left shrink-0">{bucket.count}</span>
+                  <span class="text-[10px] font-black text-gray-400 w-5 text-left shrink-0">{bucket.count}</span>
                 </div>
               {/each}
             </div>
