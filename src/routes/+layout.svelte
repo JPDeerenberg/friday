@@ -3,7 +3,7 @@
   import { onMount } from 'svelte';
   import { listen } from '@tauri-apps/api/event';
   import { isLoggedIn, personId, accountInfo, profilePicture, currentPage, userSettings } from '$lib/stores';
-  import { restoreSession, getAccount, getPersonId, getProfilePicture, handleAuthCallback } from '$lib/api';
+  import { restoreSession, getAccount, getPersonId, getProfilePicture, handleAuthCallback, logout } from '$lib/api';
   import { get } from 'svelte/store';
   import { fade } from 'svelte/transition';
 
@@ -144,6 +144,19 @@
     }
   ];
 
+  async function handleLogout() {
+    try {
+      await logout();
+    } catch (e) {
+      console.error('Logout error:', e);
+    }
+    isLoggedIn.set(false);
+    personId.set(null);
+    accountInfo.set(null);
+    profilePicture.set(null);
+    mobileSidebarOpen = false;
+  }
+
   function navigate(page: string) {
     currentPage.set(page);
     mobileSidebarOpen = false;
@@ -243,7 +256,7 @@
             </div>
 
             <button
-              onclick={() => isLoggedIn.set(false)}
+              onclick={handleLogout}
               class="w-full flex items-center gap-4 px-6 py-5 text-red-400 hover:bg-red-400/5 transition-colors border-t border-surface-800/50"
             >
               <span class="text-xl">
@@ -335,6 +348,20 @@
             </button>
           {/each}
         </div>
+
+        <!-- Logout button (desktop only) -->
+        <button
+          onclick={handleLogout}
+          title={sidebarCollapsed ? 'Uitloggen' : ''}
+          class="w-full flex items-center gap-3 px-5 py-3 text-sm font-bold text-red-400 hover:bg-red-500/10 border-t border-surface-700/50 transition-all group"
+        >
+          <span class="shrink-0">
+            <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg>
+          </span>
+          {#if !sidebarCollapsed}
+            <span class="truncate italic tracking-tight uppercase text-[10px] font-black">Uitloggen</span>
+          {/if}
+        </button>
 
         <button onclick={() => sidebarCollapsed = !sidebarCollapsed} class="p-3 text-gray-500 hover:text-gray-300 border-t border-surface-800/50 text-sm shrink-0 bg-surface-950/30">
           {sidebarCollapsed ? '→' : '←'}

@@ -17,7 +17,7 @@
   let selectedAssignment = $state<any>(null);
   let loadingList = $state(true);
   let loadingDetail = $state(false);
-  let filter = $state<'all' | 'open' | 'submitted' | 'graded'>('all');
+  let filter = $state<'all' | 'open' | 'submitted' | 'graded' | 'overdue'>('all');
 
   let submissionText = $state("");
   let attachments = $state<{id: number, storageId: string, name: string, path: string}[]>([]);
@@ -60,6 +60,11 @@
     if (a.Afgesloten) return { label: 'Afgesloten', key: 'closed' };
     if (a.BeoordeeldOp) return { label: 'Beoordeeld', key: 'graded' };
     if (a.IngeleverdOp) return { label: 'Ingeleverd', key: 'submitted' };
+    // Check if overdue: not submitted and deadline has passed
+    const deadline = a.Inlevermoment || a.InleverMoment || a.Deadline;
+    if (deadline && !a.IngeleverdOp && new Date(deadline) < new Date()) {
+      return { label: 'Te laat', key: 'overdue' };
+    }
     if (a.MagInleveren) return { label: 'In te leveren', key: 'open' };
     return { label: 'Openstaand', key: 'open' };
   }
@@ -68,6 +73,7 @@
     if (key === 'open') return 'bg-amber-500/15 text-amber-400 border-amber-500/25';
     if (key === 'submitted') return 'bg-blue-500/15 text-blue-400 border-blue-500/25';
     if (key === 'graded') return 'bg-emerald-500/15 text-emerald-400 border-emerald-500/25';
+    if (key === 'overdue') return 'bg-red-500/15 text-red-400 border-red-500/25';
     return 'bg-surface-700/60 text-gray-500 border-surface-600/30';
   }
 
@@ -79,6 +85,7 @@
           if (filter === 'open') return s === 'open';
           if (filter === 'submitted') return s === 'submitted';
           if (filter === 'graded') return s === 'graded';
+          if (filter === 'overdue') return s === 'overdue';
           return true;
         })
   );
@@ -202,15 +209,20 @@
       {#each [
         { id: 'all', label: 'Alle', count: assignments.length },
         { id: 'open', label: 'Open', count: assignments.filter(a => getStatus(a).key === 'open').length },
+        { id: 'overdue', label: 'Te laat', count: assignments.filter(a => getStatus(a).key === 'overdue').length },
         { id: 'submitted', label: 'Ingeleverd', count: assignments.filter(a => getStatus(a).key === 'submitted').length },
         { id: 'graded', label: 'Beoordeeld', count: assignments.filter(a => getStatus(a).key === 'graded').length },
       ] as f}
         <button
           onclick={() => filter = f.id as any}
           class="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-black uppercase tracking-tight transition-all whitespace-nowrap shrink-0
-                 {filter === f.id
-                   ? 'bg-primary-500 text-white shadow-lg shadow-primary-500/30'
-                   : 'bg-surface-800/70 text-gray-400 hover:text-gray-200 border border-white/5'}"
+                 {filter === f.id && f.id === 'overdue'
+                   ? 'bg-red-500 text-white shadow-lg shadow-red-500/30'
+                   : filter === f.id
+                     ? 'bg-primary-500 text-white shadow-lg shadow-primary-500/30'
+                     : f.id === 'overdue' && f.count > 0
+                       ? 'bg-red-500/10 text-red-400 hover:text-red-300 border border-red-500/20'
+                       : 'bg-surface-800/70 text-gray-400 hover:text-gray-200 border border-white/5'}"
         >
           {f.label}
           {#if f.count > 0}

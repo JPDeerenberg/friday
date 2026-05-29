@@ -918,7 +918,7 @@
                       <button
                         onclick={(e) => { e.stopPropagation(); deleteSnapshot(snapshot.id); }}
                         aria-label="Verwijderen"
-                        class="p-2 rounded-2xl bg-red-500/10 text-red-400 hover:bg-red-500 hover:text-white transition-all opacity-0 group-hover:opacity-100"
+                        class="p-2 rounded-2xl bg-red-500/10 text-red-400 hover:bg-red-500 hover:text-white transition-all"
                       >
                         <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M3 6h18m-2 0v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6m3 0V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
                       </button>
