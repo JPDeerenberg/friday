@@ -21,7 +21,7 @@
 [ ] HTML-parser omgekeerd bij huiswerk, zodat je met opmaak huiswerk kan invoeren
 [ ] Export json bestanden (lessen, cijfers, etc)
 [ ] Maak alles wat kleiner zodat agenda overzichtelijker is; kleuren ook verbeteren zoals wanneer huiswerk is afgevinkt.
-[ ] Een to-pack-for-tomorrow schema op home, alle lessen van morgen die voor de 1e pauze zijn en lessen die niet afgevinkt huiswerk hebben, zodat ik snel boeken kan inpakken
+[X] Een to-pack-for-tomorrow schema op home, alle lessen van morgen die voor de 1e pauze zijn en lessen die niet afgevinkt huiswerk hebben, zodat ik snel boeken kan inpakken
 [ ] Cijfers bij resultaten home fixen, nu staat er niks, alleen de vakken waarvan je cijfers hebt
 [ ] Alles in cache, zodat het niet steeds opnieuw ingeladen hoeft te worden; dat gebeurt stil in de achtergrond zodat je niet elke keer 2 seconden moet wachten ervoor
 [ ] cijfer calculator ook omgekeerd cijfers rekenen voor meer variatie

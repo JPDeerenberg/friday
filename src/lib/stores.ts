@@ -1,10 +1,10 @@
-import { writable } from 'svelte/store';
+import { writable } from "svelte/store";
 
 export const isLoggedIn = writable(false);
 export const personId = writable<number | null>(null);
 export const accountInfo = writable<any>(null);
 export const profilePicture = writable<string | null>(null);
-export const currentPage = writable<string>('dashboard');
+export const currentPage = writable<string>("dashboard");
 export const navigationStack = writable<string[]>([]);
 
 // Sync status
@@ -12,9 +12,9 @@ export const lastSyncTime = writable<Date | null>(null);
 export const syncInProgress = writable(false);
 
 export function navigate(pageId: string) {
-  currentPage.update(current => {
+  currentPage.update((current) => {
     if (current !== pageId) {
-      navigationStack.update(stack => [...stack, current]);
+      navigationStack.update((stack) => [...stack, current]);
     }
     return pageId;
   });
@@ -22,7 +22,7 @@ export function navigate(pageId: string) {
 
 export function goBack() {
   let canExit = false;
-  navigationStack.update(stack => {
+  navigationStack.update((stack) => {
     if (stack.length > 0) {
       const prev = stack[stack.length - 1];
       currentPage.set(prev);
@@ -35,7 +35,7 @@ export function goBack() {
 }
 
 // Persistent Settings
-export const DEFAULT_SETTINGS = {
+const DEFAULT_SETTINGS = {
   roundedGraphs: true,
   showSummary: true,
   decimalPoints: 1,
@@ -44,8 +44,8 @@ export const DEFAULT_SETTINGS = {
   insufficientThreshold: 5.5,
   zoomGraph: false,
   showWeekend: true,
-  themeColor: 'violet',
-  backgroundMode: 'normal',
+  themeColor: "violet",
+  backgroundMode: "normal",
   // Notification toggles
   notifyMessages: true,
   notifyGrades: true,
@@ -58,10 +58,10 @@ export const DEFAULT_SETTINGS = {
 };
 
 // Load settings from localStorage
-export function loadSettings() {
-  if (typeof window === 'undefined') return DEFAULT_SETTINGS;
-  
-  const savedSettings = localStorage.getItem('user_settings');
+function loadSettings() {
+  if (typeof window === "undefined") return DEFAULT_SETTINGS;
+
+  const savedSettings = localStorage.getItem("user_settings");
   if (savedSettings) {
     try {
       return { ...DEFAULT_SETTINGS, ...JSON.parse(savedSettings) };
@@ -74,14 +74,18 @@ export function loadSettings() {
 
 export const userSettings = writable(loadSettings());
 
-if (typeof window !== 'undefined') {
-  userSettings.subscribe(val => {
-    localStorage.setItem('user_settings', JSON.stringify(val));
-    
+if (typeof window !== "undefined") {
+  userSettings.subscribe((val) => {
+    localStorage.setItem("user_settings", JSON.stringify(val));
+
     // Sync notification preferences to Android
-    if (val.notifyMessages !== undefined || val.notifyGrades !== undefined || 
-        val.notifyDeadlines !== undefined || val.notifyCalendar !== undefined ||
-        val.notifyAutoDnd !== undefined) {
+    if (
+      val.notifyMessages !== undefined ||
+      val.notifyGrades !== undefined ||
+      val.notifyDeadlines !== undefined ||
+      val.notifyCalendar !== undefined ||
+      val.notifyAutoDnd !== undefined
+    ) {
       syncPreferencesToAndroid(val);
     }
   });
@@ -90,52 +94,67 @@ if (typeof window !== 'undefined') {
 // Sync preferences to Android via Tauri bridge
 function syncPreferencesToAndroid(settings: any) {
   // Store in localStorage for Android to read
-  localStorage.setItem('friday_notification_prefs', JSON.stringify({
-    notifyMessages: settings.notifyMessages ?? true,
-    notifyGrades: settings.notifyGrades ?? true,
-    notifyDeadlines: settings.notifyDeadlines ?? true,
-    notifyCalendar: settings.notifyCalendar ?? true,
-    notifyAutoDnd: settings.notifyAutoDnd ?? false,
-  }));
-  
+  localStorage.setItem(
+    "friday_notification_prefs",
+    JSON.stringify({
+      notifyMessages: settings.notifyMessages ?? true,
+      notifyGrades: settings.notifyGrades ?? true,
+      notifyDeadlines: settings.notifyDeadlines ?? true,
+      notifyCalendar: settings.notifyCalendar ?? true,
+      notifyAutoDnd: settings.notifyAutoDnd ?? false,
+    }),
+  );
+
   // Also sync via Tauri command
-  if (typeof window !== 'undefined' && (window as any).__TAURI__) {
-    import('./api').then(async (api) => {
-      const params = {
-        notifyMessages: settings.notifyMessages ?? true,
-        notifyGrades: settings.notifyGrades ?? true,
-        notifyDeadlines: settings.notifyDeadlines ?? true,
-        notifyCalendar: settings.notifyCalendar ?? true,
-        notifyAutoDnd: settings.notifyAutoDnd ?? false,
-      };
+  if (typeof window !== "undefined" && (window as any).__TAURI__) {
+    import("./api")
+      .then(async (api) => {
+        const params = {
+          notifyMessages: settings.notifyMessages ?? true,
+          notifyGrades: settings.notifyGrades ?? true,
+          notifyDeadlines: settings.notifyDeadlines ?? true,
+          notifyCalendar: settings.notifyCalendar ?? true,
+          notifyAutoDnd: settings.notifyAutoDnd ?? false,
+        };
 
-      const maxAttempts = 3;
-      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-        try {
-          await api.syncNotificationPreferences(
-            params.notifyMessages,
-            params.notifyGrades,
-            params.notifyDeadlines,
-            params.notifyCalendar,
-            params.notifyAutoDnd
-          );
+        const maxAttempts = 3;
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+          try {
+            await api.syncNotificationPreferences(
+              params.notifyMessages,
+              params.notifyGrades,
+              params.notifyDeadlines,
+              params.notifyCalendar,
+              params.notifyAutoDnd,
+            );
 
-          // After successfully syncing preferences, trigger an immediate background sync
-          // so the Android SyncService can re-evaluate DND scheduling.
-          try { await api.triggerSync(); } catch (e) { console.warn('triggerSync failed', e); }
-          return;
-        } catch (e) {
-          console.warn(`syncNotificationPreferences attempt ${attempt} failed`, e);
-          if (attempt < maxAttempts) {
-            // exponential-ish backoff
-            await new Promise(res => setTimeout(res, attempt * 300));
-            continue;
+            // After successfully syncing preferences, trigger an immediate background sync
+            // so the Android SyncService can re-evaluate DND scheduling.
+            try {
+              await api.triggerSync();
+            } catch (e) {
+              console.warn("triggerSync failed", e);
+            }
+            return;
+          } catch (e) {
+            console.warn(
+              `syncNotificationPreferences attempt ${attempt} failed`,
+              e,
+            );
+            if (attempt < maxAttempts) {
+              // exponential-ish backoff
+              await new Promise((res) => setTimeout(res, attempt * 300));
+              continue;
+            }
+            console.error(
+              "Failed to sync notification preferences after retries",
+              e,
+            );
           }
-          console.error('Failed to sync notification preferences after retries', e);
         }
-      }
-    }).catch((e) => {
-      console.error('Failed to import api for notification sync', e);
-    });
+      })
+      .catch((e) => {
+        console.error("Failed to import api for notification sync", e);
+      });
   }
 }

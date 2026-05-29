@@ -31,16 +31,9 @@
   let localOverrides = $state<Record<string, string>>({});
 
   onMount(async () => {
-    const savedOverrides = localStorage.getItem('calendar_overrides');
-    if (savedOverrides) {
-      try { localOverrides = JSON.parse(savedOverrides); } catch (e) { console.error(e); }
-    }
-    const cachedAppointments = localStorage.getItem('calendar_appointments');
-    if (cachedAppointments) {
-      try {
-        appointments = JSON.parse(cachedAppointments);
-        loading = false;
-      } catch (e) { console.error(e); }
+    const saved = localStorage.getItem('calendar_overrides');
+    if (saved) {
+      try { localOverrides = JSON.parse(saved); } catch (e) { console.error(e); }
     }
     await loadAppointments();
   });
@@ -74,7 +67,6 @@
       loadedStart = start;
       loadedEnd = end;
       appointments = await getCalendarEvents(pid, formatDate(start), formatDate(end));
-      localStorage.setItem('calendar_appointments', JSON.stringify(appointments));
     } catch (e) {
       console.error('Error loading appointments:', e);
     } finally {
@@ -434,21 +426,13 @@
   const hiddenCancelledCount = $derived.by(() => {
     if (!$userSettings.hideCancelled) return 0;
     const currentDayStr = selectedDate.toDateString();
-    let count = 0;
-    for (let i = 0; i < appointments.length; i++) {
-      const a = appointments[i];
-      if (!a.Start) continue;
-
-      const isCancelled = a.Status === 4 || a.Status === 5;
-      if (!isCancelled) continue;
-
+    return appointments.filter(a => {
+      if (!a.Start) return false;
       const d = new Date(a.Start);
       const isToday = !isNaN(d.getTime()) && d.toDateString() === currentDayStr;
-      if (isToday) {
-        count++;
-      }
-    }
-    return count;
+      const isCancelled = a.Status === 4 || a.Status === 5;
+      return isToday && isCancelled;
+    }).length;
   });
 
   // Swipe handling with live drag tracking

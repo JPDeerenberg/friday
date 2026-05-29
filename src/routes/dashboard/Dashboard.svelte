@@ -215,6 +215,8 @@
   const subjectsWithHomework = $derived(() =>
     lessonsBeforeBreak().filter(lessonHasHomework).map(e => e.Vakken?.[0]?.Naam ?? 'Onbekend')
   );
+
+  function getSubjectIcon(subject: string): string {
     const s = subject.toLowerCase();
     const iconBase = `<svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">`;
     
@@ -263,8 +265,8 @@
                 {$accountInfo?.Persoon?.Roepnaam ?? 'Gebruiker'}
              </span>
           </h1>
-          <p class="text-gray-500 text-[11px] font-black uppercase tracking-[0.3em] mt-3 flex items-center gap-3">
-            <span class="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_10px_#10b981]"></span>
+          <p class="text-gray-400 text-[11px] font-bold uppercase tracking-[0.2em] mt-2 flex items-center gap-2">
+            <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_#10b981]"></span>
             {new Date().toLocaleDateString('nl-NL', { weekday: 'long', day: 'numeric', month: 'long' })}
           </p>
         </div>
@@ -300,7 +302,7 @@
     </div>
   </header>
 
-  <main class="max-w-7xl mx-auto px-6 md:px-12 w-full py-12 pb-32">
+  <main class="max-w-7xl mx-auto px-4 md:px-8 w-full py-8 pb-28">
 
     <!-- Pack for Tomorrow -->
     {#if loadingTomorrow || tomorrowEvents.length > 0}
@@ -396,14 +398,14 @@
       </section>
     {/if}
 
-    <div class="grid grid-cols-1 lg:grid-cols-12 gap-12 md:gap-16">
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 md:gap-10">
       
       <!-- Left Column: Schedule -->
-      <div class="lg:col-span-7 space-y-16">
-        <section in:fly={{ y: 30, duration: 800 }} class="space-y-8">
-          <div class="flex items-center justify-between px-2">
-            <h2 class="text-3xl font-black text-white italic tracking-tighter flex items-center gap-4">
-              <div class="w-2.5 h-10 bg-primary-500 rounded-full shadow-[0_0_25px_rgba(200,100,255,0.7)] animate-pulse"></div>
+      <div class="lg:col-span-7 space-y-8">
+        <section in:fly={{ y: 30, duration: 800 }} class="space-y-3">
+          <div class="flex items-center justify-between px-1 mb-4">
+            <h2 class="text-xl font-black text-white italic tracking-tighter flex items-center gap-3">
+              <div class="w-2 h-7 bg-primary-500 rounded-full shadow-[0_0_20px_rgba(200,100,255,0.6)] animate-pulse"></div>
               Jouw Rooster
             </h2>
             <button 
@@ -414,8 +416,8 @@
             </button>
           </div>
 
-          <div class="glass rounded-[4rem] p-4 md:p-8 shadow-3xl relative overflow-hidden group border-white/5 min-h-[400px] flex flex-col">
-             <div class="absolute inset-0 bg-gradient-to-br from-primary-500/10 via-transparent to-transparent opacity-50 group-hover:opacity-80 transition-opacity duration-700"></div>
+          <div class="rounded-2xl p-3 md:p-5 relative overflow-hidden group border border-white/10 bg-surface-800/50 min-h-[300px] flex flex-col">
+             <div class="absolute inset-0 bg-gradient-to-br from-primary-500/8 via-transparent to-transparent opacity-60 group-hover:opacity-100 transition-opacity duration-700 pointer-events-none"></div>
              
              {#if loadingEvents}
                <div class="space-y-6 relative z-10 w-full p-4">
@@ -430,37 +432,34 @@
                   {/each}
                </div>
              {:else if todayEvents.length === 0}
-              <div class="flex-1 flex flex-col items-center justify-center text-center opacity-70 py-24" in:fade>
-                 <div class="w-40 h-40 rounded-[3.5rem] bg-surface-900/60 border border-white/10 flex items-center justify-center mb-10 text-gray-600 shadow-2xl group-hover:scale-110 group-hover:rotate-6 transition-all duration-700 relative">
-                    <div class="absolute inset-0 bg-primary-500/5 blur-3xl rounded-full"></div>
-                    <svg class="w-20 h-20 opacity-20 text-primary-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/><path d="M8 14h.01"/><path d="M12 14h.01"/><path d="M16 14h.01"/></svg>
-                 </div>
-                <p class="text-white font-black uppercase tracking-[0.4em] text-lg italic">Vrije dag!</p>
-                <p class="text-[11px] text-gray-500 mt-5 font-bold uppercase tracking-widest italic max-w-xs leading-relaxed">Je hebt vandaag geen geplande lessen. Geniet van je vrije tijd of bereid je voor op morgen.</p>
+              <div class="flex-1 flex flex-col items-center justify-center text-center py-16" in:fade>
+                <svg class="w-12 h-12 text-gray-600 mb-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/></svg>
+                <p class="text-white font-black uppercase tracking-wider text-base">Vrije dag!</p>
+                <p class="text-[11px] text-gray-500 mt-2 font-medium max-w-xs leading-relaxed">Geen geplande lessen vandaag.</p>
               </div>
             {:else}
-              <div class="space-y-4 md:space-y-5 relative z-10 w-full px-1 md:px-2">
+              <div class="space-y-2 relative z-10 w-full">
                 {#each todayEvents as event, i (event.Id || i)}
                   <button 
                     onclick={() => currentPage.set('calendar')}
                     in:fly={{ x: -30, delay: i * 100, duration: 600 }}
-                    class="w-full flex flex-row items-center gap-4 md:gap-7 p-4 sm:p-6 md:p-7 rounded-[2rem] sm:rounded-[3rem] bg-surface-900/40 border border-white/5 group/event transition-all hover:bg-surface-800/90 hover:border-primary-500/40 hover:scale-[1.02] active:scale-95 shadow-lg"
+                    class="w-full flex flex-row items-center gap-4 md:gap-5 p-4 sm:p-5 rounded-2xl bg-surface-800/60 border border-white/10 group/event transition-all hover:bg-surface-700/60 hover:border-primary-500/40 hover:scale-[1.01] active:scale-95 shadow-md"
                   >
-                    <div class="flex flex-col items-center justify-center min-w-[70px] md:min-w-[85px] py-3 md:py-5 rounded-[1.5rem] sm:rounded-[2.5rem] bg-surface-950 border border-surface-700/50 group-hover/event:border-primary-500/60 transition-all duration-500 shadow-2xl relative overflow-hidden shrink-0">
+                    <div class="flex flex-col items-center justify-center min-w-[60px] md:min-w-[75px] py-3 rounded-xl bg-surface-900/80 border border-surface-700/60 group-hover/event:border-primary-500/50 transition-all shadow-md relative overflow-hidden shrink-0">
                       <div class="absolute inset-0 bg-primary-500/5 opacity-0 group-hover/event:opacity-100 transition-opacity"></div>
-                      <span class="text-2xl md:text-3xl font-black text-primary-400 italic leading-none relative z-10">{event.LesuurVan || '—'}</span>
-                      <span class="text-[9px] md:text-[10px] font-black text-gray-600 mt-1.5 md:mt-2.5 uppercase tracking-tighter relative z-10">{formatTime(event.Start)}</span>
+                       <span class="text-xl md:text-2xl font-black text-primary-400 italic leading-none relative z-10">{event.LesuurVan || '—'}</span>
+                       <span class="text-[9px] font-bold text-gray-400 mt-1 uppercase tracking-tight relative z-10">{formatTime(event.Start)}</span>
                     </div>
                     <div class="flex-1 min-w-0 text-left">
-                      <p class="text-lg md:text-xl font-black text-gray-100 truncate group-hover/event:text-primary-400 transition-colors uppercase tracking-tight italic">
+                       <p class="text-base font-black text-white truncate group-hover/event:text-primary-400 transition-colors uppercase tracking-tight">
                         {event.Vakken?.[0]?.Naam ?? event.Omschrijving ?? 'Afspraak'}
                       </p>
                       <div class="flex flex-wrap md:flex-nowrap items-center gap-2 md:gap-5 mt-2 md:mt-4">
-                        <span class="flexitems-center gap-1.5 md:gap-2.5 text-[9px] md:text-[10px] font-black text-gray-400 uppercase tracking-widest px-3 md:px-4 py-1.5 md:py-2 rounded-xl sm:rounded-2xl bg-surface-800/80 border border-white/5 shadow-inner">
+                         <span class="flex items-center gap-1.5 text-[10px] font-bold text-gray-300 uppercase tracking-wide px-3 py-1.5 rounded-xl bg-surface-800/80 border border-white/8">
                           <svg class="w-3 md:w-3.5 h-3 md:h-3.5 text-primary-500 inline-block mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
                           {event.Lokalen?.[0]?.Naam ?? '??'}
                         </span>
-                        <span class="text-[9px] md:text-[11px] font-bold text-gray-500 uppercase tracking-tight truncate opacity-80 group-hover/event:opacity-100 transition-opacity bg-white/5 px-2.5 md:px-3 py-1 md:py-1.5 rounded-lg sm:rounded-xl">{formatTeacherName(event.Docenten?.[0]?.Naam) ?? 'Geen docent'}</span>
+                         <span class="text-[10px] font-bold text-gray-400 uppercase tracking-tight truncate bg-white/6 px-2.5 py-1 rounded-lg border border-white/8">{formatTeacherName(event.Docenten?.[0]?.Naam) ?? 'Geen docent'}</span>
                       </div>
                     </div>
                     {#if event.Inhoud}
@@ -476,10 +475,10 @@
         </section>
 
         <!-- Middle Section: Recent Grades -->
-        <section in:fly={{ y: 30, delay: 200, duration: 800 }} class="space-y-6 md:space-y-10">
-          <div class="flex items-center justify-between px-2">
-            <h2 class="text-2xl md:text-3xl font-black text-white italic tracking-tighter flex items-center gap-3 md:gap-4">
-              <div class="w-2 md:w-2.5 h-8 md:h-10 bg-accent-500 rounded-full shadow-[0_0_25px_rgba(200,100,255,0.7)]"></div>
+        <section in:fly={{ y: 30, delay: 200, duration: 800 }} class="space-y-4">
+          <div class="flex items-center justify-between px-1 mb-4">
+            <h2 class="text-xl font-black text-white italic tracking-tighter flex items-center gap-3">
+              <div class="w-2 h-7 bg-accent-500 rounded-full shadow-[0_0_20px_rgba(200,100,255,0.6)]"></div>
               Resultaten
             </h2>
             <button 
@@ -490,14 +489,14 @@
             </button>
           </div>
           
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 md:gap-8">
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-5">
             {#if loadingGrades}
                {#each Array(4) as _}
-                 <div class="p-5 md:p-8 rounded-[2rem] sm:rounded-[3.5rem] glass animate-pulse border border-white/5 h-24 md:h-32 flex items-center gap-4 md:gap-6">
-                    <div class="w-12 h-12 md:w-16 md:h-16 rounded-2xl md:rounded-3xl bg-surface-800"></div>
-                    <div class="flex-1 space-y-2 md:space-y-3">
-                       <div class="h-4 md:h-5 bg-surface-800 rounded-full w-2/3"></div>
-                       <div class="h-3 md:h-4 bg-surface-800/50 rounded-full w-1/3"></div>
+                 <div class="p-4 md:p-5 rounded-[1.75rem] glass animate-pulse border border-white/5 h-20 md:h-24 flex items-center gap-4">
+                    <div class="w-10 h-10 rounded-2xl bg-surface-800"></div>
+                    <div class="flex-1 space-y-2">
+                       <div class="h-4 bg-surface-800 rounded-full w-2/3"></div>
+                       <div class="h-3 bg-surface-800/50 rounded-full w-1/3"></div>
                     </div>
                  </div>
                {/each}
@@ -506,27 +505,32 @@
                 <button
                   onclick={() => currentPage.set('grades')}
                   in:scale={{ delay: i * 120, duration: 600, start: 0.9 }}
-                  class="flex items-center justify-between p-5 md:p-8 rounded-[2rem] sm:rounded-[3.5rem] glass border border-white/5 hover:scale-[1.05] hover:border-accent-500/40 transition-all group/grade active:scale-95 shadow-2xl md:shadow-3xl relative overflow-hidden"
+                  class="flex items-center gap-3 p-4 md:p-5 rounded-[1.75rem] glass border border-white/5 hover:scale-[1.03] hover:border-accent-500/40 transition-all group/grade active:scale-95 shadow-lg relative overflow-hidden w-full text-left"
                 >
-                  <div class="absolute -right-6 -bottom-6 w-24 h-24 md:w-32 md:h-32 bg-accent-500/5 blur-3xl rounded-full group-hover:bg-accent-500/15 transition-all duration-700"></div>
-                  <div class="flex items-center gap-4 md:gap-7 min-w-0 relative z-10 w-full pr-4">
-                    <div class="w-12 h-12 md:w-16 md:h-16 rounded-xl md:rounded-[2rem] bg-surface-900 border border-surface-700/40 flex items-center justify-center text-primary-400 shrink-0 shadow-lg md:shadow-2xl group-hover/grade:border-accent-500/60 transition-all duration-700 group-hover/grade:bg-surface-800 group-hover/grade:rotate-12 group-hover/grade:scale-110">
-                      {@html getSubjectIcon(grade.Vak?.Omschrijving ?? '')}
-                    </div>
-                    <div class="min-w-0 text-left flex-1">
-                      <p class="text-lg md:text-xl font-black text-gray-100 truncate italic tracking-tighter uppercase leading-tight group-hover/grade:text-accent-400 transition-colors">{grade.Vak?.Omschrijving ?? 'Onbekend'}</p>
-                      <p class="text-[9px] md:text-[10px] text-gray-500 font-black uppercase tracking-widest mt-1.5 md:mt-3 truncate group-hover/grade:text-gray-300 transition-colors bg-white/5 px-2 py-1 rounded inline-block">{formatDate(grade.DatumIngevoerd || '')}</p>
-                    </div>
+                  <div class="absolute -right-4 -bottom-4 w-20 h-20 bg-accent-500/5 blur-2xl rounded-full group-hover/grade:bg-accent-500/15 transition-all duration-700"></div>
+                  <!-- Subject icon -->
+                  <div class="w-10 h-10 rounded-xl bg-surface-900 border border-surface-700/40 flex items-center justify-center text-primary-400 shrink-0 group-hover/grade:border-accent-500/60 transition-all duration-500 group-hover/grade:rotate-6 group-hover/grade:scale-110 relative z-10">
+                    {@html getSubjectIcon(grade.Vak?.Omschrijving ?? '')}
                   </div>
-                  <div class="text-right shrink-0 relative z-10 pl-2">
-                    <span class="text-4xl md:text-6xl font-extrabold italic tracking-tighter drop-shadow-2xl md:drop-shadow-3xl transition-transform group-hover/grade:scale-110 block {$userSettings.highlightFailing && !isVoldoende(grade) ? 'text-red-500' : 'text-transparent bg-clip-text bg-gradient-to-br from-accent-400 via-accent-300 to-accent-600 animate-gradient-y'}">
+                  <!-- Subject info -->
+                  <div class="min-w-0 flex-1 relative z-10">
+                    <p class="text-[13px] font-black text-gray-100 truncate italic tracking-tight uppercase leading-tight group-hover/grade:text-accent-400 transition-colors">{grade.Vak?.Omschrijving ?? 'Onbekend'}</p>
+                    <p class="text-[9px] text-gray-500 font-black uppercase tracking-widest mt-1 truncate">{formatDate(grade.DatumIngevoerd || '')}</p>
+                  </div>
+                  <!-- Grade number -->
+                  <div class="shrink-0 relative z-10">
+                    <span class="text-3xl md:text-4xl font-black italic leading-none transition-transform group-hover/grade:scale-110 block {$userSettings.highlightFailing && !isVoldoende(grade) ? 'text-red-400' : 'text-accent-300'}">
                       {grade.CijferStr}
                     </span>
                   </div>
                 </button>
               {:else}
-                <div class="sm:col-span-2 py-16 md:py-24 glass rounded-[3rem] md:rounded-[4rem] flex flex-col items-center justify-center text-center opacity-50 border-dashed border-2 border-white/10 shadow-inner" in:fade>
-                   <p class="text-[11px] md:text-[13px] font-black text-gray-400 uppercase tracking-widest md:tracking-[0.4em] italic mb-2">Radiostilte...</p>
+                <div class="sm:col-span-2 py-10 rounded-2xl flex flex-col items-center justify-center text-center border border-dashed border-white/15 bg-surface-800/30" in:fade>
+                  <svg class="w-10 h-10 text-gray-600 mb-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/></svg>
+                  <p class="text-[12px] font-black text-gray-400 uppercase tracking-widest">Nog geen cijfers</p>
+                  <button onclick={() => currentPage.set('grades')} class="mt-3 text-[10px] text-primary-400 hover:text-primary-300 font-bold uppercase tracking-widest flex items-center gap-1">
+                    Bekijk cijferpagina <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="m9 18 6-6-6-6"/></svg>
+                  </button>
                 </div>
               {/each}
             {/if}
@@ -534,11 +538,10 @@
         </section>
       </div>
 
-      <!-- Right Column: Assignments & Motivation -->
-      <div class="lg:col-span-5 space-y-10 md:space-y-16">
+      <div class="lg:col-span-5 space-y-6 md:space-y-8">
         <section in:fly={{ x: 30, delay: 400, duration: 800 }} class="space-y-6 md:space-y-10">
-          <h2 class="text-2xl md:text-3xl font-black text-white italic tracking-tighter flex items-center gap-3 md:gap-4 px-2">
-            <div class="w-2 md:w-2.5 h-8 md:h-10 bg-red-500 rounded-full shadow-[0_0_25px_rgba(239,68,68,0.7)] animate-pulse"></div>
+          <h2 class="text-xl font-black text-white italic tracking-tighter flex items-center gap-3 px-1">
+            <div class="w-2 h-7 bg-red-500 rounded-full shadow-[0_0_20px_rgba(239,68,68,0.6)] animate-pulse"></div>
             Deadlines
           </h2>
           
