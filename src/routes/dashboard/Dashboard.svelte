@@ -16,6 +16,10 @@
   let loadingMessages = $state(true);
   let loadingAssignments = $state(true);
   
+  let tomorrowEvents = $state<any[]>([]);
+  let tomorrowAssignments = $state<any[]>([]);
+  let loadingTomorrow = $state(true);
+
   let refreshTrigger = $state(0);
 
   // Derived greeting
@@ -44,6 +48,9 @@
         unreadCount = data.unreadCount || 0;
         upcomingAssignments = data.upcomingAssignments || [];
         
+        tomorrowEvents = data.tomorrowEvents || [];
+        tomorrowAssignments = data.tomorrowAssignments || [];
+
         // If we have cached data, we can stop initial global loading
         loadingEvents = todayEvents.length === 0;
         loadingGrades = latestGrades.length === 0;
@@ -65,6 +72,7 @@
         loadingGrades = true;
         loadingMessages = true;
         loadingAssignments = true;
+        loadingTomorrow = true;
     }
 
     const now = new Date();
@@ -130,6 +138,25 @@
         }
       })(),
 
+      // 5. Tomorrow's schedule + open assignments
+      (async () => {
+        try {
+          const tomorrow = formatDate(new Date(now.getTime() + 86400000));
+          const [events, assignments] = await Promise.all([
+            getCalendarEvents(pid, tomorrow, tomorrow),
+            getAssignments(pid, tomorrow, tomorrow),
+          ]);
+          tomorrowEvents = events
+            .filter(e => e.Status !== 4 && e.Status !== 5)
+            .sort((a, b) => a.Start.localeCompare(b.Start));
+          tomorrowAssignments = assignments.filter(a => !a.Afgesloten && !a.IngeleverdOp);
+        } catch (e) {
+          console.error('Dashboard: Tomorrow fetch failed', e);
+        } finally {
+          loadingTomorrow = false;
+        }
+      })(),
+
       // 4. Assignments
       (async () => {
         try {
@@ -150,7 +177,9 @@
       todayEvents,
       latestGrades,
       unreadCount,
-      upcomingAssignments
+      upcomingAssignments,
+      tomorrowEvents,
+      tomorrowAssignments,
     }));
   }
 
@@ -158,7 +187,34 @@
     refreshTrigger++;
   }
 
-  function getSubjectIcon(subject: string): string {
+  // Returns all tomorrow lessons up to the first break (gap > 20 min).
+  // If no break is found, returns all lessons.
+  const lessonsBeforeBreak = $derived(() => {
+    if (tomorrowEvents.length === 0) return [];
+    for (let i = 0; i < tomorrowEvents.length - 1; i++) {
+      const endCurrent = new Date(tomorrowEvents[i].Einde ?? tomorrowEvents[i].End ?? tomorrowEvents[i].Start);
+      const startNext = new Date(tomorrowEvents[i + 1].Start);
+      const gapMinutes = (startNext.getTime() - endCurrent.getTime()) / 60000;
+      if (gapMinutes > 20) return tomorrowEvents.slice(0, i + 1);
+    }
+    return tomorrowEvents;
+  });
+
+  // Check if a calendar event has open homework (in Inhoud or a matching open assignment)
+  function lessonHasHomework(event: any): boolean {
+    if (event.Inhoud && event.Inhoud.trim().length > 0) return true;
+    const subjectName = event.Vakken?.[0]?.Naam?.toLowerCase() ?? '';
+    if (!subjectName) return false;
+    return tomorrowAssignments.some(a => {
+      const assignmentSubject = (a.Vak ?? a.Titel ?? '').toLowerCase();
+      return assignmentSubject.includes(subjectName) || subjectName.includes(assignmentSubject);
+    });
+  }
+
+  // Returns unique subjects from lessons before break that have homework
+  const subjectsWithHomework = $derived(() =>
+    lessonsBeforeBreak().filter(lessonHasHomework).map(e => e.Vakken?.[0]?.Naam ?? 'Onbekend')
+  );
     const s = subject.toLowerCase();
     const iconBase = `<svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">`;
     
@@ -245,6 +301,101 @@
   </header>
 
   <main class="max-w-7xl mx-auto px-6 md:px-12 w-full py-12 pb-32">
+
+    <!-- Pack for Tomorrow -->
+    {#if loadingTomorrow || tomorrowEvents.length > 0}
+      <section in:fly={{ y: -20, duration: 700 }} class="mb-14">
+        <div class="glass rounded-[3rem] p-6 md:p-10 relative overflow-hidden border-white/5 shadow-2xl group">
+          <!-- Ambient glow -->
+          <div class="absolute inset-0 bg-gradient-to-r from-emerald-500/8 via-transparent to-primary-500/8 opacity-60 group-hover:opacity-100 transition-opacity duration-700 pointer-events-none"></div>
+
+          <div class="flex items-center justify-between mb-6 md:mb-8 relative z-10">
+            <h2 class="text-xl md:text-2xl font-black text-white italic tracking-tighter flex items-center gap-3">
+              <div class="w-2 h-7 bg-emerald-500 rounded-full shadow-[0_0_20px_rgba(16,185,129,0.7)] animate-pulse shrink-0"></div>
+              Morgenklaar
+              <span class="text-[10px] font-black uppercase tracking-[0.3em] text-emerald-400/80 bg-emerald-500/10 border border-emerald-500/20 px-3 py-1.5 rounded-full not-italic ml-1">
+                {new Date(Date.now() + 86400000).toLocaleDateString('nl-NL', { weekday: 'long' })}
+              </span>
+            </h2>
+            <button
+              onclick={() => currentPage.set('calendar')}
+              class="text-[10px] font-black text-emerald-400 hover:text-emerald-300 uppercase tracking-[0.3em] flex items-center gap-2 group/link transition-all bg-emerald-500/5 hover:bg-emerald-500/10 border border-emerald-500/10 hover:border-emerald-500/25 px-4 py-2 rounded-full"
+            >
+              Rooster <svg class="w-3.5 h-3.5 group-hover/link:translate-x-1 transition-transform" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="m9 18 6-6-6-6"/></svg>
+            </button>
+          </div>
+
+          {#if loadingTomorrow}
+            <div class="flex items-center gap-4 md:gap-6 overflow-x-auto pb-2 no-scrollbar relative z-10">
+              {#each Array(4) as _}
+                <div class="shrink-0 w-36 md:w-44 h-24 rounded-[2rem] bg-surface-800/60 animate-pulse border border-white/5"></div>
+              {/each}
+            </div>
+          {:else}
+            <div class="relative z-10 space-y-6">
+              <!-- Lesson pills row -->
+              <div class="flex items-stretch gap-3 overflow-x-auto pb-2 no-scrollbar">
+                {#each lessonsBeforeBreak() as event, i (event.Id || i)}
+                  {@const hasHomework = lessonHasHomework(event)}
+                  <div
+                    in:fly={{ y: 15, delay: i * 70, duration: 500 }}
+                    class="shrink-0 flex flex-col justify-between gap-2 px-5 py-4 rounded-[2rem] border transition-all min-w-[130px] md:min-w-[150px] relative overflow-hidden
+                           {hasHomework
+                             ? 'bg-amber-500/10 border-amber-500/30 shadow-lg shadow-amber-500/10'
+                             : 'bg-surface-800/50 border-white/5'}"
+                  >
+                    {#if hasHomework}
+                      <div class="absolute top-2.5 right-2.5 w-2 h-2 rounded-full bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.8)] animate-pulse"></div>
+                    {/if}
+                    <div>
+                      <p class="text-[10px] font-black uppercase tracking-widest {hasHomework ? 'text-amber-400' : 'text-gray-500'} mb-1.5">
+                        {event.LesuurVan ? `Uur ${event.LesuurVan}` : formatTime(event.Start)}
+                      </p>
+                      <p class="text-sm font-black text-white italic tracking-tight leading-tight line-clamp-2 uppercase">
+                        {event.Vakken?.[0]?.Naam ?? event.Omschrijving ?? 'Afspraak'}
+                      </p>
+                    </div>
+                    <div class="flex items-center gap-1.5 mt-1">
+                      <svg class="w-3 h-3 {hasHomework ? 'text-amber-500' : 'text-gray-600'} shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
+                      <span class="text-[9px] font-black uppercase tracking-tight {hasHomework ? 'text-amber-500/80' : 'text-gray-600'} truncate">
+                        {event.Lokalen?.[0]?.Naam ?? '??'}
+                      </span>
+                    </div>
+                  </div>
+                {/each}
+
+                {#if tomorrowEvents.length > lessonsBeforeBreak().length}
+                  <div class="shrink-0 flex items-center justify-center px-5 py-4 rounded-[2rem] border border-dashed border-white/10 min-w-[80px] text-gray-600">
+                    <span class="text-[10px] font-black uppercase tracking-tight text-center">+{tomorrowEvents.length - lessonsBeforeBreak().length}<br>na pauze</span>
+                  </div>
+                {/if}
+              </div>
+
+              <!-- Homework summary row -->
+              {#if subjectsWithHomework().length > 0}
+                <div class="flex flex-wrap items-center gap-2" in:fly={{ y: 8, delay: 300, duration: 400 }}>
+                  <span class="text-[10px] font-black uppercase tracking-[0.3em] text-amber-400/70 mr-1 flex items-center gap-1.5">
+                    <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"/><path d="M8 7h6"/><path d="M8 11h8"/><path d="M8 15h4"/></svg>
+                    Huiswerk voor:
+                  </span>
+                  {#each subjectsWithHomework() as subject}
+                    <span class="px-3 py-1.5 rounded-full bg-amber-500/15 border border-amber-500/25 text-amber-300 text-[10px] font-black uppercase tracking-tight">
+                      {subject}
+                    </span>
+                  {/each}
+                </div>
+              {:else}
+                <div class="flex items-center gap-2 text-emerald-400/70" in:fly={{ y: 8, delay: 300, duration: 400 }}>
+                  <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                  <span class="text-[10px] font-black uppercase tracking-[0.3em]">Geen openstaand huiswerk voor morgen</span>
+                </div>
+              {/if}
+            </div>
+          {/if}
+        </div>
+      </section>
+    {/if}
+
     <div class="grid grid-cols-1 lg:grid-cols-12 gap-12 md:gap-16">
       
       <!-- Left Column: Schedule -->
