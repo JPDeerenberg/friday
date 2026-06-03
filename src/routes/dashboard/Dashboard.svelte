@@ -1,6 +1,6 @@
 <script lang="ts">
   import { personId, accountInfo, userSettings, currentPage } from '$lib/stores';
-  import { getCalendarEvents, getGrades, getSchoolyears, getRecentGrades, getMessageFolders, getAssignments, formatDate, formatTeacherName } from '$lib/api';
+  import { getCalendarEvents, getGrades, getSchoolyears, getRecentGrades, getMessageFolders, getAssignments, formatDate, formatTeacherName, toggleCalendarEventDone } from '$lib/api';
   import { onMount } from 'svelte';
   import { fade, fly, scale } from 'svelte/transition';
 
@@ -18,7 +18,9 @@
   
   let tomorrowEvents = $state<any[]>([]);
   let tomorrowAssignments = $state<any[]>([]);
+  let nextSchoolDayDate = $state<string>('');
   let loadingTomorrow = $state(true);
+  let expandedLesson = $state<number | null>(null);
 
   let refreshTrigger = $state(0);
 
@@ -50,6 +52,7 @@
         
         tomorrowEvents = data.tomorrowEvents || [];
         tomorrowAssignments = data.tomorrowAssignments || [];
+        nextSchoolDayDate = data.nextSchoolDayDate || formatDate(new Date(Date.now() + 86400000));
 
         // If we have cached data, we can stop initial global loading
         loadingEvents = todayEvents.length === 0;
@@ -144,20 +147,41 @@
         loadingGrades = false;
       })(),
 
-      // 5. Tomorrow's schedule + open assignments
+      // 5. Next school day's schedule + open assignments
       (async () => {
         try {
           const tomorrow = formatDate(new Date(now.getTime() + 86400000));
+          const weekLater = formatDate(new Date(now.getTime() + 7 * 86400000));
           const [events, assignments] = await Promise.all([
-            getCalendarEvents(pid, tomorrow, tomorrow),
-            getAssignments(pid, tomorrow, tomorrow),
+            getCalendarEvents(pid, tomorrow, weekLater),
+            getAssignments(pid, tomorrow, weekLater),
           ]);
-          tomorrowEvents = events
+          
+          const filtered = events
             .filter(e => e.Status !== 4 && e.Status !== 5)
             .sort((a, b) => a.Start.localeCompare(b.Start));
+          
+          // Group by date and find the first day with events
+          const eventsByDate: Record<string, any[]> = {};
+          for (const event of filtered) {
+            const date = event.Start.substring(0, 10);
+            if (!eventsByDate[date]) eventsByDate[date] = [];
+            eventsByDate[date].push(event);
+          }
+          
+          const sortedDates = Object.keys(eventsByDate).sort();
+          if (sortedDates.length > 0) {
+            nextSchoolDayDate = sortedDates[0];
+            tomorrowEvents = eventsByDate[nextSchoolDayDate];
+          } else {
+            nextSchoolDayDate = tomorrow;
+            tomorrowEvents = [];
+          }
+          
+          // Store all open assignments (not date-filtered since homework can span days)
           tomorrowAssignments = assignments.filter(a => !a.Afgesloten && !a.IngeleverdOp);
         } catch (e) {
-          console.error('Dashboard: Tomorrow fetch failed', e);
+          console.error('Dashboard: Next school day fetch failed', e);
         } finally {
           loadingTomorrow = false;
         }
@@ -186,6 +210,7 @@
       upcomingAssignments,
       tomorrowEvents,
       tomorrowAssignments,
+      nextSchoolDayDate,
     }));
   }
 
@@ -193,21 +218,44 @@
     refreshTrigger++;
   }
 
-  // Returns all tomorrow lessons up to the first break (gap > 20 min).
+  // Format the next school day as a readable label
+  const nextSchoolDayLabel = $derived(() => {
+    if (!nextSchoolDayDate) return '';
+    const date = new Date(nextSchoolDayDate + 'T00:00:00');
+    return date.toLocaleDateString('nl-NL', { weekday: 'long', day: 'numeric', month: 'long' });
+  });
+
+  // Short day name (e.g. "maandag") for the badge
+  const nextSchoolDayShortLabel = $derived(() => {
+    if (!nextSchoolDayDate) return '';
+    const date = new Date(nextSchoolDayDate + 'T00:00:00');
+    return date.toLocaleDateString('nl-NL', { weekday: 'long' });
+  });
+
+  // Whether we're skipping free days (tomorrow is not the next school day)
+  const isSkippingDays = $derived(() => {
+    const tomorrowDate = formatDate(new Date(Date.now() + 86400000));
+    return tomorrowDate !== nextSchoolDayDate;
+  });
+
+  // Returns all tomorrow lessons up to the first break.
   // If no break is found, returns all lessons.
+  // The break threshold (in minutes) is configurable in settings.
   const lessonsBeforeBreak = $derived(() => {
     if (tomorrowEvents.length === 0) return [];
+    const threshold = $userSettings.breakThresholdMinutes ?? 20;
     for (let i = 0; i < tomorrowEvents.length - 1; i++) {
       const endCurrent = new Date(tomorrowEvents[i].Einde ?? tomorrowEvents[i].End ?? tomorrowEvents[i].Start);
       const startNext = new Date(tomorrowEvents[i + 1].Start);
       const gapMinutes = (startNext.getTime() - endCurrent.getTime()) / 60000;
-      if (gapMinutes > 20) return tomorrowEvents.slice(0, i + 1);
+      if (gapMinutes > threshold) return tomorrowEvents.slice(0, i + 1);
     }
     return tomorrowEvents;
   });
 
   // Check if a calendar event has open homework (in Inhoud or a matching open assignment)
   function lessonHasHomework(event: any): boolean {
+    if (event.Afgerond) return false;
     if (event.Inhoud && event.Inhoud.trim().length > 0) return true;
     const subjectName = event.Vakken?.[0]?.Naam?.toLowerCase() ?? '';
     if (!subjectName) return false;
@@ -221,6 +269,69 @@
   const subjectsWithHomework = $derived(() =>
     lessonsBeforeBreak().filter(lessonHasHomework).map(e => e.Vakken?.[0]?.Naam ?? 'Onbekend')
   );
+
+  // Combined list for the bottom menu: all homework items from the full day
+  const packedAndExtraHomework = $derived(() => {
+    const result: {
+      type: 'packed' | 'extra';
+      subject: string;
+      lessonHour: string;
+      index: number;
+      event: any;
+      hw: { inhoud: string | null; assignments: any[]; isCompleted: boolean };
+    }[] = [];
+
+    for (let i = 0; i < tomorrowEvents.length; i++) {
+      const event = tomorrowEvents[i];
+      const hw = getLessonHomework(event);
+      if (!hw.inhoud && hw.assignments.length === 0) continue; // skip if no homework at all
+
+      result.push({
+        type: event.Afgerond ? 'packed' : 'extra',
+        subject: event.Vakken?.[0]?.Naam ?? 'Onbekend',
+        lessonHour: event.LesuurVan ?? '—',
+        index: i,
+        event,
+        hw,
+      });
+    }
+
+    return result;
+  });
+
+  // Get extended homework info for a lesson: Inhoud + matching assignments
+  function getLessonHomework(event: any): { inhoud: string | null; assignments: any[]; isCompleted: boolean } {
+    const inhoud = (event.Inhoud?.trim()) || null;
+    const subjectName = event.Vakken?.[0]?.Naam?.toLowerCase() ?? '';
+    const assignments = subjectName
+      ? tomorrowAssignments.filter(a => {
+          const assignmentSubject = (a.Vak ?? a.Titel ?? '').toLowerCase();
+          return assignmentSubject.includes(subjectName) || subjectName.includes(assignmentSubject);
+        })
+      : [];
+    return { inhoud, assignments, isCompleted: !!event.Afgerond };
+  }
+
+  function toggleLesson(index: number) {
+    expandedLesson = expandedLesson === index ? null : index;
+  }
+
+  async function markLessonDone(event: any, index: number) {
+    try {
+      await toggleCalendarEventDone(event);
+      // Toggle the local Afgerond flag so UI updates immediately
+      event.Afgerond = !event.Afgerond;
+      // If marked as done, collapse the lesson
+      if (event.Afgerond) expandedLesson = null;
+    } catch (e) {
+      console.error('Failed to toggle lesson done:', e);
+    }
+  }
+
+  function stripHtml(html: string): string {
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    return doc.body.textContent || '';
+  }
 
   function getSubjectIcon(subject: string): string {
     const s = subject.toLowerCase();
@@ -311,98 +422,279 @@
   <main class="max-w-7xl mx-auto px-4 md:px-8 w-full py-8 pb-28">
 
     <!-- Pack for Tomorrow -->
-    {#if loadingTomorrow || tomorrowEvents.length > 0}
-      <section in:fly={{ y: -20, duration: 700 }} class="mb-14">
-        <div class="glass rounded-[3rem] p-6 md:p-10 relative overflow-hidden border-white/5 shadow-2xl group">
-          <!-- Ambient glow -->
-          <div class="absolute inset-0 bg-gradient-to-r from-emerald-500/8 via-transparent to-primary-500/8 opacity-60 group-hover:opacity-100 transition-opacity duration-700 pointer-events-none"></div>
+    <section in:fly={{ y: -20, duration: 700 }} class="mb-14">
+      <div class="glass rounded-[3rem] p-6 md:p-10 relative overflow-hidden border-white/5 shadow-2xl group">
+        <!-- Ambient glow -->
+        <div class="absolute inset-0 bg-gradient-to-r from-emerald-500/8 via-transparent to-primary-500/8 opacity-60 group-hover:opacity-100 transition-opacity duration-700 pointer-events-none"></div>
 
-          <div class="flex items-center justify-between mb-6 md:mb-8 relative z-10">
-            <h2 class="text-xl md:text-2xl font-black text-white italic tracking-tighter flex items-center gap-3">
-              <div class="w-2 h-7 bg-emerald-500 rounded-full shadow-[0_0_20px_rgba(16,185,129,0.7)] animate-pulse shrink-0"></div>
-              Morgenklaar
+        <div class="flex items-center justify-between mb-6 md:mb-8 relative z-10">
+          <h2 class="text-xl md:text-2xl font-black text-white italic tracking-tighter flex items-center gap-3">
+            <div class="w-2 h-7 bg-emerald-500 rounded-full shadow-[0_0_20px_rgba(16,185,129,0.7)] animate-pulse shrink-0"></div>
+            Morgenklaar
+            {#if !loadingTomorrow && nextSchoolDayDate}
               <span class="text-[10px] font-black uppercase tracking-[0.3em] text-emerald-400/80 bg-emerald-500/10 border border-emerald-500/20 px-3 py-1.5 rounded-full not-italic ml-1">
-                {new Date(Date.now() + 86400000).toLocaleDateString('nl-NL', { weekday: 'long' })}
+                {nextSchoolDayShortLabel()}
               </span>
-            </h2>
-            <button
-              onclick={() => currentPage.set('calendar')}
-              class="text-[10px] font-black text-emerald-400 hover:text-emerald-300 uppercase tracking-[0.3em] flex items-center gap-2 group/link transition-all bg-emerald-500/5 hover:bg-emerald-500/10 border border-emerald-500/10 hover:border-emerald-500/25 px-4 py-2 rounded-full"
-            >
-              Rooster <svg class="w-3.5 h-3.5 group-hover/link:translate-x-1 transition-transform" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="m9 18 6-6-6-6"/></svg>
-            </button>
-          </div>
+            {/if}
+          </h2>
+          <button
+            onclick={() => currentPage.set('calendar')}
+            class="text-[10px] font-black text-emerald-400 hover:text-emerald-300 uppercase tracking-[0.3em] flex items-center gap-2 group/link transition-all bg-emerald-500/5 hover:bg-emerald-500/10 border border-emerald-500/10 hover:border-emerald-500/25 px-4 py-2 rounded-full"
+          >
+            Rooster <svg class="w-3.5 h-3.5 group-hover/link:translate-x-1 transition-transform" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="m9 18 6-6-6-6"/></svg>
+          </button>
+        </div>
 
-          {#if loadingTomorrow}
-            <div class="flex items-center gap-4 md:gap-6 overflow-x-auto pb-2 no-scrollbar relative z-10">
-              {#each Array(4) as _}
-                <div class="shrink-0 w-36 md:w-44 h-24 rounded-[2rem] bg-surface-800/60 animate-pulse border border-white/5"></div>
-              {/each}
-            </div>
-          {:else}
-            <div class="relative z-10 space-y-6">
-              <!-- Lesson pills row -->
-              <div class="flex items-stretch gap-3 overflow-x-auto pb-2 no-scrollbar">
-                {#each lessonsBeforeBreak() as event, i (event.Id || i)}
-                  {@const hasHomework = lessonHasHomework(event)}
-                  <div
-                    in:fly={{ y: 15, delay: i * 70, duration: 500 }}
-                    class="shrink-0 flex flex-col justify-between gap-2 px-5 py-4 rounded-[2rem] border transition-all min-w-[130px] md:min-w-[150px] relative overflow-hidden
-                           {hasHomework
-                             ? 'bg-amber-500/10 border-amber-500/30 shadow-lg shadow-amber-500/10'
-                             : 'bg-surface-800/50 border-white/5'}"
-                  >
-                    {#if hasHomework}
-                      <div class="absolute top-2.5 right-2.5 w-2 h-2 rounded-full bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.8)] animate-pulse"></div>
-                    {/if}
-                    <div>
-                      <p class="text-[10px] font-black uppercase tracking-widest {hasHomework ? 'text-amber-400' : 'text-gray-500'} mb-1.5">
-                        {event.LesuurVan ? `Uur ${event.LesuurVan}` : formatTime(event.Start)}
-                      </p>
-                      <p class="text-sm font-black text-white italic tracking-tight leading-tight line-clamp-2 uppercase">
-                        {event.Vakken?.[0]?.Naam ?? event.Omschrijving ?? 'Afspraak'}
-                      </p>
-                    </div>
-                    <div class="flex items-center gap-1.5 mt-1">
-                      <svg class="w-3 h-3 {hasHomework ? 'text-amber-500' : 'text-gray-600'} shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
-                      <span class="text-[9px] font-black uppercase tracking-tight {hasHomework ? 'text-amber-500/80' : 'text-gray-600'} truncate">
-                        {event.Lokalen?.[0]?.Naam ?? '??'}
+        {#if loadingTomorrow}
+          <div class="relative z-10 space-y-3">
+            {#each Array(3) as _}
+              <div class="rounded-2xl bg-surface-800/50 animate-pulse border border-white/5 h-20"></div>
+            {/each}
+          </div>
+        {:else if tomorrowEvents.length === 0}
+          <div class="relative z-10 flex flex-col items-center justify-center py-12 text-center" in:fade>
+            <svg class="w-12 h-12 text-emerald-500/40 mb-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/></svg>
+            <p class="text-white font-black uppercase tracking-wider text-base">Voorlopig geen lessen</p>
+            <p class="text-[11px] text-gray-500 mt-2 font-medium max-w-xs leading-relaxed">Er staan de komende dagen geen lessen gepland. Tijd om uit te rusten!</p>
+          </div>
+        {:else}
+          <div class="relative z-10 space-y-5">
+            {#if isSkippingDays()}
+              <div class="flex items-center gap-2 text-emerald-400/70 border border-emerald-500/10 bg-emerald-500/5 rounded-2xl px-5 py-3" in:fly={{ y: 8, duration: 400 }}>
+                <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+                <span class="text-[10px] font-black uppercase tracking-[0.2em]">
+                  Morgen is een vrije dag. Pak voor {nextSchoolDayShortLabel()}:
+                </span>
+              </div>
+            {/if}
+
+            <!-- Vertical lesson list -->
+            <div class="space-y-2">
+              {#each lessonsBeforeBreak() as event, i (event.Id || i)}
+                {@const hw = getLessonHomework(event)}
+                {@const hasHw = !!(hw.inhoud || hw.assignments.length > 0)}
+                {@const isOpen = expandedLesson === i}
+                <div
+                  in:fly={{ y: 10, delay: i * 60, duration: 400 }}
+                  class="rounded-2xl border transition-all overflow-hidden
+                         {hasHw
+                           ? 'bg-amber-500/8 border-amber-500/20 hover:border-amber-500/40 cursor-pointer'
+                           : 'bg-surface-800/40 border-white/5'}
+                         {isOpen ? 'border-amber-500/50' : ''}"
+                  role={hasHw ? 'button' : undefined}
+                  tabindex={hasHw ? '0' : undefined}
+                  onclick={() => hasHw && toggleLesson(i)}
+                  onkeydown={(e) => { if (hasHw && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); toggleLesson(i); } }}
+                >
+                  <!-- Lesson header row -->
+                  <div class="flex items-center gap-4 px-5 py-4">
+                    <!-- Time badge -->
+                    <div class="shrink-0 flex flex-col items-center min-w-[52px]">
+                      <span class="text-lg font-black leading-none {hasHw ? 'text-amber-400' : 'text-gray-400'}">
+                        {event.LesuurVan ?? '—'}
+                      </span>
+                      <span class="text-[8px] font-bold text-gray-600 uppercase tracking-wider mt-1">
+                        {formatTime(event.Start)}
                       </span>
                     </div>
-                  </div>
-                {/each}
 
-                {#if tomorrowEvents.length > lessonsBeforeBreak().length}
-                  <div class="shrink-0 flex items-center justify-center px-5 py-4 rounded-[2rem] border border-dashed border-white/10 min-w-[80px] text-gray-600">
-                    <span class="text-[10px] font-black uppercase tracking-tight text-center">+{tomorrowEvents.length - lessonsBeforeBreak().length}<br>na pauze</span>
-                  </div>
-                {/if}
-              </div>
+                    <!-- Subject & room -->
+                    <div class="flex-1 min-w-0">
+                      <p class="text-sm font-black text-white truncate uppercase tracking-tight">
+                        {event.Vakken?.[0]?.Naam ?? event.Omschrijving ?? 'Afspraak'}
+                      </p>
+                      <div class="flex items-center gap-2 mt-1">
+                        <span class="flex items-center gap-1 text-[9px] font-bold {hasHw ? 'text-amber-500/70' : 'text-gray-500'}">
+                          <svg class="w-2.5 h-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
+                          {event.Lokalen?.[0]?.Naam ?? '??'}
+                        </span>
+                        {#if event.Docenten?.[0]?.Naam}
+                          <span class="text-[9px] font-bold text-gray-600">· {event.Docenten[0].Naam}</span>
+                        {/if}
+                      </div>
+                    </div>
 
-              <!-- Homework summary row -->
-              {#if subjectsWithHomework().length > 0}
-                <div class="flex flex-wrap items-center gap-2" in:fly={{ y: 8, delay: 300, duration: 400 }}>
-                  <span class="text-[10px] font-black uppercase tracking-[0.3em] text-amber-400/70 mr-1 flex items-center gap-1.5">
-                    <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"/><path d="M8 7h6"/><path d="M8 11h8"/><path d="M8 15h4"/></svg>
-                    Huiswerk voor:
-                  </span>
-                  {#each subjectsWithHomework() as subject}
-                    <span class="px-3 py-1.5 rounded-full bg-amber-500/15 border border-amber-500/25 text-amber-300 text-[10px] font-black uppercase tracking-tight">
-                      {subject}
-                    </span>
-                  {/each}
+                    <!-- Indicators -->
+                    <div class="shrink-0 flex items-center gap-2">
+                      {#if hasHw}
+                        <div class="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/15 border border-amber-500/25">
+                          <span class="w-1.5 h-1.5 rounded-full bg-amber-400 shadow-[0_0_6px_rgba(251,191,36,0.8)] animate-pulse"></span>
+                          <span class="text-[8px] font-black text-amber-400 uppercase tracking-wider">{hw.assignments.length > 0 ? `${hw.assignments.length} taak` : 'HW'}</span>
+                        </div>
+                        <svg class="w-4 h-4 text-gray-500 transition-transform duration-300 {isOpen ? 'rotate-180' : ''}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>
+                      {/if}
+                    </div>
+                  </div>
+
+                  <!-- Expanded homework section -->
+                  {#if isOpen && hasHw}
+                    <div class="mx-5 mb-4 pt-3 border-t {hasHw ? 'border-amber-500/15' : 'border-white/10'} space-y-3" in:fly={{ y: -5, duration: 200 }}>
+                      <!-- Always show homework content, even when completed -->
+                      {#if hw.inhoud}
+                        <div class="text-xs text-gray-300 leading-relaxed whitespace-pre-wrap {hw.isCompleted ? 'line-through opacity-50' : ''}">
+                          {stripHtml(hw.inhoud)}
+                        </div>
+                      {/if}
+                      {#each hw.assignments as a, j}
+                        <div class="bg-white/5 rounded-xl px-4 py-3 border border-white/5 {hw.isCompleted ? 'opacity-50' : ''}">
+                          <div class="flex items-start justify-between gap-3">
+                            <div class="min-w-0">
+                              <p class="text-[11px] font-black text-white uppercase tracking-tight">{a.Titel || 'Opdracht'}</p>
+                              {#if a.Omschrijving}
+                                <p class="text-[10px] text-gray-400 mt-1.5 leading-relaxed line-clamp-3">{stripHtml(a.Omschrijving)}</p>
+                              {/if}
+                            </div>
+                            {#if a.InleverenVoor}
+                              <span class="shrink-0 text-[8px] font-black text-amber-400 uppercase tracking-wider whitespace-nowrap">
+                                {new Date(a.InleverenVoor).toLocaleDateString('nl-NL', { day: 'numeric', month: 'short' })}
+                              </span>
+                            {/if}
+                          </div>
+                          <div class="flex items-center gap-2 mt-2">
+                            {#if a.IngeleverdOp}
+                              <span class="text-[8px] font-black text-emerald-500 uppercase tracking-wider bg-emerald-500/10 px-2 py-0.5 rounded-full">Ingediend</span>
+                            {:else if a.Beoordeling}
+                              <span class="text-[8px] font-black text-primary-400 uppercase tracking-wider bg-primary-500/10 px-2 py-0.5 rounded-full">Beoordeeld</span>
+                            {:else}
+                              <span class="text-[8px] font-black text-amber-400 uppercase tracking-wider bg-amber-500/10 px-2 py-0.5 rounded-full">Open</span>
+                            {/if}
+                          </div>
+                        </div>
+                      {/each}
+
+                      {#if hw.isCompleted}
+                        <div class="flex items-center gap-2 text-emerald-500/70 pt-1">
+                          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                          <span class="text-[10px] font-black uppercase tracking-wider">Huiswerk afgerond</span>
+                        </div>
+                      {:else}
+                        <button
+                          onclick={() => markLessonDone(event, i)}
+                          class="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/25 hover:text-emerald-300 transition-all text-[10px] font-black uppercase tracking-wider active:scale-[0.98]"
+                        >
+                          <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg>
+                          Huiswerk afgerond
+                        </button>
+                      {/if}
+                    </div>
+                  {/if}
                 </div>
-              {:else}
-                <div class="flex items-center gap-2 text-emerald-400/70" in:fly={{ y: 8, delay: 300, duration: 400 }}>
-                  <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-                  <span class="text-[10px] font-black uppercase tracking-[0.3em]">Geen openstaand huiswerk voor morgen</span>
+              {/each}
+
+              {#if tomorrowEvents.length > lessonsBeforeBreak().length}
+                <div class="flex items-center gap-3 px-5 py-3 rounded-2xl border border-dashed border-white/10 bg-white/[0.02]">
+                  <div class="w-0.5 h-8 bg-primary-500/40 rounded-full"></div>
+                  <span class="text-[10px] font-black uppercase tracking-tight text-gray-500">
+                    +{tomorrowEvents.length - lessonsBeforeBreak().length} les(sen) na de pauze
+                  </span>
                 </div>
               {/if}
             </div>
-          {/if}
-        </div>
-      </section>
-    {/if}
+
+            <!-- Homework summary row -->
+            {#if subjectsWithHomework().length > 0}
+              <div class="flex flex-wrap items-center gap-2" in:fly={{ y: 8, delay: 300, duration: 400 }}>
+                <span class="text-[10px] font-black uppercase tracking-[0.3em] text-amber-400/70 mr-1 flex items-center gap-1.5">
+                  <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"/><path d="M8 7h6"/><path d="M8 11h8"/><path d="M8 15h4"/></svg>
+                  Huiswerk voor:
+                </span>
+                {#each subjectsWithHomework() as subject}
+                  <span class="px-3 py-1.5 rounded-full bg-amber-500/15 border border-amber-500/25 text-amber-300 text-[10px] font-black uppercase tracking-tight">
+                    {subject}
+                  </span>
+                {/each}
+              </div>
+            {:else}
+              <div class="flex items-center gap-2 text-emerald-400/70" in:fly={{ y: 8, delay: 300, duration: 400 }}>
+                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                <span class="text-[10px] font-black uppercase tracking-[0.3em]">Geen openstaand huiswerk voor {nextSchoolDayShortLabel()}</span>
+              </div>
+            {/if}
+
+            <!-- Bottom menu: alle lessen met huiswerk (hele dag) met uitklapbare details -->
+            {#if packedAndExtraHomework.length > 0}
+              <div class="pt-5 border-t border-white/5 space-y-2" in:fly={{ y: 8, delay: 400, duration: 400 }}>
+                <div class="flex items-center gap-2 mb-3">
+                  <span class="text-[9px] font-black uppercase tracking-[0.3em] text-white/50">Huiswerkoverzicht — {nextSchoolDayShortLabel()}</span>
+                  <div class="h-px flex-1 bg-white/5"></div>
+                </div>
+                {#each packedAndExtraHomework as item, bi (item.event.Id || bi)}
+                  {@const isExpanded = expandedLesson === 1000 + bi}
+                  <div class="rounded-xl border overflow-hidden transition-all {item.type === 'packed' ? 'bg-emerald-500/5 border-emerald-500/15' : 'bg-amber-500/5 border-amber-500/15'} {isExpanded ? (item.type === 'packed' ? 'border-emerald-500/30' : 'border-amber-500/30') : ''}">
+                    <!-- Header (clickable) -->
+                    <button
+                      onclick={() => toggleLesson(1000 + bi)}
+                      class="w-full flex items-center gap-3 px-4 py-3 text-left"
+                    >
+                      <div class="shrink-0 w-7 h-7 rounded-lg {item.type === 'packed' ? 'bg-emerald-500/15 text-emerald-400' : 'bg-amber-500/15 text-amber-400'} flex items-center justify-center">
+                        {#if item.type === 'packed'}
+                          <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                        {:else}
+                          <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2v20M2 12h20"/></svg>
+                        {/if}
+                      </div>
+                      <div class="flex-1 min-w-0">
+                        <p class="text-[11px] font-black text-white uppercase tracking-tight truncate flex items-center gap-2">
+                          {item.subject}
+                          <span class="text-[9px] font-bold text-gray-500 normal-case not-italic">les {item.lessonHour}</span>
+                        </p>
+                        <p class="text-[9px] font-bold {item.type === 'packed' ? 'text-emerald-500/70' : 'text-amber-500/70'} uppercase tracking-wider mt-0.5">
+                          {item.type === 'packed'
+                            ? '✓ Ingepakt'
+                            : (item.hw.assignments.length > 0 ? `${item.hw.assignments.length} openstaande ta(a)k(en)` : 'Huiswerk')}
+                        </p>
+                      </div>
+                      <svg class="w-3.5 h-3.5 text-gray-500 transition-transform duration-300 shrink-0 {isExpanded ? 'rotate-180' : ''}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>
+                    </button>
+
+                    <!-- Expanded homework content -->
+                    {#if isExpanded}
+                      <div class="px-4 pb-4 space-y-2" in:fly={{ y: -5, duration: 150 }}>
+                        <div class="pt-2 border-t {item.type === 'packed' ? 'border-emerald-500/10' : 'border-amber-500/10'} space-y-2.5">
+                          {#if item.hw.inhoud}
+                            <div class="text-[11px] text-gray-300 leading-relaxed whitespace-pre-wrap {item.hw.isCompleted ? 'line-through opacity-50' : ''}">
+                              {stripHtml(item.hw.inhoud)}
+                            </div>
+                          {/if}
+                          {#each item.hw.assignments as a}
+                            <div class="bg-black/20 rounded-lg px-3 py-2 {item.hw.isCompleted ? 'opacity-50' : ''}">
+                              <div class="flex items-start justify-between gap-2">
+                                <p class="text-[10px] font-bold text-white">{a.Titel || 'Opdracht'}</p>
+                                {#if a.InleverenVoor}
+                                  <span class="shrink-0 text-[7px] font-black text-amber-400 uppercase">{new Date(a.InleverenVoor).toLocaleDateString('nl-NL', { day: 'numeric', month: 'short' })}</span>
+                                {/if}
+                              </div>
+                              {#if a.Omschrijving}
+                                <p class="text-[9px] text-gray-400 mt-1 line-clamp-2">{stripHtml(a.Omschrijving)}</p>
+                              {/if}
+                            </div>
+                          {/each}
+
+                          {#if item.hw.isCompleted}
+                            <div class="flex items-center gap-1.5 text-emerald-500/70 pt-1">
+                              <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                              <span class="text-[9px] font-black uppercase tracking-wider">Huiswerk afgerond</span>
+                            </div>
+                          {:else}
+                            <button
+                              onclick={() => markLessonDone(item.event, item.index)}
+                              class="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all {item.type === 'packed' ? 'bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/25' : 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20'} active:scale-[0.98]"
+                            >
+                              <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg>
+                              Afvinken als ingepakt
+                            </button>
+                          {/if}
+                        </div>
+                      </div>
+                    {/if}
+                  </div>
+                {/each}
+              </div>
+            {/if}
+          </div>
+        {/if}
+      </div>
+    </section>
 
     <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 md:gap-10">
       

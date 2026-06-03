@@ -1284,13 +1284,13 @@
                           <div class="flex items-center gap-2.5">
                             <div class="flex-1 grid grid-cols-2 gap-2">
                               <div>
-                                <label class="text-[9px] text-gray-600 font-black uppercase block mb-0.5">Cijfer</label>
-                                <input type="number" step="0.1" min="1" max="10" bind:value={sim.value}
+                                <label for="simCijfer{idx}" class="text-[9px] text-gray-600 font-black uppercase block mb-0.5">Cijfer</label>
+                                <input id="simCijfer{idx}" type="number" step="0.1" min="1" max="10" bind:value={sim.value}
                                   class="w-full bg-surface-800 border border-surface-700 rounded-lg px-2 py-1.5 text-sm text-white font-bold focus:outline-none focus:border-primary-500" />
                               </div>
                               <div>
-                                <label class="text-[9px] text-gray-600 font-black uppercase block mb-0.5">Weging</label>
-                                <input type="number" step="1" min="1" bind:value={sim.weight}
+                                <label for="simWeging{idx}" class="text-[9px] text-gray-600 font-black uppercase block mb-0.5">Weging</label>
+                                <input id="simWeging{idx}" type="number" step="1" min="1" bind:value={sim.weight}
                                   class="w-full bg-surface-800 border border-surface-700 rounded-lg px-2 py-1.5 text-sm text-white font-bold focus:outline-none focus:border-primary-500" />
                               </div>
                             </div>
@@ -1371,13 +1371,13 @@
 
                       <div class="grid grid-cols-2 gap-4">
                         <div class="bg-surface-800/40 border border-white/5 rounded-2xl p-3">
-                          <label class="block text-[9px] text-gray-500 font-black uppercase tracking-widest mb-2 text-center">Resterende toetsen</label>
-                          <input type="number" min="1" max="20" bind:value={predictRemainingTests}
+                          <label for="predictRemainingTests" class="block text-[9px] text-gray-500 font-black uppercase tracking-widest mb-2 text-center">Resterende toetsen</label>
+                          <input id="predictRemainingTests" type="number" min="1" max="20" bind:value={predictRemainingTests}
                             class="w-full bg-surface-900 border border-primary-500/20 rounded-xl px-3 py-2 text-base font-black text-center text-primary-400 focus:outline-none focus:border-primary-500 transition-all" />
                         </div>
                         <div class="bg-surface-800/40 border border-white/5 rounded-2xl p-3">
-                          <label class="block text-[9px] text-gray-500 font-black uppercase tracking-widest mb-2 text-center">Verwacht cijfer (per toets)</label>
-                          <input type="number" step="0.1" min="1" max="10" bind:value={predictGrade}
+                          <label for="predictGrade" class="block text-[9px] text-gray-500 font-black uppercase tracking-widest mb-2 text-center">Verwacht cijfer (per toets)</label>
+                          <input id="predictGrade" type="number" step="0.1" min="1" max="10" bind:value={predictGrade}
                             class="w-full bg-surface-900 border border-primary-500/20 rounded-xl px-3 py-2 text-base font-black text-center text-primary-400 focus:outline-none focus:border-primary-500 transition-all" />
                         </div>
                       </div>
@@ -1453,8 +1453,8 @@
                       </div>
 
                       <div class="bg-surface-800/40 border border-white/5 rounded-2xl p-4">
-                        <label class="block text-[9px] text-gray-500 font-black uppercase tracking-widest mb-2 text-center">Doel gemiddelde voor dit vak</label>
-                        <input type="number" step="0.1" min="1" max="10" bind:value={targetPeriodGrade}
+                        <label for="targetPeriodGrade" class="block text-[9px] text-gray-500 font-black uppercase tracking-widest mb-2 text-center">Doel gemiddelde voor dit vak</label>
+                        <input id="targetPeriodGrade" type="number" step="0.1" min="1" max="10" bind:value={targetPeriodGrade}
                           class="w-full bg-surface-900 border border-primary-500/20 rounded-xl px-3 py-3 text-2xl font-black text-center text-primary-400 focus:outline-none focus:border-primary-500 transition-all" />
                       </div>
 

@@ -226,6 +226,7 @@
         {#if searchOpen}
           <div class="flex items-center gap-2 flex-1" transition:slide={{ axis: 'x', duration: 200 }}>
             <svg class="w-4 h-4 text-gray-500 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+            <!-- svelte-ignore a11y_autofocus -->
             <input
               type="text"
               bind:value={searchQuery}
@@ -233,17 +234,17 @@
               autofocus
               class="flex-1 bg-transparent text-gray-100 text-sm outline-none placeholder:text-gray-600"
             />
-            <button onclick={toggleSearch} class="p-1 text-gray-500 hover:text-gray-300">
+            <button onclick={toggleSearch} class="p-1 text-gray-500 hover:text-gray-300" aria-label="Zoeken sluiten">
               <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6 6 18M6 6l12 12"/></svg>
             </button>
           </div>
         {:else}
           <h1 class="text-xl font-bold text-gray-100 italic tracking-tighter">Berichten</h1>
           <div class="flex items-center gap-1">
-            <button onclick={toggleSearch} class="p-2 text-gray-500 hover:text-primary-400 transition-colors">
+            <button onclick={toggleSearch} class="p-2 text-gray-500 hover:text-primary-400 transition-colors" aria-label="Zoeken">
               <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
             </button>
-            <button onclick={() => showCompose = true} class="p-2 text-gray-500 hover:text-primary-400 transition-colors">
+            <button onclick={() => showCompose = true} class="p-2 text-gray-500 hover:text-primary-400 transition-colors" aria-label="Nieuw bericht">
               <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>
             </button>
           </div>
@@ -282,7 +283,7 @@
           class="flex-1 bg-transparent text-gray-300 text-xs outline-none placeholder:text-gray-600"
         />
         {#if searchQuery}
-          <button onclick={() => searchQuery = ''} class="text-gray-600 hover:text-gray-400">
+            <button onclick={() => searchQuery = ''} class="text-gray-600 hover:text-gray-400" aria-label="Zoekopdracht wissen">
             <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6 6 18M6 6l12 12"/></svg>
           </button>
         {/if}
@@ -483,7 +484,7 @@
           <svg class="w-4 h-4 text-primary-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
           Nieuw bericht
         </h3>
-        <button onclick={() => showCompose = false} class="w-8 h-8 rounded-full bg-surface-800 hover:bg-surface-700 flex items-center justify-center text-gray-400 hover:text-white transition-all">
+        <button onclick={() => showCompose = false} class="w-8 h-8 rounded-full bg-surface-800 hover:bg-surface-700 flex items-center justify-center text-gray-400 hover:text-white transition-all" aria-label="Sluiten">
           <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6 6 18M6 6l12 12"/></svg>
         </button>
       </div>
@@ -497,7 +498,7 @@
             {#each composeRecipients as r}
               <span class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-primary-500/20 border border-primary-500/30 text-primary-300 text-xs font-bold">
                 {r.naam ?? (r.roepnaam ? `${r.roepnaam} ${r.achternaam}` : `${r.voorletters} ${r.achternaam}`)}
-                <button onclick={() => composeRecipients = composeRecipients.filter(x => x.id !== r.id)} class="hover:text-white transition-colors">
+                <button onclick={() => composeRecipients = composeRecipients.filter(x => x.id !== r.id)} class="hover:text-white transition-colors" aria-label="Verwijder ontvanger">
                   <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                 </button>
               </span>

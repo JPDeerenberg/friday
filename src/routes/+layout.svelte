@@ -207,7 +207,7 @@
                 <p class="text-[8px] font-bold text-primary-400 uppercase tracking-widest" in:fade>Menu</p>
               </div>
             </div>
-            <button onclick={() => mobileSidebarOpen = false} class="text-gray-400 p-1">
+            <button onclick={() => mobileSidebarOpen = false} class="text-gray-400 p-1" aria-label="Sluit menu">
               <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
             </button>
           </div>

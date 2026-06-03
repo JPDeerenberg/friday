@@ -219,11 +219,11 @@
 
               <div class="flex items-center gap-3">
                 {#if item.BronSoort === 3}
-                  <a href={item.Links.find((l: any) => l.Rel === 'content')?.Href} target="_blank" class="p-3 bg-surface-950/50 hover:bg-primary-500/10 rounded-2xl text-primary-400 transition-all border border-white/5 shadow-inner active:scale-90">
+                  <a href={item.Links.find((l: any) => l.Rel === 'content')?.Href} target="_blank" class="p-3 bg-surface-950/50 hover:bg-primary-500/10 rounded-2xl text-primary-400 transition-all border border-white/5 shadow-inner active:scale-90" aria-label="Openen">
                     <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
                   </a>
                 {:else if item.BronSoort === 1}
-                  <a href={item.Links.find((l: any) => l.Rel === 'content')?.Href} target="_blank" class="p-3 bg-surface-950/50 hover:bg-primary-500/10 rounded-2xl text-primary-400 transition-all border border-white/5 shadow-inner active:scale-90">
+                  <a href={item.Links.find((l: any) => l.Rel === 'content')?.Href} target="_blank" class="p-3 bg-surface-950/50 hover:bg-primary-500/10 rounded-2xl text-primary-400 transition-all border border-white/5 shadow-inner active:scale-90" aria-label="Download">
                     <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                   </a>
                 {/if}

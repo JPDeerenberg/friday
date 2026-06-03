@@ -24,6 +24,7 @@
 - [ ] **Cijferlijst filters** — aanhouden bij app afsluiten (in cache opslaan)
 - [ ] **Caching** — alles in cache, stil op de achtergrond verversen zodat je niet elke keer 2 seconden hoeft te wachten
 - [ ] **Absenties** — datum weghalen en klassenselector fixen (per klassenjaar)
+- [ ] **Repo info** — Repo data (Github) onderaan bij instellingen toevoegen
 
 ---
 
@@ -44,6 +45,10 @@
 - [x] Tekst 'Blijf strijden' → 'Investeer in jezelf!'
 - [x] To-pack-for-tomorrow schema op home (lessen morgen vóór 1e pauze + niet-afgevinkt huiswerk)
 - [x] Cijfer calculator — ook omgekeerd cijfers rekenen voor meer variatie
-- [X] Verwijderknop snapshots — zichtbaar maken, nu is het verborgen
+- [x] Verwijderknop snapshots — zichtbaar maken, nu is het verborgen
 - [x] **Cijfers op home** — bij resultaten fixen, nu staat er niks (alleen vakken waar je cijfers van hebt)
 - [x] **Voortgang jaren** — fixen, nu staat er niks
+
+## Bij updaten:
+
+- Commit altijd de nieuwe update, ook moet de versie altijd naar boven zodat Github alles goed compileert.

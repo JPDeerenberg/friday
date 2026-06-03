@@ -217,6 +217,5 @@
     -webkit-backdrop-filter: blur(25px);
     border: 1px solid oklch(1 0 0 / 0.05);
   }
-  .no-scrollbar::-webkit-scrollbar { display: none; }
-  .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
 </style>

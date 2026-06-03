@@ -55,6 +55,7 @@ const DEFAULT_SETTINGS = {
   hideCancelled: false,
   combineLessons: false,
   showBreakSeparator: false,
+  breakThresholdMinutes: 20,
 };
 
 // Load settings from localStorage

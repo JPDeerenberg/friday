@@ -214,7 +214,8 @@
         { id: 'showWeekend', label: 'Toon Weekend', description: 'Laat zaterdag en zondag zien in de agenda.', type: 'toggle' },
         { id: 'hideCancelled', label: 'Uitgevallen lessen verbergen', description: 'Verberg lessen die als uitgevallen zijn gemarkeerd.', type: 'toggle' },
         { id: 'combineLessons', label: 'Lessen combineren', description: 'Combineer opeenvolgende lessen van hetzelfde vak.', type: 'toggle' },
-        { id: 'showBreakSeparator', label: 'Pauze indicatie', description: 'Toon pauzes tussen lessen met hun duur.', type: 'toggle' },
+        { id: 'showBreakSeparator', label: 'Pauze Indicatie', description: 'Toon pauzes tussen lessen met hun duur.', type: 'toggle' },
+        { id: 'breakThresholdMinutes', label: 'Pauze Drempel (min)', description: 'Aantal minuten pauze voordat lessen worden gesplitst op de homepagina.', type: 'number', min: 1, max: 120, step: 1 },
       ]
     },
     {
@@ -492,12 +493,12 @@
                 {#if disableSyncAtNight}
                   <div class="flex gap-4 items-center" transition:slide>
                       <div class="flex-1 space-y-2">
-                          <label class="text-[10px] font-black text-gray-500 uppercase tracking-widest">Start Uur</label>
-                          <input type="number" min="0" max="23" bind:value={disableSyncAtNightStart} onchange={applyNightSleep} class="w-full bg-surface-800 text-gray-300 rounded-xl p-2 text-center text-sm font-bold border border-white/5" />
+                          <label for="disableSyncStart" class="text-[10px] font-black text-gray-500 uppercase tracking-widest">Start Uur</label>
+                          <input id="disableSyncStart" type="number" min="0" max="23" bind:value={disableSyncAtNightStart} onchange={applyNightSleep} class="w-full bg-surface-800 text-gray-300 rounded-xl p-2 text-center text-sm font-bold border border-white/5" />
                       </div>
                       <div class="flex-1 space-y-2">
-                          <label class="text-[10px] font-black text-gray-500 uppercase tracking-widest">Eind Uur</label>
-                          <input type="number" min="0" max="23" bind:value={disableSyncAtNightEnd} onchange={applyNightSleep} class="w-full bg-surface-800 text-gray-300 rounded-xl p-2 text-center text-sm font-bold border border-white/5" />
+                          <label for="disableSyncEnd" class="text-[10px] font-black text-gray-500 uppercase tracking-widest">Eind Uur</label>
+                          <input id="disableSyncEnd" type="number" min="0" max="23" bind:value={disableSyncAtNightEnd} onchange={applyNightSleep} class="w-full bg-surface-800 text-gray-300 rounded-xl p-2 text-center text-sm font-bold border border-white/5" />
                       </div>
                   </div>
                 {/if}

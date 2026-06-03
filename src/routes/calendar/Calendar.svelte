@@ -496,7 +496,7 @@
 
 </script>
 
-<div class="flex flex-col h-full bg-surface-950" ontouchstart={handleTouchStart} ontouchmove={handleTouchMove} ontouchend={handleTouchEnd}>
+<div class="flex flex-col h-full bg-surface-950" role="application" ontouchstart={handleTouchStart} ontouchmove={handleTouchMove} ontouchend={handleTouchEnd}>
   <!-- Header Section — compact on mobile -->
   <header class="sticky top-0 z-20 bg-surface-950/90 backdrop-blur-xl border-b border-surface-800/30 px-3 py-2 md:px-4 md:py-3">
     <!-- Top row: title + actions -->
@@ -507,6 +507,7 @@
           onclick={() => { appointments = []; loadedStart = null; loadedEnd = null; loadAppointments(true); }}
           class="p-1 text-gray-500 hover:text-primary-400 transition-all hover:rotate-180 duration-500"
           title="Verversen"
+          aria-label="Verversen"
         >
           <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
         </button>
@@ -778,6 +779,7 @@
 <!-- Appointment Detail Drawer -->
 {#if selectedAppointment}
   <div class="fixed inset-0 z-50 flex items-end md:items-center justify-center p-0 md:p-6" transition:fade={{ duration: 150 }}>
+    <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
     <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" onclick={() => { selectedAppointment = null; editMode = false; }}></div>
     
     <div 
@@ -818,7 +820,7 @@
                   {/if}
                 </button>
               {/if}
-              <button onclick={() => { selectedAppointment = null; editMode = false; }} class="p-1.5 text-gray-500 hover:text-white transition-colors">
+              <button onclick={() => { selectedAppointment = null; editMode = false; }} class="p-1.5 text-gray-500 hover:text-white transition-colors" aria-label="Sluiten">
                 <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M18 6 6 18M6 6l12 12"/></svg>
               </button>
             </div>
@@ -929,6 +931,7 @@
                     onclick={() => handleDownload(bijlage)}
                     disabled={downloadingFile === bijlage.Naam}
                     class="p-2 rounded-lg bg-surface-800 text-gray-400 hover:text-white hover:bg-surface-700 disabled:opacity-50 transition-all active:scale-90"
+                    aria-label="Download"
                   >
                     {#if downloadingFile === bijlage.Naam}
                       <svg class="w-3.5 h-3.5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
@@ -960,6 +963,7 @@
 <!-- New Appointment Modal -->
 {#if isCreating}
   <div class="fixed inset-0 z-50 flex items-center justify-center p-3 md:p-4" transition:fade={{ duration: 150 }}>
+    <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
     <div class="absolute inset-0 bg-black/80 backdrop-blur-sm" onclick={() => isCreating = false}></div>
     
     <div 
@@ -969,15 +973,16 @@
       <div class="p-4 md:p-6 space-y-4 md:space-y-6">
         <div class="flex items-center justify-between">
           <h2 class="text-lg md:text-xl font-black text-white italic tracking-tighter">Nieuwe Afspraak</h2>
-          <button onclick={() => isCreating = false} class="text-gray-500 hover:text-white transition-colors">
+          <button onclick={() => isCreating = false} class="text-gray-500 hover:text-white transition-colors" aria-label="Sluiten">
             <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M18 6 6 18M6 6l12 12"/></svg>
           </button>
         </div>
 
         <div class="space-y-3 md:space-y-4">
           <div class="space-y-1">
-            <label class="text-[9px] md:text-[10px] font-black text-gray-500 uppercase tracking-widest ml-1">Omschrijving</label>
+            <label for="newAppOmschrijving" class="text-[9px] md:text-[10px] font-black text-gray-500 uppercase tracking-widest ml-1">Omschrijving</label>
             <input 
+              id="newAppOmschrijving"
               bind:value={newApp.omschrijving}
               type="text" 
               class="w-full bg-surface-950 border border-white/5 rounded-xl px-3 md:px-4 py-2.5 md:py-3 text-sm text-white focus:outline-none focus:border-primary-500/50 transition-colors"
@@ -987,8 +992,9 @@
 
           <div class="grid grid-cols-2 gap-3 md:gap-4">
             <div class="space-y-1">
-              <label class="text-[9px] md:text-[10px] font-black text-gray-500 uppercase tracking-widest ml-1">Begin</label>
+              <label for="newAppBegin" class="text-[9px] md:text-[10px] font-black text-gray-500 uppercase tracking-widest ml-1">Begin</label>
               <input 
+                id="newAppBegin"
                 bind:value={newApp.start}
                 type="time" 
                 class="w-full bg-surface-950 border border-white/5 rounded-xl px-3 md:px-4 py-2.5 md:py-3 text-sm text-white focus:outline-none"
@@ -996,8 +1002,9 @@
               />
             </div>
             <div class="space-y-1">
-              <label class="text-[9px] md:text-[10px] font-black text-gray-500 uppercase tracking-widest ml-1">Einde</label>
+              <label for="newAppEinde" class="text-[9px] md:text-[10px] font-black text-gray-500 uppercase tracking-widest ml-1">Einde</label>
               <input 
+                id="newAppEinde"
                 bind:value={newApp.einde}
                 type="time" 
                 class="w-full bg-surface-950 border border-white/5 rounded-xl px-3 md:px-4 py-2.5 md:py-3 text-sm text-white focus:outline-none"
@@ -1007,8 +1014,9 @@
           </div>
 
           <div class="space-y-1">
-            <label class="text-[9px] md:text-[10px] font-black text-gray-500 uppercase tracking-widest ml-1">Locatie</label>
+            <label for="newAppLocatie" class="text-[9px] md:text-[10px] font-black text-gray-500 uppercase tracking-widest ml-1">Locatie</label>
             <input 
+              id="newAppLocatie"
               bind:value={newApp.lokatie}
               type="text" 
               class="w-full bg-surface-950 border border-white/5 rounded-xl px-3 md:px-4 py-2.5 md:py-3 text-sm text-white focus:outline-none focus:border-primary-500/50 transition-colors"
@@ -1017,8 +1025,9 @@
           </div>
 
           <div class="space-y-1">
-            <label class="text-[9px] md:text-[10px] font-black text-gray-500 uppercase tracking-widest ml-1">Inhoud</label>
+            <label for="newAppInhoud" class="text-[9px] md:text-[10px] font-black text-gray-500 uppercase tracking-widest ml-1">Inhoud</label>
             <textarea 
+              id="newAppInhoud"
               bind:value={newApp.inhoud}
               class="w-full h-20 md:h-24 bg-surface-950 border border-white/5 rounded-xl px-3 md:px-4 py-2.5 md:py-3 text-sm text-white focus:outline-none focus:border-primary-500/50 transition-colors resize-none"
               placeholder="Details..."
