@@ -56,6 +56,7 @@ const DEFAULT_SETTINGS = {
   combineLessons: false,
   showBreakSeparator: false,
   breakThresholdMinutes: 20,
+  downloadDir: "",
 };
 
 // Load settings from localStorage

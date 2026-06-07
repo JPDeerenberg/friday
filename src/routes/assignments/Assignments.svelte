@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { personId } from '$lib/stores';
+  import { personId, userSettings } from '$lib/stores';
   import { get } from 'svelte/store';
   import { 
     getAssignments, 
@@ -7,7 +7,8 @@
     formatDate, 
     handInAssignment, 
     uploadAssignmentAttachment,
-    formatTeacherName
+    formatTeacherName,
+    downloadFile
   } from '$lib/api';
   import { onMount } from 'svelte';
   import { fade, fly, slide } from 'svelte/transition';
@@ -23,6 +24,7 @@
   let attachments = $state<{id: number, storageId: string, name: string, path: string}[]>([]);
   let isSubmitting = $state(false);
   let uploadLoading = $state(false);
+  let downloadingFile = $state<string | null>(null);
   let isMobile = $state(false);
 
   onMount(async () => {
@@ -134,6 +136,21 @@
 
   function removeAttachment(idx: number) {
     attachments = attachments.filter((_, i) => i !== idx);
+  }
+
+  async function handleDownload(bijlage: any) {
+    if (downloadingFile) return;
+    try {
+      const url = bijlage.Links?.find((l: any) => l.Rel === 'Self')?.Href ?? bijlage.Url;
+      if (!url) return;
+      downloadingFile = bijlage.Naam;
+      const downloadDir = get(userSettings).downloadDir || '';
+      await downloadFile(url, bijlage.Naam, downloadDir);
+    } catch (e) {
+      console.error('Download mislukt:', e);
+    } finally {
+      downloadingFile = null;
+    }
   }
 
   async function handleSubmit() {
@@ -372,15 +389,23 @@
               </h3>
               <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 {#each selectedAssignment.Bijlagen as file}
-                  <div class="glass p-3 rounded-xl flex items-center justify-between hover:bg-surface-800/40 transition-colors group cursor-pointer">
+                  <button
+                    onclick={() => handleDownload(file)}
+                    disabled={downloadingFile != null}
+                    class="glass p-3 rounded-xl flex items-center justify-between hover:bg-surface-800/40 transition-colors group cursor-pointer w-full text-left disabled:opacity-50"
+                  >
                     <div class="flex items-center gap-3 overflow-hidden">
                       <div class="w-8 h-8 rounded-lg bg-blue-500/15 border border-blue-500/20 flex items-center justify-center text-blue-400 shrink-0">
-                        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>
+                        {#if downloadingFile === file.Naam}
+                          <div class="w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full animate-spin"></div>
+                        {:else}
+                          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>
+                        {/if}
                       </div>
                       <span class="text-sm text-gray-300 truncate font-medium">{file.Naam}</span>
                     </div>
-                    <svg class="w-4 h-4 text-gray-600 group-hover:text-primary-400 transition-colors" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
-                  </div>
+                    <svg class="w-4 h-4 text-gray-600 group-hover:text-primary-400 transition-colors shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+                  </button>
                 {/each}
               </div>
             </div>

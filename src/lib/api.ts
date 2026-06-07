@@ -84,8 +84,13 @@ export async function getCalendarEvent(
 export async function downloadFile(
   url: string,
   filename: string,
+  downloadDir?: string,
 ): Promise<string> {
-  return invoke("download_file", { url, filename });
+  return invoke("download_file", {
+    url,
+    filename,
+    downloadDir: downloadDir || "",
+  });
 }
 
 export async function createCalendarEvent(params: {

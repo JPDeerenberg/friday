@@ -19,6 +19,8 @@ pnpm tauri android build --apk  # Build Android APK
 - **Frontend tests**: `node src/lib/stores.test.ts` (Node.js built-in `test` module + `node:assert`)
 - **Backend tests**: `cargo test` in `src-tauri/` (uses `wiremock`)
 
+When everything is valid, update the version and Commit.
+
 ---
 
 ## Architecture

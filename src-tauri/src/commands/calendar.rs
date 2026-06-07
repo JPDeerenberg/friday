@@ -169,14 +169,25 @@ pub async fn download_file(
     client: State<'_, SharedClient>,
     url: String,
     filename: String,
+    download_dir: Option<String>,
 ) -> Result<String, String> {
     use std::io::Write;
     let mut c = client.lock().await;
 
-    // Get the standard downloads directory
-    let download_dir = dirs::download_dir()
-        .or_else(|| dirs::home_dir().map(|h| h.join("Downloads")))
-        .ok_or_else(|| "Could not find downloads directory".to_string())?;
+    // Use provided download directory, or fall back to system default
+    let download_dir = if let Some(ref dir) = download_dir {
+        if !dir.is_empty() {
+            std::path::PathBuf::from(dir)
+        } else {
+            dirs::download_dir()
+                .or_else(|| dirs::home_dir().map(|h| h.join("Downloads")))
+                .ok_or_else(|| "Could not find downloads directory".to_string())?
+        }
+    } else {
+        dirs::download_dir()
+            .or_else(|| dirs::home_dir().map(|h| h.join("Downloads")))
+            .ok_or_else(|| "Could not find downloads directory".to_string())?
+    };
 
     if !download_dir.exists() {
         std::fs::create_dir_all(&download_dir).map_err(|e| e.to_string())?;

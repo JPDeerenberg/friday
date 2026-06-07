@@ -8,18 +8,17 @@
 - [ ] **Notificaties** — robuust maken, werkt nu niet betrouwbaar
 - [ ] **Rate limiting** — zorg dat je niet gerate-limited wordt
 - [ ] **'Te laat'-filter** — werkend krijgen bij opdrachten filters
+- [ ] **Do not disturb** — werkend krijgen
+- [ ] **Exporteren** — JSON-bestanden exporteren (lessen, cijfers, etc.)
+- [ ] **Bestanden Downloaden** — bij huiswerk of opdrachten kunnen er bestanden bij zitten, nu werkt het niet
 
 ## ✨ Features
 
-- [x] **Exporteren** — JSON-bestanden exporteren (lessen, cijfers, etc.)
 - [ ] **HTML-parser (omgekeerd)** — bij huiswerk, zodat je met opmaak huiswerk kan invoeren
 - [ ] **Animaties** — voor mooiere overgangen en meer 'pop'
-- [ ] **Do not disturb** — werkend krijgen
-- [ ] **Uitlogknop** — bij desktop versie
 
 ## 🔧 Verbeteringen
 
-- [x] **Agenda verkleinen** — alles wat kleiner maken zodat het overzichtelijker is; kleuren verbeteren (o.a. bij afgevinkt huiswerk)
 - [ ] **Profiel** — fixen zodat alle info erop staat (zoals waar je woont)
 - [ ] **Cijferlijst filters** — aanhouden bij app afsluiten (in cache opslaan)
 - [ ] **Caching** — alles in cache, stil op de achtergrond verversen zodat je niet elke keer 2 seconden hoeft te wachten
@@ -48,6 +47,8 @@
 - [x] Verwijderknop snapshots — zichtbaar maken, nu is het verborgen
 - [x] **Cijfers op home** — bij resultaten fixen, nu staat er niks (alleen vakken waar je cijfers van hebt)
 - [x] **Voortgang jaren** — fixen, nu staat er niks
+- [x] **Uitlogknop** — bij desktop versie
+- [x] **Agenda verkleinen** — alles wat kleiner maken zodat het overzichtelijker is; kleuren verbeteren (o.a. bij afgevinkt huiswerk)
 
 ## Bij updaten:
 

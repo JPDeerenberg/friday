@@ -6,6 +6,7 @@
            exportAllData } from '$lib/api';
   import { fade, fly, slide } from 'svelte/transition';
   import { onMount } from 'svelte';
+  import { open } from '@tauri-apps/plugin-dialog';
 
   let isMobile = $state(false);
   let testingNotification = $state<string | null>(null);
@@ -27,6 +28,7 @@
   let logs = $state<{ time: string; level: 'info' | 'warn' | 'error'; msg: string }[]>([]);
   let exportBusy = $state(false);
   let exportResult = $state<string | null>(null);
+  let pickingDir = $state(false);
 
   function addLog(level: 'info' | 'warn' | 'error', msg: string) {
     const time = new Date().toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -227,6 +229,28 @@
     }
   }
 
+  async function pickDownloadDir() {
+    pickingDir = true;
+    try {
+      const selected = await open({
+        directory: true,
+        multiple: false,
+        title: 'Kies downloadmap',
+      });
+      if (selected && typeof selected === 'string') {
+        userSettings.update(s => ({ ...s, downloadDir: selected }));
+      }
+    } catch (e) {
+      console.error('Map kiezen mislukt:', e);
+    } finally {
+      pickingDir = false;
+    }
+  }
+
+  function clearDownloadDir() {
+    userSettings.update(s => ({ ...s, downloadDir: '' }));
+  }
+
   function toggleDebug() {
     debugOpen = !debugOpen;
     if (debugOpen && !debugInfo) loadDebugInfo();
@@ -289,6 +313,12 @@
       title: 'Exporteren',
       settings: [
         { id: 'exportAll', label: 'Alles Exporteren', description: 'Exporteer al je data (lessen, cijfers, opdrachten, etc.) naar JSON-bestanden.', type: 'action', action: () => doExport() },
+      ]
+    },
+    {
+      title: 'Downloads',
+      settings: [
+        { id: 'downloadDir', label: 'Downloadmap', description: 'Kies waar gedownloade bestanden worden opgeslagen. Leeg = systeemstandaard.', type: 'download-dir' },
       ]
     },
   ];
@@ -405,6 +435,31 @@
                 </button>
                 {#if setting.id === 'exportAll' && exportResult}
                   <p class="text-[9px] text-gray-400 font-mono mt-2 text-right max-w-[200px] leading-relaxed">{exportResult}</p>
+                {/if}
+              {:else if setting.type === 'download-dir'}
+                <div class="flex items-center gap-2">
+                  {#if $userSettings.downloadDir}
+                    <button
+                      onclick={clearDownloadDir}
+                      class="text-[10px] font-black text-red-400 uppercase tracking-widest hover:text-red-300 transition-colors px-2 py-1"
+                    >
+                      Herstel
+                    </button>
+                  {/if}
+                  <button
+                    onclick={pickDownloadDir}
+                    disabled={pickingDir}
+                    class="bg-primary-500/15 text-primary-400 text-[10px] font-black uppercase tracking-widest rounded-xl px-5 py-2.5 hover:bg-primary-500/25 transition-all active:scale-95 disabled:opacity-50 border border-primary-500/10 shadow-sm"
+                  >
+                    {pickingDir ? '⏳ ...' : 'Map Kiezen'}
+                  </button>
+                </div>
+                {#if $userSettings.downloadDir}
+                  <p class="text-[9px] text-gray-500 font-mono mt-2 text-right max-w-[200px] truncate leading-relaxed" title={$userSettings.downloadDir}>
+                    {$userSettings.downloadDir}
+                  </p>
+                {:else}
+                  <p class="text-[9px] text-gray-600 mt-2 text-right">Systeemstandaard</p>
                 {/if}
               {/if}
             </div>

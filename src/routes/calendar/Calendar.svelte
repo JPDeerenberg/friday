@@ -222,7 +222,8 @@
       const url = bijlage.Links.find((l: any) => l.Rel === 'Self')?.Href;
       if (!url) return;
       downloadingFile = bijlage.Naam;
-      const path = await downloadFile(url, bijlage.Naam);
+      const downloadDir = $userSettings.downloadDir || '';
+      const path = await downloadFile(url, bijlage.Naam, downloadDir);
       alert(`Bestand gedownload naar: ${path}`);
     } catch (e) {
       alert(`Download mislukt: ${e}`);
