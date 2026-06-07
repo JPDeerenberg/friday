@@ -50,6 +50,6 @@ pub struct Vak {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LeermiddelenResponse {
-    #[serde(rename = "Items")]
+    #[serde(rename = "Items", alias = "items")]
     pub items: Vec<Leermiddel>,
 }

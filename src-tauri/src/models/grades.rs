@@ -110,7 +110,7 @@ pub struct GradeSubject {
 /// Wrapper for the grades response
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GradesResponse {
-    #[serde(rename = "Items")]
+    #[serde(rename = "Items", alias = "items")]
     pub items: Vec<Grade>,
 }
 

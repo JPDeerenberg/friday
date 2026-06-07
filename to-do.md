@@ -11,7 +11,7 @@
 
 ## ✨ Features
 
-- [ ] **Exporteren** — JSON-bestanden exporteren (lessen, cijfers, etc.)
+- [x] **Exporteren** — JSON-bestanden exporteren (lessen, cijfers, etc.)
 - [ ] **HTML-parser (omgekeerd)** — bij huiswerk, zodat je met opmaak huiswerk kan invoeren
 - [ ] **Animaties** — voor mooiere overgangen en meer 'pop'
 - [ ] **Do not disturb** — werkend krijgen

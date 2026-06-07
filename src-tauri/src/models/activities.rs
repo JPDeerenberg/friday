@@ -67,12 +67,12 @@ pub struct ActivityElement {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ActivitiesResponse {
-    #[serde(rename = "Items")]
+    #[serde(rename = "Items", alias = "items")]
     pub items: Vec<Activity>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ActivityElementsResponse {
-    #[serde(rename = "Items")]
+    #[serde(rename = "Items", alias = "items")]
     pub items: Vec<ActivityElement>,
 }

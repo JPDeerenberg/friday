@@ -122,13 +122,13 @@ pub struct Absence {
 /// Wrapper for the Items array returned by Magister
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CalendarEventsResponse {
-    #[serde(rename = "Items")]
+    #[serde(rename = "Items", alias = "items")]
     pub items: Vec<CalendarEvent>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AbsencesResponse {
-    #[serde(rename = "Items")]
+    #[serde(rename = "Items", alias = "items")]
     pub items: Vec<Absence>,
 }
 

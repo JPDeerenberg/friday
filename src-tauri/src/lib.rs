@@ -104,6 +104,8 @@ pub fn run() {
             commands::notifications::set_night_sleep_config,
             commands::notifications::get_disable_all_notifications,
             commands::notifications::set_disable_all_notifications,
+            // Export
+            commands::export::export_all_data,
         ])
         .plugin(tauri_plugin_dialog::init())
         .run(tauri::generate_context!())

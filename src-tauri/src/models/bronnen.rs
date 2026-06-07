@@ -44,12 +44,12 @@ pub struct ExternalBronSource {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BronnenResponse {
-    #[serde(rename = "Items")]
+    #[serde(rename = "Items", alias = "items")]
     pub items: Vec<Bron>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExternalBronSourcesResponse {
-    #[serde(rename = "Items")]
+    #[serde(rename = "Items", alias = "items")]
     pub items: Vec<ExternalBronSource>,
 }

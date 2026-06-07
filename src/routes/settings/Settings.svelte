@@ -2,7 +2,8 @@
   import { userSettings } from '$lib/stores';
   import { currentPage } from '$lib/stores';
   import { triggerTestNotification, notifyNewMessage, notifyNewGrade, notifyDeadline, notifyCalendarChange,
-           triggerSync, getDebugInfo, getSyncStateDebug, clearSyncState, setSyncInterval, getSyncInterval, getNightSleepConfig, setNightSleepConfig, getDisableAllNotifications, setDisableAllNotifications } from '$lib/api';
+           triggerSync, getDebugInfo, getSyncStateDebug, clearSyncState, setSyncInterval, getSyncInterval, getNightSleepConfig, setNightSleepConfig, getDisableAllNotifications, setDisableAllNotifications,
+           exportAllData } from '$lib/api';
   import { fade, fly, slide } from 'svelte/transition';
   import { onMount } from 'svelte';
 
@@ -24,6 +25,8 @@
   let disableSyncAtNightEnd = $state(7);
   let disableAllNotifications = $state(false);
   let logs = $state<{ time: string; level: 'info' | 'warn' | 'error'; msg: string }[]>([]);
+  let exportBusy = $state(false);
+  let exportResult = $state<string | null>(null);
 
   function addLog(level: 'info' | 'warn' | 'error', msg: string) {
     const time = new Date().toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -202,6 +205,28 @@
     }
   }
 
+  async function doExport() {
+    exportBusy = true;
+    exportResult = null;
+    addLog('info', 'Exporteren gestart...');
+    try {
+      const result = await exportAllData();
+      if (result.success) {
+        const fileList = result.files.join(', ');
+        exportResult = `✅ ${result.files.length} bestanden geëxporteerd: ${fileList}`;
+        addLog('info', `Export voltooid: ${result.files.length} bestanden`);
+      } else {
+        exportResult = `❌ Fout: ${result.error ?? 'Onbekende fout'}`;
+        addLog('error', `Export mislukt: ${result.error}`);
+      }
+    } catch (e) {
+      exportResult = `❌ Fout: ${e}`;
+      addLog('error', `Export mislukt: ${e}`);
+    } finally {
+      exportBusy = false;
+    }
+  }
+
   function toggleDebug() {
     debugOpen = !debugOpen;
     if (debugOpen && !debugInfo) loadDebugInfo();
@@ -259,7 +284,13 @@
         { id: 'openDndSettings', label: 'DND Toegang', description: 'Open Android instellingen voor Niet Storen toegang.', type: 'action', action: () => openDndSettings() },
       ],
       hideIfDesktop: true
-    }
+    },
+    {
+      title: 'Exporteren',
+      settings: [
+        { id: 'exportAll', label: 'Alles Exporteren', description: 'Exporteer al je data (lessen, cijfers, opdrachten, etc.) naar JSON-bestanden.', type: 'action', action: () => doExport() },
+      ]
+    },
   ];
 
   const themeColors = [
@@ -357,15 +388,24 @@
               {:else if setting.type === 'action'}
                 <button 
                   onclick={() => setting.action()}
-                  disabled={testingNotification === setting.id.split('test')[1]}
+                  disabled={setting.id === 'exportAll' ? exportBusy : (testingNotification === setting.id.split('test')[1])}
                   class="bg-primary-500/15 text-primary-400 text-[10px] font-black uppercase tracking-widest rounded-xl px-5 py-2.5 hover:bg-primary-500/25 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-wait border border-primary-500/10 shadow-sm"
                 >
-                  {#if testingNotification === setting.id.split('test')[1]}
+                  {#if setting.id === 'exportAll'}
+                    {#if exportBusy}
+                      <span class="animate-pulse">⏳ Bezig met exporteren...</span>
+                    {:else}
+                      Exporteren
+                    {/if}
+                  {:else if testingNotification === setting.id.split('test')[1]}
                     <span class="animate-pulse">⏳ Wachten...</span>
                   {:else}
                     Testen
                   {/if}
                 </button>
+                {#if setting.id === 'exportAll' && exportResult}
+                  <p class="text-[9px] text-gray-400 font-mono mt-2 text-right max-w-[200px] leading-relaxed">{exportResult}</p>
+                {/if}
               {/if}
             </div>
           {/each}

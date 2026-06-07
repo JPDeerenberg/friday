@@ -23,9 +23,25 @@ pub async fn get_schoolyears(
     };
 
     let data = c.get(&path).await.map_err(|e| e.to_string())?;
-    let resp: SchoolyearsResponse = serde_json::from_value(data).map_err(|e| e.to_string())?;
 
-    Ok(resp.items)
+    // Handle multiple possible response formats:
+    // 1. {"Items": [...]} / {"items": [...]} — paginated wrapper
+    // 2. [...] — bare array
+    let items: Vec<Schoolyear> = data["Items"].as_array()
+        .or_else(|| data["items"].as_array())
+        .map(|items| serde_json::from_value(serde_json::to_value(items).unwrap()))
+        .or_else(|| data.as_array().map(|arr| {
+            serde_json::from_value(serde_json::to_value(arr).unwrap())
+        }))
+        .unwrap_or_else(|| {
+            serde_json::from_value::<SchoolyearsResponse>(data.clone()).map(|r| r.items)
+        })
+        .map_err(|e| {
+            eprintln!("Failed to parse schoolyears. Raw data keys: {:?}", data.as_object().map(|o| o.keys().collect::<Vec<_>>()));
+            format!("Failed to parse schoolyears: {}", e)
+        })?;
+
+    Ok(items)
 }
 
 /// Get all grades for a specific schoolyear enrollment.
@@ -56,9 +72,48 @@ pub async fn get_grades(
     );
 
     let data = c.get(&path).await.map_err(|e| e.to_string())?;
-    let resp: GradesResponse = serde_json::from_value(data).map_err(|e| e.to_string())?;
 
-    Ok(resp.items)
+    // Handle multiple possible response formats:
+    // 1. {"Items": [...]} / {"items": [...]} — paginated wrapper
+    // 2. [...] — bare array
+    // 3. {"CijferVakken": [...]} — flat CijferOverzicht structure
+    // 4. {"CijferOverzicht": {"CijferVakken": [...]}} — nested CijferOverzicht
+    // 5. Other — fallback via GradesResponse struct
+    let items: Vec<Grade> = data["Items"].as_array()
+        .or_else(|| data["items"].as_array())
+        .map(|items| serde_json::from_value(serde_json::to_value(items).unwrap()).map_err(|e: serde_json::Error| e.to_string()))
+        .or_else(|| data.as_array().map(|arr| {
+            serde_json::from_value(serde_json::to_value(arr).unwrap()).map_err(|e: serde_json::Error| e.to_string())
+        }))
+        .or_else(|| {
+            // CijferOverzicht format: extract grades from CijferVakken[*].Cijfers
+            extract_grades_from_vakken(data["CijferVakken"].as_array())
+        })
+        .or_else(|| {
+            // Nested CijferOverzicht: {"CijferOverzicht": {"CijferVakken": [...]}}
+            extract_grades_from_vakken(data["CijferOverzicht"]["CijferVakken"].as_array())
+        })
+        .unwrap_or_else(|| {
+            // Final fallback: try full struct deserialization
+            serde_json::from_value::<GradesResponse>(data.clone())
+                .map(|r| r.items)
+                .map_err(|e| e.to_string())
+        })?;
+
+    Ok(items)
+}
+
+/// Helper: extract grades from an optional array of CijferVak objects.
+fn extract_grades_from_vakken(vakken: Option<&Vec<serde_json::Value>>) -> Option<Result<Vec<Grade>, String>> {
+    vakken.map(|vakken| {
+        let all_grades: Vec<Grade> = vakken.iter()
+            .filter_map(|vak| vak["Cijfers"].as_array())
+            .flat_map(|cijfers| {
+                cijfers.iter().filter_map(|c| serde_json::from_value(c.clone()).ok())
+            })
+            .collect();
+        Ok(all_grades)
+    })
 }
 
 /// Get extra grade column info (weight, description, test date).
@@ -166,10 +221,28 @@ pub async fn get_recent_grades(
         e.to_string()
     })?;
 
-    let resp: GradesResponse = serde_json::from_value(data).map_err(|e| {
-        println!("Failed to parse recent grades: {}", e);
-        e.to_string()
-    })?;
+    // Handle multiple possible response formats:
+    // 1. {"Items": [...]} / {"items": [...]} — paginated wrapper
+    // 2. [...] — bare array
+    // 3. {"CijferVakken": [...]} — flat CijferOverzicht structure
+    // 4. {"CijferOverzicht": {"CijferVakken": [...]}} — nested CijferOverzicht
+    let items: Vec<Grade> = data["Items"].as_array()
+        .or_else(|| data["items"].as_array())
+        .map(|items| serde_json::from_value(serde_json::to_value(items).unwrap()).map_err(|e: serde_json::Error| e.to_string()))
+        .or_else(|| data.as_array().map(|arr| {
+            serde_json::from_value(serde_json::to_value(arr).unwrap()).map_err(|e: serde_json::Error| e.to_string())
+        }))
+        .or_else(|| {
+            extract_grades_from_vakken(data["CijferVakken"].as_array())
+        })
+        .or_else(|| {
+            extract_grades_from_vakken(data["CijferOverzicht"]["CijferVakken"].as_array())
+        })
+        .unwrap_or_else(|| {
+            serde_json::from_value::<GradesResponse>(data.clone())
+                .map(|r| r.items)
+                .map_err(|e| e.to_string())
+        })?;
 
-    Ok(resp.items)
+    Ok(items)
 }

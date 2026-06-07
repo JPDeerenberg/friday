@@ -148,7 +148,7 @@ pub struct UploadedFile {
 /// Wrapper for the assignments response
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AssignmentsResponse {
-    #[serde(rename = "Items")]
+    #[serde(rename = "Items", alias = "items")]
     pub items: Vec<Assignment>,
 }
 

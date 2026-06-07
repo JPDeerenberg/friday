@@ -132,16 +132,19 @@ fn default_upload_type() -> String {
 /// Responses
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FoldersResponse {
+    #[serde(rename = "Items", alias = "items")]
     pub items: Vec<MessagesFolder>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MessagesResponse {
+    #[serde(rename = "Items", alias = "items")]
     pub items: Option<Vec<Bericht>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContactsResponse {
+    #[serde(rename = "Items", alias = "items")]
     pub items: Vec<Contact>,
 }
 

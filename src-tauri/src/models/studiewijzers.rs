@@ -67,12 +67,12 @@ pub struct StudiewijzerOnderdeelDetail {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StudiewijzersResponse {
-    #[serde(rename = "Items")]
+    #[serde(rename = "Items", alias = "items")]
     pub items: Vec<Studiewijzer>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StudiewijzerOnderdelenResponse {
-    #[serde(rename = "Items")]
+    #[serde(rename = "Items", alias = "items")]
     pub items: Vec<StudiewijzerOnderdeel>,
 }

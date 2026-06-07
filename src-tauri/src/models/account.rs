@@ -134,6 +134,6 @@ pub struct ProfileCareer {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProfileAddressResponse {
-    #[serde(rename = "Items")]
+    #[serde(rename = "Items", alias = "items")]
     pub items: Vec<ProfileAddress>,
 }
