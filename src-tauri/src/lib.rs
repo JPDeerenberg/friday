@@ -1,3 +1,4 @@
+mod ai;
 mod auth;
 mod client;
 mod commands;
@@ -104,6 +105,10 @@ pub fn run() {
             commands::notifications::set_night_sleep_config,
             commands::notifications::get_disable_all_notifications,
             commands::notifications::set_disable_all_notifications,
+            // AI relevance scoring
+            commands::notifications::get_relevance_threshold,
+            commands::notifications::set_relevance_threshold,
+            commands::notifications::get_notification_history,
             // Export
             commands::export::export_all_data,
         ])

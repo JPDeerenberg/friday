@@ -427,6 +427,32 @@ export async function setSyncInterval(seconds: number): Promise<string> {
   return invoke("set_sync_interval", { seconds });
 }
 
+// === AI Relevance Scoring ===
+
+/**
+ * Get the current relevance threshold for AI notification filtering.
+ * Returns a value between 0 and 100.
+ */
+export async function getRelevanceThreshold(): Promise<number> {
+  return invoke("get_relevance_threshold");
+}
+
+/**
+ * Set the relevance threshold for AI notification filtering.
+ * @param threshold Value between 0 and 100.
+ */
+export async function setRelevanceThreshold(threshold: number): Promise<string> {
+  return invoke("set_relevance_threshold", { threshold });
+}
+
+/**
+ * Get the notification history for debugging purposes.
+ * Returns a JSON string mapping notification keys to ignore counts.
+ */
+export async function getNotificationHistory(): Promise<string> {
+  return invoke("get_notification_history");
+}
+
 export async function getNightSleepConfig(): Promise<any> {
   return invoke("get_night_sleep_config");
 }

@@ -24,7 +24,8 @@ object SyncStateManager {
         val newMessages: List<MessageInfo>,
         val newGrades: List<GradeInfo>,
         val upcomingDeadlines: List<DeadlineInfo>,
-        val calendarChanges: List<CalendarChangeInfo>
+        val calendarChanges: List<CalendarChangeInfo>,
+        val relevanceScore: Int = 50 // default medium relevance
     )
     
     data class MessageInfo(
@@ -143,6 +144,14 @@ object SyncStateManager {
         val upcomingDeadlines = detectAssignmentChanges(context, prevAssignments, currentAssignments)
         val calendarChanges = detectCalendarChanges(prevCalendar, currentCalendar)
         
+        // Calculate overall relevance score based on detected changes
+        val relevanceScore = calculateOverallRelevanceScore(
+            newMessages.size,
+            newGrades.size,
+            upcomingDeadlines.size,
+            calendarChanges.size
+        )
+        
         // Save new state
         val newState = JSONObject().apply {
             put("messages", currentMessages)
@@ -157,7 +166,8 @@ object SyncStateManager {
             newMessages = newMessages,
             newGrades = newGrades,
             upcomingDeadlines = upcomingDeadlines,
-            calendarChanges = calendarChanges
+            calendarChanges = calendarChanges,
+            relevanceScore = relevanceScore
         )
     }
     
@@ -391,6 +401,29 @@ object SyncStateManager {
             }
         }
         return false
+    }
+
+    /**
+     * Calculate an overall relevance score based on the number of detected changes.
+     * Higher counts yield higher scores, capped at 100.
+     */
+    private fun calculateOverallRelevanceScore(
+        newMessagesCount: Int,
+        newGradesCount: Int,
+        upcomingDeadlinesCount: Int,
+        calendarChangesCount: Int
+    ): Int {
+        var score = 0
+        // Each new message adds 10 points (max 40)
+        score += minOf(newMessagesCount * 10, 40)
+        // Each new grade adds 15 points (max 60)
+        score += minOf(newGradesCount * 15, 60)
+        // Each upcoming deadline adds 20 points (max 80)
+        score += minOf(upcomingDeadlinesCount * 20, 80)
+        // Each calendar change adds 5 points (max 20)
+        score += minOf(calendarChangesCount * 5, 20)
+        // Cap at 100
+        return minOf(score, 100)
     }
 
     private fun parseMagisterDate(dateStr: String): Long? {

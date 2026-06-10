@@ -31,8 +31,22 @@ object NotificationHelper {
     private const val ID_GRADE = 4001
     private const val ID_DEADLINE = 5001
     
+    // SharedPreferences key for relevance threshold
+    private const val PREF_RELEVANCE_THRESHOLD = "relevance_threshold"
+    private const val DEFAULT_RELEVANCE_THRESHOLD = 30
+
     @JvmStatic
     fun showNotification(context: Context, type: Int, title: String, message: String, extra: String?) {
+        // Check relevance threshold before showing notification
+        val threshold = getRelevanceThreshold(context)
+        val relevanceScore = extra?.let { extractRelevanceScore(it) } ?: 50
+        
+        if (relevanceScore < threshold) {
+            // Notification is below threshold, record as ignored and skip
+            recordIgnoredNotification(context, type, title)
+            return
+        }
+        
         val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         
         // Create channels based on type
@@ -75,6 +89,48 @@ object NotificationHelper {
         } catch (e: Exception) {
             e.printStackTrace()
         }
+    }
+
+    /**
+     * Extract relevance score from the extra JSON string.
+     * Expected format: {"relevanceScore": 75, ...}
+     * Returns default 50 if not present.
+     */
+    private fun extractRelevanceScore(extra: String): Int {
+        return try {
+            val json = org.json.JSONObject(extra)
+            json.optInt("relevanceScore", 50)
+        } catch (e: Exception) {
+            50
+        }
+    }
+
+    /**
+     * Record that a notification was ignored (below threshold) for future AI learning.
+     */
+    private fun recordIgnoredNotification(context: Context, type: Int, title: String) {
+        val prefs = context.getSharedPreferences("friday_prefs", Context.MODE_PRIVATE)
+        val key = "ignored_${type}_${title.hashCode()}"
+        val currentCount = prefs.getInt(key, 0)
+        prefs.edit().putInt(key, currentCount + 1).apply()
+    }
+
+    /**
+     * Get the current relevance threshold from SharedPreferences.
+     */
+    @JvmStatic
+    fun getRelevanceThreshold(context: Context): Int {
+        val prefs = context.getSharedPreferences("friday_prefs", Context.MODE_PRIVATE)
+        return prefs.getInt(PREF_RELEVANCE_THRESHOLD, DEFAULT_RELEVANCE_THRESHOLD)
+    }
+
+    /**
+     * Set the relevance threshold (called from Rust via JNI).
+     */
+    @JvmStatic
+    fun setRelevanceThreshold(context: Context, threshold: Int) {
+        val prefs = context.getSharedPreferences("friday_prefs", Context.MODE_PRIVATE)
+        prefs.edit().putInt(PREF_RELEVANCE_THRESHOLD, threshold.coerceIn(0, 100)).apply()
     }
     
     private fun createChannels(notificationManager: NotificationManager) {
