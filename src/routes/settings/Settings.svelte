@@ -4,6 +4,7 @@
   import { triggerTestNotification, notifyNewMessage, notifyNewGrade, notifyDeadline, notifyCalendarChange,
            triggerSync, getDebugInfo, getSyncStateDebug, clearSyncState, setSyncInterval, getSyncInterval, getNightSleepConfig, setNightSleepConfig, getDisableAllNotifications, setDisableAllNotifications,
            exportAllData } from '$lib/api';
+  import { getAiConfig, setAiConfig, validateAiKey, listAiModels, type AiConfig, type AiProviderType, AI_PROVIDERS } from '$lib/ai';
   import { fade, fly, slide } from 'svelte/transition';
   import { onMount } from 'svelte';
   import { open } from '@tauri-apps/plugin-dialog';
@@ -29,6 +30,20 @@
   let exportBusy = $state(false);
   let exportResult = $state<string | null>(null);
   let pickingDir = $state(false);
+
+  // --- AI config state ---
+  let aiApiKey = $state('');
+  let aiBaseUrl = $state('https://api.openai.com/v1');
+  let aiModel = $state('gpt-4o-mini');
+  let aiEnabled = $state(false);
+  let aiProvider = $state<AiProviderType>('openai');
+  let aiUseDataAccess = $state(true); // Whether to use tool calling with Magister data
+  let aiTesting = $state(false);
+  let aiTestResult = $state<string | null>(null);
+  let aiTestSuccess = $state(false);
+  let aiSaving = $state(false);
+  let aiLoaded = $state(false);
+  let aiShowKey = $state(false);
 
   function addLog(level: 'info' | 'warn' | 'error', msg: string) {
     const time = new Date().toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -63,6 +78,20 @@
         disableAllNotifications = disabled;
     }).catch(e => {
         console.error("Failed to load disable all notifications config", e);
+    });
+
+    // Load AI config
+    getAiConfig().then((config: AiConfig) => {
+      aiApiKey = config.api_key;
+      aiBaseUrl = config.base_url;
+      aiModel = config.model;
+      aiEnabled = config.enabled;
+      aiProvider = config.provider || 'openai';
+      aiUseDataAccess = config.use_data_access ?? true;
+      aiLoaded = true;
+    }).catch(e => {
+      console.error("Failed to load AI config", e);
+      aiLoaded = true;
     });
   });
 
@@ -256,7 +285,53 @@
     if (debugOpen && !debugInfo) loadDebugInfo();
   }
 
+  async function saveAiConfig() {
+    aiSaving = true;
+    try {
+      await setAiConfig(aiApiKey, aiBaseUrl, aiModel, aiEnabled, aiProvider, aiUseDataAccess);
+      aiTestResult = null;
+    } catch (e) {
+      aiTestResult = `❌ Opslaan mislukt: ${e}`;
+      aiTestSuccess = false;
+    } finally {
+      aiSaving = false;
+    }
+  }
+
+  async function testAiConnection() {
+    aiTesting = true;
+    aiTestResult = null;
+    try {
+      // Save first, then test
+      await setAiConfig(aiApiKey, aiBaseUrl, aiModel, true, aiProvider, aiUseDataAccess);
+      const valid = await validateAiKey();
+      if (valid) {
+        aiTestResult = '✅ Verbinding succesvol! AI is klaar voor gebruik.';
+        aiTestSuccess = true;
+      } else {
+        aiTestResult = '❌ Verbinding mislukt. Controleer je API-sleutel en URL.';
+        aiTestSuccess = false;
+      }
+    } catch (e) {
+      aiTestResult = `❌ Fout: ${e}`;
+      aiTestSuccess = false;
+    } finally {
+      aiTesting = false;
+    }
+  }
+
+  const aiBaseUrlPresets = [
+    { value: 'https://api.openai.com/v1', label: 'OpenAI' },
+    { value: 'http://localhost:11434/v1', label: 'Ollama (lokaal)' },
+    { value: 'http://localhost:1234/v1', label: 'LM Studio (lokaal)' },
+  ];
+
   const sections: any[] = [
+    {
+      title: 'AI Assistent',
+      description: 'Configureer AI voor studiedvies, cijferanalyse, samenvattingen en meer.',
+      isAi: true,
+    },
     {
       title: 'Agenda',
       settings: [
@@ -361,7 +436,168 @@
       {#if !section.hideIfDesktop || isMobile}
         <section in:fly={{ y: 20, delay: i * 100 }} class="space-y-4">
           <h2 class="text-[10px] font-black text-gray-500 uppercase tracking-[0.3em] px-2">{section.title}</h2>
-        
+
+        {#if section.isAi}
+          <!-- AI Configuration Card -->
+          {#if aiLoaded}
+            <div class="glass p-6 rounded-3xl border-primary-500/20 space-y-5 transition-all hover:bg-surface-800/40">
+              <p class="text-[10px] text-gray-500 font-medium tracking-widest leading-relaxed">Configureer AI voor studiedvies, cijferanalyse, samenvattingen en meer.</p>
+
+              <!-- Enable toggle -->
+              <div class="flex items-center justify-between">
+                <div>
+                  <p class="text-sm font-bold text-gray-100">AI Assistent inschakelen</p>
+                  <p class="text-[10px] text-gray-500 mt-1 uppercase tracking-wider">Zet AI aan voor alle pagina's</p>
+                </div>
+                <label class="relative inline-flex items-center cursor-pointer">
+                  <input type="checkbox" bind:checked={aiEnabled} onchange={saveAiConfig} class="sr-only peer">
+                  <div class="w-11 h-6 bg-surface-700 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-500 shadow-inner"></div>
+                </label>
+              </div>
+
+              <div class="w-full h-px bg-white/5"></div>
+
+              <!-- API Key -->
+              <div class="space-y-2">
+                <label for="aiApiKey" class="text-[10px] font-black text-gray-500 uppercase tracking-widest">API Sleutel</label>
+                <div class="flex gap-2">
+                  <input
+                    id="aiApiKey"
+                    type={aiShowKey ? 'text' : 'password'}
+                    bind:value={aiApiKey}
+                    placeholder="sk-..."
+                    class="flex-1 bg-surface-800/80 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-primary-500/50 transition-all font-mono"
+                  />
+                  <button
+                    onclick={() => aiShowKey = !aiShowKey}
+                    class="px-3 py-2 rounded-xl bg-surface-800/60 border border-white/10 text-gray-400 hover:text-white transition-all text-[10px] font-bold"
+                  >
+                    {aiShowKey ? 'Verberg' : 'Toon'}
+                  </button>
+                </div>
+              </div>
+
+              <!-- Base URL -->
+              <div class="space-y-2">
+                <label for="aiBaseUrl" class="text-[10px] font-black text-gray-500 uppercase tracking-widest">API Basis URL</label>
+                <input
+                  id="aiBaseUrl"
+                  type="text"
+                  bind:value={aiBaseUrl}
+                  class="w-full bg-surface-800/80 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-primary-500/50 transition-all font-mono"
+                />
+                <div class="flex flex-wrap gap-2 mt-2">
+                  {#each aiBaseUrlPresets as preset}
+                    <button
+                      onclick={() => aiBaseUrl = preset.value}
+                      class="px-3 py-1.5 rounded-xl bg-surface-800/60 border border-white/5 text-[10px] font-bold text-gray-400 hover:text-white hover:bg-surface-700/60 transition-all {aiBaseUrl === preset.value ? 'border-primary-500/30 text-primary-400' : ''}"
+                    >
+                      {preset.label}
+                    </button>
+                  {/each}
+                </div>
+              </div>
+
+              <!-- Provider -->
+              <div class="space-y-2">
+                <label class="text-[10px] font-black text-gray-500 uppercase tracking-widest">AI Provider</label>
+                <div class="grid grid-cols-2 gap-2">
+                  {#each Object.entries(AI_PROVIDERS) as [key, info]}
+                    <button
+                      onclick={() => {
+                        aiProvider = key as AiProviderType;
+                        aiBaseUrl = info.defaultBaseUrl;
+                        aiModel = info.defaultModel;
+                      }}
+                      class="px-3 py-2.5 rounded-xl border text-[9px] font-bold uppercase tracking-wider transition-all text-left
+                        {aiProvider === key
+                          ? 'bg-primary-500/20 border-primary-500/40 text-primary-300 shadow-lg shadow-primary-500/10'
+                          : 'bg-surface-800/60 border-white/5 text-gray-400 hover:bg-surface-700/60 hover:text-gray-200'}"
+                    >
+                      <span class="block text-[10px] font-black">{info.label}</span>
+                      <span class="block text-[8px] font-normal opacity-70 mt-0.5 normal-case tracking-normal">{info.description}</span>
+                    </button>
+                  {/each}
+                </div>
+              </div>
+
+              <!-- Model -->
+              <div class="space-y-2">
+                <label for="aiModel" class="text-[10px] font-black text-gray-500 uppercase tracking-widest">Model</label>
+                <input
+                  id="aiModel"
+                  type="text"
+                  bind:value={aiModel}
+                  placeholder="gpt-4o-mini"
+                  class="w-full bg-surface-800/80 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-primary-500/50 transition-all"
+                />
+              </div>
+
+              <div class="w-full h-px bg-white/5"></div>
+
+              <!-- Data Access Toggle -->
+              <div class="flex items-center justify-between">
+                <div>
+                  <p class="text-sm font-bold text-gray-100">Toegang tot schoolgegevens</p>
+                  <p class="text-[10px] text-gray-500 mt-1 uppercase tracking-wider leading-relaxed">
+                    Laat AI je rooster, cijfers, opdrachten en berichten uitlezen via tool calling
+                  </p>
+                </div>
+                <label class="relative inline-flex items-center cursor-pointer">
+                  <input type="checkbox" bind:checked={aiUseDataAccess} class="sr-only peer">
+                  <div class="w-11 h-6 bg-surface-700 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500 shadow-inner"></div>
+                </label>
+              </div>
+
+              {#if aiUseDataAccess}
+                <div class="rounded-2xl px-4 py-3 bg-primary-500/5 border border-primary-500/10 text-[10px] text-gray-400 leading-relaxed">
+                  <span class="font-black text-primary-400">✓ Data-toegang ingeschakeld</span><br>
+                  De AI kan nu o.a.:
+                  <ul class="mt-1 space-y-1 list-disc list-inside">
+                    <li>Je lesrooster ophalen voor vandaag of morgen</li>
+                    <li>Recente cijfers en gemiddelden bekijken</li>
+                    <li>Huiswerk en opdrachten opzoeken</li>
+                    <li>Berichten en absentie checken</li>
+                    <li>Een compleet dagoverzicht geven</li>
+                  </ul>
+                </div>
+              {:else}
+                <div class="rounded-2xl px-4 py-3 bg-amber-500/5 border border-amber-500/10 text-[10px] text-gray-400 leading-relaxed">
+                  <span class="font-black text-amber-400">⚠ Data-toegang uitgeschakeld</span><br>
+                  De AI kan alleen algemene vragen beantwoorden zonder je schoolgegevens te zien.
+                </div>
+              {/if}
+
+              <!-- Actions -->
+              <div class="flex gap-3 pt-2">
+                <button
+                  onclick={saveAiConfig}
+                  disabled={aiSaving}
+                  class="flex-1 py-3 rounded-2xl bg-primary-500/20 border border-primary-500/30 text-primary-400 hover:bg-primary-500/30 transition-all text-[10px] font-black uppercase tracking-widest disabled:opacity-50"
+                >
+                  {aiSaving ? '⏳ Opslaan...' : 'Opslaan'}
+                </button>
+                <button
+                  onclick={testAiConnection}
+                  disabled={aiTesting || !aiApiKey}
+                  class="flex-1 py-3 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20 transition-all text-[10px] font-black uppercase tracking-widest disabled:opacity-50"
+                >
+                  {aiTesting ? '⏳ Testen...' : 'Test verbinding'}
+                </button>
+              </div>
+
+              {#if aiTestResult}
+                <div class="rounded-2xl px-5 py-3 text-[11px] font-medium {aiTestSuccess ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400' : 'bg-red-500/10 border border-red-500/20 text-red-400'}">
+                  {aiTestResult}
+                </div>
+              {/if}
+            </div>
+          {:else}
+            <div class="glass p-8 rounded-3xl border-white/5 flex items-center justify-center">
+              <div class="w-6 h-6 border-2 border-primary-500 border-t-transparent rounded-full animate-spin"></div>
+            </div>
+          {/if}
+        {:else}
         <div class="space-y-2">
           {#each section.settings as setting}
             <div class="glass p-5 rounded-3xl border-white/5 flex items-center justify-between gap-6 transition-all hover:bg-surface-800/40">
@@ -372,17 +608,17 @@
 
               {#if setting.type === 'toggle'}
                 <label class="relative inline-flex items-center cursor-pointer">
-                  <input 
-                    type="checkbox" 
-                    checked={$userSettings[setting.id]} 
+                  <input
+                    type="checkbox"
+                    checked={$userSettings[setting.id]}
                     onchange={(e) => updateToggle(setting.id, e.currentTarget.checked)}
                     class="sr-only peer"
                   >
                   <div class="w-11 h-6 bg-surface-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-500/80 shadow-inner"></div>
                 </label>
               {:else if setting.type === 'number'}
-                <input 
-                  type="number" 
+                <input
+                  type="number"
                   value={$userSettings[setting.id]}
                   oninput={(e) => updateNumber(setting.id, e.currentTarget.value)}
                   min={setting.min}
@@ -398,15 +634,15 @@
                       class="group flex flex-col items-center gap-1.5"
                     >
                       <div class="w-10 h-10 rounded-full {color.bg} transition-all border-2
-                                 {$userSettings[setting.id] === color.id 
-                                   ? 'border-white scale-110 shadow-lg shadow-white/20' 
+                                 {$userSettings[setting.id] === color.id
+                                   ? 'border-white scale-110 shadow-lg shadow-white/20'
                                    : 'border-transparent opacity-60 group-hover:opacity-100 group-hover:scale-105 shadow-inner'}"></div>
                       <span class="text-[8px] font-black uppercase tracking-tighter text-gray-600 group-hover:text-gray-400 transition-colors">{color.label}</span>
                     </button>
                   {/each}
                 </div>
               {:else if setting.type === 'select'}
-                <select 
+                <select
                   value={$userSettings[setting.id]}
                   onchange={(e) => updateSetting(setting.id, e.currentTarget.value)}
                   class="bg-surface-800 border-none text-gray-200 text-[10px] font-black uppercase tracking-widest rounded-xl px-4 py-2.5 outline-none cursor-pointer hover:bg-surface-700 transition-colors shadow-sm"
@@ -416,7 +652,7 @@
                   {/each}
                 </select>
               {:else if setting.type === 'action'}
-                <button 
+                <button
                   onclick={() => setting.action()}
                   disabled={setting.id === 'exportAll' ? exportBusy : (testingNotification === setting.id.split('test')[1])}
                   class="bg-primary-500/15 text-primary-400 text-[10px] font-black uppercase tracking-widest rounded-xl px-5 py-2.5 hover:bg-primary-500/25 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-wait border border-primary-500/10 shadow-sm"
@@ -465,6 +701,7 @@
             </div>
           {/each}
         </div>
+      {/if}
       </section>
       {/if}
     {/each}

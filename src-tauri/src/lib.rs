@@ -1,4 +1,5 @@
 mod ai;
+mod ai_client;
 mod auth;
 mod client;
 mod commands;
@@ -8,10 +9,11 @@ mod models;
 pub mod jni;
 
 use client::{MagisterClient, SharedClient};
+use commands::ai::AiState;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-// use tauri::Manager; // already imported in some blocks or traits
+use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -20,13 +22,17 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_opener::init())
-        .setup(|_app| {
+        .setup(|app| {
+            // Initialize AI state with app data directory
+            let app_data_dir = app.path().app_data_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+            let ai_state = AiState::new(app_data_dir);
+            app.manage(ai_state);
             #[cfg(mobile)]
             {
                 use tauri::Emitter;
                 use tauri_plugin_deep_link::DeepLinkExt;
-                let app_handle = _app.handle().clone();
-                _app.deep_link().on_open_url(move |event| {
+                let app_handle = app.handle().clone();
+                app.deep_link().on_open_url(move |event| {
                     for url in event.urls() {
                         if url.scheme() == "m6loapp" {
                             app_handle.emit("auth-callback", url.as_str()).ok();
@@ -109,6 +115,14 @@ pub fn run() {
             commands::notifications::get_relevance_threshold,
             commands::notifications::set_relevance_threshold,
             commands::notifications::get_notification_history,
+            // AI commands
+            commands::ai::get_ai_config,
+            commands::ai::set_ai_config,
+            commands::ai::validate_ai_key,
+            commands::ai::ai_chat,
+            commands::ai::ai_chat_with_tools,
+            commands::ai::ai_page_insight,
+            commands::ai::list_ai_models,
             // Export
             commands::export::export_all_data,
         ])

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { getMessageFolders, getMessages, getMessageDetail, markMessagesAsRead, searchContacts, sendMessage } from '$lib/api';
+  import { aiChat, getAiConfig } from '$lib/ai';
   import { onMount } from 'svelte';
   import { slide, fade } from 'svelte/transition';
 
@@ -13,6 +14,40 @@
   let showCompose = $state(false);
 
   let panel = $state<'list' | 'detail'>('list');
+
+  // AI Message Summary
+  let aiSummary = $state<string | null>(null);
+  let aiSummaryLoading = $state(false);
+  let aiMessageId = $state<number | null>(null);
+
+  async function summarizeMessage(message: any) {
+    if (aiSummaryLoading) return;
+    aiSummaryLoading = true;
+    aiSummary = null;
+    aiMessageId = message?.Id ?? null;
+
+    try {
+      const config = await getAiConfig();
+      if (!config.enabled || !config.api_key) {
+        aiSummary = '⚠️ AI is niet ingesteld. Ga naar Instellingen > AI.';
+        return;
+      }
+
+      const content = message.Inhoud || '';
+      const cleaned = content.replace(/<[^>]*>/g, '').substring(0, 3000);
+      const subject = message.Onderwerp || 'Onbekend onderwerp';
+
+      const response = await aiChat([
+        { role: "system", content: "Je bent een behulpzame assistent. Vat het volgende bericht samen in 2-3 zinnen in het Nederlands." },
+        { role: "user", content: `Onderwerp: ${subject}\n\nBericht:\n${cleaned}` },
+      ]);
+      aiSummary = response;
+    } catch (e) {
+      aiSummary = '⚠️ Kon het bericht niet samenvatten.';
+    } finally {
+      aiSummaryLoading = false;
+    }
+  }
 
   // Filters & Search
   let msgFilter = $state<'all' | 'unread' | 'priority'>('all');
@@ -401,6 +436,28 @@
             </div>
           {/if}
 
+          <!-- AI Summary -->
+          <div class="space-y-2">
+            <button
+              onclick={() => summarizeMessage(selectedMessage)}
+              disabled={aiSummaryLoading}
+              class="flex items-center gap-2 px-4 py-2 rounded-2xl bg-primary-500/10 border border-primary-500/20 text-primary-400 hover:bg-primary-500/20 transition-all text-[10px] font-black uppercase tracking-widest disabled:opacity-50"
+            >
+              {#if aiSummaryLoading && aiMessageId === selectedMessage?.Id}
+                <div class="w-3 h-3 border-2 border-primary-400 border-t-transparent rounded-full animate-spin"></div>
+                Samenvatten...
+              {:else}
+                <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2a4 4 0 0 1 4 4c0 2-2 3-4 5-2-2-4-3-4-5a4 4 0 0 1 4-4z"/><path d="M12 14l-2 6h4l-2-6z"/></svg>
+                Samenvatting (AI)
+              {/if}
+            </button>
+            {#if aiSummary && aiMessageId === selectedMessage?.Id}
+              <div class="p-4 rounded-2xl bg-primary-500/5 border border-primary-500/10 text-sm text-gray-200 leading-relaxed">
+                {aiSummary}
+              </div>
+            {/if}
+          </div>
+
           <div class="pt-4 border-t border-surface-800/50 flex flex-wrap gap-2">
             <button
               onclick={replyToMessage}
@@ -457,6 +514,28 @@
             {:else}
               <p class="text-sm text-gray-600 italic">Geen berichtinhoud</p>
             {/if}
+            <!-- AI Summary (mobile) -->
+            <div class="space-y-2">
+              <button
+                onclick={() => summarizeMessage(selectedMessage)}
+                disabled={aiSummaryLoading}
+                class="flex items-center justify-center gap-2 py-2.5 rounded-2xl bg-primary-500/10 border border-primary-500/20 text-primary-400 hover:bg-primary-500/20 transition-all text-[10px] font-black uppercase tracking-widest w-full disabled:opacity-50"
+              >
+                {#if aiSummaryLoading && aiMessageId === selectedMessage?.Id}
+                  <div class="w-3 h-3 border-2 border-primary-400 border-t-transparent rounded-full animate-spin"></div>
+                  Samenvatten...
+                {:else}
+                  <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2a4 4 0 0 1 4 4c0 2-2 3-4 5-2-2-4-3-4-5a4 4 0 0 1 4-4z"/><path d="M12 14l-2 6h4l-2-6z"/></svg>
+                  Samenvatting (AI)
+                {/if}
+              </button>
+              {#if aiSummary && aiMessageId === selectedMessage?.Id}
+                <div class="p-3 rounded-2xl bg-primary-500/5 border border-primary-500/10 text-sm text-gray-200 leading-relaxed">
+                  {aiSummary}
+                </div>
+              {/if}
+            </div>
+
             <button
               onclick={replyToMessage}
               class="w-full flex items-center justify-center gap-2 py-3.5 rounded-2xl bg-primary-500 text-white text-sm font-black uppercase tracking-widest shadow-xl shadow-primary-500/25 active:scale-95 transition-all"

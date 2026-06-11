@@ -6,6 +6,7 @@
   import { restoreSession, getAccount, getPersonId, getProfilePicture, handleAuthCallback, logout } from '$lib/api';
   import { get } from 'svelte/store';
   import { fade } from 'svelte/transition';
+  import AIAssistant from '$lib/components/AIAssistant.svelte';
 
   let { children } = $props();
   let loading = $state(true);
@@ -73,7 +74,7 @@
         }
       });
     })();
-    
+
     const handlePopstate = () => {
       const cp = get(currentPage);
       if (cp !== 'dashboard') {
@@ -135,10 +136,10 @@
     {
       label: 'Communicatie',
       items: [
-        { 
-          id: 'messages', 
-          label: 'Berichten', 
-          icon: `<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/><rect width="20" height="14" x="2" y="5" rx="2"/></svg>` 
+        {
+          id: 'messages',
+          label: 'Berichten',
+          icon: `<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/><rect width="20" height="14" x="2" y="5" rx="2"/></svg>`
         },
       ]
     }
@@ -244,8 +245,8 @@
             </div>
             <!-- Settings inside drawer -->
             <div class="px-6 py-4 border-t border-surface-800/50 mt-auto">
-              <button 
-                onclick={() => navigate('settings')} 
+              <button
+                onclick={() => navigate('settings')}
                 class="w-full flex items-center gap-4 px-4 py-3 rounded-2xl bg-surface-800/40 text-gray-300 hover:text-white transition-all border border-white/5 shadow-sm active:scale-95"
               >
                 <span class="text-primary-400">
@@ -340,7 +341,7 @@
         <!-- Bottom Nav Items (Icons Only) -->
         <div class="p-3 border-t border-surface-800/50 flex items-center justify-around bg-surface-950/50">
           {#each bottomNavItems.slice(0, 4) as item}
-            <button 
+            <button
               onclick={() => navigate(item.id)}
               class="p-2.5 rounded-xl transition-all {$currentPage === item.id ? 'bg-primary-500 text-white shadow-lg' : 'text-gray-500 hover:text-gray-300 hover:bg-surface-800'}"
             >
@@ -373,6 +374,11 @@
     <main class="flex-1 overflow-y-auto {$isLoggedIn ? 'pb-[60px] md:pb-0' : ''}">
       {@render children()}
     </main>
+
+    <!-- AI Assistant floating button (available on all pages when logged in) -->
+    {#if $isLoggedIn}
+      <AIAssistant />
+    {/if}
 
     <!-- ====== MOBILE: Fixed bottom tab bar ====== -->
     {#if $isLoggedIn}

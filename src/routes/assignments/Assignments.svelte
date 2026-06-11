@@ -1,15 +1,16 @@
 <script lang="ts">
   import { personId, userSettings } from '$lib/stores';
   import { get } from 'svelte/store';
-  import { 
-    getAssignments, 
-    getAssignmentDetail, 
-    formatDate, 
-    handInAssignment, 
+  import {
+    getAssignments,
+    getAssignmentDetail,
+    formatDate,
+    handInAssignment,
     uploadAssignmentAttachment,
     formatTeacherName,
     downloadFile
   } from '$lib/api';
+  import { tryAiInsight, getAiConfig } from '$lib/ai';
   import { onMount } from 'svelte';
   import { fade, fly, slide } from 'svelte/transition';
   import { open } from '@tauri-apps/plugin-dialog';
@@ -26,6 +27,41 @@
   let uploadLoading = $state(false);
   let downloadingFile = $state<string | null>(null);
   let isMobile = $state(false);
+
+  // AI Assignment Insights
+  let aiAssignmentInsight = $state<string | null>(null);
+  let aiAssignmentLoading = $state(false);
+
+  $effect(() => {
+    if (assignments.length > 0) {
+      loadAiAssignmentInsight();
+    }
+  });
+
+  async function loadAiAssignmentInsight() {
+    if (aiAssignmentLoading || assignments.length === 0) return;
+    try {
+      const config = await getAiConfig();
+      if (!config.enabled || !config.api_key) return;
+      aiAssignmentLoading = true;
+      const data = assignments.map(a => ({
+        title: a.Titel,
+        subject: a.Vak,
+        deadline: a.InleverenVoor,
+        status: a.Afgesloten ? 'Afgesloten' : a.IngeleverdOp ? 'Ingediend' : a.Beoordeling ? 'Beoordeeld' : 'Open',
+      }));
+      const result = await tryAiInsight(
+        "assignments",
+        data,
+        "Geef een korte analyse van mijn openstaande opdrachten in 2-3 zinnen. Welke deadlines zijn het belangrijkst?"
+      );
+      if (result) aiAssignmentInsight = result;
+    } catch {
+      aiAssignmentInsight = null;
+    } finally {
+      aiAssignmentLoading = false;
+    }
+  }
 
   onMount(async () => {
     const mq = window.matchMedia('(max-width: 767px)');
@@ -252,6 +288,29 @@
       {/each}
     </div>
   </header>
+
+  {#if aiAssignmentInsight && !selectedAssignment}
+    <div class="px-4 pt-3 pb-1 bg-surface-950/80 backdrop-blur border-b border-surface-800/30">
+      <div class="flex items-start gap-3 p-3 rounded-2xl bg-primary-500/5 border border-primary-500/15">
+        <div class="w-6 h-6 rounded-lg bg-gradient-to-br from-primary-500 to-accent-500 flex items-center justify-center shrink-0 shadow-lg shadow-primary-500/20">
+          <svg class="w-3 h-3 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2a4 4 0 0 1 4 4c0 2-2 3-4 5-2-2-4-3-4-5a4 4 0 0 1 4-4z"/><path d="M12 14l-2 6h4l-2-6z"/></svg>
+        </div>
+        <p class="text-xs text-gray-300 leading-relaxed">{aiAssignmentInsight}</p>
+      </div>
+    </div>
+  {:else if aiAssignmentLoading && !selectedAssignment}
+    <div class="px-4 pt-3 pb-1 bg-surface-950/80 backdrop-blur border-b border-surface-800/30">
+      <div class="flex items-center gap-3 p-3 rounded-2xl bg-primary-500/5 border border-primary-500/10">
+        <div class="w-6 h-6 rounded-lg bg-gradient-to-br from-primary-500 to-accent-500 flex items-center justify-center shrink-0 animate-pulse">
+          <svg class="w-3 h-3 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2a4 4 0 0 1 4 4c0 2-2 3-4 5-2-2-4-3-4-5a4 4 0 0 1 4-4z"/><path d="M12 14l-2 6h4l-2-6z"/></svg>
+        </div>
+        <div class="flex-1">
+          <div class="h-3 bg-surface-700/50 rounded-full w-3/4 animate-pulse mb-1"></div>
+          <div class="h-2 bg-surface-700/30 rounded-full w-1/2 animate-pulse"></div>
+        </div>
+      </div>
+    </div>
+  {/if}
 
   <div class="flex flex-1 min-h-0">
     <!-- List Pane -->

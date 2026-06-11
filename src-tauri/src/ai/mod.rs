@@ -1,5 +1,8 @@
 /// Module for AI-related functionality.
-/// Currently provides a simple relevance scoring algorithm for notifications.
+/// Provides tool definitions, provider abstraction, and notification scoring.
+
+pub mod providers;
+pub mod tools;
 
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -13,15 +16,16 @@ static NOTIFICATION_HISTORY: once_cell::sync::Lazy<Mutex<HashMap<String, u32>>> 
 ///
 /// # Arguments
 /// * `notification_type` - Type of notification (0=test,1=message,2=calendar,3=grade,4=deadline)
-/// * `course_name` - Optional course/subject name
+/// * `_course_name` - Optional course/subject name
 /// * `deadline_ms` - Milliseconds until deadline (only relevant for deadline type)
 /// * `has_been_ignored_before` - Whether similar notifications have been ignored before
 ///
 /// # Returns
 /// A score between 0 and 100, where higher means more relevant.
+#[allow(dead_code)]
 pub fn calculate_relevance_score(
     notification_type: i32,
-    course_name: Option<&str>,
+    _course_name: Option<&str>,
     deadline_ms: Option<i64>,
     has_been_ignored_before: bool,
 ) -> i32 {
@@ -62,6 +66,7 @@ pub fn calculate_relevance_score(
 }
 
 /// Record that a notification was ignored (not shown) for future scoring.
+#[allow(dead_code)]
 pub fn record_ignored_notification(key: &str) {
     if let Ok(mut history) = NOTIFICATION_HISTORY.lock() {
         let count = history.entry(key.to_string()).or_insert(0);
@@ -70,6 +75,7 @@ pub fn record_ignored_notification(key: &str) {
 }
 
 /// Check if a notification type has been ignored more than a threshold number of times.
+#[allow(dead_code)]
 pub fn has_been_ignored_before(key: &str, threshold: u32) -> bool {
     if let Ok(history) = NOTIFICATION_HISTORY.lock() {
         if let Some(&count) = history.get(key) {
@@ -87,6 +93,7 @@ pub fn get_notification_history() -> HashMap<String, u32> {
 }
 
 /// Clear the notification history.
+#[allow(dead_code)]
 pub fn clear_notification_history() {
     if let Ok(mut history) = NOTIFICATION_HISTORY.lock() {
         history.clear();

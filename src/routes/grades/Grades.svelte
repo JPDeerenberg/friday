@@ -1,6 +1,7 @@
 <script lang="ts">
   import { personId, userSettings } from '$lib/stores';
   import { getSchoolyears, getGrades, formatDate, getBulkGradeExtraInfo, formatTeacherName } from '$lib/api';
+  import { tryAiInsight, getAiConfig } from '$lib/ai';
   import { onMount } from 'svelte';
 
   let schoolyears = $state<any[]>([]);
@@ -15,7 +16,7 @@
 
   // New tab: Analyse
   let currentTab = $state<'vakken' | 'recent' | 'tools' | 'analytisch'>('vakken');
-  
+
   // Subject Sort Filter
   let subjectSortMode = $state<'alfabetisch' | 'nieuwste' | 'hoogste' | 'laagste' | 'meeste' | 'trend'>('alfabetisch');
 
@@ -140,7 +141,7 @@
 
   // Analytics tab sub-tabs
   let analyticsTab = $state<'distributie' | 'vergelijken' | 'prestaties'>('distributie');
-  
+
   // Comparison: selected subjects
   let comparisonSubjects = $state<string[]>([]);
   function toggleComparison(name: string) {
@@ -234,8 +235,8 @@
         selectedYear = currentYear || schoolyears[schoolyears.length - 1];
         await loadGrades();
       }
-    } catch (e: any) { 
-      console.error('Error loading schoolyears:', e); 
+    } catch (e: any) {
+      console.error('Error loading schoolyears:', e);
       errorMessage = e.message || String(e);
     }
     loading = false;
@@ -243,10 +244,10 @@
 
   onMount(() => {
     const cached = localStorage.getItem('grades_cache');
-    if (cached) { 
+    if (cached) {
         try {
-            const data = JSON.parse(cached); 
-            schoolyears = data.schoolyears; 
+            const data = JSON.parse(cached);
+            schoolyears = data.schoolyears;
             subjects = data.subjects;
             if (data.historicalAverages) historicalAverages = data.historicalAverages;
         } catch {}
@@ -279,11 +280,11 @@
       // Pass the date part of the endpoint manually to be extra safe
       const peildatum = selectedYear.einde.split('T')[0];
       const fetchedGrades = await getGrades($personId, selectedYear.id, peildatum);
-      
+
       const relevantColumns = [...new Set(fetchedGrades
         .filter(g => g.CijferKolom?.KolomSoort === 1)
         .map(g => g.CijferKolom.Id))];
-      
+
       if (relevantColumns.length > 0) {
         try {
           const weightsMap = await getBulkGradeExtraInfo($personId, selectedYear.id, relevantColumns);
@@ -292,19 +293,19 @@
             if (extra) return { ...g, Weging: extra.Weging, description: extra.WerkInformatieOmschrijving || extra.KolomOmschrijving };
             return g;
           });
-        } catch (e) { 
+        } catch (e) {
             console.warn('Error loading extra grade info:', e);
-            grades = fetchedGrades; 
+            grades = fetchedGrades;
         }
-      } else { 
-          grades = fetchedGrades; 
+      } else {
+          grades = fetchedGrades;
       }
       subjects = getSubjects();
       localStorage.setItem('grades_cache', JSON.stringify({ schoolyears, subjects, historicalAverages }));
       // Auto-load year progress in the background if not yet loaded
       if (historicalAverages.length === 0) loadHistoricalAverages();
-    } catch (e: any) { 
-        console.error('Error loading grades:', e); 
+    } catch (e: any) {
+        console.error('Error loading grades:', e);
         errorMessage = e.message || String(e);
     }
     loading = false;
@@ -423,6 +424,43 @@
     loadGrades();
   }
 
+  // AI Grade Analysis
+  let aiGradeInsight = $state<string | null>(null);
+  let aiGradeLoading = $state(false);
+
+  $effect(() => {
+    if (subjects.length > 0 && currentTab === 'analytisch') {
+      loadAiGradeAnalysis();
+    }
+  });
+
+  async function loadAiGradeAnalysis() {
+    if (aiGradeLoading || subjects.length === 0) return;
+    try {
+      const config = await getAiConfig();
+      if (!config.enabled || !config.api_key) return;
+
+      aiGradeLoading = true;
+      const data = subjects.map(s => ({
+        subject: s.name,
+        average: s.avg,
+        gradeCount: s.grades?.length || 0,
+        trend: s.trend,
+      }));
+
+      const result = await tryAiInsight(
+        "grades",
+        data,
+        "Geef een korte analyse van mijn cijfers in 2-3 zinnen. Welke vakken gaan goed en welke hebben aandacht nodig?"
+      );
+      if (result) aiGradeInsight = result;
+    } catch {
+      aiGradeInsight = null;
+    } finally {
+      aiGradeLoading = false;
+    }
+  }
+
   // Calculator
   let calcSubjectName = $state('');
   let calcTargetAvg = $state(5.5);
@@ -522,7 +560,7 @@
       try {
         const peildatum = year.einde.split('T')[0];
         const fetchedGrades = await getGrades($personId, year.id, peildatum);
-        
+
         const subMap = new Map<string, { totalP: number, totalW: number }>();
         for (const grade of fetchedGrades) {
            if (!grade.Vak || grade.CijferKolom?.KolomSoort !== 1 || !grade.CijferStr || !grade.TeltMee) continue;
@@ -639,7 +677,7 @@
           <h3 class="text-xl font-black text-white italic tracking-tighter">Oeps! Er ging iets mis</h3>
           <p class="text-sm text-gray-500 max-w-xs">{errorMessage}</p>
         </div>
-        <button 
+        <button
           onclick={init}
           class="px-8 py-3 rounded-2xl bg-white text-black text-xs font-black uppercase tracking-widest hover:scale-105 active:scale-95 transition-all shadow-xl shadow-white/10"
         >
@@ -688,7 +726,7 @@
                     <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
                   </filter>
                 </defs>
-                
+
                 <!-- Grid lines -->
                 {#each [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as grade}
                   {@const gy = 120 - ((grade - gMin) / gRange) * 120}
@@ -697,18 +735,18 @@
                     <text x="298" y={gy + 3} text-anchor="end" class="text-[6px]" fill="var(--color-gray-600)" opacity="0.6">{grade.toFixed(0)}</text>
                   {/if}
                 {/each}
-                
+
                 {#if path}
                   <!-- Average reference line -->
                   {@const avgY = 120 - ((overallAvg - gMin) / gRange) * 120}
                   <line x1="0" y1={avgY} x2="300" y2={avgY} stroke="var(--color-gray-400)" stroke-width="0.8" stroke-dasharray="5 4" opacity="0.5" />
-                  
+
                   <!-- Fill under curve -->
                   <path d="{path} V 120 H 0 Z" fill="url(#gradeGrad)" />
-                  
+
                   <!-- Main line -->
                   <path d={path} fill="none" stroke="url(#lineGrad)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" filter="url(#glow)" opacity="0.9" />
-                  
+
                   <!-- Interactive hover areas (invisible wider paths for easier hitting) -->
                   {#each chronoAll as g, idx}
                     {@const step = chronoAll.length > 1 ? 300 / (chronoAll.length - 1) : 150}
@@ -806,7 +844,7 @@
                 {@const subStats = computeStats(chronoVals)}
                 {@const subDist = getDistribution(chronoVals)}
                 <div class="border-t border-surface-700/50 p-4 space-y-4">
-                  
+
                   <!-- Stats row -->
                   <div class="grid grid-cols-5 gap-2">
                     <div class="bg-surface-900/50 rounded-xl p-2.5 text-center border border-white/5">
@@ -875,7 +913,7 @@
                               <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
                             </filter>
                           </defs>
-                          
+
                           <!-- Grid lines -->
                           {#each [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as grade}
                             {@const gy = 40 - ((grade - chartD.minY) / subRange) * 40}
@@ -883,7 +921,7 @@
                               <line x1="0" y1={gy} x2="100" y2={gy} stroke="var(--color-surface-700)" stroke-width="0.3" opacity="0.3" />
                             {/if}
                           {/each}
-                          
+
                           <path d={getTrendPath(subject)} fill="none" stroke="url(#lineGradDetailed)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" filter="url(#glowSub)" />
                         </svg>
                       </div>
@@ -990,6 +1028,34 @@
       <!-- ======= ANALYTISCH TAB ======= -->
       {:else if currentTab === 'analytisch'}
         <div class="space-y-6 pb-10">
+
+          <!-- AI Grade Insight Card -->
+          {#if aiGradeInsight}
+            <div class="glass rounded-2xl p-5 border-primary-500/20 bg-gradient-to-r from-primary-500/5 to-transparent" in:fly={{ y: -10, duration: 500 }}>
+              <div class="flex items-start gap-4">
+                <div class="w-8 h-8 rounded-xl bg-gradient-to-br from-primary-500 to-accent-500 flex items-center justify-center shrink-0 shadow-lg shadow-primary-500/20">
+                  <svg class="w-4 h-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2a4 4 0 0 1 4 4c0 2-2 3-4 5-2-2-4-3-4-5a4 4 0 0 1 4-4z"/><path d="M12 14l-2 6h4l-2-6z"/></svg>
+                </div>
+                <div class="flex-1 min-w-0">
+                  <p class="text-[10px] font-black text-primary-400 uppercase tracking-widest mb-2 flex items-center gap-2">
+                    <span class="w-1.5 h-1.5 rounded-full bg-primary-400 animate-pulse"></span>
+                    AI Analyse
+                  </p>
+                  <p class="text-sm text-gray-200 leading-relaxed">{aiGradeInsight}</p>
+                </div>
+              </div>
+            </div>
+          {:else if aiGradeLoading}
+            <div class="glass rounded-2xl p-5 border-primary-500/10 flex items-center gap-4">
+              <div class="w-8 h-8 rounded-xl bg-gradient-to-br from-primary-500 to-accent-500 flex items-center justify-center animate-pulse">
+                <svg class="w-4 h-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2a4 4 0 0 1 4 4c0 2-2 3-4 5-2-2-4-3-4-5a4 4 0 0 1 4-4z"/><path d="M12 14l-2 6h4l-2-6z"/></svg>
+              </div>
+              <div class="flex-1">
+                <div class="h-4 bg-surface-700/50 rounded-full w-3/4 animate-pulse mb-2"></div>
+                <div class="h-3 bg-surface-700/30 rounded-full w-1/2 animate-pulse"></div>
+              </div>
+            </div>
+          {/if}
 
           <!-- Overall stats cards -->
           {#if subjects.length > 0}
@@ -1245,7 +1311,7 @@
                           style="width: {getProgressPercent(s)}%"
                         ></div>
                       </div>
-                      
+
                       <div class="grid grid-cols-2 gap-4 mt-4 pt-2 border-t border-white/5">
                         <div class="bg-surface-800/30 rounded-2xl p-4 flex flex-col items-center justify-center">
                            <span class="text-3xl font-black italic tracking-tighter drop-shadow-md {parseFloat(getPredictedAverage(s)) >= $userSettings.insufficientThreshold ? 'text-white' : 'text-red-400'}">
@@ -1530,7 +1596,7 @@
                  {@const maxAvg = Math.max(...historicalAverages.map(h => h.avg), 7)}
                  {@const minAvg = Math.min(...historicalAverages.map(h => h.avg), 5)}
                  <div class="flex items-end justify-between gap-2 h-32 pt-4 px-2">
-                   
+
                    {#each historicalAverages as hist}
                      {@const heightPct = Math.max(10, ((hist.avg - minAvg + 0.5) / (maxAvg - minAvg + 1)) * 100)}
                      <div class="flex flex-col items-center flex-1 group">

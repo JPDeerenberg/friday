@@ -1,6 +1,7 @@
 <script lang="ts">
   import { personId, accountInfo, userSettings, currentPage } from '$lib/stores';
   import { getCalendarEvents, getGrades, getSchoolyears, getRecentGrades, getMessageFolders, getAssignments, formatDate, formatTeacherName, toggleCalendarEventDone } from '$lib/api';
+  import { tryAiInsight, getAiConfig } from '$lib/ai';
   import { onMount } from 'svelte';
   import { fade, fly, scale } from 'svelte/transition';
 
@@ -9,13 +10,13 @@
   let latestGrades = $state<any[]>([]);
   let unreadCount = $state(0);
   let upcomingAssignments = $state<any[]>([]);
-  
+
   // Section-specific loading states
   let loadingEvents = $state(true);
   let loadingGrades = $state(true);
   let loadingMessages = $state(true);
   let loadingAssignments = $state(true);
-  
+
   let tomorrowEvents = $state<any[]>([]);
   let tomorrowAssignments = $state<any[]>([]);
   let nextSchoolDayDate = $state<string>('');
@@ -23,6 +24,79 @@
   let expandedLesson = $state<number | null>(null);
 
   let refreshTrigger = $state(0);
+
+  // AI Dashboard Insight
+  let aiInsight = $state<string | null>(null);
+  let aiInsightLoading = $state(false);
+  let aiConfigured = $state(false);
+  let aiInsightError = $state(false);
+
+  $effect(() => {
+    checkAiAndLoadInsight();
+  });
+
+  async function checkAiAndLoadInsight() {
+    try {
+      const config = await getAiConfig();
+      aiConfigured = config.enabled && !!config.api_key;
+      if (aiConfigured && refreshTrigger >= 0) {
+        loadAiInsight();
+      }
+    } catch {
+      aiConfigured = false;
+    }
+  }
+
+  async function loadAiInsight() {
+    if (aiInsightLoading) return;
+    aiInsightLoading = true;
+    aiInsightError = false;
+
+    const pid = $personId;
+    if (pid === null) {
+      aiInsightLoading = false;
+      return;
+    }
+
+    // Gather available data for context
+    const data = {
+      todayEvents: todayEvents.map(e => ({
+        subject: e.Vakken?.[0]?.Naam,
+        time: e.LesuurVan,
+        location: e.Lokalen?.[0]?.Naam,
+        hasHomework: !!e.Inhoud,
+      })),
+      grades: latestGrades.map(g => ({
+        subject: g.Vak?.Omschrijving,
+        grade: g.CijferStr,
+        date: g.DatumIngevoerd,
+      })),
+      assignments: upcomingAssignments.map(a => ({
+        title: a.Titel,
+        subject: a.Vak,
+        deadline: a.InleverenVoor,
+      })),
+      unreadMessages: unreadCount,
+    };
+
+    try {
+      const result = await tryAiInsight(
+        "dashboard",
+        data,
+        "Geef een korte, behulpzame samenvatting van mijn dag in 2-3 zinnen. Noem geen cijfers of vakken tenzij relevant."
+      );
+      if (result) {
+        aiInsight = result;
+      } else {
+        aiInsight = null;
+      }
+    } catch {
+      aiInsightError = true;
+      aiInsight = null;
+    } finally {
+      aiInsightLoading = false;
+    }
+  }
 
   // Derived greeting
   const greeting = $derived(() => {
@@ -49,7 +123,7 @@
         latestGrades = data.latestGrades || [];
         unreadCount = data.unreadCount || 0;
         upcomingAssignments = data.upcomingAssignments || [];
-        
+
         tomorrowEvents = data.tomorrowEvents || [];
         tomorrowAssignments = data.tomorrowAssignments || [];
         nextSchoolDayDate = data.nextSchoolDayDate || formatDate(new Date(Date.now() + 86400000));
@@ -68,7 +142,7 @@
   async function loadDashboardData() {
     const pid = $personId;
     if (pid === null) return;
-    
+
     // Set all to loading if we are manually refreshing
     if (refreshTrigger > 0) {
         loadingEvents = true;
@@ -156,11 +230,11 @@
             getCalendarEvents(pid, tomorrow, weekLater),
             getAssignments(pid, tomorrow, weekLater),
           ]);
-          
+
           const filtered = events
             .filter(e => e.Status !== 4 && e.Status !== 5)
             .sort((a, b) => a.Start.localeCompare(b.Start));
-          
+
           // Group by date and find the first day with events
           const eventsByDate: Record<string, any[]> = {};
           for (const event of filtered) {
@@ -168,7 +242,7 @@
             if (!eventsByDate[date]) eventsByDate[date] = [];
             eventsByDate[date].push(event);
           }
-          
+
           const sortedDates = Object.keys(eventsByDate).sort();
           if (sortedDates.length > 0) {
             nextSchoolDayDate = sortedDates[0];
@@ -177,7 +251,7 @@
             nextSchoolDayDate = tomorrow;
             tomorrowEvents = [];
           }
-          
+
           // Store all open assignments (not date-filtered since homework can span days)
           tomorrowAssignments = assignments.filter(a => !a.Afgesloten && !a.IngeleverdOp);
         } catch (e) {
@@ -336,7 +410,7 @@
   function getSubjectIcon(subject: string): string {
     const s = subject.toLowerCase();
     const iconBase = `<svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">`;
-    
+
     if (s.includes('wiskunde') || s.includes('rekenen')) return iconBase + `<path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"/><path d="m10 10 4 4"/><path d="m14 10-4 4"/></svg>`;
     if (s.includes('taal') || s.includes('nederlands') || s.includes('engels') || s.includes('frans') || s.includes('duits') || s.includes('spaans')) return iconBase + `<path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"/><path d="M8 7h6"/><path d="M8 11h8"/></svg>`;
     if (s.includes('geschiedenis') || s.includes('maatschappij')) return iconBase + `<circle cx="12" cy="10" r="3"/><path d="M7 21l3-10h4l3 10"/><path d="M8 21h8"/></svg>`;
@@ -347,7 +421,7 @@
     if (s.includes('kunst') || s.includes('tekenen') || s.includes('handvaardigheid')) return iconBase + `<path d="m12 19 7-7 3 3-7 7-3-3Z"/><path d="m18 13-1.5-7.5L2 2l3.5 14.5L13 18l5-5Z"/><path d="m2 2 5 2"/><path d="m2 2 2 5"/><path d="m11 8 1 1"/><path d="m16 12 1 1"/></svg>`;
     if (s.includes('muziek')) return iconBase + `<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>`;
     if (s.includes('informatica') || s.includes('it')) return iconBase + `<rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg>`;
-    
+
     return iconBase + `<path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"/></svg>`;
   }
 
@@ -366,7 +440,7 @@
   <header class="sticky top-0 z-40 bg-surface-950/80 backdrop-blur-2xl border-b border-white/5 px-6 py-6 md:py-8 transition-all duration-500 overflow-hidden">
     <!-- Animated background pulse for header -->
     <div class="absolute inset-x-0 -top-24 h-48 bg-primary-500/5 blur-[100px] rounded-full animate-header-pulse"></div>
-    
+
     <div class="flex flex-col md:flex-row md:items-center justify-between gap-6 max-w-7xl mx-auto w-full relative z-10">
       <div class="flex items-center gap-6" in:fly={{ x: -20, duration: 800 }}>
         <div class="relative group">
@@ -407,7 +481,7 @@
           </div>
           <span class="text-xs font-black text-primary-400 uppercase tracking-widest relative z-10">{unreadCount} berichten</span>
         </button>
-        <button 
+        <button
           onclick={handleRefresh}
           class="p-4 rounded-2xl bg-surface-800/40 text-gray-400 hover:text-white border border-white/5 transition-all hover:bg-surface-700/60 active:scale-90 shadow-2xl group overflow-hidden relative"
           aria-label="Vernieuwen"
@@ -420,6 +494,59 @@
   </header>
 
   <main class="max-w-7xl mx-auto px-4 md:px-8 w-full py-8 pb-28">
+
+    <!-- AI Insight Card -->
+    {#if aiConfigured}
+      {#if aiInsightLoading}
+        <div class="mb-6 glass rounded-2xl p-5 border-primary-500/10 flex items-center gap-4" in:fade>
+          <div class="w-8 h-8 rounded-xl bg-gradient-to-br from-primary-500 to-accent-500 flex items-center justify-center animate-pulse">
+            <svg class="w-4 h-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2a4 4 0 0 1 4 4c0 2-2 3-4 5-2-2-4-3-4-5a4 4 0 0 1 4-4z"/><path d="M12 14l-2 6h4l-2-6z"/></svg>
+          </div>
+          <div class="flex-1">
+            <div class="h-4 bg-surface-700/50 rounded-full w-3/4 animate-pulse mb-2"></div>
+            <div class="h-3 bg-surface-700/30 rounded-full w-1/2 animate-pulse"></div>
+          </div>
+        </div>
+      {:else if aiInsight}
+        <div class="mb-6 glass rounded-2xl p-5 border-primary-500/20 bg-gradient-to-r from-primary-500/5 to-transparent" in:fly={{ y: -10, duration: 500 }}>
+          <div class="flex items-start gap-4">
+            <div class="w-8 h-8 rounded-xl bg-gradient-to-br from-primary-500 to-accent-500 flex items-center justify-center shrink-0 shadow-lg shadow-primary-500/20">
+              <svg class="w-4 h-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2a4 4 0 0 1 4 4c0 2-2 3-4 5-2-2-4-3-4-5a4 4 0 0 1 4-4z"/><path d="M12 14l-2 6h4l-2-6z"/></svg>
+            </div>
+            <div class="flex-1 min-w-0">
+              <p class="text-[10px] font-black text-primary-400 uppercase tracking-widest mb-2 flex items-center gap-2">
+                <span class="w-1.5 h-1.5 rounded-full bg-primary-400 animate-pulse"></span>
+                AI Inzicht
+              </p>
+              <p class="text-sm text-gray-200 leading-relaxed">{aiInsight}</p>
+            </div>
+            <button
+              onclick={loadAiInsight}
+              class="shrink-0 p-2 rounded-xl text-gray-500 hover:text-primary-400 hover:bg-surface-800/50 transition-all"
+              title="Vernieuw inzicht"
+            >
+              <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
+            </button>
+          </div>
+        </div>
+      {/if}
+    {:else if !aiConfigured && refreshTrigger >= 0}
+      <!-- Show a subtle "configure AI" prompt -->
+      <div class="mb-6 glass rounded-2xl p-4 border-dashed border-primary-500/10" in:fade>
+        <button
+          onclick={() => currentPage.set('settings')}
+          class="flex items-center gap-3 w-full text-left group"
+        >
+          <div class="w-7 h-7 rounded-xl bg-primary-500/10 flex items-center justify-center shrink-0">
+            <svg class="w-3.5 h-3.5 text-primary-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2a4 4 0 0 1 4 4c0 2-2 3-4 5-2-2-4-3-4-5a4 4 0 0 1 4-4z"/><path d="M12 14l-2 6h4l-2-6z"/></svg>
+          </div>
+          <p class="text-[11px] text-gray-500 group-hover:text-gray-300 transition-colors">
+            <span class="font-bold text-primary-400">Configureer AI</span> voor persoonlijke daginzichten en studiedvies
+          </p>
+          <svg class="w-3.5 h-3.5 text-gray-600 ml-auto group-hover:translate-x-1 transition-transform" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m9 18 6-6-6-6"/></svg>
+        </button>
+      </div>
+    {/if}
 
     <!-- Pack for Tomorrow -->
     <section in:fly={{ y: -20, duration: 700 }} class="mb-14">
@@ -697,7 +824,7 @@
     </section>
 
     <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 md:gap-10">
-      
+
       <!-- Left Column: Schedule -->
       <div class="lg:col-span-7 space-y-8">
         <section in:fly={{ y: 30, duration: 800 }} class="space-y-3">
@@ -706,7 +833,7 @@
               <div class="w-2 h-7 bg-primary-500 rounded-full shadow-[0_0_20px_rgba(200,100,255,0.6)] animate-pulse"></div>
               Jouw Rooster
             </h2>
-            <button 
+            <button
               onclick={() => currentPage.set('calendar')}
               class="text-[11px] font-black text-primary-400 hover:text-primary-300 uppercase tracking-[0.3em] transition-all hover:gap-4 flex items-center gap-3 group/all bg-primary-500/5 px-5 py-2.5 rounded-full border border-primary-500/10 hover:border-primary-500/30"
             >
@@ -716,7 +843,7 @@
 
           <div class="rounded-2xl p-3 md:p-5 relative overflow-hidden group border border-white/10 bg-surface-800/50 min-h-[300px] flex flex-col">
              <div class="absolute inset-0 bg-gradient-to-br from-primary-500/8 via-transparent to-transparent opacity-60 group-hover:opacity-100 transition-opacity duration-700 pointer-events-none"></div>
-             
+
              {#if loadingEvents}
                <div class="space-y-6 relative z-10 w-full p-4">
                   {#each Array(4) as _}
@@ -738,7 +865,7 @@
             {:else}
               <div class="space-y-2 relative z-10 w-full">
                 {#each todayEvents as event, i (event.Id || i)}
-                  <button 
+                  <button
                     onclick={() => currentPage.set('calendar')}
                     in:fly={{ x: -30, delay: i * 100, duration: 600 }}
                     class="w-full flex flex-row items-center gap-4 md:gap-5 p-4 sm:p-5 rounded-2xl bg-surface-800/60 border border-white/10 group/event transition-all hover:bg-surface-700/60 hover:border-primary-500/40 hover:scale-[1.01] active:scale-95 shadow-md"
@@ -779,14 +906,14 @@
               <div class="w-2 h-7 bg-accent-500 rounded-full shadow-[0_0_20px_rgba(200,100,255,0.6)]"></div>
               Resultaten
             </h2>
-            <button 
+            <button
               onclick={() => currentPage.set('grades')}
               class="text-[9px] md:text-[11px] font-black text-accent-400 hover:text-accent-300 uppercase tracking-widest md:tracking-[0.3em] transition-all hover:gap-3 md:hover:gap-4 flex items-center gap-2 md:gap-3 group/grades bg-accent-500/5 px-4 md:px-5 py-2 md:py-2.5 rounded-full border border-accent-500/10 hover:border-accent-500/30"
             >
               Alle cijfers <svg class="w-3.5 h-3.5 md:w-4 md:h-4 group-hover/grades:translate-x-1 transition-transform" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="m9 18 6-6-6-6"/></svg>
             </button>
           </div>
-          
+
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-5">
             {#if loadingGrades}
                {#each Array(4) as _}
@@ -842,10 +969,10 @@
             <div class="w-2 h-7 bg-red-500 rounded-full shadow-[0_0_20px_rgba(239,68,68,0.6)] animate-pulse"></div>
             Deadlines
           </h2>
-          
+
           <div class="glass rounded-[2.5rem] md:rounded-[4rem] p-4 md:p-8 shadow-2xl md:shadow-3xl relative overflow-hidden group border-white/5 flex flex-col min-h-[350px] md:min-h-[450px]">
             <div class="absolute inset-0 bg-gradient-to-br from-red-500/10 via-transparent to-transparent opacity-40 group-hover:opacity-60 transition-opacity duration-700"></div>
-            
+
             {#if loadingAssignments}
                <div class="space-y-4 md:space-y-6 relative z-10 w-full p-2 md:p-4">
                   {#each Array(3) as _}
@@ -863,7 +990,7 @@
             {:else}
               <div class="space-y-4 md:space-y-6 mb-8 md:mb-12 relative z-10 p-1 md:p-2">
                 {#each upcomingAssignments as assignment, i (assignment.Id || i)}
-                  <button 
+                  <button
                     onclick={() => currentPage.set('assignments')}
                     in:fly={{ x: 30, delay: i * 150, duration: 600 }}
                     class="w-full p-5 md:p-8 rounded-[2rem] sm:rounded-[3rem] bg-surface-900/50 border border-white/5 group/assign transition-all hover:bg-surface-800/90 hover:border-red-500/40 text-left shadow-xl md:shadow-2xl overflow-hidden relative active:scale-95 hover:scale-[1.02] flex flex-col sm:flex-row justify-between sm:items-center gap-4 sm:gap-8"
@@ -880,8 +1007,8 @@
                 {/each}
               </div>
             {/if}
-            
-            <button 
+
+            <button
               onclick={() => currentPage.set('assignments')}
               class="w-full py-5 md:py-7 rounded-[2rem] sm:rounded-[3rem] bg-gradient-to-r from-primary-600 to-primary-400 text-white font-black text-[12px] md:text-[14px] uppercase tracking-widest md:tracking-[0.4em] shadow-2xl md:shadow-3xl shadow-primary-500/40 hover:scale-[1.03] hover:brightness-110 transition-all active:scale-95 border border-white/20 ring-[6px] md:ring-8 ring-primary-500/10 italic relative overflow-hidden group/btn mt-auto"
             >
@@ -917,7 +1044,7 @@
 
 <style>
   /* Custom Animations & UI Extensions */
-  
+
   @keyframes gradient-x {
     0%, 100% { background-position: 0% 50%; }
     50% { background-position: 100% 50%; }
@@ -981,11 +1108,11 @@
     backdrop-filter: blur(40px) saturate(180%);
     -webkit-backdrop-filter: blur(40px) saturate(180%);
     border: 1px solid color-mix(in oklch, white, transparent 94%);
-    box-shadow: 
+    box-shadow:
         0 30px 60px -12px rgba(0, 0, 0, 0.6),
         inset 0 1px 1px rgba(255, 255, 255, 0.05);
   }
-  
+
   :global(body) {
     background-color: var(--color-surface-950);
     overflow-x: hidden;
