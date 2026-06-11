@@ -1,5 +1,7 @@
 <script lang="ts">
   import { isLoggedIn, currentPage } from '$lib/stores';
+  import { fly } from 'svelte/transition';
+  import { flip } from 'svelte/animate';
   import Login from './login/Login.svelte';
   import Dashboard from './dashboard/Dashboard.svelte';
   import Calendar from './calendar/Calendar.svelte';
@@ -16,29 +18,39 @@
 </script>
 
 {#if !$isLoggedIn}
-  <Login />
-{:else if $currentPage === 'calendar'}
-  <Calendar />
-{:else if $currentPage === 'grades'}
-  <Grades />
-{:else if $currentPage === 'messages'}
-  <Messages />
-{:else if $currentPage === 'assignments'}
-  <Assignments />
-{:else if $currentPage === 'leermiddelen'}
-  <Leermiddelen />
-{:else if $currentPage === 'afwezigheid'}
-  <Afwezigheid />
-{:else if $currentPage === 'bronnen'}
-  <Bronnen />
-{:else if $currentPage === 'studiewijzers'}
-  <Studiewijzers />
-{:else if $currentPage === 'activiteiten'}
-  <Activiteiten />
-{:else if $currentPage === 'profile'}
-  <Profile />
-{:else if $currentPage === 'settings'}
-  <Settings />
+  {#key $currentPage}
+    <div in:fly={{ y: 20, duration: 300 }}>
+      <Login />
+    </div>
+  {/key}
 {:else}
-  <Dashboard />
+  {#key $currentPage}
+    <div in:fly={{ y: 12, duration: 250 }}>
+      {#if $currentPage === 'calendar'}
+        <Calendar />
+      {:else if $currentPage === 'grades'}
+        <Grades />
+      {:else if $currentPage === 'messages'}
+        <Messages />
+      {:else if $currentPage === 'assignments'}
+        <Assignments />
+      {:else if $currentPage === 'leermiddelen'}
+        <Leermiddelen />
+      {:else if $currentPage === 'afwezigheid'}
+        <Afwezigheid />
+      {:else if $currentPage === 'bronnen'}
+        <Bronnen />
+      {:else if $currentPage === 'studiewijzers'}
+        <Studiewijzers />
+      {:else if $currentPage === 'activiteiten'}
+        <Activiteiten />
+      {:else if $currentPage === 'profile'}
+        <Profile />
+      {:else if $currentPage === 'settings'}
+        <Settings />
+      {:else}
+        <Dashboard />
+      {/if}
+    </div>
+  {/key}
 {/if}

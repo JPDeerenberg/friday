@@ -14,6 +14,7 @@
   import { onMount } from 'svelte';
   import { fade, fly, slide } from 'svelte/transition';
   import { open } from '@tauri-apps/plugin-dialog';
+  import RichTextEditor from '$lib/components/RichTextEditor.svelte';
 
   let assignments = $state<any[]>([]);
   let selectedAssignment = $state<any>(null);
@@ -316,8 +317,19 @@
     <!-- List Pane -->
     <aside class="{selectedAssignment ? 'hidden md:flex' : 'flex'} w-full md:w-80 border-r border-surface-800/50 flex-col bg-surface-900/30">
       {#if loadingList}
-        <div class="flex-1 flex items-center justify-center">
-          <div class="w-6 h-6 border-2 border-primary-500 border-t-transparent rounded-full animate-spin"></div>
+        <div class="flex-1 overflow-y-auto p-3 space-y-3 custom-scrollbar">
+          {#each Array(5) as _}
+            <div class="p-4 rounded-2xl bg-surface-800/40 border border-white/5">
+              <div class="flex justify-between items-start mb-3 gap-3">
+                <div class="h-4 skeleton-shimmer rounded-full w-2/3"></div>
+                <div class="h-5 skeleton-shimmer rounded-md w-16"></div>
+              </div>
+              <div class="flex items-center justify-between">
+                <div class="h-3 skeleton-shimmer rounded-full w-1/4"></div>
+                <div class="h-3 skeleton-shimmer rounded-full w-12"></div>
+              </div>
+            </div>
+          {/each}
         </div>
       {:else if filteredAssignments.length === 0}
         <div class="flex-1 flex flex-col items-center justify-center p-8 text-center">
@@ -326,11 +338,12 @@
         </div>
       {:else}
         <div class="flex-1 overflow-y-auto p-3 space-y-2 custom-scrollbar">
-          {#each filteredAssignments as assignment}
+          {#each filteredAssignments as assignment, i}
             {@const status = getStatus(assignment)}
             <button
               onclick={() => selectAssignment(assignment)}
-              class="w-full text-left p-4 rounded-2xl transition-all border
+              style="--i: {i}"
+              class="stagger-item w-full text-left p-4 rounded-2xl transition-all border
                      {selectedAssignment?.Id === assignment.Id
                        ? 'bg-primary-500/10 border-primary-500/30 shadow-xl shadow-primary-500/5'
                        : 'bg-surface-800/40 border-white/5 hover:bg-surface-800/60 hover:border-white/10'}"
@@ -362,8 +375,36 @@
     <!-- Content Pane -->
     <section class="{!selectedAssignment ? 'hidden md:block' : 'block'} flex-1 overflow-y-auto bg-surface-950 p-4 md:p-8 custom-scrollbar relative">
       {#if loadingDetail}
-        <div class="absolute inset-0 flex items-center justify-center bg-surface-950/60 backdrop-blur-sm z-20">
-          <div class="w-10 h-10 border-4 border-primary-500 border-t-transparent rounded-full animate-spin"></div>
+        <div class="absolute inset-0 z-20 overflow-hidden custom-scrollbar">
+          <div class="p-4 md:p-8 max-w-4xl mx-auto space-y-8">
+            <!-- Title skeleton -->
+            <div class="space-y-4">
+              <div class="flex items-center gap-2">
+                <div class="h-5 skeleton-shimmer rounded-lg w-20"></div>
+                <div class="h-5 skeleton-shimmer rounded-lg w-24"></div>
+              </div>
+              <div class="h-8 skeleton-shimmer rounded-full w-3/4"></div>
+              <div class="h-4 skeleton-shimmer rounded-full w-1/3"></div>
+              <!-- Info cards skeleton -->
+              <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                {#each Array(4) as _}
+                  <div class="glass p-3 rounded-xl">
+                    <div class="h-3 skeleton-shimmer rounded-full w-1/2 mb-2"></div>
+                    <div class="h-4 skeleton-shimmer rounded-full w-3/4"></div>
+                  </div>
+                {/each}
+              </div>
+            </div>
+            <!-- Description skeleton -->
+            <div class="glass rounded-3xl p-6">
+              <div class="h-4 skeleton-shimmer rounded-full w-1/4 mb-4"></div>
+              <div class="space-y-3">
+                <div class="h-3 skeleton-shimmer rounded-full w-full"></div>
+                <div class="h-3 skeleton-shimmer rounded-full w-5/6"></div>
+                <div class="h-3 skeleton-shimmer rounded-full w-4/6"></div>
+              </div>
+            </div>
+          </div>
         </div>
       {/if}
 
@@ -483,12 +524,12 @@
                 {/if}
               </div>
 
-              <div class="glass rounded-3xl overflow-hidden border-primary-500/20 focus-within:border-primary-500/40 transition-colors">
-                <textarea
-                  bind:value={submissionText}
-                  placeholder="Typ hier je opmerking voor de docent..."
-                  class="w-full bg-transparent p-5 text-sm text-gray-200 outline-none resize-none min-h-[120px] font-medium placeholder:text-gray-600"
-                ></textarea>
+              <div class="space-y-3">
+                <RichTextEditor
+                  content={submissionText}
+                  placeholder="Typ hier je opmerking voor de docent (met opmaak)..."
+                  onUpdate={(html) => submissionText = html}
+                />
 
                 {#if attachments.length > 0 || uploadLoading}
                   <div class="px-5 py-3 bg-surface-900/50 border-t border-surface-800/50 space-y-2">
@@ -516,7 +557,7 @@
                   </div>
                 {/if}
 
-                <div class="p-4 bg-surface-900/50 border-t border-surface-800/50 flex items-center justify-between">
+                <div class="flex items-center justify-between">
                   <button
                     onclick={handlePickFile}
                     disabled={uploadLoading || isSubmitting}

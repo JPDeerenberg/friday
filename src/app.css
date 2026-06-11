@@ -277,3 +277,124 @@
 .status-normal {
   border-left: 3px solid oklch(0.58 0.19 250);
 }
+
+/* ====== Eye-candy Animations ====== */
+
+/* Shimmer loading effect */
+.animate-shimmer {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.04) 40%,
+    rgba(255, 255, 255, 0.08) 50%,
+    rgba(255, 255, 255, 0.04) 60%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 2s ease-in-out infinite;
+}
+
+/* Shimmer for skeleton elements */
+.skeleton-shimmer {
+  background: linear-gradient(
+    90deg,
+    oklch(0.25 0.04 290) 25%,
+    oklch(0.3 0.04 290) 50%,
+    oklch(0.25 0.04 290) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* Smooth fade-in scale for cards/items */
+.animate-bounce-in {
+  animation: bounceIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+@keyframes bounceIn {
+  0% { opacity: 0; transform: scale(0.92) translateY(8px); }
+  60% { opacity: 1; transform: scale(1.02) translateY(-2px); }
+  100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+/* Gradient animation for headers */
+.animate-gradient {
+  background: linear-gradient(
+    135deg,
+    var(--color-primary-500) 0%,
+    var(--color-primary-400) 25%,
+    var(--color-accent-500) 50%,
+    var(--color-primary-400) 75%,
+    var(--color-primary-500) 100%
+  );
+  background-size: 200% 200%;
+  animation: gradientShift 4s ease-in-out infinite;
+}
+
+@keyframes gradientShift {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+/* Gentle pulse glow */
+.animate-glow {
+  animation: glow 2s ease-in-out infinite;
+}
+
+@keyframes glow {
+  0%, 100% { box-shadow: 0 0 8px rgba(139, 92, 246, 0.15); }
+  50% { box-shadow: 0 0 20px rgba(139, 92, 246, 0.3); }
+}
+
+/* Scale in on mount */
+.animate-scale-in {
+  animation: scaleIn 0.25s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+@keyframes scaleIn {
+  0% { opacity: 0; transform: scale(0.95); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+/* Fade in up */
+.animate-fade-in-up {
+  animation: fadeInUp 0.3s ease-out forwards;
+}
+
+@keyframes fadeInUp {
+  0% { opacity: 0; transform: translateY(10px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+/* Spin with easing for refresh buttons */
+.animate-spin-smooth {
+  animation: spinSmooth 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes spinSmooth {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Count-up number styling */
+.number-count {
+  display: inline-block;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Stagger animation helper — use with inline style="--i: N" on list items */
+@keyframes staggerFadeIn {
+  0% { opacity: 0; transform: translateY(8px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+.stagger-item {
+  animation: staggerFadeIn 0.3s ease-out both;
+  animation-delay: calc(var(--i, 0) * 40ms);
+}

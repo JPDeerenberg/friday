@@ -9,17 +9,17 @@
   let selectedYearId = $state<number | null>(null);
   let loading = $state(true);
   let initialLoading = $state(true);
-  
+
   let van = $state('');
   let tot = $state('');
 
   onMount(async () => {
     if (!$personId) return;
-    
+
     try {
       schoolyears = await getSchoolyears($personId as number);
       schoolyears.sort((a, b) => new Date(b.begin).getTime() - new Date(a.begin).getTime());
-      
+
       if (schoolyears.length > 0) {
         const currentYear = schoolyears[0];
         selectedYearId = currentYear.id;
@@ -32,7 +32,7 @@
         van = oneYearAgo.toISOString().split('T')[0];
         tot = now.toISOString().split('T')[0];
       }
-      
+
       await loadAbsences();
     } catch (e) {
       console.error('Error in onMount:', e);
@@ -106,18 +106,18 @@
       <div class="flex items-center justify-between">
         <h1 class="text-xl font-black text-gray-100 italic tracking-tighter uppercase shrink-0">Absenties</h1>
         <div class="flex items-center gap-3">
-          <button 
-            onclick={loadAbsences} 
+          <button
+            onclick={loadAbsences}
             class="p-2 text-gray-500 hover:text-primary-400 hover:rotate-180 transition-all duration-700 active:scale-95"
             aria-label="Vernieuwen"
           >
             <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
           </button>
-          
+
           {#if schoolyears.length > 0}
             <div class="relative group">
-              <select 
-                bind:value={selectedYearId} 
+              <select
+                bind:value={selectedYearId}
                 onchange={handleYearChange}
                 class="appearance-none bg-surface-900 border border-white/5 rounded-2xl px-4 py-2 pr-9 text-[10px] font-black uppercase tracking-widest text-gray-300 focus:outline-none focus:border-primary-500 transition-all cursor-pointer shadow-lg"
               >
@@ -131,18 +131,13 @@
         </div>
       </div>
 
-      <!-- Filters -->
+      <!-- Filter by type chips -->
       <div class="flex flex-wrap items-center gap-2 overflow-x-auto no-scrollbar pb-1">
         <div class="flex items-center gap-2 bg-surface-900/40 rounded-2xl p-1 border border-white/5 shadow-inner">
-          <div class="flex items-center gap-2 px-3 py-1.5 shrink-0">
-            <span class="text-[9px] font-black text-gray-600 uppercase tracking-widest">Van</span>
-            <input type="date" bind:value={van} onchange={loadAbsences} class="bg-transparent border-none text-[10px] font-black italic text-gray-200 focus:ring-0 cursor-pointer p-0 w-24" />
-          </div>
-          <div class="w-0.5 h-3 bg-surface-800 rounded-full opacity-50"></div>
-          <div class="flex items-center gap-2 px-3 py-1.5 shrink-0">
-            <span class="text-[9px] font-black text-gray-600 uppercase tracking-widest">Tot</span>
-            <input type="date" bind:value={tot} onchange={loadAbsences} class="bg-transparent border-none text-[10px] font-black italic text-gray-200 focus:ring-0 cursor-pointer p-0 w-24" />
-          </div>
+          <span class="px-3 py-1.5 text-[9px] font-black text-gray-600 uppercase tracking-widest whitespace-nowrap">
+            {schoolyears.find(y => y.id === selectedYearId)?.groep?.code ?? 'Onbekend'}
+            {schoolyears.find(y => y.id === selectedYearId)?.groep?.omschrijving ? '— ' + schoolyears.find(y => y.id === selectedYearId)?.groep?.omschrijving : ''}
+          </span>
         </div>
       </div>
     </div>
@@ -150,7 +145,7 @@
 
   <main class="flex-1 bg-[radial-gradient(circle_at_top_right,rgba(59,130,246,0.02),transparent_40%)] pb-20 overflow-y-auto">
     <div class="max-w-5xl mx-auto p-5 space-y-8">
-      
+
       <!-- Stats -->
       <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
         {#each [
@@ -193,7 +188,7 @@
             {#each absences as absence, i}
               {@const type = getAbsenceType(absence.Verantwoordingtype, absence.Code)}
               {@const subject = getSubjectName(absence)}
-              <div 
+              <div
                   in:fly={{ y: 15, delay: i * 30 }}
                   class="glass p-4 rounded-[2rem] border-white/5 hover:bg-surface-800/40 hover:border-primary-500/20 transition-all flex items-center gap-5 group shadow-lg"
                 >
@@ -221,7 +216,7 @@
                     {/if}
                   </div>
                 </div>
-                
+
                 {#if absence.Lesuur}
                   <div class="bg-surface-950 px-3 py-2 rounded-2xl border border-white/5 group-hover:border-primary-500/40 shadow-inner shrink-0">
                     <span class="text-[8px] font-black text-gray-700 uppercase block tracking-tighter leading-none mb-0.5 text-right">Uur</span>

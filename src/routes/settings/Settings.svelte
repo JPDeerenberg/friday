@@ -45,6 +45,10 @@
   let aiLoaded = $state(false);
   let aiShowKey = $state(false);
 
+  // --- GitHub repo info ---
+  let repoStats = $state<{ stars: number; forks: number; openIssues: number } | null>(null);
+  let repoStatsError = $state<string | null>(null);
+
   function addLog(level: 'info' | 'warn' | 'error', msg: string) {
     const time = new Date().toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     logs = [{ time, level, msg }, ...logs].slice(0, 50);
@@ -79,6 +83,19 @@
     }).catch(e => {
         console.error("Failed to load disable all notifications config", e);
     });
+
+    // Fetch GitHub repo stats
+    fetch('https://api.github.com/repos/JPDeerenberg/friday')
+      .then(r => {
+        if (!r.ok) throw new Error(`Status ${r.status}`);
+        return r.json();
+      })
+      .then(data => {
+        repoStats = { stars: data.stargazers_count, forks: data.forks_count, openIssues: data.open_issues_count };
+      })
+      .catch(e => {
+        repoStatsError = `Kon repo info niet laden: ${e.message || e}`;
+      });
 
     // Load AI config
     getAiConfig().then((config: AiConfig) => {
@@ -912,6 +929,64 @@
           </div>
         </div>
       {/if}
+    </section>
+
+    <!-- ===== GITHUB REPO INFO ===== -->
+    <section in:fly={{ y: 20 }}>
+      <div class="glass p-6 rounded-3xl border-white/5 space-y-4 hover:bg-surface-800/40 transition-all">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-2xl bg-surface-900 border border-surface-700/50 flex items-center justify-center text-gray-400 group-hover:rotate-6 transition-transform shadow-inner shrink-0">
+            <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.403 5.403 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65-.17.6-.22 1.23-.15 1.85v4"/><path d="M9 18c-4.51 2-5-2-7-2"/></svg>
+          </div>
+          <div>
+            <h3 class="text-sm font-black text-gray-100 italic tracking-tight uppercase">Friday — Open source</h3>
+            <p class="text-[10px] text-gray-600 font-bold uppercase tracking-widest mt-0.5">Bekijk de broncode op GitHub</p>
+          </div>
+        </div>
+
+        <a
+          href="https://github.com/JPDeerenberg/friday"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="flex items-center justify-between p-4 rounded-2xl bg-surface-900/60 border border-white/5 hover:bg-surface-800/80 hover:border-primary-500/30 transition-all group/repo active:scale-[0.98]"
+        >
+          <div class="flex items-center gap-3 min-w-0">
+            <div class="w-9 h-9 rounded-xl bg-primary-500/15 flex items-center justify-center text-primary-400 shrink-0">
+              <svg class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
+            </div>
+            <div class="min-w-0">
+              <p class="text-sm font-black text-gray-200 truncate group-hover/repo:text-primary-400 transition-colors">JPDeerenberg/friday</p>
+              <p class="text-[9px] text-gray-600 font-bold uppercase tracking-widest mt-0.5">Magister Tauri app — Volg de ontwikkeling</p>
+            </div>
+          </div>
+          <svg class="w-5 h-5 text-gray-600 group-hover/repo:text-primary-400 transition-colors shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+        </a>
+
+        <!-- GitHub Stats via API -->
+        {#if repoStats}
+          <div class="grid grid-cols-3 gap-3">
+            <div class="bg-surface-900/50 rounded-2xl p-3 text-center border border-white/5">
+              <p class="text-lg font-black text-gray-200 tabular-nums">{repoStats.stars}</p>
+              <p class="text-[8px] text-gray-600 font-black uppercase tracking-widest mt-0.5">Sterren</p>
+            </div>
+            <div class="bg-surface-900/50 rounded-2xl p-3 text-center border border-white/5">
+              <p class="text-lg font-black text-gray-200 tabular-nums">{repoStats.forks}</p>
+              <p class="text-[8px] text-gray-600 font-black uppercase tracking-widest mt-0.5">Forks</p>
+            </div>
+            <div class="bg-surface-900/50 rounded-2xl p-3 text-center border border-white/5">
+              <p class="text-lg font-black text-gray-200 tabular-nums">{repoStats.openIssues}</p>
+              <p class="text-[8px] text-gray-600 font-black uppercase tracking-widest mt-0.5">Issues</p>
+            </div>
+          </div>
+        {:else if repoStatsError}
+          <p class="text-[9px] text-red-400 text-center font-mono">{repoStatsError}</p>
+        {:else}
+          <div class="flex items-center justify-center gap-2 py-2">
+            <div class="w-4 h-4 border-2 border-primary-500 border-t-transparent rounded-full animate-spin"></div>
+            <span class="text-[9px] text-gray-600 font-black uppercase tracking-widest">Repo info laden...</span>
+          </div>
+        {/if}
+      </div>
     </section>
 
     <div class="pt-10 flex flex-col items-center gap-2">
