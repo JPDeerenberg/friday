@@ -15,7 +15,7 @@
 
 ## ✨ Features
 
-- [x] **HTML-parser (omgekeerd)** — bij huiswerk, zodat je met opmaak huiswerk kan invoeren
+- [ ] **HTML-parser (omgekeerd)** — bij huiswerk, zodat je met opmaak huiswerk kan invoeren (GUI voor huiswerk om HTML tekst te schrijven)
 - [x] **Animaties** — voor mooiere overgangen en meer 'pop'
 
 ## 🔧 Verbeteringen
