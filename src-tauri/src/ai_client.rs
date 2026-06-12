@@ -18,12 +18,9 @@ pub async fn send_chat(
     let provider = get_provider(&config.provider);
 
     // Do NOT pass tools — this function can't execute them (no MagisterClient).
-    // If we pass tools the AI will try to call them and we'd return empty responses.
     let result = provider.chat(config, messages, &[]).await?;
 
     // Return whatever text the AI replied with.
-    // If the AI somehow still returns empty content (shouldn't happen with no tools),
-    // return a fallback.
     if result.content.trim().is_empty() {
         Ok("Ik kan je vraag niet beantwoorden zonder toegang tot je schoolgegevens. Schakel 'Schoolgegevens toegang' in in de AI-instellingen voor gepersonaliseerde antwoorden.".to_string())
     } else {
@@ -55,24 +52,28 @@ pub fn build_school_context_system_prompt(page_context: Option<&str>, tools_enab
                 Wees aanmoedigend maar realistisch. \
                 Als je iets niet weet, zeg dat dan eerlijk.".to_string();
 
-    let tools_prompt = "\n\nJe hebt toegang tot de volgende tools om schoolgegevens op te vragen:\n\
+    let tools_prompt = "\n\nJe hebt toegang tot de volgende tools om schoolgegevens op te vragen en acties uit te voeren:\n\
              - get_calendar_events: Lesrooster en afspraken voor een datumbereik\n\
              - get_grades: Recente cijfers\n\
-             - get_full_grade_overview: Volledig cijferoverzicht met gemiddelden per vak (gebruik eerst get_schoolyears)\n\
+             - get_full_grade_overview: Volledig cijferoverzicht met gemiddelden per vak (eerst get_schoolyears)\n\
              - get_schoolyears: Beschikbare schooljaren\n\
-             - get_assignments: Huiswerk en opdrachten\n\
+             - get_assignments: Huiswerk en opdrachten voor een datumbereik\n\
+             - get_assignment_detail: Gedetailleerde opdrachtinfo inclusief bijlagen\n\
              - get_messages: Berichtenoverzicht uit een map\n\
              - get_message_content: Volledige inhoud van een specifiek bericht\n\
+             - send_message: Stuur een bericht naar een andere gebruiker\n\
+             - mark_messages_read: Markeer berichten als gelezen\n\
              - get_absences: Absentie en verzuim\n\
              - get_studiewijzers: Studiewijzers per vak\n\
              - get_activities: Activiteiten\n\
              - get_bronnen: Digitale leermaterialen en bronnen\n\
              - get_leermiddelen: Digitale leermiddelen en boeken\n\
              - get_today_summary: Compleet dagoverzicht (rooster, cijfers, opdrachten, berichten, absenties)\n\
-             - get_profile_info: Uitgebreide profielinformatie (naam, klas, adres, opleiding)\n\n\
-             Gebruik deze tools wanneer de gebruiker vraagt naar specifieke schoolinformatie.\n\
+             - get_profile_info: Uitgebreide profielinformatie (naam, klas, adres, opleiding)\n\
+             - download_file: Download een bestand (bijlage) en toon grootte en type\n\n\
+             Gebruik deze tools wanneer de gebruiker vraagt naar specifieke schoolinformatie of acties wil uitvoeren (zoals berichten sturen, opdrachten bekijken, bestanden downloaden).\n\
              Bij vragen over gemiddelden per vak: gebruik eerst get_schoolyears, dan get_full_grade_overview.\n\
-             Bij vragen over berichtinhoud: gebruik eerst get_messages, dan get_message_content.\n\
+             Bij vragen over berichtinhoud: gebruik eerst get_messages, dan get_message_content, of stuur een bericht met send_message.\n\
              Geef antwoord op basis van de opgehaalde data. Gebruik bullet points en houd het beknopt.";
 
     let no_tools_prompt = "\n\nJe hebt geen directe toegang tot de schoolgegevens van de gebruiker. \

@@ -114,6 +114,17 @@ pub fn get_all_tool_defs() -> Vec<ToolDef> {
             }),
         },
         ToolDef {
+            name: "get_assignment_detail".to_string(),
+            description: "Haal de volledige details van een specifieke opdracht op, inclusief bijlagen (bestanden).".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "assignment_id": { "type": "integer", "description": "ID van de opdracht" }
+                },
+                "required": ["assignment_id"]
+            }),
+        },
+        ToolDef {
             name: "get_messages".to_string(),
             description: "Haal berichten op uit een map (Postvak IN, Verzonden, Prullenbak, etc.).".to_string(),
             parameters: serde_json::json!({
@@ -145,6 +156,45 @@ pub fn get_all_tool_defs() -> Vec<ToolDef> {
                     }
                 },
                 "required": ["message_id"]
+            }),
+        },
+        ToolDef {
+            name: "send_message".to_string(),
+            description: "Stuur een bericht via Magister. Gebruik dit om een bericht te verzenden naar een medeleerling, docent of klas.".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "subject": { "type": "string", "description": "Onderwerp van het bericht" },
+                    "body": { "type": "string", "description": "Inhoud van het bericht" },
+                    "recipients": {
+                        "type": "array",
+                        "description": "Lijst van ontvangers, elk met id en type (leerling/docent/klas).",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": { "type": "integer" },
+                                "type": { "type": "string", "enum": ["leerling", "docent", "klas"], "default": "leerling" }
+                            },
+                            "required": ["id"]
+                        }
+                    }
+                },
+                "required": ["subject", "body", "recipients"]
+            }),
+        },
+        ToolDef {
+            name: "mark_messages_read".to_string(),
+            description: "Markeer een of meerdere berichten als gelezen. Geef de bericht-ID's op.".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "message_ids": {
+                        "type": "array",
+                        "items": { "type": "integer" },
+                        "description": "Lijst van bericht-ID's om als gelezen te markeren."
+                    }
+                },
+                "required": ["message_ids"]
             }),
         },
         ToolDef {
@@ -217,6 +267,17 @@ pub fn get_all_tool_defs() -> Vec<ToolDef> {
                 "type": "object",
                 "properties": {},
                 "required": []
+            }),
+        },
+        ToolDef {
+            name: "download_file".to_string(),
+            description: "Download een bestand van een opgegeven URL (uit de Magister API). Geeft de bestandsgrootte en het MIME-type terug. De AI kan de inhoud niet lezen, maar kan de gebruiker informeren.".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "url": { "type": "string", "description": "Volledige URL of relatief pad naar het bestand (zoals opgehaald uit assignment attachments of message attachments)." }
+                },
+                "required": ["url"]
             }),
         },
     ]
@@ -343,7 +404,6 @@ pub async fn execute_tool(
 
             match client.get(&path).await {
                 Ok(data) => {
-                    // Extract grades from CijferVakken structure
                     let vakken = data
                         .get("CijferVakken")
                         .or_else(|| data.get("CijferOverzicht").and_then(|co| co.get("CijferVakken")))
@@ -667,12 +727,10 @@ pub async fn execute_tool(
         "get_profile_info" => {
             let mut results = serde_json::Map::new();
 
-            // Get account info
             if let Ok(account) = client.get("account").await {
                 results.insert("account".to_string(), account);
             }
 
-            // Get profile
             if let Ok(profile) = client.get(&format!("personen/{}", person_id)).await {
                 let simplified = serde_json::json!({
                     "roepnaam": profile.get("Roepnaam"),
@@ -684,13 +742,11 @@ pub async fn execute_tool(
                 results.insert("persoon".to_string(), simplified);
             }
 
-            // Get addresses
             if let Ok(addr_data) = client.get(&format!("personen/{}/adressen", person_id)).await {
                 let items = addr_data.get("Items").cloned().unwrap_or(Value::Array(vec![]));
                 results.insert("adressen".to_string(), Value::Array(items.as_array().cloned().unwrap_or_default()));
             }
 
-            // Get career/education info
             if let Ok(career) = client.get(&format!("personen/{}/opleidinggegevensprofiel", person_id)).await {
                 results.insert("opleiding".to_string(), career);
             }
@@ -707,7 +763,6 @@ pub async fn execute_tool(
 
             let mut summary = serde_json::Map::new();
 
-            // Calendar events today
             if let Ok(events) = client
                 .get(&format!("personen/{}/afspraken?tot={}&van={}", person_id, today, today))
                 .await
@@ -716,7 +771,6 @@ pub async fn execute_tool(
                 summary.insert("vandaag_lessen".to_string(), items);
             }
 
-            // Recent grades
             if let Ok(grades) = client
                 .get(&format!("personen/{}/cijfers/laatste?top=5&skip=0", person_id))
                 .await
@@ -725,7 +779,6 @@ pub async fn execute_tool(
                 summary.insert("recente_cijfers".to_string(), items);
             }
 
-            // Assignments
             if let Ok(assignments) = client
                 .get(&format!("personen/{}/opdrachten?van={}&tot={}", person_id, today, next_week))
                 .await
@@ -734,7 +787,6 @@ pub async fn execute_tool(
                 summary.insert("aankomende_opdrachten".to_string(), items);
             }
 
-            // Unread messages
             if let Ok(folders) = client.get("berichten/mappen").await {
                 let unread = folders.get("Items").and_then(|v| v.as_array())
                     .map(|arr| arr.iter().filter_map(|f| f.get("aantalOngelezen").and_then(|v| v.as_i64())).sum::<i64>())
@@ -742,7 +794,6 @@ pub async fn execute_tool(
                 summary.insert("ongelezen_berichten".to_string(), Value::Number(unread.into()));
             }
 
-            // Absences today
             if let Ok(absences) = client
                 .get(&format!("personen/{}/absenties?tot={}&van={}", person_id, today, today))
                 .await
@@ -757,6 +808,160 @@ pub async fn execute_tool(
                 error: None,
             }
         }
+
+        // Nieuw:
+        "send_message" => {
+            let subject = args.get("subject").and_then(|v| v.as_str()).unwrap_or("");
+            let body = args.get("body").and_then(|v| v.as_str()).unwrap_or("");
+            let recipients = args.get("recipients").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+
+            let ontvangers: Vec<serde_json::Value> = recipients.iter().map(|r| {
+                serde_json::json!({
+                    "id": r.get("id").and_then(|v| v.as_i64()).unwrap_or(0),
+                    "type": r.get("type").and_then(|v| v.as_str()).unwrap_or("leerling")
+                })
+            }).collect();
+
+            let req_body = serde_json::json!({
+                "ontvangers": ontvangers,
+                "kopieOntvangers": [],
+                "blindeKopieOntvangers": [],
+                "heeftPrioriteit": false,
+                "inhoud": body,
+                "onderwerp": subject,
+                "verzendOptie": "standaard",
+                "bijlagen": []
+            });
+
+            match client.post("berichten/verzenden", &req_body).await {
+                Ok(_) => ToolResult {
+                    tool: tool_name.to_string(),
+                    success: true,
+                    data: serde_json::json!({ "status": "verzonden", "subject": subject }),
+                    error: None,
+                },
+                Err(e) => ToolResult {
+                    tool: tool_name.to_string(),
+                    success: false,
+                    data: Value::Null,
+                    error: Some(e.to_string()),
+                },
+            }
+        }
+
+        "mark_messages_read" => {
+            let message_ids = args.get("message_ids")
+                .and_then(|v| v.as_array())
+                .map(|arr| arr.iter().filter_map(|v| v.as_i64()).collect::<Vec<i64>>())
+                .unwrap_or_default();
+
+            if message_ids.is_empty() {
+                return ToolResult {
+                    tool: tool_name.to_string(),
+                    success: false,
+                    data: Value::Null,
+                    error: Some("Geen geldige bericht-ID's opgegeven.".to_string()),
+                };
+            }
+
+            let body = serde_json::json!({"BerichtIds": message_ids});
+
+            match client.put("berichten/gelezen", &body).await {
+                Ok(()) => ToolResult {
+                    tool: tool_name.to_string(),
+                    success: true,
+                    data: serde_json::json!({ "status": "gemarkeerd", "aantal": message_ids.len() }),
+                    error: None,
+                },
+                Err(e) => ToolResult {
+                    tool: tool_name.to_string(),
+                    success: false,
+                    data: Value::Null,
+                    error: Some(e.to_string()),
+                },
+            }
+        }
+
+        "get_assignment_detail" => {
+            let assignment_id = args.get("assignment_id").and_then(|v| v.as_i64()).unwrap_or(0);
+
+            match client.get(&format!("personen/{}/opdrachten/{}", person_id, assignment_id)).await {
+                Ok(data) => {
+                    let simplified = serde_json::json!({
+                        "id": data.get("Id"),
+                        "titel": data.get("Titel"),
+                        "vak": data.get("Vak"),
+                        "inleveren_voor": data.get("InleverenVoor"),
+                        "ingeleverd_op": data.get("IngeleverdOp"),
+                        "omschrijving": data.get("Omschrijving"),
+                        "bijlagen": data.get("Bijlagen").and_then(|b| b.as_array()).map(|arr| {
+                            arr.iter().map(|a| serde_json::json!({
+                                "id": a.get("Id"),
+                                "naam": a.get("Naam"),
+                                "url": a.get("Url"),
+                                "grootte": a.get("Grootte"),
+                                "content_type": a.get("ContentType"),
+                            })).collect::<Vec<_>>()
+                        }),
+                        "docenten": data.get("Docenten"),
+                        "beoordeling": data.get("Beoordeling"),
+                        "beoordeeld_op": data.get("BeoordeeldOp"),
+                        "status_laatste_opdracht_versie": data.get("StatusLaatsteOpdrachtVersie"),
+                    });
+                    ToolResult {
+                        tool: tool_name.to_string(),
+                        success: true,
+                        data: simplified,
+                        error: None,
+                    }
+                }
+                Err(e) => ToolResult {
+                    tool: tool_name.to_string(),
+                    success: false,
+                    data: Value::Null,
+                    error: Some(e.to_string()),
+                },
+            }
+        }
+
+        "download_file" => {
+            let url = args.get("url").and_then(|v| v.as_str()).unwrap_or("");
+
+            if url.is_empty() {
+                return ToolResult {
+                    tool: tool_name.to_string(),
+                    success: false,
+                    data: Value::Null,
+                    error: Some("Geen URL opgegeven.".to_string()),
+                };
+            }
+
+            match client.get_bytes_with_content_type(url).await {
+                Ok((bytes, content_type)) => {
+                    let size = bytes.len();
+                    let data = serde_json::json!({
+                        "url": url,
+                        "size_bytes": size,
+                        "size_mb": (size as f64) / 1_048_576.0,
+                        "mime_type": content_type,
+                        "message": "Het bestand is gedownload. De AI kan de inhoud niet lezen, maar je kunt het openen via de link."
+                    });
+                    ToolResult {
+                        tool: tool_name.to_string(),
+                        success: true,
+                        data,
+                        error: None,
+                    }
+                }
+                Err(e) => ToolResult {
+                    tool: tool_name.to_string(),
+                    success: false,
+                    data: Value::Null,
+                    error: Some(e.to_string()),
+                },
+            }
+        }
+
         _ => ToolResult {
             tool: tool_name.to_string(), success: false, data: Value::Null,
             error: Some(format!("Onbekende tool: {}", tool_name)),

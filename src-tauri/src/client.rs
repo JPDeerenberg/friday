@@ -1,3 +1,6 @@
+//! Magister API client.
+//! (Behoud alle bestaande code, voeg de nieuwe methode toe.)
+
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -145,7 +148,6 @@ impl MagisterClient {
 
         // Handle token expired mid-request
         if resp.status().as_u16() == 401 {
-            // Try refresh and retry once
             let text = resp.text().await.unwrap_or_default();
             if text.contains("SecurityToken Expired") || text.contains("invalid_token") {
                 self.token_set.as_mut().unwrap().expires_at = Utc::now(); // Force refresh
@@ -229,6 +231,58 @@ impl MagisterClient {
         ))
     }
 
+    /// Make an authenticated GET request and return both bytes and content type.
+    pub async fn get_bytes_with_content_type(
+        &mut self,
+        path: &str,
+    ) -> Result<(Vec<u8>, String), ClientError> {
+        self.ensure_valid_token().await?;
+        let token_set = self.token_set.as_ref().unwrap();
+
+        let url = if path.starts_with("http") {
+            path.to_string()
+        } else {
+            format!("{}/{}", token_set.api_endpoint.trim_end_matches('/'), path.trim_start_matches('/'))
+        };
+
+        let resp = self
+            .http
+            .get(&url)
+            .header(
+                "Authorization",
+                format!("Bearer {}", token_set.access_token),
+            )
+            .send()
+            .await
+            .map_err(|e| ClientError::RequestFailed(e.to_string()))?;
+
+        let content_type = resp
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("application/octet-stream")
+            .to_string();
+
+        if resp.status().as_u16() == 404 {
+            return Err(ClientError::ApiError(404, "Not Found".to_string()));
+        }
+
+        if !resp.status().is_success() {
+            let status = resp.status().as_u16();
+            let text = resp.text().await.unwrap_or_default();
+            eprintln!("API Error (BYTES): URL={}, Status={}, Body={}", url, status, text);
+            return Err(ClientError::ApiError(status, text));
+        }
+
+        let bytes = resp
+            .bytes()
+            .await
+            .map_err(|e| ClientError::ParseFailed(e.to_string()))?
+            .to_vec();
+
+        Ok((bytes, content_type))
+    }
+
     /// Make an authenticated POST request.
     pub async fn post(
         &mut self,
@@ -265,7 +319,6 @@ impl MagisterClient {
             return Err(ClientError::ApiError(status, text));
         }
 
-        // Some POST endpoints return empty body
         let text = resp.text().await.unwrap_or_default();
         if text.is_empty() {
             Ok(serde_json::Value::Null)
@@ -474,6 +527,7 @@ impl AppHandlePathResolver for tauri::AppHandle {
         self.path().app_data_dir().map_err(|e| e.to_string())
     }
 }
+
 #[cfg(test)]
 mod tests {
     use crate::client::{ClientError, MagisterClient, TokenSet};
@@ -573,7 +627,7 @@ mod tests {
 
         let result = client.get("/api/test").await;
         match result {
-            Err(ClientError::RateLimited) => {} // we will probably have to update this test depending on whether it returns ApiError or RateLimited
+            Err(ClientError::RateLimited) => {}
             Err(ClientError::ApiError(status, text)) => {
                 assert_eq!(status, 429);
                 assert_eq!(text, "Rate Limited");
@@ -605,7 +659,6 @@ mod tests {
     #[tokio::test]
     async fn test_get_not_authenticated() {
         let mut client = MagisterClient::new();
-        // token_set is None
 
         let result = client.get("/api/test").await;
         match result {
