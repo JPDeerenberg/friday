@@ -1,5 +1,3 @@
-import java.util.Properties
-
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -14,8 +12,6 @@ android {
         applicationId = "com.joris.friday"
         minSdk = 24
         targetSdk = 36
-        versionCode = 10501  // overeenkomend met versie 1.5.1
-        versionName = "1.5.1"
     }
     buildTypes {
         getByName("debug") {
@@ -23,7 +19,8 @@ android {
             isDebuggable = true
             isJniDebuggable = true
             isMinifyEnabled = false
-            packaging {                jniLibs.keepDebugSymbols.add("*/arm64-v8a/*.so")
+            packaging {
+                jniLibs.keepDebugSymbols.add("*/arm64-v8a/*.so")
                 jniLibs.keepDebugSymbols.add("*/armeabi-v7a/*.so")
                 jniLibs.keepDebugSymbols.add("*/x86/*.so")
                 jniLibs.keepDebugSymbols.add("*/x86_64/*.so")
@@ -62,3 +59,10 @@ dependencies {
 }
 
 apply(from = "tauri.build.gradle.kts")
+
+// Dit blok zorgt dat onze versiecode/versienaam altijd wordt gebruikt,
+// ook als tauri.build.gradle.kts ze probeert te overschrijven.
+afterEvaluate {
+    android.defaultConfig.versionCode = 10501
+    android.defaultConfig.versionName = "1.5.1"
+}
