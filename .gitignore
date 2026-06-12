@@ -11,6 +11,8 @@ vite.config.ts.timestamp-*
 Discipulus/
 magister_dump_json/
 json-export-lessen/
+Discipulus/
+Discipulus
 
 # IDE & Editor
 .idea/
