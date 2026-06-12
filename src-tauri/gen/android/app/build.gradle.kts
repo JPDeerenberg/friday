@@ -12,6 +12,8 @@ android {
         applicationId = "com.joris.friday"
         minSdk = 24
         targetSdk = 36
+        versionCode = 10501
+        versionName = "1.5.1"
     }
     buildTypes {
         getByName("debug") {
@@ -35,12 +37,17 @@ android {
             )
         }
     }
-    kotlinOptions {
-        jvmTarget = "1.8"
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
     buildFeatures {
         buildConfig = true
     }
+}
+
+kotlin {
+    jvmToolchain(17)
 }
 
 rust {
@@ -59,10 +66,3 @@ dependencies {
 }
 
 apply(from = "tauri.build.gradle.kts")
-
-// Dit blok zorgt dat onze versiecode/versienaam altijd wordt gebruikt,
-// ook als tauri.build.gradle.kts ze probeert te overschrijven.
-afterEvaluate {
-    android.defaultConfig.versionCode = 10501
-    android.defaultConfig.versionName = "1.5.1"
-}
