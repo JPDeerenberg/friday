@@ -12,6 +12,7 @@
     "dialog:default",
     "core:window:allow-create",
     "core:window:allow-close",
-    "deep-link:default"
+    "deep-link:default",
+    "mcp-bridge:default"
   ]
 }

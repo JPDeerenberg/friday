@@ -247,7 +247,7 @@
             <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
           </button>
         {/if}
-        <h1 class="text-lg font-bold text-gray-100 italic tracking-tighter truncate">Opdrachten</h1>
+        <h1 class="text-lg font-bold text-gray-100 truncate">Opdrachten</h1>
       </div>
       <button
         onclick={loadAssignments}
@@ -270,14 +270,14 @@
       ] as f}
         <button
           onclick={() => filter = f.id as any}
-          class="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-black uppercase tracking-tight transition-all whitespace-nowrap shrink-0
-                 {filter === f.id && f.id === 'overdue'
-                   ? 'bg-red-500 text-white shadow-lg shadow-red-500/30'
-                   : filter === f.id
-                     ? 'bg-primary-500 text-white shadow-lg shadow-primary-500/30'
-                     : f.id === 'overdue' && f.count > 0
-                       ? 'bg-red-500/10 text-red-400 hover:text-red-300 border border-red-500/20'
-                       : 'bg-surface-800/70 text-gray-400 hover:text-gray-200 border border-white/5'}"
+          class="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-black transition-all whitespace-nowrap shrink-0
+ {filter === f.id && f.id === 'overdue'
+ ? 'bg-red-500 text-white shadow-lg shadow-red-500/30'
+ : filter === f.id
+ ? 'bg-primary-500 text-white shadow-lg shadow-primary-500/30'
+ : f.id === 'overdue' && f.count > 0
+ ? 'bg-red-500/10 text-red-400 hover:text-red-300 border border-red-500/20'
+ : 'bg-surface-800/70 text-gray-400 hover:text-gray-200 border border-white/5'}"
         >
           {f.label}
           {#if f.count > 0}
@@ -334,7 +334,7 @@
       {:else if filteredAssignments.length === 0}
         <div class="flex-1 flex flex-col items-center justify-center p-8 text-center">
           <svg class="w-10 h-10 text-gray-700 mb-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>
-          <p class="text-gray-600 text-xs font-bold uppercase tracking-widest">Geen opdrachten</p>
+          <p class="text-gray-600 text-xs font-bold">Geen opdrachten</p>
         </div>
       {:else}
         <div class="flex-1 overflow-y-auto p-3 space-y-2 custom-scrollbar">
@@ -344,17 +344,17 @@
               onclick={() => selectAssignment(assignment)}
               style="--i: {i}"
               class="stagger-item w-full text-left p-4 rounded-2xl transition-all border
-                     {selectedAssignment?.Id === assignment.Id
-                       ? 'bg-primary-500/10 border-primary-500/30 shadow-xl shadow-primary-500/5'
-                       : 'bg-surface-800/40 border-white/5 hover:bg-surface-800/60 hover:border-white/10'}"
+ {selectedAssignment?.Id === assignment.Id
+ ? 'bg-primary-500/10 border-primary-500/30 shadow-xl shadow-primary-500/5'
+ : 'bg-surface-800/40 border-white/5 hover:bg-surface-800/60 hover:border-white/10'}"
             >
               <div class="flex justify-between items-start mb-2 gap-3">
                 <p class="text-sm font-bold text-gray-100 truncate flex-1 leading-tight">{assignment.Titel}</p>
-                <span class="px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wide border shrink-0 {getStatusStyle(status.key)}">
+                <span class="px-2 py-0.5 rounded-md text-[9px] font-black border shrink-0 {getStatusStyle(status.key)}">
                   {status.label}
                 </span>
               </div>
-              <div class="flex items-center justify-between text-[10px] text-gray-500 uppercase tracking-tighter font-bold">
+              <div class="flex items-center justify-between text-[10px] text-gray-500 font-bold">
                 <span class="truncate opacity-70">{assignment.Vak ?? 'Algemeen'}</span>
                 <span class="{isOverdue(assignment) ? 'text-red-400 font-black' : ''}">
                   {new Date(assignment.InleverenVoor).toLocaleDateString('nl-NL', { day: 'numeric', month: 'short' })}
@@ -363,7 +363,7 @@
               {#if isOverdue(assignment)}
                 <div class="mt-1.5 flex items-center gap-1 text-red-400">
                   <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-                  <span class="text-[9px] font-black uppercase tracking-widest">Te laat</span>
+                  <span class="text-[9px] font-black">Te laat</span>
                 </div>
               {/if}
             </button>
@@ -415,23 +415,23 @@
             <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
               <div class="flex-1 min-w-0">
                 <div class="flex items-center gap-2 mb-2 flex-wrap">
-                  <span class="px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest border {getStatusStyle(getStatus(selectedAssignment).key)}">
+                  <span class="px-2.5 py-1 rounded-lg text-[10px] font-black border {getStatusStyle(getStatus(selectedAssignment).key)}">
                     {getStatus(selectedAssignment).label}
                   </span>
                   {#if isOverdue(selectedAssignment)}
-                    <span class="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest bg-red-500/15 text-red-400 border border-red-500/25 animate-pulse">
+                    <span class="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-black bg-red-500/15 text-red-400 border border-red-500/25 animate-pulse">
                       <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
                       Te laat
                     </span>
                   {/if}
                 </div>
-                <h2 class="text-2xl font-black text-white leading-tight tracking-tight">{selectedAssignment.Titel}</h2>
-                <p class="text-gray-400 mt-1 font-medium italic text-sm">{selectedAssignment.Vak ?? 'Geen vak opgegeven'}</p>
+                <h2 class="text-2xl font-black text-white leading-tight">{selectedAssignment.Titel}</h2>
+                <p class="text-gray-400 mt-1 font-medium text-sm">{selectedAssignment.Vak ?? 'Geen vak opgegeven'}</p>
               </div>
 
               {#if selectedAssignment.Beoordeling}
                 <div class="glass p-4 rounded-2xl flex flex-col items-center justify-center min-w-[90px] border-emerald-500/30">
-                  <span class="text-[10px] text-emerald-400 font-bold uppercase tracking-widest mb-1">Cijfer</span>
+                  <span class="text-[10px] text-emerald-400 font-bold mb-1">Cijfer</span>
                   <span class="text-3xl font-black text-emerald-400">{selectedAssignment.Beoordeling}</span>
                 </div>
               {/if}
@@ -441,26 +441,26 @@
               <div class="glass p-3 rounded-xl">
                 <div class="flex items-center gap-1.5 mb-1">
                   <svg class="w-3 h-3 text-gray-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
-                  <p class="text-[10px] text-gray-500 font-bold uppercase tracking-tighter">Deadline</p>
+                  <p class="text-[10px] text-gray-500 font-bold">Deadline</p>
                 </div>
                 <p class="text-xs text-gray-200">{formatDateFull(selectedAssignment.InleverenVoor)}</p>
               </div>
               {#if selectedAssignment.IngeleverdOp}
                 <div class="glass p-3 rounded-xl border-blue-500/20">
-                  <p class="text-[10px] text-blue-400/80 font-bold uppercase tracking-tighter mb-1">Ingeleverd op</p>
+                  <p class="text-[10px] text-blue-400/80 font-bold mb-1">Ingeleverd op</p>
                   <p class="text-xs text-gray-200">{formatDateFull(selectedAssignment.IngeleverdOp)}</p>
                 </div>
               {/if}
               {#if selectedAssignment.BeoordeeldOp}
                 <div class="glass p-3 rounded-xl border-emerald-500/20">
-                  <p class="text-[10px] text-emerald-400/80 font-bold uppercase tracking-tighter mb-1">Beoordeeld op</p>
+                  <p class="text-[10px] text-emerald-400/80 font-bold mb-1">Beoordeeld op</p>
                   <p class="text-xs text-gray-200">{formatDateFull(selectedAssignment.BeoordeeldOp)}</p>
                 </div>
               {/if}
               <div class="glass p-3 rounded-xl">
                 <div class="flex items-center gap-1.5 mb-1">
                   <svg class="w-3 h-3 text-gray-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-                  <p class="text-[10px] text-gray-500 font-bold uppercase tracking-tighter">Docent</p>
+                  <p class="text-[10px] text-gray-500 font-bold">Docent</p>
                 </div>
                 <p class="text-xs text-gray-200 truncate">{selectedAssignment.Docenten?.map((d: any) => formatTeacherName(d.Naam)).join(', ') || 'N.v.t.'}</p>
               </div>
@@ -515,9 +515,9 @@
           {#if selectedAssignment.MagInleveren || selectedAssignment.OpnieuwInleveren}
             <div class="space-y-4 pt-4 border-t border-surface-800/50">
               <div class="flex items-center justify-between">
-                <h3 class="text-lg font-black text-white tracking-tight">Inleveren</h3>
+                <h3 class="text-lg font-black text-white">Inleveren</h3>
                 {#if isSubmitting}
-                  <div class="flex items-center gap-2 text-xs text-primary-400 font-bold uppercase animate-pulse">
+                  <div class="flex items-center gap-2 text-xs text-primary-400 font-bold animate-pulse">
                     <div class="w-2 h-2 rounded-full bg-primary-500 animate-pulse"></div>
                     Bezig...
                   </div>
@@ -534,7 +534,7 @@
                 {#if attachments.length > 0 || uploadLoading}
                   <div class="px-5 py-3 bg-surface-900/50 border-t border-surface-800/50 space-y-2">
                     <div class="flex items-center justify-between">
-                      <span class="text-[10px] text-gray-500 font-bold uppercase tracking-widest">Bijlagen ({attachments.length})</span>
+                      <span class="text-[10px] text-gray-500 font-bold">Bijlagen ({attachments.length})</span>
                       {#if uploadLoading}
                         <div class="w-4 h-4 border-2 border-primary-500 border-t-transparent rounded-full animate-spin"></div>
                       {/if}
@@ -570,9 +570,9 @@
                   <button
                     onclick={handleSubmit}
                     disabled={isSubmitting || uploadLoading || (!submissionText.trim() && attachments.length === 0)}
-                    class="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-primary-500 text-white text-xs font-black tracking-widest uppercase
-                           hover:bg-primary-400 shadow-lg shadow-primary-500/30
-                           active:scale-95 transition-all disabled:opacity-40 disabled:shadow-none"
+                    class="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-primary-500 text-white text-xs font-black 
+ hover:bg-primary-400 shadow-lg shadow-primary-500/30
+ active:scale-95 transition-all disabled:opacity-40 disabled:shadow-none"
                   >
                     {#if isSubmitting}
                       <div class="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
@@ -589,7 +589,7 @@
           <!-- History -->
           {#if selectedAssignment.VersieNavigatieItems?.length > 1}
             <div class="space-y-3">
-              <h3 class="text-sm font-bold text-gray-500 uppercase tracking-widest flex items-center gap-2">
+              <h3 class="text-sm font-bold text-gray-500 flex items-center gap-2">
                 <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="10"/></svg>
                 Geschiedenis
               </h3>
@@ -602,7 +602,7 @@
                       </div>
                       <div>
                         <p class="text-sm font-bold text-gray-200">{version.Omschrijving || 'Ingeleverde versie'}</p>
-                        <p class="text-[10px] text-gray-500 font-bold uppercase tracking-tighter">Ingeleverd</p>
+                        <p class="text-[10px] text-gray-500 font-bold">Ingeleverd</p>
                       </div>
                     </div>
                     <button class="text-xs font-bold text-primary-400 hover:text-primary-300 transition-colors">Bekijken</button>
@@ -618,8 +618,8 @@
           <div class="w-20 h-20 rounded-full bg-surface-900 flex items-center justify-center mb-6 border border-surface-800 shadow-xl">
             <svg class="w-10 h-10 text-gray-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><line x1="10" y1="9" x2="8" y2="9"/></svg>
           </div>
-          <h3 class="text-lg font-black text-white italic mb-2 tracking-tight">Selecteer een opdracht</h3>
-          <p class="text-gray-600 max-w-xs text-xs font-bold uppercase tracking-widest leading-relaxed">Kies een opdracht uit de lijst</p>
+          <h3 class="text-lg font-black text-white mb-2">Selecteer een opdracht</h3>
+          <p class="text-gray-600 max-w-xs text-xs font-bold leading-relaxed">Kies een opdracht uit de lijst</p>
         </div>
       {/if}
     </section>

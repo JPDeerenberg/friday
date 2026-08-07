@@ -10,7 +10,7 @@ pub struct Schoolyear {
     #[serde(alias = "Studie")]
     pub studie: SchoolyearGroep,
     #[serde(alias = "Groep")]
-    pub groep: SchoolyearGroep,
+    pub groep: Option<SchoolyearGroep>,
     #[serde(alias = "Lesperiode")]
     pub lesperiode: Lesperiode,
     #[serde(alias = "Profielen")]

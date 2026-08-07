@@ -44,6 +44,10 @@ pub struct MagisterClient {
     pub http: reqwest::Client,
     pub token_set: Option<TokenSet>,
     pub auth_flow: Option<AuthFlow>,
+    /// Set once at app startup via set_app_handle(). Needed so ensure_valid_token()
+    /// can persist a mid-session refresh to disk (bug: refreshed tokens were only
+    /// kept in memory, tokens.json was only written at login/logout/restore).
+    app_handle: Option<tauri::AppHandle>,
 }
 
 impl MagisterClient {
@@ -55,12 +59,12 @@ impl MagisterClient {
                 .unwrap_or_else(|_| reqwest::Client::new()),
             token_set: None,
             auth_flow: None,
+            app_handle: None,
         }
     }
 
-    #[allow(dead_code)]
-    pub fn set_app_handle(&mut self, _handle: tauri::AppHandle) {
-        // self.app_handle = Some(handle);
+    pub fn set_app_handle(&mut self, handle: tauri::AppHandle) {
+        self.app_handle = Some(handle);
     }
 
     /// Load tokens from disk if available.
@@ -79,7 +83,6 @@ impl MagisterClient {
     }
 
     /// Save tokens to disk.
-    #[allow(dead_code)]
     pub fn save_tokens(&self, app_handle: &tauri::AppHandle) {
         if let Some(ref token_set) = self.token_set {
             if let Ok(path) = app_handle.path_resolver_data_dir() {
@@ -118,6 +121,14 @@ impl MagisterClient {
             }
 
             self.token_set = Some(new_token);
+
+            // Bug #11 fix: persist immediately, don't leave the refreshed token
+            // in memory only. Without this, a killed/restarted process falls back
+            // to the stale on-disk token, which is also the likely cause of bug #12
+            // (token stops working after backgrounding).
+            if let Some(handle) = self.app_handle.clone() {
+                self.save_tokens(&handle);
+            }
         }
 
         Ok(())
@@ -134,60 +145,77 @@ impl MagisterClient {
             format!("{}/{}", token_set.api_endpoint.trim_end_matches('/'), path.trim_start_matches('/'))
         };
 
-        let resp = self
-            .http
-            .get(&url)
-            .header(
-                "Authorization",
-                format!("Bearer {}", token_set.access_token),
-            )
-            .header("Accept", "application/json")
-            .send()
-            .await
-            .map_err(|e| ClientError::RequestFailed(e.to_string()))?;
+        // Part B 5A: retry on 429 (rate limited) with exponential backoff. Every
+        // other branch below is unchanged from before — it still returns
+        // immediately. Only the 429 case loops (via `continue`), up to
+        // MAX_RATE_LIMIT_RETRIES times, before finally giving up.
+        const MAX_RATE_LIMIT_RETRIES: u32 = 3;
+        let mut attempt = 0;
+        loop {
+            let token_set = self.token_set.as_ref().unwrap();
+            let resp = self
+                .http
+                .get(&url)
+                .header(
+                    "Authorization",
+                    format!("Bearer {}", token_set.access_token),
+                )
+                .header("Accept", "application/json")
+                .send()
+                .await
+                .map_err(|e| ClientError::RequestFailed(e.to_string()))?;
 
-        // Handle token expired mid-request
-        if resp.status().as_u16() == 401 {
-            let text = resp.text().await.unwrap_or_default();
-            if text.contains("SecurityToken Expired") || text.contains("invalid_token") {
-                self.token_set.as_mut().unwrap().expires_at = Utc::now(); // Force refresh
-                self.ensure_valid_token().await?;
-                let token_set = self.token_set.as_ref().unwrap();
-                let resp = self
-                    .http
-                    .get(&url)
-                    .header(
-                        "Authorization",
-                        format!("Bearer {}", token_set.access_token),
-                    )
-                    .header("Content-Type", "application/json")
-                    .header("Accept", "application/json")
-                    .send()
-                    .await
-                    .map_err(|e| ClientError::RequestFailed(e.to_string()))?;
+            // Handle token expired mid-request
+            if resp.status().as_u16() == 401 {
+                let text = resp.text().await.unwrap_or_default();
+                if text.contains("SecurityToken Expired") || text.contains("invalid_token") {
+                    self.token_set.as_mut().unwrap().expires_at = Utc::now(); // Force refresh
+                    self.ensure_valid_token().await?;
+                    let token_set = self.token_set.as_ref().unwrap();
+                    let resp = self
+                        .http
+                        .get(&url)
+                        .header(
+                            "Authorization",
+                            format!("Bearer {}", token_set.access_token),
+                        )
+                        .header("Content-Type", "application/json")
+                        .header("Accept", "application/json")
+                        .send()
+                        .await
+                        .map_err(|e| ClientError::RequestFailed(e.to_string()))?;
 
-                return resp
-                    .json()
-                    .await
-                    .map_err(|e| ClientError::ParseFailed(e.to_string()));
+                    return resp
+                        .json()
+                        .await
+                        .map_err(|e| ClientError::ParseFailed(e.to_string()));
+                }
+                return Err(ClientError::Unauthorized(text));
             }
-            return Err(ClientError::Unauthorized(text));
-        }
 
-        if resp.status().as_u16() == 429 {
-            return Err(ClientError::RateLimited);
-        }
+            if resp.status().as_u16() == 429 {
+                if attempt < MAX_RATE_LIMIT_RETRIES {
+                    attempt += 1;
+                    let backoff = std::time::Duration::from_secs(1u64 << attempt); // 2s, 4s, 8s
+                    eprintln!("API rate limited (GET {}), retrying in {:?} (attempt {}/{})", url, backoff, attempt, MAX_RATE_LIMIT_RETRIES);
+                    tokio::time::sleep(backoff).await;
+                    continue;
+                }
+                return Err(ClientError::RateLimited);
+            }
 
-        if !resp.status().is_success() {
-            let status = resp.status().as_u16();
-            let text = resp.text().await.unwrap_or_default();
-            eprintln!("API Error (GET): URL={}, Status={}, Body={}", url, status, text);
-            return Err(ClientError::ApiError(status, text));
-        }
+            if !resp.status().is_success() {
+                let status = resp.status().as_u16();
+                let text = resp.text().await.unwrap_or_default();
+                eprintln!("API Error (GET): URL={}, Status={}, Body={}", url, status, text);
+                return Err(ClientError::ApiError(status, text));
+            }
 
-        resp.json()
-            .await
-            .map_err(|e| ClientError::ParseFailed(e.to_string()))
+            return resp
+                .json()
+                .await
+                .map_err(|e| ClientError::ParseFailed(e.to_string()));
+        }
     }
 
     /// Make an authenticated GET request that returns raw bytes (for images).
@@ -298,32 +326,52 @@ impl MagisterClient {
             format!("{}/{}", token_set.api_endpoint.trim_end_matches('/'), path.trim_start_matches('/'))
         };
 
-        let resp = self
-            .http
-            .post(&url)
-            .header(
-                "Authorization",
-                format!("Bearer {}", token_set.access_token),
-            )
-            .header("Content-Type", "application/json")
-            .header("Accept", "application/json")
-            .json(body)
-            .send()
-            .await
-            .map_err(|e| ClientError::RequestFailed(e.to_string()))?;
+        // Part B 5A: same 429 retry treatment as get(). Also fixes a small
+        // inconsistency found while doing this: post() previously didn't
+        // distinguish 429 from other errors at all — it fell into the generic
+        // ApiError branch below instead of ClientError::RateLimited.
+        const MAX_RATE_LIMIT_RETRIES: u32 = 3;
+        let mut attempt = 0;
+        loop {
+            let token_set = self.token_set.as_ref().unwrap();
+            let resp = self
+                .http
+                .post(&url)
+                .header(
+                    "Authorization",
+                    format!("Bearer {}", token_set.access_token),
+                )
+                .header("Content-Type", "application/json")
+                .header("Accept", "application/json")
+                .json(body)
+                .send()
+                .await
+                .map_err(|e| ClientError::RequestFailed(e.to_string()))?;
 
-        if !resp.status().is_success() {
-            let status = resp.status().as_u16();
+            if resp.status().as_u16() == 429 {
+                if attempt < MAX_RATE_LIMIT_RETRIES {
+                    attempt += 1;
+                    let backoff = std::time::Duration::from_secs(1u64 << attempt);
+                    eprintln!("API rate limited (POST {}), retrying in {:?} (attempt {}/{})", url, backoff, attempt, MAX_RATE_LIMIT_RETRIES);
+                    tokio::time::sleep(backoff).await;
+                    continue;
+                }
+                return Err(ClientError::RateLimited);
+            }
+
+            if !resp.status().is_success() {
+                let status = resp.status().as_u16();
+                let text = resp.text().await.unwrap_or_default();
+                eprintln!("API Error (POST): URL={}, Status={}, Body={}", url, status, text);
+                return Err(ClientError::ApiError(status, text));
+            }
+
             let text = resp.text().await.unwrap_or_default();
-            eprintln!("API Error (POST): URL={}, Status={}, Body={}", url, status, text);
-            return Err(ClientError::ApiError(status, text));
-        }
-
-        let text = resp.text().await.unwrap_or_default();
-        if text.is_empty() {
-            Ok(serde_json::Value::Null)
-        } else {
-            serde_json::from_str(&text).map_err(|e| ClientError::ParseFailed(e.to_string()))
+            return if text.is_empty() {
+                Ok(serde_json::Value::Null)
+            } else {
+                serde_json::from_str(&text).map_err(|e| ClientError::ParseFailed(e.to_string()))
+            };
         }
     }
 

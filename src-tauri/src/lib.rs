@@ -18,15 +18,34 @@ use tauri::Manager;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let client: SharedClient = Arc::new(Mutex::new(MagisterClient::new()));
+    let client_for_setup = client.clone();
 
-    tauri::Builder::default()
+    let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_deep_link::init())
-        .plugin(tauri_plugin_opener::init())
-        .setup(|app| {
+        .plugin(tauri_plugin_opener::init());
+
+    #[cfg(debug_assertions)]
+    {
+        builder = builder.plugin(tauri_plugin_mcp_bridge::init());
+    }
+
+    builder
+        .setup(move |app| {
             // Initialize AI state with app data directory
             let app_data_dir = app.path().app_data_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
             let ai_state = AiState::new(app_data_dir);
             app.manage(ai_state);
+
+            // Give the client a handle so ensure_valid_token() can persist mid-session
+            // token refreshes to disk (see client.rs / bug #11). Using spawn (not
+            // block_on) — block_on nested inside Tauri's own setup runtime has caused
+            // "cannot start a runtime from within a runtime" panics in similar cases;
+            // this just needs to finish before the first real command runs, which it
+            // will trivially.
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                client_for_setup.lock().await.set_app_handle(handle);
+            });
             #[cfg(mobile)]
             {
                 use tauri::Emitter;

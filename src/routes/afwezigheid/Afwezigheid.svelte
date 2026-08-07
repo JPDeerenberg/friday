@@ -1,6 +1,7 @@
 <script lang="ts">
   import { personId } from '$lib/stores';
   import { getAbsences, formatDate, getSchoolyears } from '$lib/api';
+  import { cacheGet } from '$lib/cache';
   import { onMount } from 'svelte';
   import { fade, fly, slide } from 'svelte/transition';
 
@@ -17,7 +18,13 @@
     if (!$personId) return;
 
     try {
-      schoolyears = await getSchoolyears($personId as number);
+      // Schoolyears rarely change within a session — 30 min TTL, cache-first so
+      // revisiting this page doesn't re-show a loading state every time.
+      schoolyears = await cacheGet(
+        `afwezigheid_schoolyears_${$personId}`,
+        () => getSchoolyears($personId as number),
+        30 * 60 * 1000
+      );
       schoolyears.sort((a, b) => new Date(b.begin).getTime() - new Date(a.begin).getTime());
 
       if (schoolyears.length > 0) {
@@ -45,7 +52,15 @@
     if (!$personId) return;
     loading = true;
     try {
-      const raw = await getAbsences($personId as number, van, tot);
+      // Cache-first, keyed per person+date-range so switching schoolyears in the
+      // selector can't serve another year's cached absences. cacheGet resolves
+      // near-instantly on a cache hit (background-refreshing silently after), so
+      // `loading` only stays true long enough to matter on a genuine cache miss.
+      const raw = await cacheGet(
+        `afwezigheid_${$personId}_${van}_${tot}`,
+        () => getAbsences($personId as number, van, tot),
+        5 * 60 * 1000
+      );
       absences = raw.sort((a, b) => {
         const dateA = a.Start ? new Date(a.Start).getTime() : 0;
         const dateB = b.Start ? new Date(b.Start).getTime() : 0;
@@ -122,7 +137,7 @@
                 class="appearance-none bg-surface-900 border border-white/5 rounded-2xl px-4 py-2 pr-9 text-[10px] font-black uppercase tracking-widest text-gray-300 focus:outline-none focus:border-primary-500 transition-all cursor-pointer shadow-lg"
               >
                 {#each schoolyears as year}
-                  <option value={year.id}>{year.groep.code}{year.groep.omschrijving ? ' — ' + year.groep.omschrijving : ''}</option>
+                  <option value={year.id}>{year.groep?.code ?? 'Onbekend'}{year.groep?.omschrijving ? ' — ' + year.groep.omschrijving : ''}</option>
                 {/each}
               </select>
               <div class="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-600 text-[10px]">▼</div>

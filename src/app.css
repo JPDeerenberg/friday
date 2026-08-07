@@ -13,6 +13,122 @@
   --color-surface-850: oklch(0.35 0.04 280);
   --color-surface-900: oklch(0.25 0.04 285);
   --color-surface-950: oklch(0.15 0.04 290);
+
+  /* Material 3 shape scale (m3.material.io/foundations/shape/shape-scale).
+     Tailwind v4 auto-generates rounded-m3-* utilities from --radius-* tokens. */
+  --radius-m3-none: 0px;
+  --radius-m3-xs: 4px;
+  --radius-m3-sm: 8px;
+  --radius-m3-md: 12px;
+  --radius-m3-lg: 16px;
+  --radius-m3-xl: 28px;
+  --radius-m3-full: 9999px;
+
+  /* Material 3 type scale (m3.material.io/styles/typography/type-scale-tokens).
+     Sizes/weights confirmed against two independent sources; line-height and
+     letter-spacing (tracking) are standard M3 values from general familiarity,
+     spot-checked against Body Large's published token (16/24/0.5) which matched
+     exactly — not independently re-verified line-by-line for all 15, so treat
+     line-height/tracking as "should be right" rather than "double-confirmed".
+     Tailwind v4 bundles size+line-height+tracking+weight into one utility via
+     these --text-name / --text-name--line-height paired properties, so e.g.
+     text-label-large applies all four at once. This REPLACES the old app-wide
+     uppercase/italic/tracking-widest styling — none of these 15 use uppercase
+     or italic; real M3 type is normal-case. */
+  --text-display-large: 57px;
+  --text-display-large--line-height: 64px;
+  --text-display-large--letter-spacing: -0.25px;
+  --text-display-large--font-weight: 400;
+  --text-display-medium: 45px;
+  --text-display-medium--line-height: 52px;
+  --text-display-medium--letter-spacing: 0px;
+  --text-display-medium--font-weight: 400;
+  --text-display-small: 36px;
+  --text-display-small--line-height: 44px;
+  --text-display-small--letter-spacing: 0px;
+  --text-display-small--font-weight: 400;
+
+  --text-headline-large: 32px;
+  --text-headline-large--line-height: 40px;
+  --text-headline-large--letter-spacing: 0px;
+  --text-headline-large--font-weight: 400;
+  --text-headline-medium: 28px;
+  --text-headline-medium--line-height: 36px;
+  --text-headline-medium--letter-spacing: 0px;
+  --text-headline-medium--font-weight: 400;
+  --text-headline-small: 24px;
+  --text-headline-small--line-height: 32px;
+  --text-headline-small--letter-spacing: 0px;
+  --text-headline-small--font-weight: 400;
+
+  --text-title-large: 22px;
+  --text-title-large--line-height: 28px;
+  --text-title-large--letter-spacing: 0px;
+  --text-title-large--font-weight: 400;
+  --text-title-medium: 16px;
+  --text-title-medium--line-height: 24px;
+  --text-title-medium--letter-spacing: 0.15px;
+  --text-title-medium--font-weight: 500;
+  --text-title-small: 14px;
+  --text-title-small--line-height: 20px;
+  --text-title-small--letter-spacing: 0.1px;
+  --text-title-small--font-weight: 500;
+
+  --text-body-large: 16px;
+  --text-body-large--line-height: 24px;
+  --text-body-large--letter-spacing: 0.5px;
+  --text-body-large--font-weight: 400;
+  --text-body-medium: 14px;
+  --text-body-medium--line-height: 20px;
+  --text-body-medium--letter-spacing: 0.25px;
+  --text-body-medium--font-weight: 400;
+  --text-body-small: 12px;
+  --text-body-small--line-height: 16px;
+  --text-body-small--letter-spacing: 0.4px;
+  --text-body-small--font-weight: 400;
+
+  --text-label-large: 14px;
+  --text-label-large--line-height: 20px;
+  --text-label-large--letter-spacing: 0.1px;
+  --text-label-large--font-weight: 500;
+  --text-label-medium: 12px;
+  --text-label-medium--line-height: 16px;
+  --text-label-medium--letter-spacing: 0.5px;
+  --text-label-medium--font-weight: 500;
+  --text-label-small: 11px;
+  --text-label-small--line-height: 16px;
+  --text-label-small--letter-spacing: 0.5px;
+  --text-label-small--font-weight: 500;
+}
+
+/* --- Material 3 Elevation ---
+   M3 explicitly prefers tonal elevation (tinting the surface with the primary
+   color, more tint = higher) over raw drop shadows; shadow is reserved for
+   levels 4-5 (hover/dragged interaction states). See m3.material.io/styles/elevation.
+   NOTE: Google doesn't publish exact CSS blur/spread px values for the shadow
+   part — the box-shadow numbers below are our own reasonable approximation of
+   "sits higher = softer/larger shadow", not a verified spec constant. The tint
+   percentages are likewise our own interpolation of the documented mechanism. */
+@utility elevation-0 { background-color: var(--color-surface-900); box-shadow: none; }
+@utility elevation-1 {
+  background-color: color-mix(in oklch, var(--color-surface-900), var(--color-primary-500) 5%);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+}
+@utility elevation-2 {
+  background-color: color-mix(in oklch, var(--color-surface-900), var(--color-primary-500) 8%);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+@utility elevation-3 {
+  background-color: color-mix(in oklch, var(--color-surface-900), var(--color-primary-500) 11%);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+}
+@utility elevation-4 {
+  background-color: color-mix(in oklch, var(--color-surface-900), var(--color-primary-500) 12%);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.35);
+}
+@utility elevation-5 {
+  background-color: color-mix(in oklch, var(--color-surface-900), var(--color-primary-500) 14%);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
 }
 
 /* Custom Overrides for AMOLED / Dark Mode */

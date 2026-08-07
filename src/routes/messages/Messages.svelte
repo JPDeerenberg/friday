@@ -223,7 +223,7 @@
       <div class="p-3 border-b border-surface-700/20">
         <button
           onclick={() => showCompose = true}
-          class="w-full py-2.5 px-3 rounded-2xl bg-primary-500 text-white text-sm font-black uppercase tracking-widest hover:bg-primary-400 active:scale-[0.98] shadow-lg shadow-primary-500/30 transition-all flex items-center justify-center gap-2"
+          class="w-full py-2.5 px-3 rounded-2xl bg-primary-500 text-white text-sm font-black hover:bg-primary-400 active:scale-[0.98] shadow-lg shadow-primary-500/30 transition-all flex items-center justify-center gap-2"
         >
           <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
           Nieuw
@@ -237,9 +237,9 @@
             <button
               onclick={() => selectFolder(folder)}
               class="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs transition-all
-                     {selectedFolder?.id === folder.id
-                       ? 'bg-primary-500/15 text-primary-300 font-bold'
-                       : 'text-gray-400 hover:bg-surface-800 hover:text-gray-200'}"
+ {selectedFolder?.id === folder.id
+ ? 'bg-primary-500/15 text-primary-300 font-bold'
+ : 'text-gray-400 hover:bg-surface-800 hover:text-gray-200'}"
             >
               <span class="truncate">{folder.naam}</span>
               {#if folder.aantalOngelezen > 0}
@@ -274,7 +274,7 @@
             </button>
           </div>
         {:else}
-          <h1 class="text-xl font-bold text-gray-100 italic tracking-tighter">Berichten</h1>
+          <h1 class="text-xl font-bold text-gray-100">Berichten</h1>
           <div class="flex items-center gap-1">
             <button onclick={toggleSearch} class="p-2 text-gray-500 hover:text-primary-400 transition-colors" aria-label="Zoeken">
               <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
@@ -293,9 +293,9 @@
             <button
               onclick={() => selectFolder(folder)}
               class="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs whitespace-nowrap shrink-0 font-bold transition-all
-                     {selectedFolder?.id === folder.id
-                       ? 'bg-primary-500 text-white shadow-lg shadow-primary-500/25'
-                       : 'bg-surface-800 text-gray-400 hover:text-gray-200'}"
+ {selectedFolder?.id === folder.id
+ ? 'bg-primary-500 text-white shadow-lg shadow-primary-500/25'
+ : 'bg-surface-800 text-gray-400 hover:text-gray-200'}"
             >
               {folder.naam}
               {#if folder.aantalOngelezen > 0}
@@ -333,10 +333,10 @@
         ] as f}
           <button
             onclick={() => msgFilter = f.id as any}
-            class="flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wide whitespace-nowrap shrink-0 transition-all
-                   {msgFilter === f.id
-                     ? 'bg-primary-500/20 text-primary-300 border border-primary-500/30'
-                     : 'text-gray-500 hover:text-gray-300 border border-surface-700/50'}"
+            class="flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black whitespace-nowrap shrink-0 transition-all
+ {msgFilter === f.id
+ ? 'bg-primary-500/20 text-primary-300 border border-primary-500/30'
+ : 'text-gray-500 hover:text-gray-300 border border-surface-700/50'}"
           >
             {#if f.id === 'unread'}
               <svg class="w-2.5 h-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><circle cx="12" cy="12" r="4" fill="currentColor"/></svg>
@@ -362,15 +362,15 @@
         {:else if filteredMessages().length === 0}
           <div class="flex flex-col items-center justify-center py-20 text-center px-6">
             <svg class="w-10 h-10 text-gray-700 mb-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
-            <p class="text-gray-600 text-xs font-bold uppercase tracking-widest">Geen berichten</p>
+            <p class="text-gray-600 text-xs font-bold">Geen berichten</p>
           </div>
         {:else}
           {#each filteredMessages() as msg}
             <button
               onclick={() => openMessage(msg)}
               class="w-full text-left px-4 py-3.5 border-b border-surface-800/40 transition-all active:bg-surface-800/50 group
-                     {selectedMessage?.id === msg.id ? 'bg-primary-500/8 border-l-2 border-l-primary-500' : ''}
-                     {!msg.isGelezen ? 'border-l-2 border-l-primary-400' : ''}"
+ {selectedMessage?.id === msg.id ? 'bg-primary-500/8 border-l-2 border-l-primary-500' : ''}
+ {!msg.isGelezen ? 'border-l-2 border-l-primary-400' : ''}"
             >
               <div class="flex items-start justify-between gap-2">
                 <div class="flex items-center gap-2.5 min-w-0">
@@ -388,7 +388,7 @@
               <p class="text-xs text-gray-500 truncate mt-0.5 pl-4.5">{msg.onderwerp ?? '(geen onderwerp)'}</p>
               {#if msg.heeftPrioriteit}
                 <div class="mt-1.5 pl-4.5 flex">
-                  <span class="flex items-center gap-1 text-[10px] text-amber-400 font-bold uppercase tracking-widest bg-amber-500/10 px-2 py-0.5 rounded-md border border-amber-500/20">
+                  <span class="flex items-center gap-1 text-[10px] text-amber-400 font-bold bg-amber-500/10 px-2 py-0.5 rounded-md border border-amber-500/20">
                     <svg class="w-3 h-3" viewBox="0 0 24 24" fill="currentColor"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
                     Prioriteit
                   </span>
@@ -411,7 +411,7 @@
           <div class="flex items-start justify-between gap-4">
             <h2 class="text-lg font-bold text-gray-100 leading-snug">{selectedMessage.onderwerp ?? '(geen onderwerp)'}</h2>
             {#if selectedMessage.heeftPrioriteit}
-              <span class="flex items-center gap-1 text-[10px] text-amber-400 font-black uppercase tracking-widest bg-amber-500/10 border border-amber-500/25 px-2.5 py-1 rounded-xl shrink-0">
+              <span class="flex items-center gap-1 text-[10px] text-amber-400 font-black bg-amber-500/10 border border-amber-500/25 px-2.5 py-1 rounded-xl shrink-0">
                 <svg class="w-3 h-3" viewBox="0 0 24 24" fill="currentColor"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
                 Prioriteit
               </span>
@@ -441,7 +441,7 @@
             <button
               onclick={() => summarizeMessage(selectedMessage)}
               disabled={aiSummaryLoading}
-              class="flex items-center gap-2 px-4 py-2 rounded-2xl bg-primary-500/10 border border-primary-500/20 text-primary-400 hover:bg-primary-500/20 transition-all text-[10px] font-black uppercase tracking-widest disabled:opacity-50"
+              class="flex items-center gap-2 px-4 py-2 rounded-2xl bg-primary-500/10 border border-primary-500/20 text-primary-400 hover:bg-primary-500/20 transition-all text-[10px] font-black disabled:opacity-50"
             >
               {#if aiSummaryLoading && aiMessageId === selectedMessage?.Id}
                 <div class="w-3 h-3 border-2 border-primary-400 border-t-transparent rounded-full animate-spin"></div>
@@ -461,7 +461,7 @@
           <div class="pt-4 border-t border-surface-800/50 flex flex-wrap gap-2">
             <button
               onclick={replyToMessage}
-              class="flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-primary-500 text-white text-xs font-black uppercase tracking-widest shadow-lg shadow-primary-500/25 active:scale-95 transition-all"
+              class="flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-primary-500 text-white text-xs font-black shadow-lg shadow-primary-500/25 active:scale-95 transition-all"
             >
               <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m9 17-5-5 5-5m10 5H5"/></svg>
               Beantwoord
@@ -512,14 +512,14 @@
                 {@html selectedMessage.inhoud}
               </div>
             {:else}
-              <p class="text-sm text-gray-600 italic">Geen berichtinhoud</p>
+              <p class="text-sm text-gray-600">Geen berichtinhoud</p>
             {/if}
             <!-- AI Summary (mobile) -->
             <div class="space-y-2">
               <button
                 onclick={() => summarizeMessage(selectedMessage)}
                 disabled={aiSummaryLoading}
-                class="flex items-center justify-center gap-2 py-2.5 rounded-2xl bg-primary-500/10 border border-primary-500/20 text-primary-400 hover:bg-primary-500/20 transition-all text-[10px] font-black uppercase tracking-widest w-full disabled:opacity-50"
+                class="flex items-center justify-center gap-2 py-2.5 rounded-2xl bg-primary-500/10 border border-primary-500/20 text-primary-400 hover:bg-primary-500/20 transition-all text-[10px] font-black w-full disabled:opacity-50"
               >
                 {#if aiSummaryLoading && aiMessageId === selectedMessage?.Id}
                   <div class="w-3 h-3 border-2 border-primary-400 border-t-transparent rounded-full animate-spin"></div>
@@ -538,7 +538,7 @@
 
             <button
               onclick={replyToMessage}
-              class="w-full flex items-center justify-center gap-2 py-3.5 rounded-2xl bg-primary-500 text-white text-sm font-black uppercase tracking-widest shadow-xl shadow-primary-500/25 active:scale-95 transition-all"
+              class="w-full flex items-center justify-center gap-2 py-3.5 rounded-2xl bg-primary-500 text-white text-sm font-black shadow-xl shadow-primary-500/25 active:scale-95 transition-all"
             >
               <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m9 17-5-5 5-5m10 5H5"/></svg>
               Beantwoorden
@@ -572,7 +572,7 @@
       <div class="flex-1 overflow-y-auto p-5 space-y-4">
         <!-- To field -->
         <div>
-          <label for="composeQuery" class="text-[10px] text-gray-500 font-black uppercase tracking-widest block mb-1.5">Aan</label>
+          <label for="composeQuery" class="text-[10px] text-gray-500 font-black block mb-1.5">Aan</label>
           <div class="flex flex-wrap gap-1.5 mb-2">
             {#each composeRecipients as r}
               <span class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-primary-500/20 border border-primary-500/30 text-primary-300 text-xs font-bold">
@@ -605,7 +605,7 @@
 
         <!-- Subject -->
         <div>
-          <label for="composeSubject" class="text-[10px] text-gray-500 font-black uppercase tracking-widest block mb-1.5">Onderwerp</label>
+          <label for="composeSubject" class="text-[10px] text-gray-500 font-black block mb-1.5">Onderwerp</label>
           <input
             id="composeSubject" type="text" bind:value={composeSubject}
             class="w-full px-3 py-2.5 rounded-xl bg-surface-800 border border-surface-700 text-gray-100 text-sm focus:outline-none focus:border-primary-500"
@@ -614,7 +614,7 @@
 
         <!-- Body -->
         <div>
-          <label for="composeContent" class="text-[10px] text-gray-500 font-black uppercase tracking-widest block mb-1.5">Bericht</label>
+          <label for="composeContent" class="text-[10px] text-gray-500 font-black block mb-1.5">Bericht</label>
           <textarea
             id="composeContent" bind:value={composeContent} rows="6"
             class="w-full px-3 py-2.5 rounded-xl bg-surface-800 border border-surface-700 text-gray-100 text-sm resize-none focus:outline-none focus:border-primary-500"

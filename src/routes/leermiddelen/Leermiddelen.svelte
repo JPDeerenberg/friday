@@ -67,7 +67,7 @@
     <div class="max-w-5xl mx-auto w-full space-y-4">
       <div class="flex items-center justify-between">
         <div class="flex items-center gap-3">
-          <h1 class="text-xl font-black text-gray-100 italic tracking-tighter uppercase shrink-0">Leermiddelen</h1>
+          <h1 class="text-xl font-black text-gray-100 shrink-0">Leermiddelen</h1>
           <button 
             onclick={loadData} 
             class="p-2 text-gray-500 hover:text-emerald-400 hover:rotate-180 transition-all duration-700 active:scale-95"
@@ -83,7 +83,7 @@
           type="text"
           placeholder="ZOEKEN IN BOEKEN..."
           bind:value={searchQuery}
-          class="w-full bg-surface-900 border border-white/5 rounded-2xl px-5 py-3 pl-11 text-[10px] font-black uppercase tracking-widest text-gray-100 placeholder-gray-600 focus:outline-none focus:border-emerald-500/50 transition-all shadow-lg"
+          class="w-full bg-surface-900 border border-white/5 rounded-2xl px-5 py-3 pl-11 text-[10px] font-black text-gray-100 placeholder-gray-600 focus:outline-none focus:border-emerald-500/50 transition-all shadow-lg"
         />
         <svg class="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 group-focus-within:text-emerald-500 transition-colors" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
       </div>
@@ -96,7 +96,7 @@
       {#if loading && !leermiddelen.length}
         <div class="flex flex-col items-center justify-center py-40 gap-4">
           <div class="w-10 h-10 border-4 border-emerald-500/20 border-t-emerald-500 rounded-full animate-spin"></div>
-          <p class="text-[9px] font-black text-gray-600 uppercase tracking-[0.3em] animate-pulse">Catalogus ophalen...</p>
+          <p class="text-[9px] font-black text-gray-600 animate-pulse">Catalogus ophalen...</p>
         </div>
       {:else if error && !leermiddelen.length}
         <div class="glass rounded-[3rem] p-16 text-center space-y-6 border-red-500/10 bg-red-500/[0.02] shadow-2xl mx-auto max-w-lg">
@@ -104,18 +104,18 @@
               <svg class="w-10 h-10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" x2="12" y1="9" y2="13"/><line x1="12" x2="12.01" y1="17" y2="17"/></svg>
            </div>
            <div class="space-y-1">
-              <h3 class="text-xl font-black text-white italic tracking-tight uppercase">Inladen mislukt</h3>
-              <p class="text-gray-500 text-[10px] font-black uppercase tracking-widest leading-relaxed">{error}</p>
+              <h3 class="text-xl font-black text-white">Inladen mislukt</h3>
+              <p class="text-gray-500 text-[10px] font-black leading-relaxed">{error}</p>
            </div>
-           <button onclick={loadData} class="w-full py-4 rounded-2xl bg-surface-800 text-white text-[10px] font-black uppercase tracking-[0.3em] transition-all hover:bg-surface-700 active:scale-95 shadow-lg border border-white/5">
+           <button onclick={loadData} class="w-full py-4 rounded-2xl bg-surface-800 text-white text-[10px] font-black transition-all hover:bg-surface-700 active:scale-95 shadow-lg border border-white/5">
               Herhalen
            </button>
         </div>
       {:else if filteredMaterials().length === 0}
         <div in:fade class="glass rounded-[3rem] p-24 text-center space-y-4 border-white/5 shadow-2xl flex flex-col items-center">
             <svg class="w-16 h-16 text-gray-800 mb-2" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20M4 19.5A2.5 2.5 0 0 0 6.5 22H20M4 19.5V5A2.5 2.5 0 0 1 6.5 2.5H20v11H6.5A2.5 2.5 0 0 0 4 16v3.5z"/></svg>
-            <h3 class="text-xl font-black text-gray-400 italic uppercase">Geen resultaten</h3>
-            <p class="text-gray-700 text-[10px] font-black uppercase tracking-[0.4em]">Pas je filter aan</p>
+            <h3 class="text-xl font-black text-gray-400">Geen resultaten</h3>
+            <p class="text-gray-700 text-[10px] font-black">Pas je filter aan</p>
         </div>
       {:else}
         <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6 md:gap-10">
@@ -131,7 +131,7 @@
                          <svg class="w-16 h-16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20M4 19.5A2.5 2.5 0 0 0 6.5 22H20M4 19.5V5A2.5 2.5 0 0 1 6.5 2.5H20v11H6.5A2.5 2.5 0 0 0 4 16v3.5z"/></svg>
                       </div>
                       <div class="px-3 py-1 rounded-xl bg-emerald-500/5 border border-emerald-500/10 shadow-sm transition-all group-hover:bg-emerald-500/15">
-                        <span class="text-[9px] font-black text-emerald-500 uppercase tracking-widest italic">
+                        <span class="text-[9px] font-black text-emerald-500">
                            {material.Vak?.Afkorting || 'MAGIS'}
                         </span>
                      </div>
@@ -143,7 +143,7 @@
                  
                  <!-- Status Badge -->
                  <div class="absolute top-4 right-4">
-                    <span class="px-3.5 py-1.5 rounded-2xl text-[8px] font-black uppercase tracking-widest border backdrop-blur-3xl shadow-2xl {getStatusColor(material.Status)}">
+                    <span class="px-3.5 py-1.5 rounded-2xl text-[8px] font-black border backdrop-blur-3xl shadow-2xl {getStatusColor(material.Status)}">
                       {material.Status === 1 ? 'Beschikbaar' : 'Gearchiveerd'}
                     </span>
                  </div>
@@ -154,7 +154,7 @@
                       {#if link.Rel === 'content'}
                         <button
                           onclick={() => handleOpen(link.Href)}
-                          class="w-full bg-emerald-500 hover:bg-emerald-400 text-white text-[10px] font-black py-4 rounded-3xl text-center transition-all flex items-center justify-center gap-2.5 uppercase tracking-[0.25em] shadow-xl shadow-emerald-500/20 active:scale-95 border border-emerald-400/30 ring-1 ring-white/10"
+                          class="w-full bg-emerald-500 hover:bg-emerald-400 text-white text-[10px] font-black py-4 rounded-3xl text-center transition-all flex items-center justify-center gap-2.5 shadow-xl shadow-emerald-500/20 active:scale-95 border border-emerald-400/30 ring-1 ring-white/10"
                         >
                           Lezen
                           <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
@@ -166,10 +166,10 @@
 
               <!-- Meta -->
               <div class="px-2 space-y-1.5 flex flex-col items-center text-center">
-                <span class="text-[9px] font-black text-emerald-500 uppercase tracking-[0.3em] leading-none block italic opacity-70">
+                <span class="text-[9px] font-black text-emerald-500 leading-none block opacity-70">
                   {material.Vak?.Omschrijving || 'Algemeen Lesmateriaal'}
                 </span>
-                <h3 class="text-sm font-black text-gray-100 group-hover:text-emerald-400 transition-colors line-clamp-2 leading-none italic uppercase tracking-tighter min-h-[1.5rem]">
+                <h3 class="text-sm font-black text-gray-100 group-hover:text-emerald-400 transition-colors line-clamp-2 leading-none min-h-[1.5rem]">
                   {material.Titel}
                 </h3>
               </div>

@@ -444,7 +444,7 @@
       <button onclick={goBack} class="p-2 text-gray-500 hover:text-primary-400 transition-all font-black text-lg" aria-label="Terug">
         <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
       </button>
-      <h1 class="text-xl font-black text-gray-100 italic tracking-tighter">Instellingen</h1>
+      <h1 class="text-xl font-black text-gray-100">Instellingen</h1>
     </div>
   </header>
 
@@ -452,19 +452,19 @@
     {#each sections as section, i}
       {#if !section.hideIfDesktop || isMobile}
         <section in:fly={{ y: 20, delay: i * 100 }} class="space-y-4">
-          <h2 class="text-[10px] font-black text-gray-500 uppercase tracking-[0.3em] px-2">{section.title}</h2>
+          <h2 class="text-[10px] font-black text-gray-500 px-2">{section.title}</h2>
 
         {#if section.isAi}
           <!-- AI Configuration Card -->
           {#if aiLoaded}
             <div class="glass p-6 rounded-3xl border-primary-500/20 space-y-5 transition-all hover:bg-surface-800/40">
-              <p class="text-[10px] text-gray-500 font-medium tracking-widest leading-relaxed">Configureer AI voor studiedvies, cijferanalyse, samenvattingen en meer.</p>
+              <p class="text-[10px] text-gray-500 font-medium leading-relaxed">Configureer AI voor studiedvies, cijferanalyse, samenvattingen en meer.</p>
 
               <!-- Enable toggle -->
               <div class="flex items-center justify-between">
                 <div>
                   <p class="text-sm font-bold text-gray-100">AI Assistent inschakelen</p>
-                  <p class="text-[10px] text-gray-500 mt-1 uppercase tracking-wider">Zet AI aan voor alle pagina's</p>
+                  <p class="text-[10px] text-gray-500 mt-1">Zet AI aan voor alle pagina's</p>
                 </div>
                 <label class="relative inline-flex items-center cursor-pointer">
                   <input type="checkbox" bind:checked={aiEnabled} onchange={saveAiConfig} class="sr-only peer">
@@ -476,7 +476,7 @@
 
               <!-- API Key -->
               <div class="space-y-2">
-                <label for="aiApiKey" class="text-[10px] font-black text-gray-500 uppercase tracking-widest">API Sleutel</label>
+                <label for="aiApiKey" class="text-[10px] font-black text-gray-500">API Sleutel</label>
                 <div class="flex gap-2">
                   <input
                     id="aiApiKey"
@@ -496,7 +496,7 @@
 
               <!-- Base URL -->
               <div class="space-y-2">
-                <label for="aiBaseUrl" class="text-[10px] font-black text-gray-500 uppercase tracking-widest">API Basis URL</label>
+                <label for="aiBaseUrl" class="text-[10px] font-black text-gray-500">API Basis URL</label>
                 <input
                   id="aiBaseUrl"
                   type="text"
@@ -517,7 +517,7 @@
 
               <!-- Provider -->
               <div class="space-y-2">
-                <label class="text-[10px] font-black text-gray-500 uppercase tracking-widest">AI Provider</label>
+                <label class="text-[10px] font-black text-gray-500">AI Provider</label>
                 <div class="grid grid-cols-2 gap-2">
                   {#each Object.entries(AI_PROVIDERS) as [key, info]}
                     <button
@@ -526,13 +526,13 @@
                         aiBaseUrl = info.defaultBaseUrl;
                         aiModel = info.defaultModel;
                       }}
-                      class="px-3 py-2.5 rounded-xl border text-[9px] font-bold uppercase tracking-wider transition-all text-left
-                        {aiProvider === key
-                          ? 'bg-primary-500/20 border-primary-500/40 text-primary-300 shadow-lg shadow-primary-500/10'
-                          : 'bg-surface-800/60 border-white/5 text-gray-400 hover:bg-surface-700/60 hover:text-gray-200'}"
+                      class="px-3 py-2.5 rounded-xl border text-[9px] font-bold transition-all text-left
+ {aiProvider === key
+ ? 'bg-primary-500/20 border-primary-500/40 text-primary-300 shadow-lg shadow-primary-500/10'
+ : 'bg-surface-800/60 border-white/5 text-gray-400 hover:bg-surface-700/60 hover:text-gray-200'}"
                     >
                       <span class="block text-[10px] font-black">{info.label}</span>
-                      <span class="block text-[8px] font-normal opacity-70 mt-0.5 normal-case tracking-normal">{info.description}</span>
+                      <span class="block text-[8px] font-normal opacity-70 mt-0.5 normal-case">{info.description}</span>
                     </button>
                   {/each}
                 </div>
@@ -540,7 +540,7 @@
 
               <!-- Model -->
               <div class="space-y-2">
-                <label for="aiModel" class="text-[10px] font-black text-gray-500 uppercase tracking-widest">Model</label>
+                <label for="aiModel" class="text-[10px] font-black text-gray-500">Model</label>
                 <input
                   id="aiModel"
                   type="text"
@@ -556,7 +556,7 @@
               <div class="flex items-center justify-between">
                 <div>
                   <p class="text-sm font-bold text-gray-100">Toegang tot schoolgegevens</p>
-                  <p class="text-[10px] text-gray-500 mt-1 uppercase tracking-wider leading-relaxed">
+                  <p class="text-[10px] text-gray-500 mt-1 leading-relaxed">
                     Laat AI je rooster, cijfers, opdrachten en berichten uitlezen via tool calling
                   </p>
                 </div>
@@ -590,14 +590,14 @@
                 <button
                   onclick={saveAiConfig}
                   disabled={aiSaving}
-                  class="flex-1 py-3 rounded-2xl bg-primary-500/20 border border-primary-500/30 text-primary-400 hover:bg-primary-500/30 transition-all text-[10px] font-black uppercase tracking-widest disabled:opacity-50"
+                  class="flex-1 py-3 rounded-2xl bg-primary-500/20 border border-primary-500/30 text-primary-400 hover:bg-primary-500/30 transition-all text-[10px] font-black disabled:opacity-50"
                 >
                   {aiSaving ? '⏳ Opslaan...' : 'Opslaan'}
                 </button>
                 <button
                   onclick={testAiConnection}
                   disabled={aiTesting || !aiApiKey}
-                  class="flex-1 py-3 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20 transition-all text-[10px] font-black uppercase tracking-widest disabled:opacity-50"
+                  class="flex-1 py-3 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20 transition-all text-[10px] font-black disabled:opacity-50"
                 >
                   {aiTesting ? '⏳ Testen...' : 'Test verbinding'}
                 </button>
@@ -620,7 +620,7 @@
             <div class="glass p-5 rounded-3xl border-white/5 flex items-center justify-between gap-6 transition-all hover:bg-surface-800/40">
               <div class="flex-1">
                 <p class="text-sm font-bold text-gray-100">{setting.label}</p>
-                <p class="text-[10px] text-gray-500 font-medium mt-1 uppercase tracking-widest leading-relaxed">{setting.description}</p>
+                <p class="text-[10px] text-gray-500 font-medium mt-1 leading-relaxed">{setting.description}</p>
               </div>
 
               {#if setting.type === 'toggle'}
@@ -651,10 +651,10 @@
                       class="group flex flex-col items-center gap-1.5"
                     >
                       <div class="w-10 h-10 rounded-full {color.bg} transition-all border-2
-                                 {$userSettings[setting.id] === color.id
-                                   ? 'border-white scale-110 shadow-lg shadow-white/20'
-                                   : 'border-transparent opacity-60 group-hover:opacity-100 group-hover:scale-105 shadow-inner'}"></div>
-                      <span class="text-[8px] font-black uppercase tracking-tighter text-gray-600 group-hover:text-gray-400 transition-colors">{color.label}</span>
+ {$userSettings[setting.id] === color.id
+ ? 'border-white scale-110 shadow-lg shadow-white/20'
+ : 'border-transparent opacity-60 group-hover:opacity-100 group-hover:scale-105 shadow-inner'}"></div>
+                      <span class="text-[8px] font-black text-gray-600 group-hover:text-gray-400 transition-colors">{color.label}</span>
                     </button>
                   {/each}
                 </div>
@@ -662,7 +662,7 @@
                 <select
                   value={$userSettings[setting.id]}
                   onchange={(e) => updateSetting(setting.id, e.currentTarget.value)}
-                  class="bg-surface-800 border-none text-gray-200 text-[10px] font-black uppercase tracking-widest rounded-xl px-4 py-2.5 outline-none cursor-pointer hover:bg-surface-700 transition-colors shadow-sm"
+                  class="bg-surface-800 border-none text-gray-200 text-[10px] font-black rounded-xl px-4 py-2.5 outline-none cursor-pointer hover:bg-surface-700 transition-colors shadow-sm"
                 >
                   {#each setting.options as option}
                     <option value={option.value}>{option.label}</option>
@@ -672,7 +672,7 @@
                 <button
                   onclick={() => setting.action()}
                   disabled={setting.id === 'exportAll' ? exportBusy : (testingNotification === setting.id.split('test')[1])}
-                  class="bg-primary-500/15 text-primary-400 text-[10px] font-black uppercase tracking-widest rounded-xl px-5 py-2.5 hover:bg-primary-500/25 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-wait border border-primary-500/10 shadow-sm"
+                  class="bg-primary-500/15 text-primary-400 text-[10px] font-black rounded-xl px-5 py-2.5 hover:bg-primary-500/25 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-wait border border-primary-500/10 shadow-sm"
                 >
                   {#if setting.id === 'exportAll'}
                     {#if exportBusy}
@@ -694,7 +694,7 @@
                   {#if $userSettings.downloadDir}
                     <button
                       onclick={clearDownloadDir}
-                      class="text-[10px] font-black text-red-400 uppercase tracking-widest hover:text-red-300 transition-colors px-2 py-1"
+                      class="text-[10px] font-black text-red-400 hover:text-red-300 transition-colors px-2 py-1"
                     >
                       Herstel
                     </button>
@@ -702,7 +702,7 @@
                   <button
                     onclick={pickDownloadDir}
                     disabled={pickingDir}
-                    class="bg-primary-500/15 text-primary-400 text-[10px] font-black uppercase tracking-widest rounded-xl px-5 py-2.5 hover:bg-primary-500/25 transition-all active:scale-95 disabled:opacity-50 border border-primary-500/10 shadow-sm"
+                    class="bg-primary-500/15 text-primary-400 text-[10px] font-black rounded-xl px-5 py-2.5 hover:bg-primary-500/25 transition-all active:scale-95 disabled:opacity-50 border border-primary-500/10 shadow-sm"
                   >
                     {pickingDir ? '⏳ ...' : 'Map Kiezen'}
                   </button>
@@ -729,12 +729,12 @@
         onclick={toggleDebug}
         class="w-full flex items-center justify-between px-2 mb-4 group"
       >
-        <h2 class="text-[10px] font-black text-gray-600 uppercase tracking-[0.3em] group-hover:text-amber-500 transition-colors flex items-center gap-2">
+        <h2 class="text-[10px] font-black text-gray-600 group-hover:text-amber-500 transition-colors flex items-center gap-2">
           <svg class="w-3 h-3 text-amber-500/70" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
           Systeem Debug
         </h2>
         <div class="flex items-center gap-2">
-          <span class="text-[9px] font-black text-gray-700 uppercase tracking-widest">
+          <span class="text-[9px] font-black text-gray-700">
             {debugOpen ? 'Verbergen' : 'Tonen'}
           </span>
           <svg
@@ -789,7 +789,7 @@
           {:else}
             <div class="debug-card rounded-3xl p-8 flex flex-col items-center justify-center gap-4 text-center">
                <svg class="w-10 h-10 text-gray-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
-               <p class="text-[10px] font-black text-gray-600 uppercase tracking-widest max-w-[150px]">Geen debug info geladen</p>
+               <p class="text-[10px] font-black text-gray-600 max-w-[150px]">Geen debug info geladen</p>
                <button onclick={loadDebugInfo} class="debug-btn-primary px-8">Info ophalen</button>
             </div>
           {/if}
@@ -812,10 +812,10 @@
               {#each [60, 300, 900, 1800, 3600] as preset}
                 <button
                   onclick={() => { intervalSeconds = preset; }}
-                  class="flex-1 text-[9px] font-black uppercase tracking-widest rounded-xl py-2
-                    {intervalSeconds === preset
-                      ? 'bg-amber-500 text-white shadow-lg shadow-amber-500/20'
-                      : 'bg-surface-800 text-gray-500 hover:text-gray-300 transition-all active:scale-95'}"
+                  class="flex-1 text-[9px] font-black rounded-xl py-2
+ {intervalSeconds === preset
+ ? 'bg-amber-500 text-white shadow-lg shadow-amber-500/20'
+ : 'bg-surface-800 text-gray-500 hover:text-gray-300 transition-all active:scale-95'}"
                 >
                   {intervalLabel(preset)}
                 </button>
@@ -842,11 +842,11 @@
                 {#if disableSyncAtNight}
                   <div class="flex gap-4 items-center" transition:slide>
                       <div class="flex-1 space-y-2">
-                          <label for="disableSyncStart" class="text-[10px] font-black text-gray-500 uppercase tracking-widest">Start Uur</label>
+                          <label for="disableSyncStart" class="text-[10px] font-black text-gray-500">Start Uur</label>
                           <input id="disableSyncStart" type="number" min="0" max="23" bind:value={disableSyncAtNightStart} onchange={applyNightSleep} class="w-full bg-surface-800 text-gray-300 rounded-xl p-2 text-center text-sm font-bold border border-white/5" />
                       </div>
                       <div class="flex-1 space-y-2">
-                          <label for="disableSyncEnd" class="text-[10px] font-black text-gray-500 uppercase tracking-widest">Eind Uur</label>
+                          <label for="disableSyncEnd" class="text-[10px] font-black text-gray-500">Eind Uur</label>
                           <input id="disableSyncEnd" type="number" min="0" max="23" bind:value={disableSyncAtNightEnd} onchange={applyNightSleep} class="w-full bg-surface-800 text-gray-300 rounded-xl p-2 text-center text-sm font-bold border border-white/5" />
                       </div>
                   </div>
@@ -878,8 +878,8 @@
                 <svg class="w-6 h-6 {forceSyncBusy ? 'animate-spin' : ''}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
               </div>
               <div class="text-center">
-                <p class="text-[11px] font-black text-gray-200 uppercase tracking-widest italic">Force Sync</p>
-                <p class="text-[8px] text-gray-600 font-bold uppercase mt-1">Nu ophalen</p>
+                <p class="text-[11px] font-black text-gray-200">Force Sync</p>
+                <p class="text-[8px] text-gray-600 font-bold mt-1">Nu ophalen</p>
               </div>
             </button>
             <button
@@ -890,8 +890,8 @@
                 <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
               </div>
               <div class="text-center">
-                <p class="text-[11px] font-black text-red-400 uppercase tracking-widest italic">Baseline</p>
-                <p class="text-[8px] text-gray-600 font-bold uppercase mt-1">State wissen</p>
+                <p class="text-[11px] font-black text-red-400">Baseline</p>
+                <p class="text-[8px] text-gray-600 font-bold mt-1">State wissen</p>
               </div>
             </button>
           </div>
@@ -900,7 +900,7 @@
           <div class="debug-card rounded-3xl p-5 space-y-4 overflow-hidden relative">
             <div class="flex items-center justify-between relative z-10">
               <p class="debug-label">Systeemboodschappen</p>
-              <button onclick={() => logs = []} class="text-[10px] font-black text-gray-600 hover:text-red-400 transition-colors uppercase tracking-widest">
+              <button onclick={() => logs = []} class="text-[10px] font-black text-gray-600 hover:text-red-400 transition-colors">
                 Opschonen
               </button>
             </div>
@@ -920,7 +920,7 @@
               {:else}
                 <div class="py-12 flex flex-col items-center justify-center opacity-30">
                   <svg class="w-10 h-10 mb-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-                  <p class="text-[9px] font-black uppercase tracking-[0.2em]">Geen activiteiten</p>
+                  <p class="text-[9px] font-black">Geen activiteiten</p>
                 </div>
               {/each}
             </div>
@@ -939,8 +939,8 @@
             <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.403 5.403 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65-.17.6-.22 1.23-.15 1.85v4"/><path d="M9 18c-4.51 2-5-2-7-2"/></svg>
           </div>
           <div>
-            <h3 class="text-sm font-black text-gray-100 italic tracking-tight uppercase">Friday — Open source</h3>
-            <p class="text-[10px] text-gray-600 font-bold uppercase tracking-widest mt-0.5">Bekijk de broncode op GitHub</p>
+            <h3 class="text-sm font-black text-gray-100">Friday — Open source</h3>
+            <p class="text-[10px] text-gray-600 font-bold mt-0.5">Bekijk de broncode op GitHub</p>
           </div>
         </div>
 
@@ -956,7 +956,7 @@
             </div>
             <div class="min-w-0">
               <p class="text-sm font-black text-gray-200 truncate group-hover/repo:text-primary-400 transition-colors">JPDeerenberg/friday</p>
-              <p class="text-[9px] text-gray-600 font-bold uppercase tracking-widest mt-0.5">Magister Tauri app — Volg de ontwikkeling</p>
+              <p class="text-[9px] text-gray-600 font-bold mt-0.5">Magister Tauri app — Volg de ontwikkeling</p>
             </div>
           </div>
           <svg class="w-5 h-5 text-gray-600 group-hover/repo:text-primary-400 transition-colors shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
@@ -967,15 +967,15 @@
           <div class="grid grid-cols-3 gap-3">
             <div class="bg-surface-900/50 rounded-2xl p-3 text-center border border-white/5">
               <p class="text-lg font-black text-gray-200 tabular-nums">{repoStats.stars}</p>
-              <p class="text-[8px] text-gray-600 font-black uppercase tracking-widest mt-0.5">Sterren</p>
+              <p class="text-[8px] text-gray-600 font-black mt-0.5">Sterren</p>
             </div>
             <div class="bg-surface-900/50 rounded-2xl p-3 text-center border border-white/5">
               <p class="text-lg font-black text-gray-200 tabular-nums">{repoStats.forks}</p>
-              <p class="text-[8px] text-gray-600 font-black uppercase tracking-widest mt-0.5">Forks</p>
+              <p class="text-[8px] text-gray-600 font-black mt-0.5">Forks</p>
             </div>
             <div class="bg-surface-900/50 rounded-2xl p-3 text-center border border-white/5">
               <p class="text-lg font-black text-gray-200 tabular-nums">{repoStats.openIssues}</p>
-              <p class="text-[8px] text-gray-600 font-black uppercase tracking-widest mt-0.5">Issues</p>
+              <p class="text-[8px] text-gray-600 font-black mt-0.5">Issues</p>
             </div>
           </div>
         {:else if repoStatsError}
@@ -983,7 +983,7 @@
         {:else}
           <div class="flex items-center justify-center gap-2 py-2">
             <div class="w-4 h-4 border-2 border-primary-500 border-t-transparent rounded-full animate-spin"></div>
-            <span class="text-[9px] text-gray-600 font-black uppercase tracking-widest">Repo info laden...</span>
+            <span class="text-[9px] text-gray-600 font-black">Repo info laden...</span>
           </div>
         {/if}
       </div>
@@ -991,7 +991,7 @@
 
     <div class="pt-10 flex flex-col items-center gap-2">
       <div class="w-10 h-[1px] bg-surface-800"></div>
-      <p class="text-[9px] text-gray-600 font-black uppercase tracking-[0.4em] text-center">Version 1.3.1 • Friday App</p>
+      <p class="text-[9px] text-gray-600 font-black text-center">Version 1.3.1 • Friday App</p>
     </div>
   </main>
 </div>
@@ -1014,8 +1014,7 @@
   .debug-label {
     font-size: 10px;
     font-weight: 900;
-    letter-spacing: 0.2em;
-    text-transform: uppercase;
+    letter-spacing: 0.02em;
     color: rgb(75, 85, 99);
   }
 
@@ -1037,8 +1036,7 @@
   .info-tile-title {
     font-size: 8px;
     font-weight: 900;
-    text-transform: uppercase;
-    letter-spacing: 0.12em;
+    letter-spacing: 0.02em;
     color: rgb(107, 114, 128);
     line-height: 1;
   }
@@ -1056,13 +1054,11 @@
     color: oklch(0.8 0.15 80);
     font-size: 10px;
     font-weight: 950;
-    text-transform: uppercase;
-    letter-spacing: 0.2em;
+    letter-spacing: 0.02em;
     border-radius: 16px;
     padding: 12px;
     transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
     border: 1px solid oklch(0.8 0.15 80 / 0.2);
-    font-style: italic;
   }
   .debug-btn-primary:active { transform: scale(0.96); }
 
@@ -1071,8 +1067,7 @@
     color: oklch(1 0 0 / 0.6);
     font-size: 10px;
     font-weight: 900;
-    text-transform: uppercase;
-    letter-spacing: 0.15em;
+    letter-spacing: 0.02em;
     border-radius: 14px;
     padding: 10px;
     transition: all 0.2s ease;

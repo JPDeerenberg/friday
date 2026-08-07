@@ -138,8 +138,8 @@
     <div class="flex flex-col gap-4 max-w-5xl mx-auto w-full">
       <div class="flex items-center justify-between">
         <div>
-          <h1 class="text-xl font-black text-gray-100 italic tracking-tighter uppercase">Bronnen</h1>
-          <p class="text-[10px] font-black text-gray-600 uppercase tracking-widest mt-0.5">Lesmateriaal & Documenten</p>
+          <h1 class="text-xl font-black text-gray-100">Bronnen</h1>
+          <p class="text-[10px] font-black text-gray-600 mt-0.5">Lesmateriaal & Documenten</p>
         </div>
         
         <button 
@@ -158,7 +158,7 @@
           {#if i > 0}
             <svg class="w-3 h-3 text-gray-800 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="m9 18 6-6-6-6"/></svg>
           {/if}
-          <span class="px-3 py-1.5 rounded-xl bg-surface-900/50 border border-white/5 text-[9px] font-black uppercase tracking-widest text-gray-400 whitespace-nowrap shadow-sm">
+          <span class="px-3 py-1.5 rounded-xl bg-surface-900/50 border border-white/5 text-[9px] font-black text-gray-400 whitespace-nowrap shadow-sm">
             {part.Naam}
           </span>
         {/each}
@@ -172,7 +172,7 @@
       {#if loading}
         <div class="flex flex-col items-center justify-center py-40 gap-4">
           <div class="w-10 h-10 border-4 border-primary-500/20 border-t-primary-500 rounded-full animate-spin"></div>
-          <p class="text-[9px] font-black text-gray-600 uppercase tracking-widest animate-pulse">Bestanden zoeken...</p>
+          <p class="text-[9px] font-black text-gray-600 animate-pulse">Bestanden zoeken...</p>
         </div>
       {:else if currentItems.length === 0}
         <div in:fade class="glass rounded-[3rem] p-16 text-center space-y-6 border-surface-800/50 bg-surface-900/[0.02] shadow-2xl">
@@ -180,8 +180,8 @@
             <svg class="w-8 h-8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
           </div>
           <div class="space-y-1">
-            <h3 class="text-xl font-black text-white italic tracking-tight uppercase">Lege Map</h3>
-            <p class="text-gray-600 text-[10px] font-black uppercase tracking-widest leading-relaxed">Geen bestanden gevonden in deze map.</p>
+            <h3 class="text-xl font-black text-white">Lege Map</h3>
+            <p class="text-gray-600 text-[10px] font-black leading-relaxed">Geen bestanden gevonden in deze map.</p>
           </div>
         </div>
       {:else}
@@ -205,14 +205,14 @@
               </div>
               
               <div class="flex-1 min-w-0">
-                <h3 class="text-sm font-black text-gray-200 truncate group-hover:text-white transition-colors italic uppercase tracking-tighter">
+                <h3 class="text-sm font-black text-gray-200 truncate group-hover:text-white transition-colors">
                   {item.Naam}
                 </h3>
                 <div class="flex items-center gap-3 mt-1 underline-offset-4">
-                   <span class="text-[9px] font-black text-gray-600 uppercase tracking-widest">{item.BronSoort === 0 ? 'Folder' : item.BronSoort === 3 ? 'URL' : 'Data'}</span>
+                   <span class="text-[9px] font-black text-gray-600">{item.BronSoort === 0 ? 'Folder' : item.BronSoort === 3 ? 'URL' : 'Data'}</span>
                    {#if item.Grootte > 0}
                      <span class="w-1 h-1 bg-surface-800 rounded-full"></span>
-                     <span class="text-[9px] font-black text-gray-500 uppercase tabular-nums">{formatSize(item.Grootte)}</span>
+                     <span class="text-[9px] font-black text-gray-500 tabular-nums">{formatSize(item.Grootte)}</span>
                    {/if}
                 </div>
               </div>

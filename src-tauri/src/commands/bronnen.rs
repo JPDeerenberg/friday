@@ -10,7 +10,11 @@ pub async fn get_bronnen(
     path: String,
 ) -> Result<Vec<Bron>, String> {
     let mut client = client.lock().await;
-    // path should be something like "personen/{id}/bronnen?soort=0" or a link from a folder
+    // path should be something like "personen/{id}/bronnen?soort=0" or a Href from a folder's
+    // Links array. Hrefs returned directly by Magister include a "/api/" segment that must be
+    // stripped, since api_endpoint already ends in /api — same convention as calendar.rs,
+    // messages.rs, and assignments.rs (see those files' Links handling).
+    let path = path.replace("/api/", "");
     let response = client.get(&path).await.map_err(|e| e.to_string())?;
     let bronnen: BronnenResponse =
         serde_json::from_value(response).map_err(|e| format!("Failed to parse bronnen: {}", e))?;

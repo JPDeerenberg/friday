@@ -61,10 +61,10 @@
           </button>
         {/if}
         <div class="flex flex-col min-w-0">
-          <h1 class="text-xl font-black text-gray-100 italic tracking-tighter uppercase truncate">
+          <h1 class="text-xl font-black text-gray-100 truncate">
             {selectedActivity ? 'Details' : 'Activiteiten'}
           </h1>
-          <p class="text-[9px] font-black text-gray-600 uppercase tracking-widest mt-0.5">
+          <p class="text-[9px] font-black text-gray-600 mt-0.5">
             {selectedActivity ? selectedActivity.Titel : 'Inschrijvingen & Events'}
           </p>
         </div>
@@ -77,7 +77,7 @@
       {#if loading}
         <div class="flex flex-col items-center justify-center py-40 gap-4">
           <div class="w-10 h-10 border-4 border-primary-500/20 border-t-primary-500 rounded-full animate-spin"></div>
-          <p class="text-[9px] font-black text-gray-600 uppercase tracking-widest animate-pulse">Laden...</p>
+          <p class="text-[9px] font-black text-gray-600 animate-pulse">Laden...</p>
         </div>
       {:else if !selectedActivity}
         {#if activities.length === 0}
@@ -85,8 +85,8 @@
             <div class="w-20 h-20 bg-surface-900 rounded-[2.5rem] flex items-center justify-center text-gray-700 border border-white/5 shadow-inner">
                <svg class="w-8 h-8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 12 10 16 18 8"/><circle cx="12" cy="12" r="10"/></svg>
             </div>
-            <h3 class="text-xl font-black text-gray-400 italic uppercase">Geen Activiteiten</h3>
-            <p class="text-gray-700 text-[10px] font-black uppercase tracking-[0.4em]">Niets om voor in te schrijven</p>
+            <h3 class="text-xl font-black text-gray-400">Geen Activiteiten</h3>
+            <p class="text-gray-700 text-[10px] font-black">Niets om voor in te schrijven</p>
           </div>
         {:else}
           <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
@@ -97,24 +97,24 @@
                 class="glass p-6 rounded-[2.5rem] border-white/5 hover:border-primary-500/20 hover:bg-surface-800/40 transition-all text-left flex flex-col gap-5 group shadow-xl relative overflow-hidden"
               >
                 <div class="flex justify-between items-start relative z-10">
-                   <div class="px-3 py-1.5 rounded-xl border-white/10 bg-primary-500/10 text-primary-400 text-[8px] font-black uppercase tracking-widest border">
+                   <div class="px-3 py-1.5 rounded-xl border-white/10 bg-primary-500/10 text-primary-400 text-[8px] font-black border">
                       {activity.Status === 1 ? 'Open' : 'Gesloten'}
                    </div>
-                   <span class="text-[9px] font-black text-gray-600 uppercase tracking-tighter tabular-nums font-mono">
+                   <span class="text-[9px] font-black text-gray-600 tabular-nums font-mono">
                      {new Date(activity.StartInschrijfdatum).toLocaleDateString('nl-NL', { day: '2-digit', month: 'short' })}
                    </span>
                 </div>
                 <div class="space-y-2 relative z-10">
-                  <h3 class="text-lg font-black text-gray-100 group-hover:text-primary-400 transition-colors italic uppercase tracking-tighter">
+                  <h3 class="text-lg font-black text-gray-100 group-hover:text-primary-400 transition-colors">
                     {activity.Titel}
                   </h3>
-                  <p class="text-[11px] text-gray-500 font-bold tracking-tight line-clamp-2 leading-relaxed italic">
+                  <p class="text-[11px] text-gray-500 font-bold line-clamp-2 leading-relaxed">
                     {activity.Details?.replace(/<[^>]*>/g, '') || 'Geen omschrijving beschikbaar'}
                   </p>
                 </div>
                 
                 <div class="flex items-center justify-between pt-4 mt-2 border-t border-white/[0.03] relative z-10">
-                  <div class="flex items-center gap-2 text-[9px] font-black text-gray-400 uppercase tracking-widest">
+                  <div class="flex items-center gap-2 text-[9px] font-black text-gray-400">
                     <svg class="w-3.5 h-3.5 text-primary-500/60" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
                     <span>{activity.AantalInschrijvingen} ingeschreven</span>
                   </div>
@@ -134,16 +134,16 @@
             </div>
             
             <div class="relative z-10 space-y-6">
-              <h2 class="text-3xl font-black text-white italic tracking-tighter uppercase">{selectedActivity.Titel}</h2>
+              <h2 class="text-3xl font-black text-white">{selectedActivity.Titel}</h2>
               {#if selectedActivity.Details}
-                <div class="text-gray-400 text-sm leading-loose prose-invert prose-p:mb-4 italic">
+                <div class="text-gray-400 text-sm leading-loose prose-invert prose-p:mb-4">
                   {@html selectedActivity.Details}
                 </div>
               {/if}
               
               <div class="grid grid-cols-1 sm:grid-cols-2 gap-8 pt-10 border-t border-white/5">
                 <div>
-                  <span class="text-[9px] font-black text-gray-600 uppercase tracking-[0.2em] block mb-2">Inschrijfperiode</span>
+                  <span class="text-[9px] font-black text-gray-600 block mb-2">Inschrijfperiode</span>
                   <div class="flex items-center gap-3">
                     <div class="px-3 py-1.5 rounded-xl bg-surface-900 border border-white/5 text-[10px] font-black text-gray-200 tabular-nums">
                       {new Date(selectedActivity.StartInschrijfdatum).toLocaleDateString('nl-NL')}
@@ -160,7 +160,7 @@
 
           <div>
              <div class="flex items-center gap-4 px-2 mb-6">
-              <span class="text-[10px] font-black text-gray-600 uppercase tracking-[0.3em] italic">Mogelijkheden</span>
+              <span class="text-[10px] font-black text-gray-600">Mogelijkheden</span>
               <div class="h-px flex-1 bg-gradient-to-r from-white/5 to-transparent"></div>
             </div>
 
@@ -170,31 +170,31 @@
               </div>
             {:else if elements.length === 0}
               <div class="p-12 text-center opacity-30 glass rounded-3xl border-dashed border-white/10">
-                <p class="text-[10px] font-black uppercase tracking-widest">Geen onderdelen gevonden</p>
+                <p class="text-[10px] font-black">Geen onderdelen gevonden</p>
               </div>
             {:else}
               <div class="grid grid-cols-1 gap-4">
                 {#each elements as element}
                   <div class="glass p-6 rounded-[2.5rem] border-white/5 flex flex-col sm:flex-row sm:items-center gap-6 group hover:bg-surface-800/40 transition-all shadow-xl">
                     <div class="flex-1 space-y-2">
-                      <h4 class="text-sm font-black text-gray-100 uppercase italic tracking-tight">{element.Titel}</h4>
+                      <h4 class="text-sm font-black text-gray-100">{element.Titel}</h4>
                       {#if element.Details}
-                        <p class="text-[11px] text-gray-500 font-bold leading-relaxed italic">{@html element.Details}</p>
+                        <p class="text-[11px] text-gray-500 font-bold leading-relaxed">{@html element.Details}</p>
                       {/if}
                     </div>
                     
                     <div class="flex flex-col sm:items-end gap-3 shrink-0">
                        <div class="flex items-center gap-3">
-                         <span class="text-[9px] font-black text-gray-600 uppercase tracking-widest">
+                         <span class="text-[9px] font-black text-gray-600">
                            {element.AantalPlaatsenBeschikbaar} PLEKKEN VRIJ
                          </span>
                          {#if element.IsIngeschreven}
-                           <span class="px-3 py-1 rounded-xl text-[8px] font-black uppercase tracking-widest bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shadow-[0_0_15px_rgba(16,185,129,0.1)]">Ingeschreven</span>
+                           <span class="px-3 py-1 rounded-xl text-[8px] font-black bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shadow-[0_0_15px_rgba(16,185,129,0.1)]">Ingeschreven</span>
                          {/if}
                        </div>
                        
                        {#if element.IsOpInTeSchrijven && !element.IsIngeschreven}
-                         <button class="bg-primary-500 hover:bg-primary-600 text-white text-[10px] font-black uppercase tracking-widest px-8 py-3.5 rounded-2xl transition-all shadow-xl shadow-primary-500/20 active:scale-95 border border-primary-400/30">
+                         <button class="bg-primary-500 hover:bg-primary-600 text-white text-[10px] font-black px-8 py-3.5 rounded-2xl transition-all shadow-xl shadow-primary-500/20 active:scale-95 border border-primary-400/30">
                            Inschrijven
                          </button>
                        {/if}

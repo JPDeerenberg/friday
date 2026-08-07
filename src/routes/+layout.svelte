@@ -197,7 +197,7 @@
         <!-- svelte-ignore a11y_click_events_have_key_events -->
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div class="fixed inset-0 bg-black/60 z-40 md:hidden" onclick={() => mobileSidebarOpen = false}></div>
-        <div class="fixed bottom-[60px] left-0 right-0 z-50 md:hidden bg-surface-900 border border-surface-700/50 rounded-t-3xl shadow-2xl overflow-y-auto max-h-[70dvh]">
+        <div class="fixed bottom-[64px] left-0 right-0 z-50 md:hidden bg-surface-900 border border-surface-700/50 rounded-t-3xl shadow-2xl overflow-y-auto max-h-[70dvh]">
           <div class="flex items-center justify-between px-5 py-4 border-b border-surface-700/50">
             <div class="flex items-center gap-3 p-6 mb-2">
               <div class="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 overflow-hidden">
@@ -205,7 +205,7 @@
               </div>
               <div class="flex flex-col">
                 <h1 class="text-xl font-black text-white italic tracking-tighter" in:fade>Friday</h1>
-                <p class="text-[8px] font-bold text-primary-400 uppercase tracking-widest" in:fade>Menu</p>
+                <p class="text-label-small text-primary-400" in:fade>Menu</p>
               </div>
             </div>
             <button onclick={() => mobileSidebarOpen = false} class="text-gray-400 p-1" aria-label="Sluit menu">
@@ -215,13 +215,13 @@
           <nav class="p-4 space-y-5 pb-6">
             {#each navGroups as group}
               <div class="space-y-1">
-                <h3 class="px-3 text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-2">{group.label}</h3>
+                <h3 class="px-3 text-label-small text-gray-500 mb-2">{group.label}</h3>
                 {#each group.items as item}
                   <button
                     onclick={() => navigate(item.id)}
-                    class="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-medium transition-all
+                    class="w-full flex items-center gap-3 px-4 py-3 rounded-m3-full text-sm font-medium transition-all
                            {$currentPage === item.id
-                             ? 'bg-primary-500/15 text-primary-400'
+                             ? 'bg-primary-container text-on-primary-container'
                              : 'text-gray-400 hover:bg-surface-800 hover:text-gray-200'}"
                   >
                     <span class="text-xl shrink-0">{@html item.icon}</span>
@@ -252,7 +252,7 @@
                 <span class="text-primary-400">
                    <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
                 </span>
-                <span class="text-xs font-black uppercase tracking-widest italic">Instellingen</span>
+                <span class="text-label-large">Instellingen</span>
               </button>
             </div>
 
@@ -263,7 +263,7 @@
               <span class="text-xl">
                  <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg>
               </span>
-              <span class="text-sm font-black uppercase tracking-[0.2em]">Uitloggen</span>
+              <span class="text-label-large">Uitloggen</span>
             </button>
           </nav>
         </div>
@@ -286,15 +286,15 @@
           {#each navGroups as group}
             <div class="space-y-1">
               {#if !sidebarCollapsed}
-                <h3 class="px-3 text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-2">{group.label}</h3>
+                <h3 class="px-3 text-label-small text-gray-500 mb-2">{group.label}</h3>
               {/if}
               {#each group.items as item}
                 <button
                   onclick={() => navigate(item.id)}
                   title={sidebarCollapsed ? item.label : ''}
-                  class="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium transition-all group
+                  class="w-full flex items-center gap-3 px-3 py-2 rounded-m3-full text-sm font-medium transition-all group
                          {$currentPage === item.id
-                           ? 'bg-primary-500/15 text-primary-400'
+                           ? 'bg-primary-container text-on-primary-container'
                            : 'text-gray-400 hover:bg-surface-800 hover:text-gray-200'}"
                 >
                   <span class="text-lg shrink-0 group-hover:scale-110 transition-transform">
@@ -334,7 +334,7 @@
              <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
           </span>
           {#if !sidebarCollapsed}
-            <span class="truncate italic tracking-tight uppercase text-[10px] font-black">Instellingen</span>
+            <span class="truncate text-label-medium">Instellingen</span>
           {/if}
         </button>
 
@@ -360,7 +360,7 @@
             <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg>
           </span>
           {#if !sidebarCollapsed}
-            <span class="truncate italic tracking-tight uppercase text-[10px] font-black">Uitloggen</span>
+            <span class="truncate text-label-medium">Uitloggen</span>
           {/if}
         </button>
 
@@ -371,7 +371,7 @@
     {/if}
 
     <!-- Main content — on mobile add bottom padding so content isn't behind the tab bar -->
-    <main class="flex-1 overflow-y-auto {$isLoggedIn ? 'pb-[60px] md:pb-0' : ''}">
+    <main class="flex-1 overflow-y-auto {$isLoggedIn ? 'pb-[64px] md:pb-0' : ''}">
       {@render children()}
     </main>
 
@@ -382,14 +382,16 @@
 
     <!-- ====== MOBILE: Fixed bottom tab bar ====== -->
     {#if $isLoggedIn}
-      <nav class="fixed md:hidden bottom-0 left-0 right-0 z-30 bg-surface-950/95 backdrop-blur-md border-t border-surface-800/50 flex items-stretch h-[60px] pb-[env(safe-area-inset-bottom)]">
+      <nav class="fixed md:hidden bottom-0 left-0 right-0 z-30 bg-surface-950/95 backdrop-blur-md border-t border-surface-800/50 flex items-stretch h-[64px] pb-[env(safe-area-inset-bottom)]">
         {#each bottomNavItems as item}
           <button
             onclick={() => handleBottomNav(item.id)}
             class="flex-1 flex flex-col items-center justify-center gap-1 transition-all {isBottomActive(item.id) ? 'text-primary-400' : 'text-gray-500'}"
           >
-            {@html item.icon}
-            <span class="text-[9px] font-black uppercase tracking-widest">{item.label}</span>
+            <span class="px-4 py-0.5 rounded-m3-full transition-colors {isBottomActive(item.id) ? 'bg-primary-container text-on-primary-container' : ''}">
+              {@html item.icon}
+            </span>
+            <span class="text-label-medium">{item.label}</span>
           </button>
         {/each}
       </nav>

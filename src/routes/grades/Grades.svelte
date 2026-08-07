@@ -498,10 +498,15 @@
     return totalW > 0 ? (totalP / totalW).toFixed($userSettings.decimalPoints) : '0';
   }
 
+  /** Clamp a 1-10 grade value to a 0-100% position for progress bars. */
+  function pct(value: number): number {
+    if (isNaN(value)) return 0;
+    return Math.min(100, Math.max(0, (value / 10) * 100));
+  }
+
   function getProgressPercent(subject: any): number {
-    const current = subject.avg;
     const predicted = parseFloat(getPredictedAverage(subject));
-    return Math.min(100, Math.max(0, (predicted / 10) * 100));
+    return pct(predicted);
   }
 
   function getMinGradeForPass(subject: any): string | null {
@@ -1305,11 +1310,12 @@
                         <span class="text-gray-500">Huidig: <span class="text-gray-300">{s.avg.toFixed($userSettings.decimalPoints)}</span></span>
                         <span class="text-gray-500">Voorspeld: <span class="{parseFloat(getPredictedAverage(s)) >= $userSettings.insufficientThreshold ? 'text-accent-400' : 'text-red-400'}">{getPredictedAverage(s)}</span></span>
                       </div>
-                      <div class="h-2 bg-surface-800 rounded-full overflow-hidden border border-surface-700/50">
+                      <div class="relative h-2 bg-surface-800 rounded-full overflow-hidden border border-surface-700/50">
                         <div
                           class="h-full rounded-full transition-all duration-500 {parseFloat(getPredictedAverage(s)) >= $userSettings.insufficientThreshold ? 'bg-gradient-to-r from-primary-600 to-accent-400' : 'bg-gradient-to-r from-red-600 to-red-400'}"
                           style="width: {getProgressPercent(s)}%"
                         ></div>
+                        <div class="absolute top-0 bottom-0 w-0.5 bg-white/80" style="left: calc({pct(s.avg)}% - 1px)" title="Huidig: {s.avg.toFixed($userSettings.decimalPoints)}"></div>
                       </div>
 
                       <div class="grid grid-cols-2 gap-4 mt-4 pt-2 border-t border-white/5">
@@ -1402,11 +1408,12 @@
                         <span class="text-gray-500">Huidig: <span class="text-gray-300">{s.avg.toFixed($userSettings.decimalPoints)}</span></span>
                         <span class="text-gray-500">Nieuw: <span class="{parseFloat(getAverageForGrade(s)) >= $userSettings.insufficientThreshold ? 'text-accent-400' : 'text-red-400'}">{getAverageForGrade(s)}</span></span>
                       </div>
-                      <div class="h-2 bg-surface-800 rounded-full overflow-hidden border border-surface-700/50">
+                      <div class="relative h-2 bg-surface-800 rounded-full overflow-hidden border border-surface-700/50">
                         <div
                           class="h-full rounded-full transition-all duration-500 {parseFloat(getAverageForGrade(s)) >= $userSettings.insufficientThreshold ? 'bg-gradient-to-r from-accent-600 to-primary-400' : 'bg-gradient-to-r from-red-600 to-red-400'}"
-                          style="width: {Math.min(100, (parseFloat(getAverageForGrade(s)) / 10) * 100)}%"
+                          style="width: {pct(parseFloat(getAverageForGrade(s)))}%"
                         ></div>
+                        <div class="absolute top-0 bottom-0 w-0.5 bg-white/80" style="left: calc({pct(s.avg)}% - 1px)" title="Huidig: {s.avg.toFixed($userSettings.decimalPoints)}"></div>
                       </div>
 
                       <div class="grid grid-cols-2 gap-4 mt-4 pt-2 border-t border-white/5">
@@ -1465,8 +1472,9 @@
                           <span class="text-gray-500">Huidig: {s.avg.toFixed(1)}</span>
                           <span class="text-gray-500">Verwacht: {(() => { const t = (s.totalPoints||0) + predictGrade * predictRemainingTests; const w = (s.totalWeight||0) + predictRemainingTests; return (w > 0 ? t/w : 0).toFixed(1); })()}</span>
                         </div>
-                        <div class="h-2.5 bg-surface-800 rounded-full overflow-hidden border border-surface-700/50">
-                          <div class="h-full rounded-full bg-gradient-to-r from-primary-600 to-accent-400 transition-all duration-500" style="width: {(() => { const t = (s.totalPoints||0) + predictGrade * predictRemainingTests; const w = (s.totalWeight||0) + predictRemainingTests; return ((w > 0 ? t/w : 0) / 10) * 100; })()}%"></div>
+                        <div class="relative h-2.5 bg-surface-800 rounded-full overflow-hidden border border-surface-700/50">
+                          <div class="h-full rounded-full bg-gradient-to-r from-primary-600 to-accent-400 transition-all duration-500" style="width: {pct((() => { const t = (s.totalPoints||0) + predictGrade * predictRemainingTests; const w = (s.totalWeight||0) + predictRemainingTests; return w > 0 ? t/w : 0; })())}%"></div>
+                          <div class="absolute top-0 bottom-0 w-0.5 bg-white/80" style="left: calc({pct(s.avg)}% - 1px)" title="Huidig: {s.avg.toFixed(1)}"></div>
                         </div>
                       </div>
 

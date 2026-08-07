@@ -503,7 +503,7 @@
     <!-- Top row: title + actions -->
     <div class="flex items-center justify-between gap-2">
       <div class="flex items-center gap-1.5">
-        <h1 class="text-lg md:text-xl font-black text-white italic tracking-tighter">Agenda</h1>
+        <h1 class="text-lg md:text-xl font-black text-white">Agenda</h1>
         <button
           onclick={() => { appointments = []; loadedStart = null; loadedEnd = null; loadAppointments(true); }}
           class="p-1 text-gray-500 hover:text-primary-400 transition-all hover:rotate-180 duration-500"
@@ -534,7 +534,7 @@
         </button>
         <button
           onclick={goToToday}
-          class="px-2 py-1 rounded-lg bg-surface-800 text-gray-300 text-[9px] font-black uppercase tracking-widest hover:bg-surface-700 transition-all"
+          class="px-2 py-1 rounded-lg bg-surface-800 text-gray-300 text-[9px] font-black hover:bg-surface-700 transition-all"
         >
           Vandaag
         </button>
@@ -556,10 +556,10 @@
             }
           }}
         />
-        <p class="text-[9px] font-black text-primary-400 uppercase tracking-[0.15em] group-hover:text-primary-300 transition-colors">
+        <p class="text-[9px] font-black text-primary-400 group-hover:text-primary-300 transition-colors">
           {selectedDate.toLocaleDateString('nl-NL', { month: 'long', year: 'numeric' })}
         </p>
-        <h2 class="text-lg md:text-xl font-black text-white italic tracking-tighter leading-tight group-hover:text-gray-200 transition-colors">
+        <h2 class="text-lg md:text-xl font-black text-white leading-tight group-hover:text-gray-200 transition-colors">
           {selectedDate.toLocaleDateString('nl-NL', { weekday: 'long', day: 'numeric' })}
         </h2>
       </label>
@@ -582,11 +582,11 @@
         <button
           onclick={() => { selectedDate = new Date(date); loadAppointments(); }}
           class="flex-1 flex flex-col items-center py-1.5 px-0.5 rounded-lg transition-all border min-w-[38px] relative
-                 {isSelected 
-                   ? 'bg-primary-500 border-primary-400 text-white shadow-md shadow-primary-500/25' 
-                   : 'bg-surface-800/60 border-white/5 text-gray-400 hover:bg-surface-700 hover:text-gray-200'}"
+ {isSelected 
+ ? 'bg-primary-500 border-primary-400 text-white shadow-md shadow-primary-500/25' 
+ : 'bg-surface-800/60 border-white/5 text-gray-400 hover:bg-surface-700 hover:text-gray-200'}"
         >
-          <span class="text-[8px] font-black uppercase tracking-tighter opacity-60">
+          <span class="text-[8px] font-black opacity-60">
             {date.toLocaleDateString('nl-NL', { weekday: 'short' }).slice(0, 2)}
           </span>
           <span class="text-sm font-black leading-none">{date.getDate()}</span>
@@ -617,13 +617,13 @@
             <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M18 6 6 18M6 6l12 12"/></svg>
           </div>
           <div>
-            <p class="text-[10px] font-black text-red-400 uppercase tracking-widest">{hiddenCancelledCount} les{hiddenCancelledCount !== 1 ? 'sen' : ''} uitgevallen</p>
+            <p class="text-[10px] font-black text-red-400">{hiddenCancelledCount} les{hiddenCancelledCount !== 1 ? 'sen' : ''} uitgevallen</p>
             <p class="text-[8px] text-gray-500 font-bold">Zijn momenteel verborgen</p>
           </div>
         </div>
         <button 
           onclick={() => $userSettings.hideCancelled = false}
-          class="px-2.5 py-1 rounded-lg bg-surface-800 text-[9px] font-black text-gray-300 hover:text-white hover:bg-surface-700 transition-all uppercase tracking-widest"
+          class="px-2.5 py-1 rounded-lg bg-surface-800 text-[9px] font-black text-gray-300 hover:text-white hover:bg-surface-700 transition-all"
         >
           Tonen
         </button>
@@ -633,7 +633,7 @@
     {#if loading}
       <div class="flex flex-col items-center justify-center py-16 gap-3">
         <div class="w-10 h-10 border-3 border-primary-500 border-t-transparent rounded-full animate-spin shadow-[0_0_20px_rgba(var(--color-primary-500),0.3)]"></div>
-        <p class="text-[10px] font-black text-gray-600 uppercase tracking-widest animate-pulse">Lessen ophalen...</p>
+        <p class="text-[10px] font-black text-gray-600 animate-pulse">Lessen ophalen...</p>
       </div>
     {:else if dayAppointments.length === 0}
       <div class="flex flex-col items-center justify-center py-16 text-center space-y-4">
@@ -641,8 +641,8 @@
           <svg class="w-8 h-8 text-gray-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/><path d="M18 22 13 17l-3 3-5-5"/></svg>
         </div>
         <div>
-          <h3 class="text-base font-black text-white italic tracking-tight mb-1">Geen lessen gepland</h3>
-          <p class="text-[10px] font-bold text-gray-500 uppercase tracking-widest max-w-[200px] leading-relaxed">
+          <h3 class="text-base font-black text-white mb-1">Geen lessen gepland</h3>
+          <p class="text-[10px] font-bold text-gray-500 max-w-[200px] leading-relaxed">
             Geniet van je vrije dag!
           </p>
         </div>
@@ -656,7 +656,7 @@
             </div>
             <div class="flex-1 flex items-center gap-2">
               <div class="h-[1px] flex-1 bg-gradient-to-r from-surface-700 to-transparent"></div>
-              <span class="text-[8px] font-black uppercase tracking-[0.15em] text-gray-500 whitespace-nowrap">
+              <span class="text-[8px] font-black text-gray-500 whitespace-nowrap">
                 {app.Duration} min pauze
               </span>
               <div class="h-[1px] flex-1 bg-gradient-to-l from-surface-700 to-transparent"></div>
@@ -670,13 +670,13 @@
             onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDetail(app); } }}
             in:fly={{ y: 12, duration: 200, delay: i * 20, easing: (t) => 1 - Math.pow(1-t, 3) }}
             class="w-full text-left rounded-2xl p-3 md:p-4 flex gap-3 md:gap-4 transition-all active:scale-[0.98] hover:scale-[1.005] relative overflow-hidden cursor-pointer border
-                   {app.InfoType === 1 && !app.Afgerond 
-                     ? 'bg-primary-500/10 border-primary-500/30 shadow-sm shadow-primary-500/10' 
-                     : app.Status === 4 || app.Status === 5
-                       ? 'bg-red-500/8 border-red-500/30'
-                       : app.Afgerond
-                         ? 'bg-surface-800/50 border-surface-700/40 opacity-70'
-                         : 'bg-surface-800/60 border-surface-700/40 hover:bg-surface-700/60 hover:border-surface-600/50'}"
+ {app.InfoType === 1 && !app.Afgerond 
+ ? 'bg-primary-500/10 border-primary-500/30 shadow-sm shadow-primary-500/10' 
+ : app.Status === 4 || app.Status === 5
+ ? 'bg-red-500/8 border-red-500/30'
+ : app.Afgerond
+ ? 'bg-surface-800/50 border-surface-700/40 opacity-70'
+ : 'bg-surface-800/60 border-surface-700/40 hover:bg-surface-700/60 hover:border-surface-600/50'}"
           >
             <!-- Soft background glow -->
             {#if app.InfoType === 1 && !app.Afgerond}
@@ -685,10 +685,10 @@
             
             <!-- Time/Period -->
             <div class="flex flex-col items-center justify-center min-w-[36px] md:min-w-[42px] gap-0.5 relative z-10">
-              <span class="text-[8px] md:text-[9px] font-black {app.Status === 4 || app.Status === 5 ? 'text-red-400' : 'text-primary-400'} uppercase tracking-tight">
+              <span class="text-[8px] md:text-[9px] font-black {app.Status === 4 || app.Status === 5 ? 'text-red-400' : 'text-primary-400'}">
                 {app.IsCombined ? 'Uren' : 'Les'}
               </span>
-              <span class="text-lg md:text-xl font-black {app.Status === 4 || app.Status === 5 ? 'text-red-400' : 'text-white'} italic leading-none">{app.Lesuur}</span>
+              <span class="text-lg md:text-xl font-black {app.Status === 4 || app.Status === 5 ? 'text-red-400' : 'text-white'} leading-none">{app.Lesuur}</span>
               <div class="h-px w-4 {app.Status === 4 || app.Status === 5 ? 'bg-red-500/30' : 'bg-surface-600'} my-0.5"></div>
               <span class="text-[8px] md:text-[9px] font-bold {app.Status === 4 || app.Status === 5 ? 'text-red-400/70' : 'text-primary-300/80'}">{formatTime(app.Start)}</span>
             </div>
@@ -699,7 +699,7 @@
             <!-- Info -->
             <div class="flex-1 min-w-0 flex flex-col justify-center relative z-10">
               <div class="flex items-center justify-between gap-1.5 mb-0.5">
-                <span class="text-sm md:text-base font-black {app.Status === 4 || app.Status === 5 ? 'text-red-400 line-through' : 'text-white'} uppercase tracking-tight truncate">
+                <span class="text-sm md:text-base font-black {app.Status === 4 || app.Status === 5 ? 'text-red-400 line-through' : 'text-white'} truncate">
                   {app.Vakken?.[0]?.Omschrijving || app.Omschrijving || 'Vrij'}
                 </span>
                 {#if app.Docenten?.[0]}
@@ -722,20 +722,20 @@
 
               {#if app.Status === 4 || app.Status === 5}
                 <div class="mt-1.5 flex">
-                  <span class="px-2 py-0.5 rounded-full text-[7px] md:text-[8px] font-black uppercase tracking-widest border border-red-500/40 text-red-400 bg-red-500/10">
+                  <span class="px-2 py-0.5 rounded-full text-[7px] md:text-[8px] font-black border border-red-500/40 text-red-400 bg-red-500/10">
                     Uitgevallen
                   </span>
                 </div>
               {:else if app.InfoType && app.InfoType !== 0}
                 <div class="mt-1.5 flex">
-                  <span class="px-2 py-0.5 rounded-full text-[7px] md:text-[8px] font-black uppercase tracking-widest border {getInfoColor(app.InfoType)}">
+                  <span class="px-2 py-0.5 rounded-full text-[7px] md:text-[8px] font-black border {getInfoColor(app.InfoType)}">
                     {getInfoLabel(app.InfoType)}
                   </span>
                 </div>
               {/if}
 
               {#if app.Aantekening}
-                <div class="mt-1.5 text-[9px] md:text-[10px] text-gray-500 italic bg-surface-900/50 p-1.5 rounded-lg border border-white/5 line-clamp-1">
+                <div class="mt-1.5 text-[9px] md:text-[10px] text-gray-500 bg-surface-900/50 p-1.5 rounded-lg border border-white/5 line-clamp-1">
                   {app.Aantekening}
                 </div>
               {/if}
@@ -747,9 +747,9 @@
                 <button 
                   onclick={(e) => { e.stopPropagation(); toggleDone(app); }}
                   class="w-7 h-7 md:w-8 md:h-8 rounded-full border-2 transition-all flex items-center justify-center
-                         {app.Afgerond 
-                           ? 'bg-emerald-500 border-emerald-400 text-white shadow-sm shadow-emerald-500/30' 
-                           : 'bg-surface-900 border-surface-600 text-transparent hover:border-primary-500 hover:bg-surface-800 active:scale-110'}"
+ {app.Afgerond 
+ ? 'bg-emerald-500 border-emerald-400 text-white shadow-sm shadow-emerald-500/30' 
+ : 'bg-surface-900 border-surface-600 text-transparent hover:border-primary-500 hover:bg-surface-800 active:scale-110'}"
                 >
                   <svg class="w-3.5 h-3.5 md:w-4 md:h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="4"><path d="M20 6L9 17L4 12"/></svg>
                 </button>
@@ -796,7 +796,7 @@
         <!-- Title area -->
         <div class="space-y-2 md:space-y-3">
           <div class="flex items-center justify-between">
-             <span class="px-2 py-0.5 rounded-full text-[8px] md:text-[9px] font-black uppercase tracking-widest border {getInfoColor(selectedAppointment.InfoType)}">
+             <span class="px-2 py-0.5 rounded-full text-[8px] md:text-[9px] font-black border {getInfoColor(selectedAppointment.InfoType)}">
               {getInfoLabel(selectedAppointment.InfoType)}
             </span>
             <div class="flex items-center gap-1.5">
@@ -826,7 +826,7 @@
               </button>
             </div>
           </div>
-          <h2 class="text-xl md:text-2xl font-black text-white italic leading-tight tracking-tighter">
+          <h2 class="text-xl md:text-2xl font-black text-white leading-tight">
             {selectedAppointment.Vakken?.[0]?.Omschrijving || selectedAppointment.Omschrijving || 'Vrij'}
           </h2>
           <div class="flex flex-wrap gap-1.5 md:gap-2">
@@ -844,17 +844,17 @@
         <!-- Times and Details -->
         <div class="grid grid-cols-2 gap-2 md:gap-3">
           <div class="bg-surface-800/50 p-2.5 md:p-3 rounded-xl md:rounded-2xl border border-white/5">
-            <p class="text-[8px] md:text-[9px] font-black text-gray-500 uppercase tracking-widest mb-0.5">Begin</p>
-            <p class="text-base md:text-lg font-black text-white italic">{formatTime(selectedAppointment.Start)}</p>
+            <p class="text-[8px] md:text-[9px] font-black text-gray-500 mb-0.5">Begin</p>
+            <p class="text-base md:text-lg font-black text-white">{formatTime(selectedAppointment.Start)}</p>
           </div>
           <div class="bg-surface-800/50 p-2.5 md:p-3 rounded-xl md:rounded-2xl border border-white/5">
-            <p class="text-[8px] md:text-[9px] font-black text-gray-500 uppercase tracking-widest mb-0.5">Einde</p>
-            <p class="text-base md:text-lg font-black text-white italic">{formatTime(selectedAppointment.Einde)}</p>
+            <p class="text-[8px] md:text-[9px] font-black text-gray-500 mb-0.5">Einde</p>
+            <p class="text-base md:text-lg font-black text-white">{formatTime(selectedAppointment.Einde)}</p>
           </div>
         </div>
 
         <div class="space-y-3">
-          <h3 class="text-[10px] font-black text-gray-100 uppercase tracking-widest flex items-center gap-2">
+          <h3 class="text-[10px] font-black text-gray-100 flex items-center gap-2">
             <div class="w-1 h-3 bg-primary-500 rounded-full"></div>
             Huiswerk & Inhoud
           </h3>
@@ -867,7 +867,7 @@
               ></textarea>
               <button
                 onclick={saveLocalOverride}
-                class="w-full py-2.5 md:py-3 rounded-xl bg-primary-500 text-white font-black text-xs uppercase tracking-widest hover:bg-primary-400 transition-all shadow-lg shadow-primary-500/20"
+                class="w-full py-2.5 md:py-3 rounded-xl bg-primary-500 text-white font-black text-xs hover:bg-primary-400 transition-all shadow-lg shadow-primary-500/20"
               >
                 Opslaan (Lokaal)
               </button>
@@ -877,16 +877,16 @@
                <button 
                 onclick={() => toggleDone(selectedAppointment)}
                 class="w-full flex items-center justify-center gap-2 py-3 rounded-xl border-2 transition-all mb-3
-                       {selectedAppointment.Afgerond 
-                         ? 'bg-emerald-500/10 border-emerald-500/50 text-emerald-400' 
-                         : 'bg-primary-500 border-primary-400 text-white shadow-md shadow-primary-500/20'}"
+ {selectedAppointment.Afgerond 
+ ? 'bg-emerald-500/10 border-emerald-500/50 text-emerald-400' 
+ : 'bg-primary-500 border-primary-400 text-white shadow-md shadow-primary-500/20'}"
                >
                  <div class="w-5 h-5 rounded-full border-2 border-current flex items-center justify-center">
                    {#if selectedAppointment.Afgerond}
                      <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="4"><path d="M20 6L9 17L4 12"/></svg>
                    {/if}
                  </div>
-                 <span class="text-[10px] md:text-xs font-black uppercase tracking-widest">
+                 <span class="text-[10px] md:text-xs font-black">
                    {selectedAppointment.Afgerond ? 'Huiswerk voltooid' : 'Markeren als klaar'}
                  </span>
                </button>
@@ -895,24 +895,24 @@
                <HtmlRenderer html={selectedAppointment.Inhoud} />
             </div>
           {:else}
-            <p class="text-[10px] text-gray-600 italic px-1">Geen inhoud beschikbaar.</p>
+            <p class="text-[10px] text-gray-600 px-1">Geen inhoud beschikbaar.</p>
           {/if}
         </div>
 
         {#if selectedAppointment.Aantekening && !editMode}
           <div class="space-y-1.5 md:space-y-2">
-            <h3 class="text-[9px] md:text-[10px] font-black text-gray-100 uppercase tracking-widest flex items-center gap-2">
+            <h3 class="text-[9px] md:text-[10px] font-black text-gray-100 flex items-center gap-2">
               <div class="w-1 h-2.5 md:h-3 bg-accent-500 rounded-full"></div>
               Aantekening
             </h3>
-            <div class="p-3 md:p-4 rounded-xl md:rounded-2xl bg-surface-950 border border-white/5 text-xs text-gray-500 italic leading-relaxed">
+            <div class="p-3 md:p-4 rounded-xl md:rounded-2xl bg-surface-950 border border-white/5 text-xs text-gray-500 leading-relaxed">
               {selectedAppointment.Aantekening}
             </div>
           </div>
         {/if}
         {#if selectedAppointment.Bijlagen && selectedAppointment.Bijlagen.length > 0}
           <div class="space-y-2 md:space-y-3 pb-2 md:pb-4">
-            <h3 class="text-[9px] md:text-[10px] font-black text-gray-100 uppercase tracking-widest flex items-center gap-2">
+            <h3 class="text-[9px] md:text-[10px] font-black text-gray-100 flex items-center gap-2">
               <div class="w-1 h-2.5 md:h-3 bg-blue-500 rounded-full"></div>
               Bijlagen ({selectedAppointment.Bijlagen.length})
             </h3>
@@ -951,7 +951,7 @@
       <div class="p-3 pt-0 shrink-0 md:hidden">
         <button 
           onclick={() => { showDetail = false; selectedAppointment = null; editMode = false; }}
-          class="w-full py-2.5 rounded-xl bg-surface-800 text-white text-xs font-black uppercase tracking-tight hover:bg-surface-700 transition-all"
+          class="w-full py-2.5 rounded-xl bg-surface-800 text-white text-xs font-black hover:bg-surface-700 transition-all"
         >
           Sluiten
         </button>
@@ -973,7 +973,7 @@
     >
       <div class="p-4 md:p-6 space-y-4 md:space-y-6">
         <div class="flex items-center justify-between">
-          <h2 class="text-lg md:text-xl font-black text-white italic tracking-tighter">Nieuwe Afspraak</h2>
+          <h2 class="text-lg md:text-xl font-black text-white">Nieuwe Afspraak</h2>
           <button onclick={() => isCreating = false} class="text-gray-500 hover:text-white transition-colors" aria-label="Sluiten">
             <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M18 6 6 18M6 6l12 12"/></svg>
           </button>
@@ -981,7 +981,7 @@
 
         <div class="space-y-3 md:space-y-4">
           <div class="space-y-1">
-            <label for="newAppOmschrijving" class="text-[9px] md:text-[10px] font-black text-gray-500 uppercase tracking-widest ml-1">Omschrijving</label>
+            <label for="newAppOmschrijving" class="text-[9px] md:text-[10px] font-black text-gray-500 ml-1">Omschrijving</label>
             <input 
               id="newAppOmschrijving"
               bind:value={newApp.omschrijving}
@@ -993,7 +993,7 @@
 
           <div class="grid grid-cols-2 gap-3 md:gap-4">
             <div class="space-y-1">
-              <label for="newAppBegin" class="text-[9px] md:text-[10px] font-black text-gray-500 uppercase tracking-widest ml-1">Begin</label>
+              <label for="newAppBegin" class="text-[9px] md:text-[10px] font-black text-gray-500 ml-1">Begin</label>
               <input 
                 id="newAppBegin"
                 bind:value={newApp.start}
@@ -1003,7 +1003,7 @@
               />
             </div>
             <div class="space-y-1">
-              <label for="newAppEinde" class="text-[9px] md:text-[10px] font-black text-gray-500 uppercase tracking-widest ml-1">Einde</label>
+              <label for="newAppEinde" class="text-[9px] md:text-[10px] font-black text-gray-500 ml-1">Einde</label>
               <input 
                 id="newAppEinde"
                 bind:value={newApp.einde}
@@ -1015,7 +1015,7 @@
           </div>
 
           <div class="space-y-1">
-            <label for="newAppLocatie" class="text-[9px] md:text-[10px] font-black text-gray-500 uppercase tracking-widest ml-1">Locatie</label>
+            <label for="newAppLocatie" class="text-[9px] md:text-[10px] font-black text-gray-500 ml-1">Locatie</label>
             <input 
               id="newAppLocatie"
               bind:value={newApp.lokatie}
@@ -1026,7 +1026,7 @@
           </div>
 
           <div class="space-y-1">
-            <label for="newAppInhoud" class="text-[9px] md:text-[10px] font-black text-gray-500 uppercase tracking-widest ml-1">Inhoud</label>
+            <label for="newAppInhoud" class="text-[9px] md:text-[10px] font-black text-gray-500 ml-1">Inhoud</label>
             <textarea 
               id="newAppInhoud"
               bind:value={newApp.inhoud}
@@ -1041,7 +1041,7 @@
         {/if}
         <button 
           onclick={createAppointment}
-          class="w-full py-3 md:py-4 rounded-xl md:rounded-2xl bg-primary-500 text-white font-black uppercase tracking-widest hover:bg-primary-400 transition-all shadow-lg shadow-primary-500/25 active:scale-[0.98]"
+          class="w-full py-3 md:py-4 rounded-xl md:rounded-2xl bg-primary-500 text-white font-black hover:bg-primary-400 transition-all shadow-lg shadow-primary-500/25 active:scale-[0.98]"
         >
           Toevoegen
         </button>

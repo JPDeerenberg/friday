@@ -114,10 +114,10 @@
           </button>
         {/if}
         <div class="flex flex-col min-w-0">
-          <h1 class="text-xl font-black text-gray-100 italic tracking-tighter uppercase truncate">
+          <h1 class="text-xl font-black text-gray-100 truncate">
             {selectedSW ? selectedSW.Titel : 'Studiewijzers'}
           </h1>
-          <p class="text-[9px] font-black text-gray-600 uppercase tracking-widest mt-0.5">
+          <p class="text-[9px] font-black text-gray-600 mt-0.5">
             {selectedSW ? 'Onderdelen & Materiaal' : 'Selecteer een cursus'}
           </p>
         </div>
@@ -139,7 +139,7 @@
     {#if loading && !selectedSW && !studiewijzers.length}
       <div class="flex flex-col items-center justify-center py-40 gap-4">
         <div class="w-10 h-10 border-4 border-primary-500/20 border-t-primary-500 rounded-full animate-spin"></div>
-        <p class="text-[9px] font-black text-gray-600 uppercase tracking-widest animate-pulse">Catalogus inladen...</p>
+        <p class="text-[9px] font-black text-gray-600 animate-pulse">Catalogus inladen...</p>
       </div>
     {:else if error && !selectedSW}
        <div class="max-w-lg mx-auto mt-20 p-10 glass rounded-[3rem] text-center space-y-6 border-red-500/10 bg-red-500/[0.02] shadow-2xl mx-4">
@@ -147,10 +147,10 @@
              <svg class="w-10 h-10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" x2="12" y1="9" y2="13"/><line x1="12" x2="12.01" y1="17" y2="17"/></svg>
           </div>
           <div class="space-y-1">
-             <h3 class="text-xl font-black text-white italic tracking-tight uppercase">Foutmelding</h3>
-             <p class="text-gray-500 text-[10px] font-black uppercase tracking-widest leading-relaxed">{error}</p>
+             <h3 class="text-xl font-black text-white">Foutmelding</h3>
+             <p class="text-gray-500 text-[10px] font-black leading-relaxed">{error}</p>
           </div>
-          <button onclick={loadInitialData} class="w-full py-4 rounded-2xl bg-surface-800 text-white text-[10px] font-black uppercase tracking-[0.3em] transition-all hover:bg-surface-700 active:scale-95 shadow-lg border border-white/5">
+          <button onclick={loadInitialData} class="w-full py-4 rounded-2xl bg-surface-800 text-white text-[10px] font-black transition-all hover:bg-surface-700 active:scale-95 shadow-lg border border-white/5">
              Opnieuw Proberen
           </button>
        </div>
@@ -159,8 +159,8 @@
         {#if studiewijzers.length === 0 && !loading}
           <div class="glass rounded-[3rem] p-24 text-center border-white/5 shadow-2xl flex flex-col items-center">
              <svg class="w-16 h-16 text-gray-800 mb-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20M4 19.5A2.5 2.5 0 0 0 6.5 22H20M4 19.5V5A2.5 2.5 0 0 1 6.5 2.5H20v11H6.5A2.5 2.5 0 0 0 4 16v3.5z"/></svg>
-             <h3 class="text-xl font-black text-gray-500 italic uppercase">Geen studiewijzers</h3>
-             <p class="text-[9px] font-black text-gray-700 uppercase tracking-[0.4em]">Niets beschikbaar voor dit jaar</p>
+             <h3 class="text-xl font-black text-gray-500">Geen studiewijzers</h3>
+             <p class="text-[9px] font-black text-gray-700">Niets beschikbaar voor dit jaar</p>
           </div>
         {:else}
           <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -181,16 +181,16 @@
                         <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20M4 19.5A2.5 2.5 0 0 0 6.5 22H20M4 19.5V5A2.5 2.5 0 0 1 6.5 2.5H20v11H6.5A2.5 2.5 0 0 0 4 16v3.5z"/></svg>
                       {/if}
                    </div>
-                   <span class="text-[8px] font-black uppercase tracking-[0.2em] px-3 py-1.5 rounded-xl border backdrop-blur-md {isProj ? 'bg-amber-500/10 text-amber-500 border-amber-500/20' : 'bg-primary-500/10 text-primary-500 border-primary-500/20'}">
+                   <span class="text-[8px] font-black px-3 py-1.5 rounded-xl border backdrop-blur-md {isProj ? 'bg-amber-500/10 text-amber-500 border-amber-500/20' : 'bg-primary-500/10 text-primary-500 border-primary-500/20'}">
                       {isProj ? 'Project' : 'Wijzer'}
                    </span>
                 </div>
                 
                 <div class="relative z-10">
-                  <h3 class="text-base font-black text-gray-100 italic tracking-tighter line-clamp-2 leading-none uppercase group-hover:text-white transition-colors">
+                  <h3 class="text-base font-black text-gray-100 line-clamp-2 leading-none group-hover:text-white transition-colors">
                     {sw.Titel}
                   </h3>
-                   <div class="flex items-center gap-2 text-[9px] font-black text-gray-600 uppercase tracking-[0.2em] mt-4 pt-4 border-t border-white/[0.03]">
+                   <div class="flex items-center gap-2 text-[9px] font-black text-gray-600 mt-4 pt-4 border-t border-white/[0.03]">
                     <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20M4 19.5A2.5 2.5 0 0 0 6.5 22H20M4 19.5V5A2.5 2.5 0 0 1 6.5 2.5H20v11H6.5A2.5 2.5 0 0 0 4 16v3.5z"/></svg>
                     <span>{new Date(sw.Van).getFullYear()}</span>
                   </div>
@@ -206,7 +206,7 @@
         <!-- Parts List -->
         <div class="w-full md:w-80 lg:w-96 border-r border-white/5 bg-surface-900/10 flex flex-col shrink-0">
           <div class="p-5 border-b border-white/5 bg-surface-950/20">
-             <h2 class="text-[10px] font-black text-gray-500 uppercase tracking-[0.3em] italic">Cursus Onderdelen</h2>
+             <h2 class="text-[10px] font-black text-gray-500">Cursus Onderdelen</h2>
           </div>
           <div class="flex-1 overflow-y-auto no-scrollbar p-3 space-y-2">
             {#if selectedSW.Detail?.Onderdelen?.Items}
@@ -216,7 +216,7 @@
                   class="w-full p-4 rounded-[1.75rem] text-left transition-all border {selectedOnderdeel?.Id === onderdeel.Id ? 'bg-primary-500/15 border-primary-500/40 shadow-xl' : 'bg-surface-800/20 border-transparent hover:bg-surface-800/60'} flex items-center gap-4 group"
                 >
                   <div class="w-3 h-3 rounded-lg shrink-0 shadow-inner group-hover:scale-110 transition-transform" style="background-color: {onderdeel.Kleur ? '#' + onderdeel.Kleur.toString(16).padStart(6, '0') : '#3b82f6'}"></div>
-                  <span class="text-[11px] font-black text-gray-200 uppercase tracking-tight italic group-hover:text-white transition-colors">{onderdeel.Titel}</span>
+                  <span class="text-[11px] font-black text-gray-200 group-hover:text-white transition-colors">{onderdeel.Titel}</span>
                 </button>
               {/each}
             {/if}
@@ -235,8 +235,8 @@
                 <div class="flex items-center gap-5">
                    <div class="w-1.5 h-12 rounded-full shadow-lg" style="background-color: {selectedOnderdeel.Kleur ? '#' + selectedOnderdeel.Kleur.toString(16).padStart(6, '0') : '#3b82f6'}"></div>
                    <div class="min-w-0">
-                      <h2 class="text-3xl font-black text-white italic tracking-tighter uppercase leading-none truncate">{selectedOnderdeel.Titel}</h2>
-                      <p class="text-[9px] font-black text-gray-600 uppercase tracking-widest mt-1">Geselecteerd Onderdeel</p>
+                      <h2 class="text-3xl font-black text-white leading-none truncate">{selectedOnderdeel.Titel}</h2>
+                      <p class="text-[9px] font-black text-gray-600 mt-1">Geselecteerd Onderdeel</p>
                    </div>
                 </div>
                 
@@ -253,7 +253,7 @@
               {#if (selectedOnderdeel.Detail?.Bronnen || []).length > 0}
                 <div class="space-y-6">
                   <div class="flex items-center gap-4">
-                     <span class="text-[10px] font-black text-gray-600 uppercase tracking-[0.4em] italic">Bijlagen & Bronnen</span>
+                     <span class="text-[10px] font-black text-gray-600">Bijlagen & Bronnen</span>
                      <div class="h-px flex-1 bg-gradient-to-r from-white/5 to-transparent"></div>
                   </div>
 
@@ -264,7 +264,7 @@
                             <div class="w-10 h-10 rounded-xl bg-surface-950 flex items-center justify-center text-primary-400 border border-white/5 shadow-inner">
                                {@html getFileIcon(bron)}
                             </div>
-                            <span class="text-[11px] font-black text-gray-200 uppercase tracking-tighter truncate italic">{bron.Naam}</span>
+                            <span class="text-[11px] font-black text-gray-200 truncate">{bron.Naam}</span>
                          </div>
                          <a 
                            href={bron.Links?.find((l: any) => l.Rel === 'content')?.Href} 
@@ -288,8 +288,8 @@
                 <div class="w-24 h-24 rounded-[2.5rem] bg-surface-900 border border-white/5 flex items-center justify-center mb-6 text-gray-700 shadow-inner group-hover:rotate-6 transition-transform">
                   <svg class="w-12 h-12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>
                 </div>
-                <h3 class="text-xl font-black text-gray-500 italic uppercase">Geen deel geselecteerd</h3>
-                <p class="text-[9px] font-black uppercase tracking-[0.4em] mt-2">Kies een onderdeel uit de lijst</p>
+                <h3 class="text-xl font-black text-gray-500">Geen deel geselecteerd</h3>
+                <p class="text-[9px] font-black mt-2">Kies een onderdeel uit de lijst</p>
              </div>
           {/if}
         </div>

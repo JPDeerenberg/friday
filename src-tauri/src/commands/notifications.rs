@@ -197,8 +197,30 @@ pub fn show_notification(
     Ok(())
 }
 
+/// Part B 4A: simple last-run timestamp guard so trigger_sync can't fire more
+/// than once per SYNC_THROTTLE_SECS. In-process only (resets on app restart),
+/// which is fine — this exists to collapse rapid-fire bursts (e.g. several
+/// notification-preference toggles in quick succession, see stores.ts
+/// syncPreferencesToAndroid), not to be a durable rate limit.
+static LAST_SYNC: std::sync::Mutex<Option<std::time::Instant>> = std::sync::Mutex::new(None);
+const SYNC_THROTTLE_SECS: u64 = 15;
+
 #[tauri::command]
 pub fn trigger_sync(app: AppHandle) -> Result<(), String> {
+    {
+        let mut last = LAST_SYNC.lock().map_err(|e| e.to_string())?;
+        if let Some(t) = *last {
+            let elapsed = t.elapsed().as_secs();
+            if elapsed < SYNC_THROTTLE_SECS {
+                return Err(format!(
+                    "Sync throttled — probeer over {} seconden opnieuw",
+                    SYNC_THROTTLE_SECS - elapsed
+                ));
+            }
+        }
+        *last = Some(std::time::Instant::now());
+    }
+
     let _ = &app;
     #[cfg(target_os = "android")]
     {
