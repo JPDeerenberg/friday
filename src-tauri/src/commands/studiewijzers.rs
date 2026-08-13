@@ -9,7 +9,10 @@ pub async fn get_studiewijzers(
     client: State<'_, SharedClient>,
     person_id: i64,
 ) -> Result<Vec<Studiewijzer>, String> {
-    let mut client = client.lock().await;
+    let ctx = {
+        let mut c = client.lock().await;
+        c.request_context().await.map_err(|e| e.to_string())?
+    };
     let now = chrono::Local::now().format("%Y-%m-%d").to_string();
     let sw_url = format!("leerlingen/{}/studiewijzers?peildatum={}", person_id, now);
     let proj_url = format!("leerlingen/{}/projecten?peildatum={}", person_id, now);
@@ -19,8 +22,14 @@ pub async fn get_studiewijzers(
 
     let mut all_items = Vec::new();
 
+    // Fetch both concurrently — independent, order doesn't matter.
+    let (sw_result, proj_result) = tokio::join!(
+        crate::client::get_with_context(&ctx, &sw_url),
+        crate::client::get_with_context(&ctx, &proj_url)
+    );
+
     // Try fetching normal studiewijzers
-    match client.get(&sw_url).await {
+    match sw_result {
         Ok(sw_response) => match serde_json::from_value::<StudiewijzersResponse>(sw_response) {
             Ok(sws) => all_items.extend(sws.items),
             Err(e) => println!("Warning: Failed to parse studiewijzers: {}", e),
@@ -29,7 +38,7 @@ pub async fn get_studiewijzers(
     }
 
     // Try fetching projects
-    match client.get(&proj_url).await {
+    match proj_result {
         Ok(proj_response) => match serde_json::from_value::<StudiewijzersResponse>(proj_response) {
             Ok(projs) => all_items.extend(projs.items),
             Err(e) => println!("Warning: Failed to parse projects: {}", e),
@@ -47,14 +56,17 @@ pub async fn get_studiewijzer_detail(
     id: i64,
     is_project: bool,
 ) -> Result<StudiewijzerDetail, String> {
-    let mut client = client.lock().await;
+    let ctx = {
+        let mut c = client.lock().await;
+        c.request_context().await.map_err(|e| e.to_string())?
+    };
     let base = if is_project {
         "projecten"
     } else {
         "studiewijzers"
     };
     let url = format!("leerlingen/{}/{}/{}", person_id, base, id);
-    let response = client.get(&url).await.map_err(|e| e.to_string())?;
+    let response = crate::client::get_with_context(&ctx, &url).await.map_err(|e| e.to_string())?;
     let detail: StudiewijzerDetail = serde_json::from_value(response)
         .map_err(|e| format!("Failed to parse studiewijzer detail: {}", e))?;
     Ok(detail)
@@ -68,7 +80,10 @@ pub async fn get_studiewijzer_onderdeel_detail(
     onderdeel_id: i64,
     is_project: bool,
 ) -> Result<StudiewijzerOnderdeelDetail, String> {
-    let mut client = client.lock().await;
+    let ctx = {
+        let mut c = client.lock().await;
+        c.request_context().await.map_err(|e| e.to_string())?
+    };
     let base = if is_project {
         "projecten"
     } else {
@@ -78,7 +93,7 @@ pub async fn get_studiewijzer_onderdeel_detail(
         "leerlingen/{}/{}/{}/onderdelen/{}?gebruikMappenStructuur=true",
         person_id, base, sw_id, onderdeel_id
     );
-    let response = client.get(&url).await.map_err(|e| e.to_string())?;
+    let response = crate::client::get_with_context(&ctx, &url).await.map_err(|e| e.to_string())?;
     let detail: StudiewijzerOnderdeelDetail = serde_json::from_value(response)
         .map_err(|e| format!("Failed to parse onderdeel detail: {}", e))?;
     Ok(detail)

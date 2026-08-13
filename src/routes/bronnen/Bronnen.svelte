@@ -1,6 +1,7 @@
 <script lang="ts">
   import { personId } from '$lib/stores';
   import { getBronnen, getExternalBronSources } from '$lib/api';
+  import { cacheGet } from '$lib/cache';
   import { onMount } from 'svelte';
   import { fade, fly, slide } from 'svelte/transition';
 
@@ -19,22 +20,19 @@
   let pathHistory = $state<any[]>([]); // To support back navigation
 
   onMount(async () => {
-    const cachedSources = localStorage.getItem('bronnen_sources');
     const cachedItems = localStorage.getItem('bronnen_current_items');
     const cachedHistory = localStorage.getItem('bronnen_path_history');
-    if (cachedSources) {
+    if (cachedItems) {
       try {
-        sources = JSON.parse(cachedSources);
-        if (cachedItems) currentItems = JSON.parse(cachedItems);
+        currentItems = JSON.parse(cachedItems);
         if (cachedHistory) pathHistory = JSON.parse(cachedHistory);
-        loading = false;
+        if (currentItems.length > 0) loading = false;
       } catch (e) { console.error(e); }
     }
     const pid = $personId;
     if (!pid) return;
     try {
-      sources = await getExternalBronSources(pid);
-      localStorage.setItem('bronnen_sources', JSON.stringify(sources));
+      sources = await cacheGet(`bronnen_sources_${pid}`, () => getExternalBronSources(pid), 5 * 60 * 1000);
       console.log('[Bronnen] External sources:', JSON.stringify(sources));
       if (sources.length > 0 && currentItems.length === 0) {
         // Try each source until we find one with items if not loaded from cache
@@ -138,14 +136,14 @@
     <div class="flex flex-col gap-4 max-w-5xl mx-auto w-full">
       <div class="flex items-center justify-between">
         <div>
-          <h1 class="text-xl font-black text-gray-100">Bronnen</h1>
-          <p class="text-[10px] font-black text-gray-600 mt-0.5">Lesmateriaal & Documenten</p>
+          <h1 class="text-title-large text-gray-100">Bronnen</h1>
+          <p class="text-body-medium text-gray-600 mt-0.5">Lesmateriaal & Documenten</p>
         </div>
         
         <button 
           onclick={goBack} 
           disabled={pathHistory.length <= 1}
-          class="p-2.5 rounded-2xl bg-surface-900 border border-white/5 text-gray-400 hover:text-primary-400 disabled:opacity-20 transition-all active:scale-95 shadow-lg shadow-black/20"
+          class="p-2.5 rounded-full bg-surface-900 border border-white/5 text-gray-400 hover:text-primary-400 disabled:opacity-20 transition-all active:scale-95 shadow-lg shadow-black/20"
           aria-label="Terug"
         >
           <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
@@ -158,7 +156,7 @@
           {#if i > 0}
             <svg class="w-3 h-3 text-gray-800 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="m9 18 6-6-6-6"/></svg>
           {/if}
-          <span class="px-3 py-1.5 rounded-xl bg-surface-900/50 border border-white/5 text-[9px] font-black text-gray-400 whitespace-nowrap shadow-sm">
+          <span class="px-3 py-1.5 rounded-m3-sm bg-surface-900/50 border border-white/5 text-label-small text-gray-400 whitespace-nowrap shadow-sm">
             {part.Naam}
           </span>
         {/each}
@@ -172,20 +170,20 @@
       {#if loading}
         <div class="flex flex-col items-center justify-center py-40 gap-4">
           <div class="w-10 h-10 border-4 border-primary-500/20 border-t-primary-500 rounded-full animate-spin"></div>
-          <p class="text-[9px] font-black text-gray-600 animate-pulse">Bestanden zoeken...</p>
+          <p class="text-label-medium text-gray-600 animate-pulse">Bestanden zoeken...</p>
         </div>
       {:else if currentItems.length === 0}
-        <div in:fade class="glass rounded-[3rem] p-16 text-center space-y-6 border-surface-800/50 bg-surface-900/[0.02] shadow-2xl">
-          <div class="w-20 h-20 bg-surface-900 rounded-[2rem] flex items-center justify-center mx-auto text-gray-700 border border-white/5 shadow-inner">
+        <div in:fade class="glass rounded-m3-md p-16 text-center space-y-6 border-surface-800/50 bg-surface-900/[0.02] shadow-2xl">
+          <div class="w-20 h-20 bg-surface-900 rounded-m3-md flex items-center justify-center mx-auto text-gray-700 border border-white/5 shadow-inner">
             <svg class="w-8 h-8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
           </div>
           <div class="space-y-1">
-            <h3 class="text-xl font-black text-white">Lege Map</h3>
-            <p class="text-gray-600 text-[10px] font-black leading-relaxed">Geen bestanden gevonden in deze map.</p>
+            <h3 class="text-headline-small text-white">Lege Map</h3>
+            <p class="text-gray-600 text-body-medium leading-relaxed">Geen bestanden gevonden in deze map.</p>
           </div>
         </div>
       {:else}
-        <div class="grid grid-cols-1 divide-y divide-white/[0.03] glass rounded-[2.5rem] overflow-hidden shadow-2xl border-white/5">
+        <div class="grid grid-cols-1 divide-y divide-white/[0.03] glass rounded-m3-md overflow-hidden shadow-2xl border-white/5">
           {#each currentItems as item, i}
             <div 
               in:fly={{ y: 10, delay: i * 20 }} 
@@ -200,30 +198,30 @@
                 }
               }}
             >
-              <div class="w-12 h-12 rounded-2xl bg-surface-950 flex items-center justify-center text-primary-400 group-hover:bg-primary-500/10 group-hover:scale-105 transition-all shadow-inner border border-white/5">
+              <div class="w-12 h-12 rounded-m3-md bg-surface-950 flex items-center justify-center text-primary-400 group-hover:bg-primary-500/10 group-hover:scale-105 transition-all shadow-inner border border-white/5">
                 {@html getFileIcon(item)}
               </div>
               
               <div class="flex-1 min-w-0">
-                <h3 class="text-sm font-black text-gray-200 truncate group-hover:text-white transition-colors">
+                <h3 class="text-title-small text-gray-200 truncate group-hover:text-white transition-colors">
                   {item.Naam}
                 </h3>
                 <div class="flex items-center gap-3 mt-1 underline-offset-4">
-                   <span class="text-[9px] font-black text-gray-600">{item.BronSoort === 0 ? 'Folder' : item.BronSoort === 3 ? 'URL' : 'Data'}</span>
+                   <span class="text-label-small text-gray-600">{item.BronSoort === 0 ? 'Folder' : item.BronSoort === 3 ? 'URL' : 'Data'}</span>
                    {#if item.Grootte > 0}
                      <span class="w-1 h-1 bg-surface-800 rounded-full"></span>
-                     <span class="text-[9px] font-black text-gray-500 tabular-nums">{formatSize(item.Grootte)}</span>
+                     <span class="text-label-small text-gray-500 tabular-nums">{formatSize(item.Grootte)}</span>
                    {/if}
                 </div>
               </div>
 
               <div class="flex items-center gap-3">
                 {#if item.BronSoort === 3}
-                  <a href={item.Links.find((l: any) => l.Rel === 'content')?.Href} target="_blank" class="p-3 bg-surface-950/50 hover:bg-primary-500/10 rounded-2xl text-primary-400 transition-all border border-white/5 shadow-inner active:scale-90" aria-label="Openen">
+                  <a href={item.Links.find((l: any) => l.Rel === 'content')?.Href} target="_blank" class="p-3 bg-surface-950/50 hover:bg-primary-500/10 rounded-full text-primary-400 transition-all border border-white/5 shadow-inner active:scale-90" aria-label="Openen">
                     <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
                   </a>
                 {:else if item.BronSoort === 1}
-                  <a href={item.Links.find((l: any) => l.Rel === 'content')?.Href} target="_blank" class="p-3 bg-surface-950/50 hover:bg-primary-500/10 rounded-2xl text-primary-400 transition-all border border-white/5 shadow-inner active:scale-90" aria-label="Download">
+                  <a href={item.Links.find((l: any) => l.Rel === 'content')?.Href} target="_blank" class="p-3 bg-surface-950/50 hover:bg-primary-500/10 rounded-full text-primary-400 transition-all border border-white/5 shadow-inner active:scale-90" aria-label="Download">
                     <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                   </a>
                 {/if}

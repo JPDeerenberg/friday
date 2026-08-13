@@ -1,6 +1,7 @@
 <script lang="ts">
   import { personId } from '$lib/stores';
   import { getProfileInfo, getProfileAddresses, getCareerInfo, getProfilePicture, getAccount } from '$lib/api';
+  import { cacheGet, cacheRefresh } from '$lib/cache';
   import { onMount } from 'svelte';
   import { fade, fly, slide } from 'svelte/transition';
   import Button from '$lib/components/Button.svelte';
@@ -16,43 +17,39 @@
   let error = $state<string | null>(null);
 
   onMount(async () => {
-    const cached = localStorage.getItem('profile_cache');
-    if (cached) {
-      try {
-        const parsed = JSON.parse(cached);
-        info = parsed.info;
-        addresses = parsed.addresses;
-        career = parsed.career;
-        profilePic = parsed.profilePic;
-        account = parsed.account;
-        loading = false;
-      } catch (e) { console.error(e); }
-    }
     await loadProfile();
   });
 
-  async function loadProfile() {
+  async function fetchAllProfileData(pid: number) {
+    const result = { info: undefined as any, addresses: [] as any[], career: undefined as any, profilePic: null as string | null, account: undefined as any };
+    const tasks = [
+      getProfileInfo(pid).then(r => result.info = r).catch(e => console.error('Info fail:', e)),
+      getProfileAddresses(pid).then(r => result.addresses = r).catch(e => console.error('Addr fail:', e)),
+      getCareerInfo(pid).then(r => result.career = r).catch(e => console.error('Career fail:', e)),
+      getProfilePicture(pid).then(r => result.profilePic = r).catch(e => console.error('Pic fail:', e)),
+      getAccount().then(r => result.account = r).catch(e => console.error('Account fail:', e)),
+    ];
+    await Promise.allSettled(tasks);
+    return result;
+  }
+
+  async function loadProfile(force = false) {
     const pid = $personId;
     if (!pid) return;
     if (!info) loading = true;
     error = null;
 
-    const tasks = [
-      getProfileInfo(pid).then(r => info = r).catch(e => console.error('Info fail:', e)),
-      getProfileAddresses(pid).then(r => addresses = r).catch(e => console.error('Addr fail:', e)),
-      getCareerInfo(pid).then(r => career = r).catch(e => console.error('Career fail:', e)),
-      getProfilePicture(pid).then(r => profilePic = r).catch(e => console.error('Pic fail:', e)),
-      getAccount().then(r => account = r).catch(e => console.error('Account fail:', e)),
-    ];
-
     try {
-      await Promise.allSettled(tasks);
+      const data = force
+        ? await cacheRefresh(`profile_${pid}`, () => fetchAllProfileData(pid), 5 * 60 * 1000)
+        : await cacheGet(`profile_${pid}`, () => fetchAllProfileData(pid), 5 * 60 * 1000);
+      info = data.info;
+      addresses = data.addresses;
+      career = data.career;
+      profilePic = data.profilePic;
+      account = data.account;
       if (!info && !career && !account) {
         error = 'Kon profielgegevens niet inladen.';
-      } else {
-        localStorage.setItem('profile_cache', JSON.stringify({
-          info, addresses, career, profilePic, account
-        }));
       }
     } catch (e) {
       console.error('Profile load error:', e);
@@ -123,7 +120,7 @@
       <div class="flex items-center justify-between max-w-4xl mx-auto w-full">
         <h1 class="text-title-large text-gray-100">Mijn profiel</h1>
         <button
-          onclick={loadProfile}
+          onclick={() => loadProfile(true)}
           class="w-10 h-10 rounded-full flex items-center justify-center text-gray-400 hover:bg-white/10 hover:text-primary-400 transition-all hover:rotate-180 duration-700 active:scale-95"
           aria-label="Vernieuwen"
         >
@@ -148,7 +145,7 @@
             <h3 class="text-headline-small text-white">Inladen mislukt</h3>
             <p class="text-body-medium text-gray-400">{error}</p>
           </div>
-          <Button variant="filled" onclick={loadProfile} class="w-full">Opnieuw proberen</Button>
+          <Button variant="filled" onclick={() => loadProfile(true)} class="w-full">Opnieuw proberen</Button>
         </Card>
       </div>
     {:else}

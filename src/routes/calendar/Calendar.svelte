@@ -503,7 +503,7 @@
     <!-- Top row: title + actions -->
     <div class="flex items-center justify-between gap-2">
       <div class="flex items-center gap-1.5">
-        <h1 class="text-lg md:text-xl font-black text-white">Agenda</h1>
+        <h1 class="text-title-large text-white">Agenda</h1>
         <button
           onclick={() => { appointments = []; loadedStart = null; loadedEnd = null; loadAppointments(true); }}
           class="p-1 text-gray-500 hover:text-primary-400 transition-all hover:rotate-180 duration-500"
@@ -528,13 +528,13 @@
       <div class="flex items-center gap-1.5">
         <button
           onclick={() => isCreating = true}
-          class="p-1.5 rounded-lg bg-primary-500/15 border border-primary-500/25 text-primary-400 hover:bg-primary-500/25 transition-all"
+          class="p-1.5 rounded-full bg-primary-500/15 border border-primary-500/25 text-primary-400 hover:bg-primary-500/25 transition-all"
         >
           <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
         </button>
         <button
           onclick={goToToday}
-          class="px-2 py-1 rounded-lg bg-surface-800 text-gray-300 text-[9px] font-black hover:bg-surface-700 transition-all"
+          class="px-2 py-1 rounded-m3-full bg-surface-800 text-gray-300 text-label-medium hover:bg-surface-700 transition-all"
         >
           Vandaag
         </button>
@@ -556,16 +556,16 @@
             }
           }}
         />
-        <p class="text-[9px] font-black text-primary-400 group-hover:text-primary-300 transition-colors">
+        <p class="text-label-small text-primary-400 group-hover:text-primary-300 transition-colors">
           {selectedDate.toLocaleDateString('nl-NL', { month: 'long', year: 'numeric' })}
         </p>
-        <h2 class="text-lg md:text-xl font-black text-white leading-tight group-hover:text-gray-200 transition-colors">
+        <h2 class="text-headline-small text-white leading-tight group-hover:text-gray-200 transition-colors">
           {selectedDate.toLocaleDateString('nl-NL', { weekday: 'long', day: 'numeric' })}
         </h2>
       </label>
 
       <!-- Compact Navigation -->
-      <div class="flex items-center bg-surface-900 rounded-lg p-0.5 border border-white/5">
+      <div class="flex items-center bg-surface-900 rounded-m3-sm p-0.5 border border-white/5">
         <button onclick={prevDay} class="p-1.5 text-gray-500 hover:text-white transition-colors" title="Vorige dag">
           <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
         </button>
@@ -581,15 +581,15 @@
       {#each weekData as { date, isToday, isSelected, hasTest, hasHomework }}
         <button
           onclick={() => { selectedDate = new Date(date); loadAppointments(); }}
-          class="flex-1 flex flex-col items-center py-1.5 px-0.5 rounded-lg transition-all border min-w-[38px] relative
+          class="flex-1 flex flex-col items-center py-1.5 px-0.5 rounded-m3-sm transition-all border min-w-[38px] relative
  {isSelected 
  ? 'bg-primary-500 border-primary-400 text-white shadow-md shadow-primary-500/25' 
  : 'bg-surface-800/60 border-white/5 text-gray-400 hover:bg-surface-700 hover:text-gray-200'}"
         >
-          <span class="text-[8px] font-black opacity-60">
+          <span class="text-label-small opacity-60">
             {date.toLocaleDateString('nl-NL', { weekday: 'short' }).slice(0, 2)}
           </span>
-          <span class="text-sm font-black leading-none">{date.getDate()}</span>
+          <span class="text-title-small leading-none">{date.getDate()}</span>
           
           <div class="flex gap-0.5 mt-0.5">
             {#if hasTest}
@@ -611,19 +611,19 @@
     style="transform: translateX({swipeOffset}px); transition: {isDragging || noTransition ? 'none' : 'transform 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94)'}; will-change: transform; touch-action: pan-y;"
   >
     {#if hiddenCancelledCount > 0 && !loading}
-      <div class="bg-red-500/10 border border-red-500/20 rounded-2xl p-2.5 md:p-3 flex items-center justify-between mb-2" transition:slide>
+      <div class="bg-red-500/10 border border-red-500/20 rounded-m3-md p-2.5 md:p-3 flex items-center justify-between mb-2" transition:slide>
         <div class="flex items-center gap-2.5">
-          <div class="w-7 h-7 rounded-full bg-red-500/20 text-red-400 flex items-center justify-center shrink-0">
+          <div class="w-7 h-7 rounded-m3-sm bg-red-500/20 text-red-400 flex items-center justify-center shrink-0">
             <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M18 6 6 18M6 6l12 12"/></svg>
           </div>
           <div>
-            <p class="text-[10px] font-black text-red-400">{hiddenCancelledCount} les{hiddenCancelledCount !== 1 ? 'sen' : ''} uitgevallen</p>
-            <p class="text-[8px] text-gray-500 font-bold">Zijn momenteel verborgen</p>
+            <p class="text-label-medium text-red-400">{hiddenCancelledCount} les{hiddenCancelledCount !== 1 ? 'sen' : ''} uitgevallen</p>
+            <p class="text-label-small text-gray-500">Zijn momenteel verborgen</p>
           </div>
         </div>
         <button 
           onclick={() => $userSettings.hideCancelled = false}
-          class="px-2.5 py-1 rounded-lg bg-surface-800 text-[9px] font-black text-gray-300 hover:text-white hover:bg-surface-700 transition-all"
+          class="px-2.5 py-1 rounded-m3-full bg-surface-800 text-label-medium text-gray-300 hover:text-white hover:bg-surface-700 transition-all"
         >
           Tonen
         </button>
@@ -633,7 +633,7 @@
     {#if loading}
       <div class="flex flex-col items-center justify-center py-16 gap-3">
         <div class="w-10 h-10 border-3 border-primary-500 border-t-transparent rounded-full animate-spin shadow-[0_0_20px_rgba(var(--color-primary-500),0.3)]"></div>
-        <p class="text-[10px] font-black text-gray-600 animate-pulse">Lessen ophalen...</p>
+        <p class="text-label-medium text-gray-600 animate-pulse">Lessen ophalen...</p>
       </div>
     {:else if dayAppointments.length === 0}
       <div class="flex flex-col items-center justify-center py-16 text-center space-y-4">
@@ -641,8 +641,8 @@
           <svg class="w-8 h-8 text-gray-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/><path d="M18 22 13 17l-3 3-5-5"/></svg>
         </div>
         <div>
-          <h3 class="text-base font-black text-white mb-1">Geen lessen gepland</h3>
-          <p class="text-[10px] font-bold text-gray-500 max-w-[200px] leading-relaxed">
+          <h3 class="text-headline-small text-white mb-1">Geen lessen gepland</h3>
+          <p class="text-body-medium text-gray-500 max-w-[200px] leading-relaxed">
             Geniet van je vrije dag!
           </p>
         </div>
@@ -656,7 +656,7 @@
             </div>
             <div class="flex-1 flex items-center gap-2">
               <div class="h-[1px] flex-1 bg-gradient-to-r from-surface-700 to-transparent"></div>
-              <span class="text-[8px] font-black text-gray-500 whitespace-nowrap">
+              <span class="text-label-small text-gray-500 whitespace-nowrap">
                 {app.Duration} min pauze
               </span>
               <div class="h-[1px] flex-1 bg-gradient-to-l from-surface-700 to-transparent"></div>
@@ -669,7 +669,7 @@
             onclick={() => openDetail(app)}
             onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDetail(app); } }}
             in:fly={{ y: 12, duration: 200, delay: i * 20, easing: (t) => 1 - Math.pow(1-t, 3) }}
-            class="w-full text-left rounded-2xl p-3 md:p-4 flex gap-3 md:gap-4 transition-all active:scale-[0.98] hover:scale-[1.005] relative overflow-hidden cursor-pointer border
+            class="w-full text-left rounded-m3-md p-3 md:p-4 flex gap-3 md:gap-4 transition-all active:scale-[0.98] hover:scale-[1.005] relative overflow-hidden cursor-pointer border
  {app.InfoType === 1 && !app.Afgerond 
  ? 'bg-primary-500/10 border-primary-500/30 shadow-sm shadow-primary-500/10' 
  : app.Status === 4 || app.Status === 5
@@ -685,12 +685,12 @@
             
             <!-- Time/Period -->
             <div class="flex flex-col items-center justify-center min-w-[36px] md:min-w-[42px] gap-0.5 relative z-10">
-              <span class="text-[8px] md:text-[9px] font-black {app.Status === 4 || app.Status === 5 ? 'text-red-400' : 'text-primary-400'}">
+              <span class="text-label-small {app.Status === 4 || app.Status === 5 ? 'text-red-400' : 'text-primary-400'}">
                 {app.IsCombined ? 'Uren' : 'Les'}
               </span>
-              <span class="text-lg md:text-xl font-black {app.Status === 4 || app.Status === 5 ? 'text-red-400' : 'text-white'} leading-none">{app.Lesuur}</span>
+              <span class="text-title-large {app.Status === 4 || app.Status === 5 ? 'text-red-400' : 'text-white'} leading-none">{app.Lesuur}</span>
               <div class="h-px w-4 {app.Status === 4 || app.Status === 5 ? 'bg-red-500/30' : 'bg-surface-600'} my-0.5"></div>
-              <span class="text-[8px] md:text-[9px] font-bold {app.Status === 4 || app.Status === 5 ? 'text-red-400/70' : 'text-primary-300/80'}">{formatTime(app.Start)}</span>
+              <span class="text-label-small {app.Status === 4 || app.Status === 5 ? 'text-red-400/70' : 'text-primary-300/80'}">{formatTime(app.Start)}</span>
             </div>
 
             <!-- Vertical Divider -->
@@ -699,17 +699,17 @@
             <!-- Info -->
             <div class="flex-1 min-w-0 flex flex-col justify-center relative z-10">
               <div class="flex items-center justify-between gap-1.5 mb-0.5">
-                <span class="text-sm md:text-base font-black {app.Status === 4 || app.Status === 5 ? 'text-red-400 line-through' : 'text-white'} truncate">
+                <span class="text-title-medium {app.Status === 4 || app.Status === 5 ? 'text-red-400 line-through' : 'text-white'} truncate">
                   {app.Vakken?.[0]?.Omschrijving || app.Omschrijving || 'Vrij'}
                 </span>
                 {#if app.Docenten?.[0]}
-                  <span class="text-[8px] md:text-[9px] font-bold text-gray-500 shrink-0 bg-surface-900/60 px-1.5 py-0.5 rounded-md border border-white/5">
+                  <span class="text-label-small text-gray-500 shrink-0 bg-surface-900/60 px-1.5 py-0.5 rounded-m3-sm border border-white/5">
                     {app.Docenten[0].Naam}
                   </span>
                 {/if}
               </div>
 
-              <div class="flex items-center gap-2.5 text-[9px] md:text-[10px] font-bold {app.Status === 4 || app.Status === 5 ? 'text-red-400/60' : 'text-gray-400'}">
+              <div class="flex items-center gap-2.5 text-label-small {app.Status === 4 || app.Status === 5 ? 'text-red-400/60' : 'text-gray-400'}">
                 <div class="flex items-center gap-1">
                   <svg class="w-2.5 h-2.5 md:w-3 md:h-3 currentcolor" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
                   <span class="truncate">{app.Lokatie || '—'}</span>
@@ -722,20 +722,20 @@
 
               {#if app.Status === 4 || app.Status === 5}
                 <div class="mt-1.5 flex">
-                  <span class="px-2 py-0.5 rounded-full text-[7px] md:text-[8px] font-black border border-red-500/40 text-red-400 bg-red-500/10">
+                  <span class="px-2 py-0.5 rounded-m3-sm text-label-small border border-red-500/40 text-red-400 bg-red-500/10">
                     Uitgevallen
                   </span>
                 </div>
               {:else if app.InfoType && app.InfoType !== 0}
                 <div class="mt-1.5 flex">
-                  <span class="px-2 py-0.5 rounded-full text-[7px] md:text-[8px] font-black border {getInfoColor(app.InfoType)}">
+                  <span class="px-2 py-0.5 rounded-m3-sm text-label-small border {getInfoColor(app.InfoType)}">
                     {getInfoLabel(app.InfoType)}
                   </span>
                 </div>
               {/if}
 
               {#if app.Aantekening}
-                <div class="mt-1.5 text-[9px] md:text-[10px] text-gray-500 bg-surface-900/50 p-1.5 rounded-lg border border-white/5 line-clamp-1">
+                <div class="mt-1.5 text-body-small text-gray-500 bg-surface-900/50 p-1.5 rounded-m3-sm border border-white/5 line-clamp-1">
                   {app.Aantekening}
                 </div>
               {/if}
@@ -784,7 +784,7 @@
     <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" onclick={() => { selectedAppointment = null; editMode = false; }}></div>
     
     <div 
-      class="relative w-full max-w-lg bg-surface-900 border-t md:border border-white/10 rounded-t-2xl md:rounded-[2.5rem] shadow-2xl overflow-hidden flex flex-col max-h-[85vh] z-10"
+      class="relative w-full max-w-lg bg-surface-900 border-t md:border border-white/10 rounded-t-m3-xl md:rounded-m3-xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh] z-10"
       transition:fly={{ y: 30, duration: 300, easing: (t) => 1 - Math.pow(1 - t, 3) }}
     >
       <!-- Top Handle -->
@@ -796,13 +796,13 @@
         <!-- Title area -->
         <div class="space-y-2 md:space-y-3">
           <div class="flex items-center justify-between">
-             <span class="px-2 py-0.5 rounded-full text-[8px] md:text-[9px] font-black border {getInfoColor(selectedAppointment.InfoType)}">
+             <span class="px-2 py-0.5 rounded-m3-sm text-label-small border {getInfoColor(selectedAppointment.InfoType)}">
               {getInfoLabel(selectedAppointment.InfoType)}
             </span>
             <div class="flex items-center gap-1.5">
               <button 
                 onclick={() => editMode = !editMode}
-                class="p-1.5 rounded-lg bg-surface-800 text-gray-400 hover:text-white transition-colors"
+                class="p-1.5 rounded-full bg-surface-800 text-gray-400 hover:text-white transition-colors"
                 title="Bewerken"
               >
                 <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>
@@ -811,7 +811,7 @@
                 <button 
                   onclick={deleteAppointment}
                   disabled={deletingAppointment}
-                  class="p-1.5 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 hover:text-red-300 transition-colors disabled:opacity-50"
+                  class="p-1.5 rounded-full bg-red-500/10 text-red-400 hover:bg-red-500/20 hover:text-red-300 transition-colors disabled:opacity-50"
                   title="Afspraak verwijderen"
                 >
                   {#if deletingAppointment}
@@ -826,15 +826,15 @@
               </button>
             </div>
           </div>
-          <h2 class="text-xl md:text-2xl font-black text-white leading-tight">
+          <h2 class="text-headline-medium text-white leading-tight">
             {selectedAppointment.Vakken?.[0]?.Omschrijving || selectedAppointment.Omschrijving || 'Vrij'}
           </h2>
           <div class="flex flex-wrap gap-1.5 md:gap-2">
-            <span class="flex items-center gap-1.5 text-[9px] md:text-[10px] font-bold text-gray-300 bg-surface-800/80 px-2 py-1 rounded-lg border border-white/5">
+            <span class="flex items-center gap-1.5 text-label-small text-gray-300 bg-surface-800/80 px-2 py-1 rounded-m3-sm border border-white/5">
               <svg class="w-2.5 h-2.5 md:w-3 md:h-3 text-primary-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
               {selectedAppointment.Docenten?.[0]?.Naam || 'Geen docent'}
             </span>
-            <span class="flex items-center gap-1.5 text-[9px] md:text-[10px] font-bold text-gray-300 bg-surface-800/80 px-2 py-1 rounded-lg border border-white/5">
+            <span class="flex items-center gap-1.5 text-label-small text-gray-300 bg-surface-800/80 px-2 py-1 rounded-m3-sm border border-white/5">
               <svg class="w-2.5 h-2.5 md:w-3 md:h-3 text-primary-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
               {selectedAppointment.Lokatie || 'Onbekend'}
             </span>
@@ -843,18 +843,18 @@
 
         <!-- Times and Details -->
         <div class="grid grid-cols-2 gap-2 md:gap-3">
-          <div class="bg-surface-800/50 p-2.5 md:p-3 rounded-xl md:rounded-2xl border border-white/5">
-            <p class="text-[8px] md:text-[9px] font-black text-gray-500 mb-0.5">Begin</p>
-            <p class="text-base md:text-lg font-black text-white">{formatTime(selectedAppointment.Start)}</p>
+          <div class="bg-surface-800/50 p-2.5 md:p-3 rounded-m3-sm border border-white/5">
+            <p class="text-label-small text-gray-500 mb-0.5">Begin</p>
+            <p class="text-title-large text-white">{formatTime(selectedAppointment.Start)}</p>
           </div>
-          <div class="bg-surface-800/50 p-2.5 md:p-3 rounded-xl md:rounded-2xl border border-white/5">
-            <p class="text-[8px] md:text-[9px] font-black text-gray-500 mb-0.5">Einde</p>
-            <p class="text-base md:text-lg font-black text-white">{formatTime(selectedAppointment.Einde)}</p>
+          <div class="bg-surface-800/50 p-2.5 md:p-3 rounded-m3-sm border border-white/5">
+            <p class="text-label-small text-gray-500 mb-0.5">Einde</p>
+            <p class="text-title-large text-white">{formatTime(selectedAppointment.Einde)}</p>
           </div>
         </div>
 
         <div class="space-y-3">
-          <h3 class="text-[10px] font-black text-gray-100 flex items-center gap-2">
+          <h3 class="text-label-medium text-gray-100 flex items-center gap-2">
             <div class="w-1 h-3 bg-primary-500 rounded-full"></div>
             Huiswerk & Inhoud
           </h3>
@@ -862,12 +862,12 @@
             <div class="space-y-2 md:space-y-3" in:slide>
               <textarea
                 bind:value={editContent}
-                class="w-full h-32 md:h-40 bg-surface-950 border border-primary-500/30 rounded-xl md:rounded-2xl p-3 md:p-4 text-sm text-gray-200 focus:outline-none focus:border-primary-500 transition-colors"
+                class="w-full h-32 md:h-40 bg-surface-950 border border-primary-500/30 rounded-m3-xs p-3 md:p-4 text-body-large text-gray-200 focus:outline-none focus:border-primary-500 transition-colors"
                 placeholder="Huiswerk bewerken..."
               ></textarea>
               <button
                 onclick={saveLocalOverride}
-                class="w-full py-2.5 md:py-3 rounded-xl bg-primary-500 text-white font-black text-xs hover:bg-primary-400 transition-all shadow-lg shadow-primary-500/20"
+                class="w-full py-2.5 md:py-3 rounded-m3-full bg-primary-500 text-white text-label-large hover:bg-primary-400 transition-all shadow-lg shadow-primary-500/20"
               >
                 Opslaan (Lokaal)
               </button>
@@ -876,7 +876,7 @@
              {#if selectedAppointment.InfoType === 1}
                <button 
                 onclick={() => toggleDone(selectedAppointment)}
-                class="w-full flex items-center justify-center gap-2 py-3 rounded-xl border-2 transition-all mb-3
+                class="w-full flex items-center justify-center gap-2 py-3 rounded-m3-full border-2 transition-all mb-3
  {selectedAppointment.Afgerond 
  ? 'bg-emerald-500/10 border-emerald-500/50 text-emerald-400' 
  : 'bg-primary-500 border-primary-400 text-white shadow-md shadow-primary-500/20'}"
@@ -886,52 +886,52 @@
                      <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="4"><path d="M20 6L9 17L4 12"/></svg>
                    {/if}
                  </div>
-                 <span class="text-[10px] md:text-xs font-black">
+                 <span class="text-label-large">
                    {selectedAppointment.Afgerond ? 'Huiswerk voltooid' : 'Markeren als klaar'}
                  </span>
                </button>
              {/if}
-            <div class="p-4 md:p-5 rounded-2xl md:rounded-3xl bg-surface-950 border border-white/5 prose prose-sm prose-invert max-w-none shadow-inner">
+            <div class="p-4 md:p-5 rounded-m3-md bg-surface-950 border border-white/5 prose prose-sm prose-invert max-w-none shadow-inner">
                <HtmlRenderer html={selectedAppointment.Inhoud} />
             </div>
           {:else}
-            <p class="text-[10px] text-gray-600 px-1">Geen inhoud beschikbaar.</p>
+            <p class="text-body-medium text-gray-600 px-1">Geen inhoud beschikbaar.</p>
           {/if}
         </div>
 
         {#if selectedAppointment.Aantekening && !editMode}
           <div class="space-y-1.5 md:space-y-2">
-            <h3 class="text-[9px] md:text-[10px] font-black text-gray-100 flex items-center gap-2">
+            <h3 class="text-label-medium text-gray-100 flex items-center gap-2">
               <div class="w-1 h-2.5 md:h-3 bg-accent-500 rounded-full"></div>
               Aantekening
             </h3>
-            <div class="p-3 md:p-4 rounded-xl md:rounded-2xl bg-surface-950 border border-white/5 text-xs text-gray-500 leading-relaxed">
+            <div class="p-3 md:p-4 rounded-m3-md bg-surface-950 border border-white/5 text-body-medium text-gray-500 leading-relaxed">
               {selectedAppointment.Aantekening}
             </div>
           </div>
         {/if}
         {#if selectedAppointment.Bijlagen && selectedAppointment.Bijlagen.length > 0}
           <div class="space-y-2 md:space-y-3 pb-2 md:pb-4">
-            <h3 class="text-[9px] md:text-[10px] font-black text-gray-100 flex items-center gap-2">
+            <h3 class="text-label-medium text-gray-100 flex items-center gap-2">
               <div class="w-1 h-2.5 md:h-3 bg-blue-500 rounded-full"></div>
               Bijlagen ({selectedAppointment.Bijlagen.length})
             </h3>
             <div class="grid gap-1.5 md:gap-2">
               {#each selectedAppointment.Bijlagen as bijlage}
-                <div class="flex items-center justify-between p-2.5 md:p-3 rounded-xl md:rounded-2xl bg-surface-950 border border-white/5 transition-all hover:border-white/10 group">
+                <div class="flex items-center justify-between p-2.5 md:p-3 rounded-m3-md bg-surface-950 border border-white/5 transition-all hover:border-white/10 group">
                   <div class="flex items-center gap-2.5 md:gap-3 overflow-hidden">
-                    <div class="w-7 h-7 md:w-8 md:h-8 rounded-lg bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400 shrink-0">
+                    <div class="w-7 h-7 md:w-8 md:h-8 rounded-m3-sm bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400 shrink-0">
                       <svg class="w-3.5 h-3.5 md:w-4 md:h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.51a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
                     </div>
                     <div class="flex flex-col min-w-0">
-                      <span class="text-xs font-bold text-gray-200 truncate">{bijlage.Naam}</span>
-                      <span class="text-[9px] md:text-[10px] text-gray-600 font-medium">{bijlage.Grootte ? Math.round(bijlage.Grootte / 1024) + ' KB' : '—'}</span>
+                      <span class="text-body-medium text-gray-200 truncate">{bijlage.Naam}</span>
+                      <span class="text-label-small text-gray-600">{bijlage.Grootte ? Math.round(bijlage.Grootte / 1024) + ' KB' : '—'}</span>
                     </div>
                   </div>
                   <button 
                     onclick={() => handleDownload(bijlage)}
                     disabled={downloadingFile === bijlage.Naam}
-                    class="p-2 rounded-lg bg-surface-800 text-gray-400 hover:text-white hover:bg-surface-700 disabled:opacity-50 transition-all active:scale-90"
+                    class="p-2 rounded-full bg-surface-800 text-gray-400 hover:text-white hover:bg-surface-700 disabled:opacity-50 transition-all active:scale-90"
                     aria-label="Download"
                   >
                     {#if downloadingFile === bijlage.Naam}
@@ -951,7 +951,7 @@
       <div class="p-3 pt-0 shrink-0 md:hidden">
         <button 
           onclick={() => { showDetail = false; selectedAppointment = null; editMode = false; }}
-          class="w-full py-2.5 rounded-xl bg-surface-800 text-white text-xs font-black hover:bg-surface-700 transition-all"
+          class="w-full py-2.5 rounded-m3-full bg-surface-800 text-white text-label-large hover:bg-surface-700 transition-all"
         >
           Sluiten
         </button>
@@ -968,12 +968,12 @@
     <div class="absolute inset-0 bg-black/80 backdrop-blur-sm" onclick={() => isCreating = false}></div>
     
     <div 
-      class="relative w-full max-w-md bg-surface-900 border border-white/10 rounded-2xl md:rounded-[2.5rem] shadow-2xl overflow-hidden flex flex-col z-10"
+      class="relative w-full max-w-md bg-surface-900 border border-white/10 rounded-m3-xl shadow-2xl overflow-hidden flex flex-col z-10"
       transition:scale={{ start: 0.95, duration: 250 }}
     >
       <div class="p-4 md:p-6 space-y-4 md:space-y-6">
         <div class="flex items-center justify-between">
-          <h2 class="text-lg md:text-xl font-black text-white">Nieuwe Afspraak</h2>
+          <h2 class="text-title-large text-white">Nieuwe Afspraak</h2>
           <button onclick={() => isCreating = false} class="text-gray-500 hover:text-white transition-colors" aria-label="Sluiten">
             <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M18 6 6 18M6 6l12 12"/></svg>
           </button>
@@ -981,67 +981,67 @@
 
         <div class="space-y-3 md:space-y-4">
           <div class="space-y-1">
-            <label for="newAppOmschrijving" class="text-[9px] md:text-[10px] font-black text-gray-500 ml-1">Omschrijving</label>
+            <label for="newAppOmschrijving" class="text-label-medium text-gray-500 ml-1">Omschrijving</label>
             <input 
               id="newAppOmschrijving"
               bind:value={newApp.omschrijving}
               type="text" 
-              class="w-full bg-surface-950 border border-white/5 rounded-xl px-3 md:px-4 py-2.5 md:py-3 text-sm text-white focus:outline-none focus:border-primary-500/50 transition-colors"
+              class="w-full bg-surface-950 border border-white/5 rounded-m3-xs px-3 md:px-4 py-2.5 md:py-3 text-body-large text-white focus:outline-none focus:border-primary-500/50 transition-colors"
               placeholder="Bijv. Projectoverleg"
             />
           </div>
 
           <div class="grid grid-cols-2 gap-3 md:gap-4">
             <div class="space-y-1">
-              <label for="newAppBegin" class="text-[9px] md:text-[10px] font-black text-gray-500 ml-1">Begin</label>
+              <label for="newAppBegin" class="text-label-medium text-gray-500 ml-1">Begin</label>
               <input 
                 id="newAppBegin"
                 bind:value={newApp.start}
                 type="time" 
-                class="w-full bg-surface-950 border border-white/5 rounded-xl px-3 md:px-4 py-2.5 md:py-3 text-sm text-white focus:outline-none"
+                class="w-full bg-surface-950 border border-white/5 rounded-m3-xs px-3 md:px-4 py-2.5 md:py-3 text-body-large text-white focus:outline-none"
                 style="color-scheme: dark"
               />
             </div>
             <div class="space-y-1">
-              <label for="newAppEinde" class="text-[9px] md:text-[10px] font-black text-gray-500 ml-1">Einde</label>
+              <label for="newAppEinde" class="text-label-medium text-gray-500 ml-1">Einde</label>
               <input 
                 id="newAppEinde"
                 bind:value={newApp.einde}
                 type="time" 
-                class="w-full bg-surface-950 border border-white/5 rounded-xl px-3 md:px-4 py-2.5 md:py-3 text-sm text-white focus:outline-none"
+                class="w-full bg-surface-950 border border-white/5 rounded-m3-xs px-3 md:px-4 py-2.5 md:py-3 text-body-large text-white focus:outline-none"
                 style="color-scheme: dark"
               />
             </div>
           </div>
 
           <div class="space-y-1">
-            <label for="newAppLocatie" class="text-[9px] md:text-[10px] font-black text-gray-500 ml-1">Locatie</label>
+            <label for="newAppLocatie" class="text-label-medium text-gray-500 ml-1">Locatie</label>
             <input 
               id="newAppLocatie"
               bind:value={newApp.lokatie}
               type="text" 
-              class="w-full bg-surface-950 border border-white/5 rounded-xl px-3 md:px-4 py-2.5 md:py-3 text-sm text-white focus:outline-none focus:border-primary-500/50 transition-colors"
+              class="w-full bg-surface-950 border border-white/5 rounded-m3-xs px-3 md:px-4 py-2.5 md:py-3 text-body-large text-white focus:outline-none focus:border-primary-500/50 transition-colors"
               placeholder="Bijv. Kantine"
             />
           </div>
 
           <div class="space-y-1">
-            <label for="newAppInhoud" class="text-[9px] md:text-[10px] font-black text-gray-500 ml-1">Inhoud</label>
+            <label for="newAppInhoud" class="text-label-medium text-gray-500 ml-1">Inhoud</label>
             <textarea 
               id="newAppInhoud"
               bind:value={newApp.inhoud}
-              class="w-full h-20 md:h-24 bg-surface-950 border border-white/5 rounded-xl px-3 md:px-4 py-2.5 md:py-3 text-sm text-white focus:outline-none focus:border-primary-500/50 transition-colors resize-none"
+              class="w-full h-20 md:h-24 bg-surface-950 border border-white/5 rounded-m3-xs px-3 md:px-4 py-2.5 md:py-3 text-body-large text-white focus:outline-none focus:border-primary-500/50 transition-colors resize-none"
               placeholder="Details..."
             ></textarea>
           </div>
         </div>
 
         {#if createError}
-          <p class="text-xs text-red-400 font-bold bg-red-500/10 border border-red-500/20 rounded-xl px-3 py-2">{createError}</p>
+          <p class="text-body-small text-red-400 bg-red-500/10 border border-red-500/20 rounded-m3-sm px-3 py-2">{createError}</p>
         {/if}
         <button 
           onclick={createAppointment}
-          class="w-full py-3 md:py-4 rounded-xl md:rounded-2xl bg-primary-500 text-white font-black hover:bg-primary-400 transition-all shadow-lg shadow-primary-500/25 active:scale-[0.98]"
+          class="w-full py-3 md:py-4 rounded-m3-full bg-primary-500 text-white text-label-large hover:bg-primary-400 transition-all shadow-lg shadow-primary-500/25 active:scale-[0.98]"
         >
           Toevoegen
         </button>

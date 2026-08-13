@@ -13,25 +13,22 @@ pub async fn get_calendar_events(
     start: String, // yyyy-MM-dd
     end: String,   // yyyy-MM-dd
 ) -> Result<Vec<CalendarEvent>, String> {
-    let mut c = client.lock().await;
+    let ctx = {
+        let mut c = client.lock().await;
+        c.request_context().await.map_err(|e| e.to_string())?
+    };
 
     // Fetch events and absences concurrently
     let start_date = if start.len() >= 10 { &start[0..10] } else { &start };
     let end_date = if end.len() >= 10 { &end[0..10] } else { &end };
 
-    let events_data = c
-        .get(&format!(
-            "personen/{person_id}/afspraken?tot={end_date}&van={start_date}"
-        ))
-        .await
-        .map_err(|e| e.to_string())?;
+    let events_url = format!("personen/{person_id}/afspraken?tot={end_date}&van={start_date}");
+    let absences_url = format!("personen/{person_id}/absenties?tot={end_date}&van={start_date}");
 
-    let absences_data = c
-        .get(&format!(
-            "personen/{person_id}/absenties?tot={end_date}&van={start_date}"
-        ))
-        .await
-        .map_err(|e| e.to_string())?;
+    let (events_data, absences_data) = tokio::try_join!(
+        crate::client::get_with_context(&ctx, &events_url),
+        crate::client::get_with_context(&ctx, &absences_url)
+    ).map_err(|e| e.to_string())?;
 
     let events_resp: CalendarEventsResponse =
         serde_json::from_value(events_data).map_err(|e| e.to_string())?;
@@ -68,9 +65,11 @@ pub async fn get_calendar_event(
     person_id: i64,
     event_id: i64,
 ) -> Result<CalendarEvent, String> {
-    let mut c = client.lock().await;
-    let data = c
-        .get(&format!("personen/{person_id}/afspraken/{event_id}"))
+    let ctx = {
+        let mut c = client.lock().await;
+        c.request_context().await.map_err(|e| e.to_string())?
+    };
+    let data = crate::client::get_with_context(&ctx, &format!("personen/{person_id}/afspraken/{event_id}"))
         .await
         .map_err(|e| e.to_string())?;
 
@@ -147,14 +146,17 @@ pub async fn get_absences(
     van: String,
     tot: String,
 ) -> Result<Vec<crate::models::calendar::Absence>, String> {
-    let mut client = client.lock().await;
+    let ctx = {
+        let mut c = client.lock().await;
+        c.request_context().await.map_err(|e| e.to_string())?
+    };
 
     let start_date = if van.len() >= 10 { &van[0..10] } else { &van };
     let end_date = if tot.len() >= 10 { &tot[0..10] } else { &tot };
 
     let url = format!("personen/{}/absenties?van={}&tot={}", person_id, start_date, end_date);
     println!("Fetching absences from: {}", url);
-    let response = client.get(&url).await.map_err(|e| e.to_string())?;
+    let response = crate::client::get_with_context(&ctx, &url).await.map_err(|e| e.to_string())?;
 
     let res: crate::models::calendar::AbsencesResponse = serde_json::from_value(response.clone())
         .map_err(|e| {

@@ -2,6 +2,7 @@
   import { personId, userSettings } from '$lib/stores';
   import { getSchoolyears, getGrades, formatDate, getBulkGradeExtraInfo, formatTeacherName } from '$lib/api';
   import { tryAiInsight, getAiConfig } from '$lib/ai';
+  import { cacheGet, cacheRefresh } from '$lib/cache';
   import { onMount } from 'svelte';
 
   let schoolyears = $state<any[]>([]);
@@ -219,13 +220,15 @@
     return buildSmoothPath(points);
   }
 
-  async function init() {
+  async function init(force = false) {
     loading = true;
     errorMessage = null;
     const pid = $personId;
     if (!pid) { loading = false; return; }
     try {
-      schoolyears = await getSchoolyears(pid, '2013-01-01', formatDate(new Date()));
+      schoolyears = force
+        ? await cacheRefresh(`grades_schoolyears_${pid}`, () => getSchoolyears(pid, '2013-01-01', formatDate(new Date())), 30 * 60 * 1000)
+        : await cacheGet(`grades_schoolyears_${pid}`, () => getSchoolyears(pid, '2013-01-01', formatDate(new Date())), 30 * 60 * 1000);
       if (schoolyears.length > 0) {
         const now = new Date();
         const currentYear = schoolyears.find(y => {
@@ -233,7 +236,7 @@
           return new Date(y.begin) <= now && new Date(y.einde) >= now;
         });
         selectedYear = currentYear || schoolyears[schoolyears.length - 1];
-        await loadGrades();
+        await loadGrades(force);
       }
     } catch (e: any) {
       console.error('Error loading schoolyears:', e);
@@ -243,15 +246,6 @@
   }
 
   onMount(() => {
-    const cached = localStorage.getItem('grades_cache');
-    if (cached) {
-        try {
-            const data = JSON.parse(cached);
-            schoolyears = data.schoolyears;
-            subjects = data.subjects;
-            if (data.historicalAverages) historicalAverages = data.historicalAverages;
-        } catch {}
-    }
     // Restore persisted UI state
     const savedFilters = localStorage.getItem('grades_ui_state');
     if (savedFilters) {
@@ -272,36 +266,42 @@
     localStorage.setItem('grades_ui_state', JSON.stringify({ recentFilter, subjectSortMode, currentTab }));
   });
 
-  async function loadGrades() {
+  async function loadGrades(force = false) {
     if (!selectedYear?.id || !$personId) return;
     loading = true;
     errorMessage = null;
     try {
       // Pass the date part of the endpoint manually to be extra safe
       const peildatum = selectedYear.einde.split('T')[0];
-      const fetchedGrades = await getGrades($personId, selectedYear.id, peildatum);
+      const pid = $personId;
+      const yearId = selectedYear.id;
+      const fetcher = async () => {
+        const fetchedGrades = await getGrades(pid, yearId, peildatum);
+        const relevantColumns = [...new Set(fetchedGrades
+          .filter(g => g.CijferKolom?.KolomSoort === 1)
+          .map(g => g.CijferKolom.Id))];
 
-      const relevantColumns = [...new Set(fetchedGrades
-        .filter(g => g.CijferKolom?.KolomSoort === 1)
-        .map(g => g.CijferKolom.Id))];
-
-      if (relevantColumns.length > 0) {
-        try {
-          const weightsMap = await getBulkGradeExtraInfo($personId, selectedYear.id, relevantColumns);
-          grades = fetchedGrades.map(g => {
-            const extra = weightsMap[g.CijferKolom.Id];
-            if (extra) return { ...g, Weging: extra.Weging, description: extra.WerkInformatieOmschrijving || extra.KolomOmschrijving };
-            return g;
-          });
-        } catch (e) {
+        if (relevantColumns.length > 0) {
+          try {
+            const weightsMap = await getBulkGradeExtraInfo(pid, yearId, relevantColumns);
+            return fetchedGrades.map(g => {
+              const extra = weightsMap[g.CijferKolom.Id];
+              if (extra) return { ...g, Weging: extra.Weging, description: extra.WerkInformatieOmschrijving || extra.KolomOmschrijving };
+              return g;
+            });
+          } catch (e) {
             console.warn('Error loading extra grade info:', e);
-            grades = fetchedGrades;
+            return fetchedGrades;
+          }
         }
-      } else {
-          grades = fetchedGrades;
-      }
+        return fetchedGrades;
+      };
+
+      grades = force
+        ? await cacheRefresh(`grades_${pid}_${yearId}`, fetcher, 5 * 60 * 1000)
+        : await cacheGet(`grades_${pid}_${yearId}`, fetcher, 5 * 60 * 1000);
+
       subjects = getSubjects();
-      localStorage.setItem('grades_cache', JSON.stringify({ schoolyears, subjects, historicalAverages }));
       // Auto-load year progress in the background if not yet loaded
       if (historicalAverages.length === 0) loadHistoricalAverages();
     } catch (e: any) {
@@ -555,45 +555,51 @@
   let historicalAverages = $state<{ year: string; avg: number; id: number }[]>([]);
   let loadingHistory = $state(false);
 
-  async function loadHistoricalAverages() {
-    if (historicalAverages.length > 0) return; // Already loaded
-    if (!$personId) return; // Needs personId
+  async function loadHistoricalAverages(force = false) {
+    if (historicalAverages.length > 0 && !force) return; // Already loaded
+    const pid = $personId;
+    if (!pid) return; // Needs personId
     loadingHistory = true;
-    const results = [];
-    for (const year of schoolyears) {
-      if (!year.einde) continue;
-      try {
-        const peildatum = year.einde.split('T')[0];
-        const fetchedGrades = await getGrades($personId, year.id, peildatum);
+    const fetcher = async () => {
+      const results = [];
+      for (const year of schoolyears) {
+        if (!year.einde) continue;
+        try {
+          const peildatum = year.einde.split('T')[0];
+          const fetchedGrades = await getGrades(pid, year.id, peildatum);
 
-        const subMap = new Map<string, { totalP: number, totalW: number }>();
-        for (const grade of fetchedGrades) {
-           if (!grade.Vak || grade.CijferKolom?.KolomSoort !== 1 || !grade.CijferStr || !grade.TeltMee) continue;
-           const val = parseFloat(grade.CijferStr.replace(',', '.'));
-           const w = typeof grade.Weging === 'number' ? grade.Weging : 1;
-           if (!isNaN(val)) {
-               const s = subMap.get(grade.Vak.Omschrijving) || { totalP: 0, totalW: 0 };
-               s.totalP += val * w;
-               s.totalW += w;
-               subMap.set(grade.Vak.Omschrijving, s);
-           }
+          const subMap = new Map<string, { totalP: number, totalW: number }>();
+          for (const grade of fetchedGrades) {
+             if (!grade.Vak || grade.CijferKolom?.KolomSoort !== 1 || !grade.CijferStr || !grade.TeltMee) continue;
+             const val = parseFloat(grade.CijferStr.replace(',', '.'));
+             const w = typeof grade.Weging === 'number' ? grade.Weging : 1;
+             if (!isNaN(val)) {
+                 const s = subMap.get(grade.Vak.Omschrijving) || { totalP: 0, totalW: 0 };
+                 s.totalP += val * w;
+                 s.totalW += w;
+                 subMap.set(grade.Vak.Omschrijving, s);
+             }
+          }
+          let validAvgCount = 0, sumAvgs = 0;
+          for (const s of subMap.values()) {
+              if (s.totalW > 0) {
+                  sumAvgs += s.totalP / s.totalW;
+                  validAvgCount++;
+              }
+          }
+          if (validAvgCount > 0) {
+              results.push({ id: year.id, year: year.groep?.code ?? year.studie?.code ?? '?', avg: sumAvgs / validAvgCount });
+          }
+        } catch(e) {
+          console.warn(`Voortgang jaren: kon cijfers niet laden voor schooljaar ${year.groep?.code ?? year.id}`, e);
         }
-        let validAvgCount = 0, sumAvgs = 0;
-        for (const s of subMap.values()) {
-            if (s.totalW > 0) {
-                sumAvgs += s.totalP / s.totalW;
-                validAvgCount++;
-            }
-        }
-        if (validAvgCount > 0) {
-            results.push({ id: year.id, year: year.groep?.code ?? year.studie?.code ?? '?', avg: sumAvgs / validAvgCount });
-        }
-      } catch(e) {
-        console.warn(`Voortgang jaren: kon cijfers niet laden voor schooljaar ${year.groep?.code ?? year.id}`, e);
       }
-    }
-    historicalAverages = results.sort((a,b) => a.id - b.id);
-    localStorage.setItem('grades_cache', JSON.stringify({ schoolyears, subjects, historicalAverages }));
+      return results.sort((a,b) => a.id - b.id);
+    };
+
+    historicalAverages = force
+      ? await cacheRefresh(`grades_historical_${pid}`, fetcher, 60 * 60 * 1000)
+      : await cacheGet(`grades_historical_${pid}`, fetcher, 60 * 60 * 1000);
     loadingHistory = false;
   }
 </script>
@@ -605,7 +611,7 @@
       <div class="flex items-center gap-3">
         <h1 class="text-xl font-black text-white italic tracking-tighter">Cijfers</h1>
         <button
-          onclick={() => selectYear(selectedYear)}
+          onclick={() => loadGrades(true)}
           aria-label="Vernieuwen"
           class="p-1.5 text-gray-500 hover:text-primary-400 transition-all hover:scale-110 active:scale-95"
         >
@@ -683,7 +689,7 @@
           <p class="text-sm text-gray-500 max-w-xs">{errorMessage}</p>
         </div>
         <button
-          onclick={init}
+          onclick={() => init(true)}
           class="px-8 py-3 rounded-2xl bg-white text-black text-xs font-black uppercase tracking-widest hover:scale-105 active:scale-95 transition-all shadow-xl shadow-white/10"
         >
           Opnieuw Proberen
@@ -1591,7 +1597,7 @@
                 <h2 class="text-xl font-black text-white italic tracking-tighter">Voortgang Jaren</h2>
               </div>
               {#if historicalAverages.length === 0}
-                <button onclick={loadHistoricalAverages} disabled={loadingHistory} class="px-4 py-2 bg-surface-800 text-xs font-black text-gray-300 uppercase tracking-widest rounded-xl hover:bg-surface-700 hover:text-white transition active:scale-95 disabled:opacity-50 disabled:active:scale-100">
+                <button onclick={() => loadHistoricalAverages()} disabled={loadingHistory} class="px-4 py-2 bg-surface-800 text-xs font-black text-gray-300 uppercase tracking-widest rounded-xl hover:bg-surface-700 hover:text-white transition active:scale-95 disabled:opacity-50 disabled:active:scale-100">
                   {loadingHistory ? 'Laden...' : 'Laad Data'}
                 </button>
               {/if}

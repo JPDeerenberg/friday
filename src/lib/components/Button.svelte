@@ -7,12 +7,6 @@
    * uses the real "Label Large" type style (14px/medium/normal-case, confirmed
    * via search), not the old app-wide uppercase-italic-tracking-widest styling.
    * Shape uses rounded-m3-full — standard M3 buttons are pill/stadium-shaped.
-   *
-   * Known simplification: the "tonal" variant's text reuses .text-on-primary-container
-   * rather than a dedicated on-secondary-container token (that token doesn't exist per
-   * theme yet — adding it means touching all 8 theme blocks in app.css, out of scope
-   * for this pass). Contrast is fine in practice since these palettes are monochromatic,
-   * but flagging it as a shortcut, not a "this is definitely spec-correct" claim.
    */
   import type { Snippet } from 'svelte';
 
@@ -38,7 +32,7 @@
 
   const variantClasses: Record<Variant, string> = {
     filled: 'bg-primary-500 text-on-primary hover:brightness-110 active:brightness-95',
-    tonal: 'bg-secondary-container text-on-primary-container hover:brightness-110 active:brightness-95',
+    tonal: 'bg-secondary-container text-on-secondary-container hover:brightness-110 active:brightness-95',
     outlined: 'bg-transparent border border-primary-500/40 text-primary-400 hover:bg-primary-500/10',
     text: 'bg-transparent text-primary-400 hover:bg-primary-500/10 px-4',
     elevated: 'elevation-1 text-primary-400 hover:elevation-2',

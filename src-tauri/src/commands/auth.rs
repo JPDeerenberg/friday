@@ -148,9 +148,11 @@ pub async fn is_authenticated(client: State<'_, SharedClient>) -> Result<bool, S
 /// Get current account info.
 #[tauri::command]
 pub async fn get_account(client: State<'_, SharedClient>) -> Result<ApiAccount, String> {
-    let mut c = client.lock().await;
-    let data = c
-        .get("account?noCache=0")
+    let ctx = {
+        let mut c = client.lock().await;
+        c.request_context().await.map_err(|e| e.to_string())?
+    };
+    let data = crate::client::get_with_context(&ctx, "account?noCache=0")
         .await
         .map_err(|e| e.to_string())?;
     serde_json::from_value(data).map_err(|e| e.to_string())
@@ -162,10 +164,13 @@ pub async fn get_profile_info(
     client: State<'_, SharedClient>,
     person_id: i64,
 ) -> Result<crate::models::account::ProfileInfo, String> {
-    let mut client = client.lock().await;
+    let ctx = {
+        let mut c = client.lock().await;
+        c.request_context().await.map_err(|e| e.to_string())?
+    };
     let url = format!("personen/{}/profiel", person_id);
     println!("Fetching profile info: {}", url);
-    let response = client.get(&url).await.map_err(|e| {
+    let response = crate::client::get_with_context(&ctx, &url).await.map_err(|e| {
         println!("Error fetching profile info: {}", e);
         e.to_string()
     })?;
@@ -183,10 +188,13 @@ pub async fn get_profile_addresses(
     client: State<'_, SharedClient>,
     person_id: i64,
 ) -> Result<Vec<crate::models::account::ProfileAddress>, String> {
-    let mut client = client.lock().await;
+    let ctx = {
+        let mut c = client.lock().await;
+        c.request_context().await.map_err(|e| e.to_string())?
+    };
     let url = format!("personen/{}/adressen", person_id);
     println!("Fetching profile addresses: {}", url);
-    let response = client.get(&url).await.map_err(|e| {
+    let response = crate::client::get_with_context(&ctx, &url).await.map_err(|e| {
         println!("Error fetching addresses: {}", e);
         e.to_string()
     })?;
@@ -200,10 +208,13 @@ pub async fn get_career_info(
     client: State<'_, SharedClient>,
     person_id: i64,
 ) -> Result<crate::models::account::ProfileCareer, String> {
-    let mut client = client.lock().await;
+    let ctx = {
+        let mut c = client.lock().await;
+        c.request_context().await.map_err(|e| e.to_string())?
+    };
     let url = format!("personen/{}/opleidinggegevensprofiel", person_id);
     println!("Fetching career info: {}", url);
-    let response = client.get(&url).await.map_err(|e| {
+    let response = crate::client::get_with_context(&ctx, &url).await.map_err(|e| {
         println!("Error fetching career info: {}", e);
         e.to_string()
     })?;
@@ -231,10 +242,13 @@ pub async fn get_profile_picture(
     client: State<'_, SharedClient>,
     person_id: i64,
 ) -> Result<Option<String>, String> {
-    let mut c = client.lock().await;
+    let ctx = {
+        let mut c = client.lock().await;
+        c.request_context().await.map_err(|e| e.to_string())?
+    };
     let url = format!("leerlingen/{person_id}/foto");
     println!("Fetching profile picture: {}", url);
-    match c.get_bytes(&url).await {
+    match crate::client::get_bytes_with_context(&ctx, &url).await {
         Ok(Some(bytes)) => {
             use base64::{engine::general_purpose::STANDARD, Engine};
             println!("Got profile picture bytes: {}", bytes.len());

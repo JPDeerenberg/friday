@@ -43,7 +43,7 @@
 
   const baseClasses = $derived(
     isFilterSelected
-      ? 'bg-secondary-container text-on-primary-container border border-transparent'
+      ? 'bg-secondary-container text-on-secondary-container border border-transparent'
       : 'bg-transparent text-gray-300 border border-surface-700/60 hover:bg-surface-800/40'
   );
 </script>

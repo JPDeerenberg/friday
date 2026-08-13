@@ -176,13 +176,21 @@
     if (id === 'more') return mobileSidebarOpen || !bottomNavItems.slice(0, 4).some(i => i.id === $currentPage);
     return $currentPage === id;
   }
+
+  // M3 nav icons distinguish active/inactive state via a filled vs. outlined
+  // glyph. Rather than sourcing a second (filled) icon asset per nav item,
+  // synthesize the filled look from the same path data: swap the outline's
+  // fill="none" for a soft tonal fill while keeping the crisp stroke on top.
+  function navIcon(svg: string, active: boolean): string {
+    return active ? svg.replace('fill="none"', 'fill="currentColor" fill-opacity="0.2"') : svg;
+  }
 </script>
 
 {#if loading}
   <div class="flex items-center justify-center h-screen bg-surface-950">
     <div class="flex flex-col items-center gap-4">
       <div class="w-12 h-12 border-4 border-primary-500 border-t-transparent rounded-full animate-spin"></div>
-      <p class="text-gray-400 text-sm">Laden...</p>
+      <p class="text-gray-400 text-body-medium">Laden...</p>
     </div>
   </div>
 {:else}
@@ -197,14 +205,14 @@
         <!-- svelte-ignore a11y_click_events_have_key_events -->
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div class="fixed inset-0 bg-black/60 z-40 md:hidden" onclick={() => mobileSidebarOpen = false}></div>
-        <div class="fixed bottom-[64px] left-0 right-0 z-50 md:hidden bg-surface-900 border border-surface-700/50 rounded-t-3xl shadow-2xl overflow-y-auto max-h-[70dvh]">
+        <div class="fixed bottom-[64px] left-0 right-0 z-50 md:hidden bg-surface-900 border border-surface-700/50 rounded-t-m3-xl shadow-2xl overflow-y-auto max-h-[70dvh]">
           <div class="flex items-center justify-between px-5 py-4 border-b border-surface-700/50">
             <div class="flex items-center gap-3 p-6 mb-2">
-              <div class="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 overflow-hidden">
+              <div class="w-10 h-10 rounded-m3-sm flex items-center justify-center shrink-0 overflow-hidden">
                 <img src="/logo.png" alt="Friday Logo" class="w-full h-full object-cover" />
               </div>
               <div class="flex flex-col">
-                <h1 class="text-xl font-black text-white italic tracking-tighter" in:fade>Friday</h1>
+                <h1 class="text-title-large text-white" in:fade>Friday</h1>
                 <p class="text-label-small text-primary-400" in:fade>Menu</p>
               </div>
             </div>
@@ -219,12 +227,12 @@
                 {#each group.items as item}
                   <button
                     onclick={() => navigate(item.id)}
-                    class="w-full flex items-center gap-3 px-4 py-3 rounded-m3-full text-sm font-medium transition-all
+                    class="w-full flex items-center gap-3 px-4 py-3 rounded-m3-full text-label-large transition-all
                            {$currentPage === item.id
                              ? 'bg-primary-container text-on-primary-container'
                              : 'text-gray-400 hover:bg-surface-800 hover:text-gray-200'}"
                   >
-                    <span class="text-xl shrink-0">{@html item.icon}</span>
+                    <span class="text-xl shrink-0">{@html navIcon(item.icon, $currentPage === item.id)}</span>
                     <span class="truncate">{item.label}</span>
                   </button>
                 {/each}
@@ -232,7 +240,7 @@
             {/each}
             <!-- Profile at bottom of drawer -->
             <div class="space-y-1 border-t border-surface-700/50 pt-4">
-              <button onclick={() => navigate('profile')} class="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-medium text-gray-400 hover:bg-surface-800 hover:text-gray-200 transition-all">
+              <button onclick={() => navigate('profile')} class="w-full flex items-center gap-3 px-4 py-3 rounded-m3-md text-label-large text-gray-400 hover:bg-surface-800 hover:text-gray-200 transition-all">
                 {#if $profilePicture}
                   <img src="data:image/jpeg;base64,{$profilePicture}" alt="Profiel" class="w-6 h-6 rounded-full object-cover shrink-0" />
                 {:else}
@@ -247,7 +255,7 @@
             <div class="px-6 py-4 border-t border-surface-800/50 mt-auto">
               <button
                 onclick={() => navigate('settings')}
-                class="w-full flex items-center gap-4 px-4 py-3 rounded-2xl bg-surface-800/40 text-gray-300 hover:text-white transition-all border border-white/5 shadow-sm active:scale-95"
+                class="w-full flex items-center gap-4 px-4 py-3 rounded-m3-md bg-surface-800/40 text-gray-300 hover:text-white transition-all border border-white/5 shadow-sm active:scale-95"
               >
                 <span class="text-primary-400">
                    <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
@@ -273,11 +281,11 @@
       <aside class="hidden md:flex flex-col {sidebarCollapsed ? 'w-16' : 'w-56'} bg-surface-900 border-r border-surface-700/50 transition-all duration-300 shrink-0">
         <!-- Logo -->
         <div class="flex items-center gap-3 px-4 py-5 border-b border-surface-700/50 shrink-0">
-          <div class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 overflow-hidden">
+          <div class="w-8 h-8 rounded-m3-sm flex items-center justify-center shrink-0 overflow-hidden">
             <img src="/logo.png" alt="Friday" class="w-full h-full object-cover" />
           </div>
           {#if !sidebarCollapsed}
-            <span class="text-base font-black text-white italic tracking-tighter truncate">Friday</span>
+            <span class="text-title-medium text-white truncate">Friday</span>
           {/if}
         </div>
 
@@ -292,16 +300,16 @@
                 <button
                   onclick={() => navigate(item.id)}
                   title={sidebarCollapsed ? item.label : ''}
-                  class="w-full flex items-center gap-3 px-3 py-2 rounded-m3-full text-sm font-medium transition-all group
+                  class="w-full flex items-center gap-3 px-3 py-2 rounded-m3-full text-label-large transition-all group
                          {$currentPage === item.id
                            ? 'bg-primary-container text-on-primary-container'
                            : 'text-gray-400 hover:bg-surface-800 hover:text-gray-200'}"
                 >
                   <span class="text-lg shrink-0 group-hover:scale-110 transition-transform">
-                    {@html item.icon}
+                    {@html navIcon(item.icon, $currentPage === item.id)}
                   </span>
                   {#if !sidebarCollapsed}
-                    <span class="truncate tracking-tight font-bold">{item.label}</span>
+                    <span class="truncate">{item.label}</span>
                   {/if}
                 </button>
               {/each}
@@ -321,15 +329,15 @@
             {/if}
             {#if !sidebarCollapsed}
               <div class="min-w-0">
-                <p class="text-sm font-medium text-gray-200 truncate">{$accountInfo?.Persoon?.Roepnaam ?? 'Gebruiker'}</p>
-                <p class="text-xs text-gray-500 truncate">Profiel bekijken</p>
+                <p class="text-title-small text-gray-200 truncate">{$accountInfo?.Persoon?.Roepnaam ?? 'Gebruiker'}</p>
+                <p class="text-label-small text-gray-500 truncate">Profiel bekijken</p>
               </div>
             {/if}
           </div>
         </button>
 
         <!-- Settings button -->
-        <button onclick={() => navigate('settings')} class="w-full flex items-center gap-3 px-5 py-3 text-sm font-bold text-gray-400 hover:bg-surface-800 hover:text-gray-200 border-t border-surface-700/50 transition-all group">
+        <button onclick={() => navigate('settings')} class="w-full flex items-center gap-3 px-5 py-3 text-gray-400 hover:bg-surface-800 hover:text-gray-200 border-t border-surface-700/50 transition-all group">
           <span class="text-lg shrink-0 text-primary-400 group-hover:rotate-45 transition-transform duration-500">
              <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
           </span>
@@ -343,9 +351,9 @@
           {#each bottomNavItems.slice(0, 4) as item}
             <button
               onclick={() => navigate(item.id)}
-              class="p-2.5 rounded-xl transition-all {$currentPage === item.id ? 'bg-primary-500 text-white shadow-lg' : 'text-gray-500 hover:text-gray-300 hover:bg-surface-800'}"
+              class="p-2.5 rounded-full transition-all {$currentPage === item.id ? 'bg-primary-500 text-white shadow-lg' : 'text-gray-500 hover:text-gray-300 hover:bg-surface-800'}"
             >
-              {@html item.icon}
+              {@html navIcon(item.icon, $currentPage === item.id)}
             </button>
           {/each}
         </div>
@@ -354,7 +362,7 @@
         <button
           onclick={handleLogout}
           title={sidebarCollapsed ? 'Uitloggen' : ''}
-          class="w-full flex items-center gap-3 px-5 py-3 text-sm font-bold text-red-400 hover:bg-red-500/10 border-t border-surface-700/50 transition-all group"
+          class="w-full flex items-center gap-3 px-5 py-3 text-red-400 hover:bg-red-500/10 border-t border-surface-700/50 transition-all group"
         >
           <span class="shrink-0">
             <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg>
@@ -364,7 +372,7 @@
           {/if}
         </button>
 
-        <button onclick={() => sidebarCollapsed = !sidebarCollapsed} class="p-3 text-gray-500 hover:text-gray-300 border-t border-surface-800/50 text-sm shrink-0 bg-surface-950/30">
+        <button onclick={() => sidebarCollapsed = !sidebarCollapsed} class="p-3 text-gray-500 hover:text-gray-300 border-t border-surface-800/50 text-label-large shrink-0 bg-surface-950/30">
           {sidebarCollapsed ? '→' : '←'}
         </button>
       </aside>
@@ -389,7 +397,7 @@
             class="flex-1 flex flex-col items-center justify-center gap-1 transition-all {isBottomActive(item.id) ? 'text-primary-400' : 'text-gray-500'}"
           >
             <span class="px-4 py-0.5 rounded-m3-full transition-colors {isBottomActive(item.id) ? 'bg-primary-container text-on-primary-container' : ''}">
-              {@html item.icon}
+              {@html navIcon(item.icon, isBottomActive(item.id))}
             </span>
             <span class="text-label-medium">{item.label}</span>
           </button>

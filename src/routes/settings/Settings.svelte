@@ -441,10 +441,10 @@
   <!-- Sticky Header -->
   <header class="sticky top-0 z-20 border-b border-surface-800/50 bg-surface-950/95 backdrop-blur px-4 py-3">
     <div class="flex items-center gap-4">
-      <button onclick={goBack} class="p-2 text-gray-500 hover:text-primary-400 transition-all font-black text-lg" aria-label="Terug">
+      <button onclick={goBack} class="p-2 rounded-full text-gray-500 hover:text-primary-400 transition-all" aria-label="Terug">
         <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
       </button>
-      <h1 class="text-xl font-black text-gray-100">Instellingen</h1>
+      <h1 class="text-title-large text-gray-100">Instellingen</h1>
     </div>
   </header>
 
@@ -452,19 +452,19 @@
     {#each sections as section, i}
       {#if !section.hideIfDesktop || isMobile}
         <section in:fly={{ y: 20, delay: i * 100 }} class="space-y-4">
-          <h2 class="text-[10px] font-black text-gray-500 px-2">{section.title}</h2>
+          <h2 class="text-label-medium text-gray-500 px-2">{section.title}</h2>
 
         {#if section.isAi}
           <!-- AI Configuration Card -->
           {#if aiLoaded}
-            <div class="glass p-6 rounded-3xl border-primary-500/20 space-y-5 transition-all hover:bg-surface-800/40">
-              <p class="text-[10px] text-gray-500 font-medium leading-relaxed">Configureer AI voor studiedvies, cijferanalyse, samenvattingen en meer.</p>
+            <div class="glass p-6 rounded-m3-md border-primary-500/20 space-y-5 transition-all hover:bg-surface-800/40">
+              <p class="text-body-medium text-gray-500 leading-relaxed">Configureer AI voor studiedvies, cijferanalyse, samenvattingen en meer.</p>
 
               <!-- Enable toggle -->
               <div class="flex items-center justify-between">
                 <div>
-                  <p class="text-sm font-bold text-gray-100">AI Assistent inschakelen</p>
-                  <p class="text-[10px] text-gray-500 mt-1">Zet AI aan voor alle pagina's</p>
+                  <p class="text-title-small text-gray-100">AI Assistent inschakelen</p>
+                  <p class="text-label-medium text-gray-500 mt-1">Zet AI aan voor alle pagina's</p>
                 </div>
                 <label class="relative inline-flex items-center cursor-pointer">
                   <input type="checkbox" bind:checked={aiEnabled} onchange={saveAiConfig} class="sr-only peer">
@@ -476,18 +476,18 @@
 
               <!-- API Key -->
               <div class="space-y-2">
-                <label for="aiApiKey" class="text-[10px] font-black text-gray-500">API Sleutel</label>
+                <label for="aiApiKey" class="text-label-medium text-gray-500">API Sleutel</label>
                 <div class="flex gap-2">
                   <input
                     id="aiApiKey"
                     type={aiShowKey ? 'text' : 'password'}
                     bind:value={aiApiKey}
                     placeholder="sk-..."
-                    class="flex-1 bg-surface-800/80 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-primary-500/50 transition-all font-mono"
+                    class="flex-1 bg-surface-800/80 border border-white/10 rounded-m3-xs px-4 py-3 text-body-medium text-white placeholder-gray-600 focus:outline-none focus:border-primary-500/50 transition-all font-mono"
                   />
                   <button
                     onclick={() => aiShowKey = !aiShowKey}
-                    class="px-3 py-2 rounded-xl bg-surface-800/60 border border-white/10 text-gray-400 hover:text-white transition-all text-[10px] font-bold"
+                    class="px-3 py-2 rounded-m3-full bg-surface-800/60 border border-white/10 text-gray-400 hover:text-white transition-all text-label-medium"
                   >
                     {aiShowKey ? 'Verberg' : 'Toon'}
                   </button>
@@ -496,18 +496,18 @@
 
               <!-- Base URL -->
               <div class="space-y-2">
-                <label for="aiBaseUrl" class="text-[10px] font-black text-gray-500">API Basis URL</label>
+                <label for="aiBaseUrl" class="text-label-medium text-gray-500">API Basis URL</label>
                 <input
                   id="aiBaseUrl"
                   type="text"
                   bind:value={aiBaseUrl}
-                  class="w-full bg-surface-800/80 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-primary-500/50 transition-all font-mono"
+                  class="w-full bg-surface-800/80 border border-white/10 rounded-m3-xs px-4 py-3 text-body-medium text-white placeholder-gray-600 focus:outline-none focus:border-primary-500/50 transition-all font-mono"
                 />
                 <div class="flex flex-wrap gap-2 mt-2">
                   {#each aiBaseUrlPresets as preset}
                     <button
                       onclick={() => aiBaseUrl = preset.value}
-                      class="px-3 py-1.5 rounded-xl bg-surface-800/60 border border-white/5 text-[10px] font-bold text-gray-400 hover:text-white hover:bg-surface-700/60 transition-all {aiBaseUrl === preset.value ? 'border-primary-500/30 text-primary-400' : ''}"
+                      class="px-3 py-1.5 rounded-m3-sm bg-surface-800/60 border border-white/5 text-label-medium text-gray-400 hover:text-white hover:bg-surface-700/60 transition-all {aiBaseUrl === preset.value ? 'border-primary-500/30 text-primary-400' : ''}"
                     >
                       {preset.label}
                     </button>
@@ -517,7 +517,7 @@
 
               <!-- Provider -->
               <div class="space-y-2">
-                <label class="text-[10px] font-black text-gray-500">AI Provider</label>
+                <label class="text-label-medium text-gray-500">AI Provider</label>
                 <div class="grid grid-cols-2 gap-2">
                   {#each Object.entries(AI_PROVIDERS) as [key, info]}
                     <button
@@ -526,13 +526,13 @@
                         aiBaseUrl = info.defaultBaseUrl;
                         aiModel = info.defaultModel;
                       }}
-                      class="px-3 py-2.5 rounded-xl border text-[9px] font-bold transition-all text-left
+                      class="px-3 py-2.5 rounded-m3-sm border text-label-medium transition-all text-left
  {aiProvider === key
  ? 'bg-primary-500/20 border-primary-500/40 text-primary-300 shadow-lg shadow-primary-500/10'
  : 'bg-surface-800/60 border-white/5 text-gray-400 hover:bg-surface-700/60 hover:text-gray-200'}"
                     >
-                      <span class="block text-[10px] font-black">{info.label}</span>
-                      <span class="block text-[8px] font-normal opacity-70 mt-0.5 normal-case">{info.description}</span>
+                      <span class="block text-label-medium">{info.label}</span>
+                      <span class="block text-label-small opacity-70 mt-0.5">{info.description}</span>
                     </button>
                   {/each}
                 </div>
@@ -540,13 +540,13 @@
 
               <!-- Model -->
               <div class="space-y-2">
-                <label for="aiModel" class="text-[10px] font-black text-gray-500">Model</label>
+                <label for="aiModel" class="text-label-medium text-gray-500">Model</label>
                 <input
                   id="aiModel"
                   type="text"
                   bind:value={aiModel}
                   placeholder="gpt-4o-mini"
-                  class="w-full bg-surface-800/80 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-primary-500/50 transition-all"
+                  class="w-full bg-surface-800/80 border border-white/10 rounded-m3-xs px-4 py-3 text-body-medium text-white placeholder-gray-600 focus:outline-none focus:border-primary-500/50 transition-all"
                 />
               </div>
 
@@ -555,8 +555,8 @@
               <!-- Data Access Toggle -->
               <div class="flex items-center justify-between">
                 <div>
-                  <p class="text-sm font-bold text-gray-100">Toegang tot schoolgegevens</p>
-                  <p class="text-[10px] text-gray-500 mt-1 leading-relaxed">
+                  <p class="text-title-small text-gray-100">Toegang tot schoolgegevens</p>
+                  <p class="text-label-medium text-gray-500 mt-1 leading-relaxed">
                     Laat AI je rooster, cijfers, opdrachten en berichten uitlezen via tool calling
                   </p>
                 </div>
@@ -567,8 +567,8 @@
               </div>
 
               {#if aiUseDataAccess}
-                <div class="rounded-2xl px-4 py-3 bg-primary-500/5 border border-primary-500/10 text-[10px] text-gray-400 leading-relaxed">
-                  <span class="font-black text-primary-400">✓ Data-toegang ingeschakeld</span><br>
+                <div class="rounded-m3-md px-4 py-3 bg-primary-500/5 border border-primary-500/10 text-body-medium text-gray-400 leading-relaxed">
+                  <span class="text-label-medium text-primary-400">✓ Data-toegang ingeschakeld</span><br>
                   De AI kan nu o.a.:
                   <ul class="mt-1 space-y-1 list-disc list-inside">
                     <li>Je lesrooster ophalen voor vandaag of morgen</li>
@@ -579,8 +579,8 @@
                   </ul>
                 </div>
               {:else}
-                <div class="rounded-2xl px-4 py-3 bg-amber-500/5 border border-amber-500/10 text-[10px] text-gray-400 leading-relaxed">
-                  <span class="font-black text-amber-400">⚠ Data-toegang uitgeschakeld</span><br>
+                <div class="rounded-m3-md px-4 py-3 bg-amber-500/5 border border-amber-500/10 text-body-medium text-gray-400 leading-relaxed">
+                  <span class="text-label-medium text-amber-400">⚠ Data-toegang uitgeschakeld</span><br>
                   De AI kan alleen algemene vragen beantwoorden zonder je schoolgegevens te zien.
                 </div>
               {/if}
@@ -590,37 +590,37 @@
                 <button
                   onclick={saveAiConfig}
                   disabled={aiSaving}
-                  class="flex-1 py-3 rounded-2xl bg-primary-500/20 border border-primary-500/30 text-primary-400 hover:bg-primary-500/30 transition-all text-[10px] font-black disabled:opacity-50"
+                  class="flex-1 py-3 rounded-m3-full bg-primary-500/20 border border-primary-500/30 text-primary-400 hover:bg-primary-500/30 transition-all text-label-large disabled:opacity-50"
                 >
                   {aiSaving ? '⏳ Opslaan...' : 'Opslaan'}
                 </button>
                 <button
                   onclick={testAiConnection}
                   disabled={aiTesting || !aiApiKey}
-                  class="flex-1 py-3 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20 transition-all text-[10px] font-black disabled:opacity-50"
+                  class="flex-1 py-3 rounded-m3-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20 transition-all text-label-large disabled:opacity-50"
                 >
                   {aiTesting ? '⏳ Testen...' : 'Test verbinding'}
                 </button>
               </div>
 
               {#if aiTestResult}
-                <div class="rounded-2xl px-5 py-3 text-[11px] font-medium {aiTestSuccess ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400' : 'bg-red-500/10 border border-red-500/20 text-red-400'}">
+                <div class="rounded-m3-md px-5 py-3 text-body-small {aiTestSuccess ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400' : 'bg-red-500/10 border border-red-500/20 text-red-400'}">
                   {aiTestResult}
                 </div>
               {/if}
             </div>
           {:else}
-            <div class="glass p-8 rounded-3xl border-white/5 flex items-center justify-center">
+            <div class="glass p-8 rounded-m3-md border-white/5 flex items-center justify-center">
               <div class="w-6 h-6 border-2 border-primary-500 border-t-transparent rounded-full animate-spin"></div>
             </div>
           {/if}
         {:else}
         <div class="space-y-2">
           {#each section.settings as setting}
-            <div class="glass p-5 rounded-3xl border-white/5 flex items-center justify-between gap-6 transition-all hover:bg-surface-800/40">
+            <div class="glass p-5 rounded-m3-md border-white/5 flex items-center justify-between gap-6 transition-all hover:bg-surface-800/40">
               <div class="flex-1">
-                <p class="text-sm font-bold text-gray-100">{setting.label}</p>
-                <p class="text-[10px] text-gray-500 font-medium mt-1 leading-relaxed">{setting.description}</p>
+                <p class="text-title-small text-gray-100">{setting.label}</p>
+                <p class="text-label-medium text-gray-500 mt-1 leading-relaxed">{setting.description}</p>
               </div>
 
               {#if setting.type === 'toggle'}
@@ -641,7 +641,7 @@
                   min={setting.min}
                   max={setting.max}
                   step={setting.step ?? 1}
-                  class="w-20 px-3 py-2 rounded-xl bg-surface-950 border border-surface-700 text-sm text-gray-100 text-center font-black focus:outline-none focus:border-primary-500 shadow-inner"
+                  class="w-20 px-3 py-2 rounded-m3-xs bg-surface-950 border border-surface-700 text-title-small text-gray-100 text-center focus:outline-none focus:border-primary-500 shadow-inner"
                 />
               {:else if setting.type === 'theme-picker'}
                 <div class="grid grid-cols-4 gap-3 py-1">
@@ -654,7 +654,7 @@
  {$userSettings[setting.id] === color.id
  ? 'border-white scale-110 shadow-lg shadow-white/20'
  : 'border-transparent opacity-60 group-hover:opacity-100 group-hover:scale-105 shadow-inner'}"></div>
-                      <span class="text-[8px] font-black text-gray-600 group-hover:text-gray-400 transition-colors">{color.label}</span>
+                      <span class="text-label-small text-gray-600 group-hover:text-gray-400 transition-colors">{color.label}</span>
                     </button>
                   {/each}
                 </div>
@@ -662,7 +662,7 @@
                 <select
                   value={$userSettings[setting.id]}
                   onchange={(e) => updateSetting(setting.id, e.currentTarget.value)}
-                  class="bg-surface-800 border-none text-gray-200 text-[10px] font-black rounded-xl px-4 py-2.5 outline-none cursor-pointer hover:bg-surface-700 transition-colors shadow-sm"
+                  class="bg-surface-800 border-none text-gray-200 text-label-medium rounded-m3-sm px-4 py-2.5 outline-none cursor-pointer hover:bg-surface-700 transition-colors shadow-sm"
                 >
                   {#each setting.options as option}
                     <option value={option.value}>{option.label}</option>
@@ -672,7 +672,7 @@
                 <button
                   onclick={() => setting.action()}
                   disabled={setting.id === 'exportAll' ? exportBusy : (testingNotification === setting.id.split('test')[1])}
-                  class="bg-primary-500/15 text-primary-400 text-[10px] font-black rounded-xl px-5 py-2.5 hover:bg-primary-500/25 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-wait border border-primary-500/10 shadow-sm"
+                  class="bg-primary-500/15 text-primary-400 text-label-large rounded-m3-full px-5 py-2.5 hover:bg-primary-500/25 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-wait border border-primary-500/10 shadow-sm"
                 >
                   {#if setting.id === 'exportAll'}
                     {#if exportBusy}
@@ -687,14 +687,14 @@
                   {/if}
                 </button>
                 {#if setting.id === 'exportAll' && exportResult}
-                  <p class="text-[9px] text-gray-400 font-mono mt-2 text-right max-w-[200px] leading-relaxed">{exportResult}</p>
+                  <p class="text-label-small text-gray-400 font-mono mt-2 text-right max-w-[200px] leading-relaxed">{exportResult}</p>
                 {/if}
               {:else if setting.type === 'download-dir'}
                 <div class="flex items-center gap-2">
                   {#if $userSettings.downloadDir}
                     <button
                       onclick={clearDownloadDir}
-                      class="text-[10px] font-black text-red-400 hover:text-red-300 transition-colors px-2 py-1"
+                      class="text-label-medium text-red-400 hover:text-red-300 transition-colors px-2 py-1"
                     >
                       Herstel
                     </button>
@@ -702,17 +702,17 @@
                   <button
                     onclick={pickDownloadDir}
                     disabled={pickingDir}
-                    class="bg-primary-500/15 text-primary-400 text-[10px] font-black rounded-xl px-5 py-2.5 hover:bg-primary-500/25 transition-all active:scale-95 disabled:opacity-50 border border-primary-500/10 shadow-sm"
+                    class="bg-primary-500/15 text-primary-400 text-label-large rounded-m3-full px-5 py-2.5 hover:bg-primary-500/25 transition-all active:scale-95 disabled:opacity-50 border border-primary-500/10 shadow-sm"
                   >
                     {pickingDir ? '⏳ ...' : 'Map Kiezen'}
                   </button>
                 </div>
                 {#if $userSettings.downloadDir}
-                  <p class="text-[9px] text-gray-500 font-mono mt-2 text-right max-w-[200px] truncate leading-relaxed" title={$userSettings.downloadDir}>
+                  <p class="text-label-small text-gray-500 font-mono mt-2 text-right max-w-[200px] truncate leading-relaxed" title={$userSettings.downloadDir}>
                     {$userSettings.downloadDir}
                   </p>
                 {:else}
-                  <p class="text-[9px] text-gray-600 mt-2 text-right">Systeemstandaard</p>
+                  <p class="text-label-small text-gray-600 mt-2 text-right">Systeemstandaard</p>
                 {/if}
               {/if}
             </div>
@@ -729,12 +729,12 @@
         onclick={toggleDebug}
         class="w-full flex items-center justify-between px-2 mb-4 group"
       >
-        <h2 class="text-[10px] font-black text-gray-600 group-hover:text-amber-500 transition-colors flex items-center gap-2">
+        <h2 class="text-label-medium text-gray-600 group-hover:text-amber-500 transition-colors flex items-center gap-2">
           <svg class="w-3 h-3 text-amber-500/70" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
           Systeem Debug
         </h2>
         <div class="flex items-center gap-2">
-          <span class="text-[9px] font-black text-gray-700">
+          <span class="text-label-small text-gray-700">
             {debugOpen ? 'Verbergen' : 'Tonen'}
           </span>
           <svg
@@ -749,7 +749,7 @@
 
           <!-- System info cards -->
           {#if debugInfo}
-            <div class="debug-card rounded-3xl p-5 space-y-4 shadow-xl">
+            <div class="debug-card rounded-m3-md p-5 space-y-4 shadow-xl">
               <p class="debug-label">Systeeminformatie</p>
               <div class="grid grid-cols-2 gap-3">
                 <div class="info-tile">
@@ -776,7 +776,7 @@
                   </span>
                   <div class="min-w-0">
                     <p class="info-tile-title">Data Path</p>
-                    <p class="info-tile-value font-mono text-[9px] break-all opacity-80">{debugInfo.dataDir ?? '?'}</p>
+                    <p class="info-tile-value font-mono text-label-small break-all opacity-80">{debugInfo.dataDir ?? '?'}</p>
                   </div>
                 </div>
               </div>
@@ -787,19 +787,19 @@
               </button>
             </div>
           {:else}
-            <div class="debug-card rounded-3xl p-8 flex flex-col items-center justify-center gap-4 text-center">
+            <div class="debug-card rounded-m3-md p-8 flex flex-col items-center justify-center gap-4 text-center">
                <svg class="w-10 h-10 text-gray-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
-               <p class="text-[10px] font-black text-gray-600 max-w-[150px]">Geen debug info geladen</p>
+               <p class="text-label-medium text-gray-600 max-w-[150px]">Geen debug info geladen</p>
                <button onclick={loadDebugInfo} class="debug-btn-primary px-8">Info ophalen</button>
             </div>
           {/if}
 
           <!-- Sync interval -->
-          <div class="debug-card rounded-3xl p-6 space-y-4">
+          <div class="debug-card rounded-m3-md p-6 space-y-4">
             <div class="flex items-center justify-between">
               <p class="debug-label">Sync frequentie</p>
-              <div class="px-3 py-1 bg-amber-500/15 rounded-lg border border-amber-500/20">
-                <span class="text-xs font-black text-amber-500 tabular-nums">{intervalLabel(intervalSeconds)}</span>
+              <div class="px-3 py-1 bg-amber-500/15 rounded-m3-sm border border-amber-500/20">
+                <span class="text-label-medium text-amber-500 tabular-nums">{intervalLabel(intervalSeconds)}</span>
               </div>
             </div>
             <input
@@ -812,7 +812,7 @@
               {#each [60, 300, 900, 1800, 3600] as preset}
                 <button
                   onclick={() => { intervalSeconds = preset; }}
-                  class="flex-1 text-[9px] font-black rounded-xl py-2
+                  class="flex-1 text-label-medium rounded-m3-full py-2
  {intervalSeconds === preset
  ? 'bg-amber-500 text-white shadow-lg shadow-amber-500/20'
  : 'bg-surface-800 text-gray-500 hover:text-gray-300 transition-all active:scale-95'}"
@@ -825,12 +825,12 @@
               Interval Toepassen
             </button>
             {#if intervalResult}
-              <p class="text-[9px] text-amber-400 font-mono text-center bg-amber-500/5 py-2 rounded-lg">{intervalResult}</p>
+              <p class="text-label-small text-amber-400 font-mono text-center bg-amber-500/5 py-2 rounded-m3-sm">{intervalResult}</p>
             {/if}
           </div>
 
           <!-- Night Sleep & Notifications -->
-          <div class="debug-card rounded-3xl p-6 space-y-6">
+          <div class="debug-card rounded-m3-md p-6 space-y-6">
             <div class="space-y-4">
                 <div class="flex items-center justify-between">
                   <p class="debug-label">Nachtrust</p>
@@ -842,12 +842,12 @@
                 {#if disableSyncAtNight}
                   <div class="flex gap-4 items-center" transition:slide>
                       <div class="flex-1 space-y-2">
-                          <label for="disableSyncStart" class="text-[10px] font-black text-gray-500">Start Uur</label>
-                          <input id="disableSyncStart" type="number" min="0" max="23" bind:value={disableSyncAtNightStart} onchange={applyNightSleep} class="w-full bg-surface-800 text-gray-300 rounded-xl p-2 text-center text-sm font-bold border border-white/5" />
+                          <label for="disableSyncStart" class="text-label-medium text-gray-500">Start Uur</label>
+                          <input id="disableSyncStart" type="number" min="0" max="23" bind:value={disableSyncAtNightStart} onchange={applyNightSleep} class="w-full bg-surface-800 text-gray-300 rounded-m3-xs p-2 text-center text-title-small border border-white/5" />
                       </div>
                       <div class="flex-1 space-y-2">
-                          <label for="disableSyncEnd" class="text-[10px] font-black text-gray-500">Eind Uur</label>
-                          <input id="disableSyncEnd" type="number" min="0" max="23" bind:value={disableSyncAtNightEnd} onchange={applyNightSleep} class="w-full bg-surface-800 text-gray-300 rounded-xl p-2 text-center text-sm font-bold border border-white/5" />
+                          <label for="disableSyncEnd" class="text-label-medium text-gray-500">Eind Uur</label>
+                          <input id="disableSyncEnd" type="number" min="0" max="23" bind:value={disableSyncAtNightEnd} onchange={applyNightSleep} class="w-full bg-surface-800 text-gray-300 rounded-m3-xs p-2 text-center text-title-small border border-white/5" />
                       </div>
                   </div>
                 {/if}
@@ -858,7 +858,7 @@
             <div class="flex items-center justify-between">
                 <div>
                     <p class="debug-label">Notificaties Uitzetten</p>
-                    <p class="text-[9px] text-red-400 font-bold mt-1 max-w-[200px]">Stopt alle achtergrond notificaties volledig</p>
+                    <p class="text-body-small text-red-400 mt-1 max-w-[200px]">Stopt alle achtergrond notificaties volledig</p>
                 </div>
                 <label class="relative inline-flex items-center cursor-pointer">
                     <input type="checkbox" bind:checked={disableAllNotifications} onchange={applyDisableAllNotifications} class="sr-only peer">
@@ -872,45 +872,45 @@
             <button
               onclick={doForceSync}
               disabled={forceSyncBusy}
-              class="debug-card rounded-3xl p-6 flex flex-col items-center gap-3 hover:bg-surface-700/40 transition-all active:scale-[0.98] disabled:opacity-50 ring-1 ring-white/5"
+              class="debug-card rounded-m3-md p-6 flex flex-col items-center gap-3 hover:bg-surface-700/40 transition-all active:scale-[0.98] disabled:opacity-50 ring-1 ring-white/5"
             >
-              <div class="w-12 h-12 rounded-2xl bg-amber-500/10 text-amber-500 flex items-center justify-center shadow-inner">
+              <div class="w-12 h-12 rounded-m3-md bg-amber-500/10 text-amber-500 flex items-center justify-center shadow-inner">
                 <svg class="w-6 h-6 {forceSyncBusy ? 'animate-spin' : ''}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
               </div>
               <div class="text-center">
-                <p class="text-[11px] font-black text-gray-200">Force Sync</p>
-                <p class="text-[8px] text-gray-600 font-bold mt-1">Nu ophalen</p>
+                <p class="text-label-medium text-gray-200">Force Sync</p>
+                <p class="text-label-small text-gray-600 mt-1">Nu ophalen</p>
               </div>
             </button>
             <button
               onclick={doClearState}
-              class="debug-card rounded-3xl p-6 flex flex-col items-center gap-3 hover:bg-red-500/10 transition-all active:scale-[0.98] ring-1 ring-white/5"
+              class="debug-card rounded-m3-md p-6 flex flex-col items-center gap-3 hover:bg-red-500/10 transition-all active:scale-[0.98] ring-1 ring-white/5"
             >
-              <div class="w-12 h-12 rounded-2xl bg-red-500/10 text-red-400 flex items-center justify-center shadow-inner">
+              <div class="w-12 h-12 rounded-m3-md bg-red-500/10 text-red-400 flex items-center justify-center shadow-inner">
                 <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
               </div>
               <div class="text-center">
-                <p class="text-[11px] font-black text-red-400">Baseline</p>
-                <p class="text-[8px] text-gray-600 font-bold mt-1">State wissen</p>
+                <p class="text-label-medium text-red-400">Baseline</p>
+                <p class="text-label-small text-gray-600 mt-1">State wissen</p>
               </div>
             </button>
           </div>
 
           <!-- Logs -->
-          <div class="debug-card rounded-3xl p-5 space-y-4 overflow-hidden relative">
+          <div class="debug-card rounded-m3-md p-5 space-y-4 overflow-hidden relative">
             <div class="flex items-center justify-between relative z-10">
               <p class="debug-label">Systeemboodschappen</p>
-              <button onclick={() => logs = []} class="text-[10px] font-black text-gray-600 hover:text-red-400 transition-colors">
+              <button onclick={() => logs = []} class="text-label-medium text-gray-600 hover:text-red-400 transition-colors">
                 Opschonen
               </button>
             </div>
             <div class="space-y-2 max-h-60 overflow-y-auto no-scrollbar relative z-10 pr-1">
               {#each logs as log}
-                <div class="flex gap-3 items-start p-2.5 rounded-xl bg-surface-950/40 border border-white/5" transition:slide={{ duration: 150 }}>
-                  <span class="text-[10px] font-black text-gray-700 shrink-0 tabular-nums">{log.time}</span>
+                <div class="flex gap-3 items-start p-2.5 rounded-m3-sm bg-surface-950/40 border border-white/5" transition:slide={{ duration: 150 }}>
+                  <span class="text-label-small text-gray-700 shrink-0 tabular-nums">{log.time}</span>
                   <div class="flex-1 min-w-0">
-                    <p class="text-[10px] font-mono text-gray-400 break-words leading-relaxed">
-                      <span class="{log.level === 'error' ? 'text-red-500' : log.level === 'warn' ? 'text-amber-500' : 'text-emerald-500'} font-black mr-2">
+                    <p class="text-label-small font-mono text-gray-400 break-words leading-relaxed">
+                      <span class="{log.level === 'error' ? 'text-red-500' : log.level === 'warn' ? 'text-amber-500' : 'text-emerald-500'} text-label-medium mr-2">
                         {log.level.toUpperCase()}
                       </span>
                       {log.msg}
@@ -920,7 +920,7 @@
               {:else}
                 <div class="py-12 flex flex-col items-center justify-center opacity-30">
                   <svg class="w-10 h-10 mb-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-                  <p class="text-[9px] font-black">Geen activiteiten</p>
+                  <p class="text-label-small">Geen activiteiten</p>
                 </div>
               {/each}
             </div>
@@ -933,14 +933,14 @@
 
     <!-- ===== GITHUB REPO INFO ===== -->
     <section in:fly={{ y: 20 }}>
-      <div class="glass p-6 rounded-3xl border-white/5 space-y-4 hover:bg-surface-800/40 transition-all">
+      <div class="glass p-6 rounded-m3-md border-white/5 space-y-4 hover:bg-surface-800/40 transition-all">
         <div class="flex items-center gap-3">
-          <div class="w-10 h-10 rounded-2xl bg-surface-900 border border-surface-700/50 flex items-center justify-center text-gray-400 group-hover:rotate-6 transition-transform shadow-inner shrink-0">
+          <div class="w-10 h-10 rounded-m3-sm bg-surface-900 border border-surface-700/50 flex items-center justify-center text-gray-400 group-hover:rotate-6 transition-transform shadow-inner shrink-0">
             <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.403 5.403 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65-.17.6-.22 1.23-.15 1.85v4"/><path d="M9 18c-4.51 2-5-2-7-2"/></svg>
           </div>
           <div>
-            <h3 class="text-sm font-black text-gray-100">Friday — Open source</h3>
-            <p class="text-[10px] text-gray-600 font-bold mt-0.5">Bekijk de broncode op GitHub</p>
+            <h3 class="text-title-small text-gray-100">Friday — Open source</h3>
+            <p class="text-label-small text-gray-600 mt-0.5">Bekijk de broncode op GitHub</p>
           </div>
         </div>
 
@@ -948,15 +948,15 @@
           href="https://github.com/JPDeerenberg/friday"
           target="_blank"
           rel="noopener noreferrer"
-          class="flex items-center justify-between p-4 rounded-2xl bg-surface-900/60 border border-white/5 hover:bg-surface-800/80 hover:border-primary-500/30 transition-all group/repo active:scale-[0.98]"
+          class="flex items-center justify-between p-4 rounded-m3-md bg-surface-900/60 border border-white/5 hover:bg-surface-800/80 hover:border-primary-500/30 transition-all group/repo active:scale-[0.98]"
         >
           <div class="flex items-center gap-3 min-w-0">
-            <div class="w-9 h-9 rounded-xl bg-primary-500/15 flex items-center justify-center text-primary-400 shrink-0">
+            <div class="w-9 h-9 rounded-m3-sm bg-primary-500/15 flex items-center justify-center text-primary-400 shrink-0">
               <svg class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
             </div>
             <div class="min-w-0">
-              <p class="text-sm font-black text-gray-200 truncate group-hover/repo:text-primary-400 transition-colors">JPDeerenberg/friday</p>
-              <p class="text-[9px] text-gray-600 font-bold mt-0.5">Magister Tauri app — Volg de ontwikkeling</p>
+              <p class="text-title-small text-gray-200 truncate group-hover/repo:text-primary-400 transition-colors">JPDeerenberg/friday</p>
+              <p class="text-label-small text-gray-600 mt-0.5">Magister Tauri app — Volg de ontwikkeling</p>
             </div>
           </div>
           <svg class="w-5 h-5 text-gray-600 group-hover/repo:text-primary-400 transition-colors shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
@@ -965,25 +965,25 @@
         <!-- GitHub Stats via API -->
         {#if repoStats}
           <div class="grid grid-cols-3 gap-3">
-            <div class="bg-surface-900/50 rounded-2xl p-3 text-center border border-white/5">
-              <p class="text-lg font-black text-gray-200 tabular-nums">{repoStats.stars}</p>
-              <p class="text-[8px] text-gray-600 font-black mt-0.5">Sterren</p>
+            <div class="bg-surface-900/50 rounded-m3-sm p-3 text-center border border-white/5">
+              <p class="text-title-large text-gray-200 tabular-nums">{repoStats.stars}</p>
+              <p class="text-label-small text-gray-600 mt-0.5">Sterren</p>
             </div>
-            <div class="bg-surface-900/50 rounded-2xl p-3 text-center border border-white/5">
-              <p class="text-lg font-black text-gray-200 tabular-nums">{repoStats.forks}</p>
-              <p class="text-[8px] text-gray-600 font-black mt-0.5">Forks</p>
+            <div class="bg-surface-900/50 rounded-m3-sm p-3 text-center border border-white/5">
+              <p class="text-title-large text-gray-200 tabular-nums">{repoStats.forks}</p>
+              <p class="text-label-small text-gray-600 mt-0.5">Forks</p>
             </div>
-            <div class="bg-surface-900/50 rounded-2xl p-3 text-center border border-white/5">
-              <p class="text-lg font-black text-gray-200 tabular-nums">{repoStats.openIssues}</p>
-              <p class="text-[8px] text-gray-600 font-black mt-0.5">Issues</p>
+            <div class="bg-surface-900/50 rounded-m3-sm p-3 text-center border border-white/5">
+              <p class="text-title-large text-gray-200 tabular-nums">{repoStats.openIssues}</p>
+              <p class="text-label-small text-gray-600 mt-0.5">Issues</p>
             </div>
           </div>
         {:else if repoStatsError}
-          <p class="text-[9px] text-red-400 text-center font-mono">{repoStatsError}</p>
+          <p class="text-label-small text-red-400 text-center font-mono">{repoStatsError}</p>
         {:else}
           <div class="flex items-center justify-center gap-2 py-2">
             <div class="w-4 h-4 border-2 border-primary-500 border-t-transparent rounded-full animate-spin"></div>
-            <span class="text-[9px] text-gray-600 font-black">Repo info laden...</span>
+            <span class="text-label-small text-gray-600">Repo info laden...</span>
           </div>
         {/if}
       </div>
@@ -991,7 +991,7 @@
 
     <div class="pt-10 flex flex-col items-center gap-2">
       <div class="w-10 h-[1px] bg-surface-800"></div>
-      <p class="text-[9px] text-gray-600 font-black text-center">Version 1.3.1 • Friday App</p>
+      <p class="text-label-small text-gray-600 text-center">Version 1.3.1 • Friday App</p>
     </div>
   </main>
 </div>
@@ -1012,9 +1012,10 @@
   }
 
   .debug-label {
-    font-size: 10px;
-    font-weight: 900;
-    letter-spacing: 0.02em;
+    font-size: var(--text-label-medium);
+    line-height: var(--text-label-medium--line-height);
+    letter-spacing: var(--text-label-medium--letter-spacing);
+    font-weight: var(--text-label-medium--font-weight);
     color: rgb(75, 85, 99);
   }
 
@@ -1023,7 +1024,7 @@
     align-items: center;
     gap: 12px;
     background: oklch(1 0 0 / 0.02);
-    border-radius: 18px;
+    border-radius: var(--radius-m3-sm);
     padding: 12px 16px;
     min-width: 0;
     border: 1px solid oklch(1 0 0 / 0.03);
@@ -1034,28 +1035,30 @@
   }
 
   .info-tile-title {
-    font-size: 8px;
-    font-weight: 900;
-    letter-spacing: 0.02em;
+    font-size: var(--text-label-small);
+    line-height: var(--text-label-small--line-height);
+    letter-spacing: var(--text-label-small--letter-spacing);
+    font-weight: var(--text-label-small--font-weight);
     color: rgb(107, 114, 128);
-    line-height: 1;
   }
 
   .info-tile-value {
-    font-size: 11px;
-    font-weight: 800;
+    font-size: var(--text-body-small);
+    line-height: var(--text-body-small--line-height);
+    letter-spacing: var(--text-body-small--letter-spacing);
+    font-weight: 500;
     color: rgb(229, 231, 235);
     margin-top: 4px;
-    line-height: normal;
   }
 
   .debug-btn-primary {
     background: oklch(0.7 0.15 80 / 0.15);
     color: oklch(0.8 0.15 80);
-    font-size: 10px;
-    font-weight: 950;
-    letter-spacing: 0.02em;
-    border-radius: 16px;
+    font-size: var(--text-label-large);
+    line-height: var(--text-label-large--line-height);
+    letter-spacing: var(--text-label-large--letter-spacing);
+    font-weight: var(--text-label-large--font-weight);
+    border-radius: var(--radius-m3-full);
     padding: 12px;
     transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
     border: 1px solid oklch(0.8 0.15 80 / 0.2);
@@ -1065,10 +1068,11 @@
   .debug-btn-secondary {
     background: oklch(1 0 0 / 0.05);
     color: oklch(1 0 0 / 0.6);
-    font-size: 10px;
-    font-weight: 900;
-    letter-spacing: 0.02em;
-    border-radius: 14px;
+    font-size: var(--text-label-large);
+    line-height: var(--text-label-large--line-height);
+    letter-spacing: var(--text-label-large--letter-spacing);
+    font-weight: var(--text-label-large--font-weight);
+    border-radius: var(--radius-m3-full);
     padding: 10px;
     transition: all 0.2s ease;
     border: 1px solid oklch(1 0 0 / 0.08);

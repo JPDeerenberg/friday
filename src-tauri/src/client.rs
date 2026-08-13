@@ -50,6 +50,146 @@ pub struct MagisterClient {
     app_handle: Option<tauri::AppHandle>,
 }
 
+/// A lightweight, cheaply-cloneable snapshot of what's needed to make an
+/// authenticated request. Obtained via `MagisterClient::request_context()`,
+/// which is the ONLY part that needs `&mut self` (and therefore the client
+/// lock) — once you have a `RequestContext`, the actual HTTP request can
+/// happen without holding the lock at all.
+///
+/// Why this exists: every command currently does `client.lock().await` then
+/// keeps that lock for its ENTIRE request, including the network
+/// round-trip. Since `SharedClient` is one mutex shared by the whole app,
+/// this means any two commands invoked concurrently (e.g. the dashboard's
+/// five parallel fetches) serialize on the network I/O itself, not just on
+/// the cheap "is my token still valid" check — defeating the point of
+/// firing them in parallel from the frontend.
+///
+/// `reqwest::Client` is cheap to clone (it's an `Arc` internally around the
+/// connection pool — this is documented, intended usage, not a workaround),
+/// so cloning it plus the current token/endpoint costs nothing meaningful
+/// and lets the request happen fully unlocked.
+///
+/// This exact pattern (clone http+token, drop the lock, then fan out
+/// requests) already exists and works in `get_bulk_grade_extra_info` (see
+/// commands/grades.rs) — this just formalizes it as a reusable primitive
+/// instead of a one-off.
+///
+/// Deliberately scoped to GET only, and deliberately NOT used for every
+/// command in the app — see `get_with_context()` below for what's traded
+/// away by not holding the lock, and why that trade is fine for read-only
+/// fetches but not for the OAuth login flow or any write (POST/PUT/PATCH/
+/// DELETE), which all still use the original, fully-serialized `&mut self`
+/// methods unchanged.
+#[derive(Clone)]
+pub struct RequestContext {
+    http: reqwest::Client,
+    access_token: String,
+    api_endpoint: String,
+}
+
+impl RequestContext {
+    fn build_url(&self, path: &str) -> String {
+        if path.starts_with("http") {
+            path.to_string()
+        } else {
+            format!("{}/{}", self.api_endpoint.trim_end_matches('/'), path.trim_start_matches('/'))
+        }
+    }
+}
+
+/// Make an authenticated GET request using a pre-fetched `RequestContext`,
+/// without holding the client lock. This is the parallel-safe counterpart
+/// to `MagisterClient::get()` — same URL-building, 429-retry, and
+/// error-handling logic, just operating on cloned values instead of
+/// `&mut self`.
+///
+/// One deliberate behavioral difference from `MagisterClient::get()`: this
+/// does NOT handle the "401 mid-request, token expired right as we sent
+/// the request" case by refreshing and retrying — it can't, since it has
+/// no way to write a refreshed token back (no lock, no `&mut self`). It
+/// just returns `ClientError::Unauthorized`, the same as every non-GET
+/// method (`put`, `patch`, `delete_with_body`) already does today for this
+/// exact race. Callers using this path are the app's read-only,
+/// best-effort parallel fetches (dashboard-style), which already treat
+/// each fetch independently with its own error handling — a stale-token
+/// failure here surfaces as a normal error, same as any other, and a
+/// retry (or just reopening the page) gets a fresh context with a valid
+/// token.
+pub async fn get_with_context(ctx: &RequestContext, path: &str) -> Result<serde_json::Value, ClientError> {
+    let url = ctx.build_url(path);
+
+    const MAX_RATE_LIMIT_RETRIES: u32 = 3;
+    let mut attempt = 0;
+    loop {
+        let resp = ctx
+            .http
+            .get(&url)
+            .header("Authorization", format!("Bearer {}", ctx.access_token))
+            .header("Accept", "application/json")
+            .send()
+            .await
+            .map_err(|e| ClientError::RequestFailed(e.to_string()))?;
+
+        if resp.status().as_u16() == 401 {
+            let text = resp.text().await.unwrap_or_default();
+            return Err(ClientError::Unauthorized(text));
+        }
+
+        if resp.status().as_u16() == 429 {
+            if attempt < MAX_RATE_LIMIT_RETRIES {
+                attempt += 1;
+                let backoff = std::time::Duration::from_secs(1u64 << attempt);
+                eprintln!("API rate limited (GET {}), retrying in {:?} (attempt {}/{})", url, backoff, attempt, MAX_RATE_LIMIT_RETRIES);
+                tokio::time::sleep(backoff).await;
+                continue;
+            }
+            return Err(ClientError::RateLimited);
+        }
+
+        if !resp.status().is_success() {
+            let status = resp.status().as_u16();
+            let text = resp.text().await.unwrap_or_default();
+            eprintln!("API Error (GET, unlocked): URL={}, Status={}, Body={}", url, status, text);
+            return Err(ClientError::ApiError(status, text));
+        }
+
+        return resp.json().await.map_err(|e| ClientError::ParseFailed(e.to_string()));
+    }
+}
+
+/// Byte-returning counterpart to `get_with_context()` — same rationale and
+/// same 401 behavior difference from `MagisterClient::get_bytes()`. Used
+/// for e.g. the profile picture fetch.
+pub async fn get_bytes_with_context(ctx: &RequestContext, path: &str) -> Result<Option<Vec<u8>>, ClientError> {
+    let url = ctx.build_url(path);
+
+    let resp = ctx
+        .http
+        .get(&url)
+        .header("Authorization", format!("Bearer {}", ctx.access_token))
+        .send()
+        .await
+        .map_err(|e| ClientError::RequestFailed(e.to_string()))?;
+
+    if resp.status().as_u16() == 404 {
+        return Ok(None);
+    }
+
+    if !resp.status().is_success() {
+        let status = resp.status().as_u16();
+        let text = resp.text().await.unwrap_or_default();
+        eprintln!("API Error (BYTES, unlocked): URL={}, Status={}, Body={}", url, status, text);
+        return Err(ClientError::ApiError(status, text));
+    }
+
+    Ok(Some(
+        resp.bytes()
+            .await
+            .map_err(|e| ClientError::ParseFailed(e.to_string()))?
+            .to_vec(),
+    ))
+}
+
 impl MagisterClient {
     pub fn new() -> Self {
         Self {
@@ -132,6 +272,22 @@ impl MagisterClient {
         }
 
         Ok(())
+    }
+
+    /// Ensure the token is valid (refreshing + persisting if needed — same
+    /// call as always, still fully serialized under the client lock since
+    /// it may mutate `token_set`), then return a cheap snapshot that can be
+    /// used to make the actual HTTP request AFTER the caller drops the
+    /// lock. See `RequestContext` (defined above this impl block) for the
+    /// full rationale.
+    pub async fn request_context(&mut self) -> Result<RequestContext, ClientError> {
+        self.ensure_valid_token().await?;
+        let token_set = self.token_set.as_ref().unwrap();
+        Ok(RequestContext {
+            http: self.http.clone(),
+            access_token: token_set.access_token.clone(),
+            api_endpoint: token_set.api_endpoint.clone(),
+        })
     }
 
     /// Make an authenticated GET request to the Magister API.

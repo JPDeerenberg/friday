@@ -155,6 +155,7 @@
   --m3-on-primary-container: #ddd6fe;
   --m3-secondary: #c084fc;
   --m3-secondary-container: #581c87;
+  --m3-on-secondary-container: #ddd6fe;
   --m3-tertiary: #a78bfa;
   --theme-hue: 310;
   --color-primary-400: #d8b4fe;
@@ -170,6 +171,7 @@
   --m3-on-primary-container: #dbeafe;
   --m3-secondary: #60a5fa;
   --m3-secondary-container: #1e3a8a;
+  --m3-on-secondary-container: #dbeafe;
   --m3-tertiary: #3b82f6;
   --theme-hue: 250;
   --color-primary-400: #93c5fd;
@@ -185,6 +187,7 @@
   --m3-on-primary-container: #cffafe;
   --m3-secondary: #22d3ee;
   --m3-secondary-container: #0e7490;
+  --m3-on-secondary-container: #cffafe;
   --m3-tertiary: #0891b2;
   --theme-hue: 200;
   --color-primary-400: #67e8f9;
@@ -200,6 +203,7 @@
   --m3-on-primary-container: #d1fae5;
   --m3-secondary: #4ade80;
   --m3-secondary-container: #064e3b;
+  --m3-on-secondary-container: #d1fae5;
   --m3-tertiary: #22c55e;
   --theme-hue: 150;
   --color-primary-400: #86efac;
@@ -215,6 +219,7 @@
   --m3-on-primary-container: #fef9c3;
   --m3-secondary: #facc15;
   --m3-secondary-container: #713f12;
+  --m3-on-secondary-container: #fef9c3;
   --m3-tertiary: #eab308;
   --theme-hue: 95;
   --color-primary-400: #fde047;
@@ -230,6 +235,7 @@
   --m3-on-primary-container: #ffedd5;
   --m3-secondary: #fb923c;
   --m3-secondary-container: #7c2d12;
+  --m3-on-secondary-container: #ffedd5;
   --m3-tertiary: #f97316;
   --theme-hue: 50;
   --color-primary-400: #fdba74;
@@ -245,6 +251,7 @@
   --m3-on-primary-container: #fee2e2;
   --m3-secondary: #f87171;
   --m3-secondary-container: #7f1d1d;
+  --m3-on-secondary-container: #fee2e2;
   --m3-tertiary: #ef4444;
   --theme-hue: 25;
   --color-primary-400: #fca5a5;
@@ -260,6 +267,7 @@
   --m3-on-primary-container: #fce7f3;
   --m3-secondary: #f472b6;
   --m3-secondary-container: #831843;
+  --m3-on-secondary-container: #fce7f3;
   --m3-tertiary: #ec4899;
   --theme-hue: 350;
   --color-primary-400: #f9a8d4;
@@ -276,6 +284,7 @@
   --m3-on-primary-container: #ffffff;
   --m3-secondary: var(--custom-primary);
   --m3-secondary-container: var(--custom-primary);
+  --m3-on-secondary-container: #ffffff;
   --m3-tertiary: var(--custom-primary);
   --theme-hue: 280;
   --color-primary-400: var(--custom-primary);
@@ -305,6 +314,9 @@
 }
 .bg-secondary-container {
   background-color: var(--m3-secondary-container);
+}
+.text-on-secondary-container {
+  color: var(--m3-on-secondary-container);
 }
 .text-on-surface-variant {
   color: oklch(0.8 0.02 var(--theme-hue, 280));

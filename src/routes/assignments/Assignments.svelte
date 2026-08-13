@@ -11,6 +11,7 @@
     downloadFile
   } from '$lib/api';
   import { tryAiInsight, getAiConfig } from '$lib/ai';
+  import { cacheGet, cacheRefresh } from '$lib/cache';
   import { onMount } from 'svelte';
   import { fade, fly, slide } from 'svelte/transition';
   import { open } from '@tauri-apps/plugin-dialog';
@@ -68,26 +69,23 @@
     const mq = window.matchMedia('(max-width: 767px)');
     isMobile = mq.matches;
     mq.addEventListener('change', (e) => isMobile = e.matches);
-    const cached = localStorage.getItem('assignments_cache');
-    if (cached) {
-      try {
-        assignments = JSON.parse(cached);
-        loadingList = false;
-      } catch (e) { console.error(e); }
-    }
     await loadAssignments();
   });
 
-  async function loadAssignments() {
+  async function loadAssignments(force = false) {
     const pid = get(personId);
     if (!pid) return;
     if (assignments.length === 0) loadingList = true;
     try {
-      const start = '2013-01-01';
-      const end = formatDate(new Date(Date.now() + 365 * 86400000));
-      const raw = await getAssignments(pid, start, end);
-      assignments = raw.sort((a, b) => b.InleverenVoor.localeCompare(a.InleverenVoor));
-      localStorage.setItem('assignments_cache', JSON.stringify(assignments));
+      const fetcher = async () => {
+        const start = '2013-01-01';
+        const end = formatDate(new Date(Date.now() + 365 * 86400000));
+        const raw = await getAssignments(pid, start, end);
+        return raw.sort((a, b) => b.InleverenVoor.localeCompare(a.InleverenVoor));
+      };
+      assignments = force
+        ? await cacheRefresh(`assignments_${pid}`, fetcher, 5 * 60 * 1000)
+        : await cacheGet(`assignments_${pid}`, fetcher, 5 * 60 * 1000);
     } catch (e) {
       console.error('Error loading assignments:', e);
     } finally {
@@ -210,7 +208,7 @@
         }))
       };
       await handInAssignment(selfUrl, selectedAssignment.Id, JSON.stringify(submissionBody));
-      await loadAssignments();
+      await loadAssignments(true);
       await selectAssignment(assignments.find(a => a.Id === selectedAssignment.Id));
       submissionText = "";
       attachments = [];
@@ -242,15 +240,15 @@
         {#if selectedAssignment && isMobile}
           <button
             onclick={() => selectedAssignment = null}
-            class="flex items-center gap-1 text-primary-400 font-semibold text-sm shrink-0"
+            class="flex items-center gap-1 text-primary-400 text-label-large shrink-0"
           >
             <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
           </button>
         {/if}
-        <h1 class="text-lg font-bold text-gray-100 truncate">Opdrachten</h1>
+        <h1 class="text-title-large text-gray-100 truncate">Opdrachten</h1>
       </div>
       <button
-        onclick={loadAssignments}
+        onclick={() => loadAssignments(true)}
         aria-label="Vernieuwen"
         title="Vernieuwen"
         class="p-2 text-gray-500 hover:text-primary-400 transition-all hover:scale-110 active:scale-90 shrink-0"
@@ -270,7 +268,7 @@
       ] as f}
         <button
           onclick={() => filter = f.id as any}
-          class="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-black transition-all whitespace-nowrap shrink-0
+          class="flex items-center gap-1.5 px-3 py-1.5 rounded-m3-sm text-label-medium transition-all whitespace-nowrap shrink-0
  {filter === f.id && f.id === 'overdue'
  ? 'bg-red-500 text-white shadow-lg shadow-red-500/30'
  : filter === f.id
@@ -281,7 +279,7 @@
         >
           {f.label}
           {#if f.count > 0}
-            <span class="text-[9px] font-black {filter === f.id ? 'bg-white/20' : 'bg-surface-700'} px-1.5 py-0.5 rounded-full">
+            <span class="text-label-small {filter === f.id ? 'bg-white/20' : 'bg-surface-700'} px-1.5 py-0.5 rounded-full">
               {f.count}
             </span>
           {/if}
@@ -292,17 +290,17 @@
 
   {#if aiAssignmentInsight && !selectedAssignment}
     <div class="px-4 pt-3 pb-1 bg-surface-950/80 backdrop-blur border-b border-surface-800/30">
-      <div class="flex items-start gap-3 p-3 rounded-2xl bg-primary-500/5 border border-primary-500/15">
-        <div class="w-6 h-6 rounded-lg bg-gradient-to-br from-primary-500 to-accent-500 flex items-center justify-center shrink-0 shadow-lg shadow-primary-500/20">
+      <div class="flex items-start gap-3 p-3 rounded-m3-md bg-primary-500/5 border border-primary-500/15">
+        <div class="w-6 h-6 rounded-m3-sm bg-gradient-to-br from-primary-500 to-accent-500 flex items-center justify-center shrink-0 shadow-lg shadow-primary-500/20">
           <svg class="w-3 h-3 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2a4 4 0 0 1 4 4c0 2-2 3-4 5-2-2-4-3-4-5a4 4 0 0 1 4-4z"/><path d="M12 14l-2 6h4l-2-6z"/></svg>
         </div>
-        <p class="text-xs text-gray-300 leading-relaxed">{aiAssignmentInsight}</p>
+        <p class="text-body-small text-gray-300 leading-relaxed">{aiAssignmentInsight}</p>
       </div>
     </div>
   {:else if aiAssignmentLoading && !selectedAssignment}
     <div class="px-4 pt-3 pb-1 bg-surface-950/80 backdrop-blur border-b border-surface-800/30">
-      <div class="flex items-center gap-3 p-3 rounded-2xl bg-primary-500/5 border border-primary-500/10">
-        <div class="w-6 h-6 rounded-lg bg-gradient-to-br from-primary-500 to-accent-500 flex items-center justify-center shrink-0 animate-pulse">
+      <div class="flex items-center gap-3 p-3 rounded-m3-md bg-primary-500/5 border border-primary-500/10">
+        <div class="w-6 h-6 rounded-m3-sm bg-gradient-to-br from-primary-500 to-accent-500 flex items-center justify-center shrink-0 animate-pulse">
           <svg class="w-3 h-3 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2a4 4 0 0 1 4 4c0 2-2 3-4 5-2-2-4-3-4-5a4 4 0 0 1 4-4z"/><path d="M12 14l-2 6h4l-2-6z"/></svg>
         </div>
         <div class="flex-1">
@@ -319,10 +317,10 @@
       {#if loadingList}
         <div class="flex-1 overflow-y-auto p-3 space-y-3 custom-scrollbar">
           {#each Array(5) as _}
-            <div class="p-4 rounded-2xl bg-surface-800/40 border border-white/5">
+            <div class="p-4 rounded-m3-md bg-surface-800/40 border border-white/5">
               <div class="flex justify-between items-start mb-3 gap-3">
                 <div class="h-4 skeleton-shimmer rounded-full w-2/3"></div>
-                <div class="h-5 skeleton-shimmer rounded-md w-16"></div>
+                <div class="h-5 skeleton-shimmer rounded-m3-sm w-16"></div>
               </div>
               <div class="flex items-center justify-between">
                 <div class="h-3 skeleton-shimmer rounded-full w-1/4"></div>
@@ -334,7 +332,7 @@
       {:else if filteredAssignments.length === 0}
         <div class="flex-1 flex flex-col items-center justify-center p-8 text-center">
           <svg class="w-10 h-10 text-gray-700 mb-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>
-          <p class="text-gray-600 text-xs font-bold">Geen opdrachten</p>
+          <p class="text-gray-600 text-body-medium">Geen opdrachten</p>
         </div>
       {:else}
         <div class="flex-1 overflow-y-auto p-3 space-y-2 custom-scrollbar">
@@ -343,27 +341,27 @@
             <button
               onclick={() => selectAssignment(assignment)}
               style="--i: {i}"
-              class="stagger-item w-full text-left p-4 rounded-2xl transition-all border
+              class="stagger-item w-full text-left p-4 rounded-m3-md transition-all border
  {selectedAssignment?.Id === assignment.Id
  ? 'bg-primary-500/10 border-primary-500/30 shadow-xl shadow-primary-500/5'
  : 'bg-surface-800/40 border-white/5 hover:bg-surface-800/60 hover:border-white/10'}"
             >
               <div class="flex justify-between items-start mb-2 gap-3">
-                <p class="text-sm font-bold text-gray-100 truncate flex-1 leading-tight">{assignment.Titel}</p>
-                <span class="px-2 py-0.5 rounded-md text-[9px] font-black border shrink-0 {getStatusStyle(status.key)}">
+                <p class="text-title-small text-gray-100 truncate flex-1 leading-tight">{assignment.Titel}</p>
+                <span class="px-2 py-0.5 rounded-m3-sm text-label-small border shrink-0 {getStatusStyle(status.key)}">
                   {status.label}
                 </span>
               </div>
-              <div class="flex items-center justify-between text-[10px] text-gray-500 font-bold">
+              <div class="flex items-center justify-between text-label-small text-gray-500">
                 <span class="truncate opacity-70">{assignment.Vak ?? 'Algemeen'}</span>
-                <span class="{isOverdue(assignment) ? 'text-red-400 font-black' : ''}">
+                <span class="{isOverdue(assignment) ? 'text-red-400' : ''}">
                   {new Date(assignment.InleverenVoor).toLocaleDateString('nl-NL', { day: 'numeric', month: 'short' })}
                 </span>
               </div>
               {#if isOverdue(assignment)}
                 <div class="mt-1.5 flex items-center gap-1 text-red-400">
                   <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-                  <span class="text-[9px] font-black">Te laat</span>
+                  <span class="text-label-small">Te laat</span>
                 </div>
               {/if}
             </button>
@@ -380,15 +378,15 @@
             <!-- Title skeleton -->
             <div class="space-y-4">
               <div class="flex items-center gap-2">
-                <div class="h-5 skeleton-shimmer rounded-lg w-20"></div>
-                <div class="h-5 skeleton-shimmer rounded-lg w-24"></div>
+                <div class="h-5 skeleton-shimmer rounded-m3-sm w-20"></div>
+                <div class="h-5 skeleton-shimmer rounded-m3-sm w-24"></div>
               </div>
               <div class="h-8 skeleton-shimmer rounded-full w-3/4"></div>
               <div class="h-4 skeleton-shimmer rounded-full w-1/3"></div>
               <!-- Info cards skeleton -->
               <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 {#each Array(4) as _}
-                  <div class="glass p-3 rounded-xl">
+                  <div class="glass p-3 rounded-m3-sm">
                     <div class="h-3 skeleton-shimmer rounded-full w-1/2 mb-2"></div>
                     <div class="h-4 skeleton-shimmer rounded-full w-3/4"></div>
                   </div>
@@ -396,7 +394,7 @@
               </div>
             </div>
             <!-- Description skeleton -->
-            <div class="glass rounded-3xl p-6">
+            <div class="glass rounded-m3-md p-6">
               <div class="h-4 skeleton-shimmer rounded-full w-1/4 mb-4"></div>
               <div class="space-y-3">
                 <div class="h-3 skeleton-shimmer rounded-full w-full"></div>
@@ -415,62 +413,62 @@
             <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
               <div class="flex-1 min-w-0">
                 <div class="flex items-center gap-2 mb-2 flex-wrap">
-                  <span class="px-2.5 py-1 rounded-lg text-[10px] font-black border {getStatusStyle(getStatus(selectedAssignment).key)}">
+                  <span class="px-2.5 py-1 rounded-m3-sm text-label-small border {getStatusStyle(getStatus(selectedAssignment).key)}">
                     {getStatus(selectedAssignment).label}
                   </span>
                   {#if isOverdue(selectedAssignment)}
-                    <span class="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-black bg-red-500/15 text-red-400 border border-red-500/25 animate-pulse">
+                    <span class="flex items-center gap-1 px-2.5 py-1 rounded-m3-sm text-label-small bg-red-500/15 text-red-400 border border-red-500/25 animate-pulse">
                       <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
                       Te laat
                     </span>
                   {/if}
                 </div>
-                <h2 class="text-2xl font-black text-white leading-tight">{selectedAssignment.Titel}</h2>
-                <p class="text-gray-400 mt-1 font-medium text-sm">{selectedAssignment.Vak ?? 'Geen vak opgegeven'}</p>
+                <h2 class="text-headline-medium text-white leading-tight">{selectedAssignment.Titel}</h2>
+                <p class="text-gray-400 mt-1 text-body-medium">{selectedAssignment.Vak ?? 'Geen vak opgegeven'}</p>
               </div>
 
               {#if selectedAssignment.Beoordeling}
-                <div class="glass p-4 rounded-2xl flex flex-col items-center justify-center min-w-[90px] border-emerald-500/30">
-                  <span class="text-[10px] text-emerald-400 font-bold mb-1">Cijfer</span>
-                  <span class="text-3xl font-black text-emerald-400">{selectedAssignment.Beoordeling}</span>
+                <div class="glass p-4 rounded-m3-md flex flex-col items-center justify-center min-w-[90px] border-emerald-500/30">
+                  <span class="text-label-small text-emerald-400 mb-1">Cijfer</span>
+                  <span class="text-headline-large text-emerald-400">{selectedAssignment.Beoordeling}</span>
                 </div>
               {/if}
             </div>
 
             <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <div class="glass p-3 rounded-xl">
+              <div class="glass p-3 rounded-m3-sm">
                 <div class="flex items-center gap-1.5 mb-1">
                   <svg class="w-3 h-3 text-gray-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
-                  <p class="text-[10px] text-gray-500 font-bold">Deadline</p>
+                  <p class="text-label-small text-gray-500">Deadline</p>
                 </div>
-                <p class="text-xs text-gray-200">{formatDateFull(selectedAssignment.InleverenVoor)}</p>
+                <p class="text-body-small text-gray-200">{formatDateFull(selectedAssignment.InleverenVoor)}</p>
               </div>
               {#if selectedAssignment.IngeleverdOp}
-                <div class="glass p-3 rounded-xl border-blue-500/20">
-                  <p class="text-[10px] text-blue-400/80 font-bold mb-1">Ingeleverd op</p>
-                  <p class="text-xs text-gray-200">{formatDateFull(selectedAssignment.IngeleverdOp)}</p>
+                <div class="glass p-3 rounded-m3-sm border-blue-500/20">
+                  <p class="text-label-small text-blue-400/80 mb-1">Ingeleverd op</p>
+                  <p class="text-body-small text-gray-200">{formatDateFull(selectedAssignment.IngeleverdOp)}</p>
                 </div>
               {/if}
               {#if selectedAssignment.BeoordeeldOp}
-                <div class="glass p-3 rounded-xl border-emerald-500/20">
-                  <p class="text-[10px] text-emerald-400/80 font-bold mb-1">Beoordeeld op</p>
-                  <p class="text-xs text-gray-200">{formatDateFull(selectedAssignment.BeoordeeldOp)}</p>
+                <div class="glass p-3 rounded-m3-sm border-emerald-500/20">
+                  <p class="text-label-small text-emerald-400/80 mb-1">Beoordeeld op</p>
+                  <p class="text-body-small text-gray-200">{formatDateFull(selectedAssignment.BeoordeeldOp)}</p>
                 </div>
               {/if}
-              <div class="glass p-3 rounded-xl">
+              <div class="glass p-3 rounded-m3-sm">
                 <div class="flex items-center gap-1.5 mb-1">
                   <svg class="w-3 h-3 text-gray-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-                  <p class="text-[10px] text-gray-500 font-bold">Docent</p>
+                  <p class="text-label-small text-gray-500">Docent</p>
                 </div>
-                <p class="text-xs text-gray-200 truncate">{selectedAssignment.Docenten?.map((d: any) => formatTeacherName(d.Naam)).join(', ') || 'N.v.t.'}</p>
+                <p class="text-body-small text-gray-200 truncate">{selectedAssignment.Docenten?.map((d: any) => formatTeacherName(d.Naam)).join(', ') || 'N.v.t.'}</p>
               </div>
             </div>
           </div>
 
           <!-- Description -->
           {#if selectedAssignment.Omschrijving}
-            <div class="glass rounded-3xl p-6 bg-surface-900/40">
-              <h3 class="text-sm font-bold text-gray-100 mb-4 flex items-center gap-2">
+            <div class="glass rounded-m3-md p-6 bg-surface-900/40">
+              <h3 class="text-title-small text-gray-100 mb-4 flex items-center gap-2">
                 <span class="w-1.5 h-4 bg-primary-500 rounded-full"></span>
                 Omschrijving
               </h3>
@@ -483,7 +481,7 @@
           <!-- Teacher attachments -->
           {#if selectedAssignment.Bijlagen?.length}
             <div class="space-y-3">
-              <h3 class="text-sm font-bold text-gray-300 flex items-center gap-2">
+              <h3 class="text-title-small text-gray-300 flex items-center gap-2">
                 <svg class="w-4 h-4 text-blue-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
                 Bijlagen van docent
               </h3>
@@ -492,17 +490,17 @@
                   <button
                     onclick={() => handleDownload(file)}
                     disabled={downloadingFile != null}
-                    class="glass p-3 rounded-xl flex items-center justify-between hover:bg-surface-800/40 transition-colors group cursor-pointer w-full text-left disabled:opacity-50"
+                    class="glass p-3 rounded-m3-md flex items-center justify-between hover:bg-surface-800/40 transition-colors group cursor-pointer w-full text-left disabled:opacity-50"
                   >
                     <div class="flex items-center gap-3 overflow-hidden">
-                      <div class="w-8 h-8 rounded-lg bg-blue-500/15 border border-blue-500/20 flex items-center justify-center text-blue-400 shrink-0">
+                      <div class="w-8 h-8 rounded-m3-sm bg-blue-500/15 border border-blue-500/20 flex items-center justify-center text-blue-400 shrink-0">
                         {#if downloadingFile === file.Naam}
                           <div class="w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full animate-spin"></div>
                         {:else}
                           <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>
                         {/if}
                       </div>
-                      <span class="text-sm text-gray-300 truncate font-medium">{file.Naam}</span>
+                      <span class="text-body-medium text-gray-300 truncate">{file.Naam}</span>
                     </div>
                     <svg class="w-4 h-4 text-gray-600 group-hover:text-primary-400 transition-colors shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
                   </button>
@@ -515,9 +513,9 @@
           {#if selectedAssignment.MagInleveren || selectedAssignment.OpnieuwInleveren}
             <div class="space-y-4 pt-4 border-t border-surface-800/50">
               <div class="flex items-center justify-between">
-                <h3 class="text-lg font-black text-white">Inleveren</h3>
+                <h3 class="text-title-large text-white">Inleveren</h3>
                 {#if isSubmitting}
-                  <div class="flex items-center gap-2 text-xs text-primary-400 font-bold animate-pulse">
+                  <div class="flex items-center gap-2 text-label-medium text-primary-400 animate-pulse">
                     <div class="w-2 h-2 rounded-full bg-primary-500 animate-pulse"></div>
                     Bezig...
                   </div>
@@ -534,19 +532,19 @@
                 {#if attachments.length > 0 || uploadLoading}
                   <div class="px-5 py-3 bg-surface-900/50 border-t border-surface-800/50 space-y-2">
                     <div class="flex items-center justify-between">
-                      <span class="text-[10px] text-gray-500 font-bold">Bijlagen ({attachments.length})</span>
+                      <span class="text-label-medium text-gray-500">Bijlagen ({attachments.length})</span>
                       {#if uploadLoading}
                         <div class="w-4 h-4 border-2 border-primary-500 border-t-transparent rounded-full animate-spin"></div>
                       {/if}
                     </div>
                     <div class="flex flex-wrap gap-2">
                       {#each attachments as att, i}
-                        <div transition:slide={{ axis: 'x' }} class="pl-3 pr-2 py-1.5 rounded-xl bg-surface-800 border border-surface-700 flex items-center gap-2">
+                        <div transition:slide={{ axis: 'x' }} class="pl-3 pr-2 py-1.5 rounded-m3-sm bg-surface-800 border border-surface-700 flex items-center gap-2">
                           <svg class="w-3 h-3 text-gray-500 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
-                          <span class="text-xs text-gray-300 font-medium">{att.name}</span>
+                          <span class="text-label-medium text-gray-300">{att.name}</span>
                           <button
                             onclick={() => removeAttachment(i)}
-                            class="w-5 h-5 rounded-lg bg-red-500/10 text-red-500 flex items-center justify-center hover:bg-red-500 hover:text-white transition-all"
+                            class="w-5 h-5 rounded-full bg-red-500/10 text-red-500 flex items-center justify-center hover:bg-red-500 hover:text-white transition-all"
                             aria-label="Verwijder bijlage"
                           >
                             <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
@@ -561,7 +559,7 @@
                   <button
                     onclick={handlePickFile}
                     disabled={uploadLoading || isSubmitting}
-                    class="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold text-gray-400 hover:text-gray-200 hover:bg-surface-700 transition-all disabled:opacity-50"
+                    class="flex items-center gap-2 px-4 py-2 rounded-m3-full text-label-large text-gray-400 hover:text-gray-200 hover:bg-surface-700 transition-all disabled:opacity-50"
                   >
                     <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
                     Bijlage toevoegen
@@ -570,7 +568,7 @@
                   <button
                     onclick={handleSubmit}
                     disabled={isSubmitting || uploadLoading || (!submissionText.trim() && attachments.length === 0)}
-                    class="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-primary-500 text-white text-xs font-black 
+                    class="flex items-center gap-2 px-6 py-2.5 rounded-m3-full bg-primary-500 text-white text-label-large 
  hover:bg-primary-400 shadow-lg shadow-primary-500/30
  active:scale-95 transition-all disabled:opacity-40 disabled:shadow-none"
                   >
@@ -589,23 +587,23 @@
           <!-- History -->
           {#if selectedAssignment.VersieNavigatieItems?.length > 1}
             <div class="space-y-3">
-              <h3 class="text-sm font-bold text-gray-500 flex items-center gap-2">
+              <h3 class="text-title-small text-gray-500 flex items-center gap-2">
                 <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="10"/></svg>
                 Geschiedenis
               </h3>
               <div class="space-y-2">
                 {#each selectedAssignment.VersieNavigatieItems.slice(1) as version}
-                  <div class="glass p-4 rounded-2xl flex items-center justify-between opacity-60 hover:opacity-100 transition-opacity">
+                  <div class="glass p-4 rounded-m3-md flex items-center justify-between opacity-60 hover:opacity-100 transition-opacity">
                     <div class="flex items-center gap-4">
                       <div class="w-9 h-9 rounded-full bg-surface-800 flex items-center justify-center text-xs font-black text-gray-500 border border-surface-700">
                         V{version.VersieNummer}
                       </div>
                       <div>
-                        <p class="text-sm font-bold text-gray-200">{version.Omschrijving || 'Ingeleverde versie'}</p>
-                        <p class="text-[10px] text-gray-500 font-bold">Ingeleverd</p>
+                        <p class="text-title-small text-gray-200">{version.Omschrijving || 'Ingeleverde versie'}</p>
+                        <p class="text-label-small text-gray-500">Ingeleverd</p>
                       </div>
                     </div>
-                    <button class="text-xs font-bold text-primary-400 hover:text-primary-300 transition-colors">Bekijken</button>
+                    <button class="text-label-large text-primary-400 hover:text-primary-300 transition-colors">Bekijken</button>
                   </div>
                 {/each}
               </div>
@@ -618,8 +616,8 @@
           <div class="w-20 h-20 rounded-full bg-surface-900 flex items-center justify-center mb-6 border border-surface-800 shadow-xl">
             <svg class="w-10 h-10 text-gray-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><line x1="10" y1="9" x2="8" y2="9"/></svg>
           </div>
-          <h3 class="text-lg font-black text-white mb-2">Selecteer een opdracht</h3>
-          <p class="text-gray-600 max-w-xs text-xs font-bold leading-relaxed">Kies een opdracht uit de lijst</p>
+          <h3 class="text-headline-small text-white mb-2">Selecteer een opdracht</h3>
+          <p class="text-gray-600 max-w-xs text-body-medium leading-relaxed">Kies een opdracht uit de lijst</p>
         </div>
       {/if}
     </section>
