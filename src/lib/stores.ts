@@ -131,7 +131,7 @@ function syncPreferencesToAndroid(settings: any) {
             );
 
             // After successfully syncing preferences, trigger an immediate background sync
-            // so the Android SyncService can re-evaluate DND scheduling.
+            // so the Android background worker can re-evaluate DND scheduling.
             try {
               await api.triggerSync();
             } catch (e) {

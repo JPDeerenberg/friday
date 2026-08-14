@@ -24,30 +24,31 @@ class MainActivity : TauriActivity() {
     private var hasPromptedPermissions = false
     private var hasPromptedBatteryOpt = false
 
+    companion object {
+        const val PREF_SYNC_INTERVAL = "sync_interval_minutes"
+        const val PERIODIC_SYNC_WORK = "FridayPeriodicSync"
+        const val MIN_SYNC_INTERVAL_MINUTES = 15L
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
-        
-        // Start background sync service
-        val serviceIntent = Intent(this, SyncService::class.java)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            startForegroundService(serviceIntent)
-        } else {
-            startService(serviceIntent)
-        }
 
-        // Schedule a guaranteed periodic sync via WorkManager as a backup to SyncService.
-        // WorkManager is OS-managed and survives service kills, Doze mode, and reboots.
+        // Schedule the periodic sync via WorkManager. WorkManager is the sole sync
+        // driver — it is OS-managed and survives process kills, Doze mode, and reboots.
         // 15 minutes is the minimum interval WorkManager allows.
+        val prefs = getSharedPreferences("friday_prefs", Context.MODE_PRIVATE)
+        val intervalMinutes = prefs.getLong(PREF_SYNC_INTERVAL, MIN_SYNC_INTERVAL_MINUTES)
+            .coerceAtLeast(MIN_SYNC_INTERVAL_MINUTES)
         val constraints = Constraints.Builder()
             .setRequiredNetworkType(NetworkType.CONNECTED)
             .build()
-        val periodicSync = PeriodicWorkRequestBuilder<SyncWorker>(15, TimeUnit.MINUTES)
+        val periodicSync = PeriodicWorkRequestBuilder<SyncWorker>(intervalMinutes, TimeUnit.MINUTES)
             .setConstraints(constraints)
             .build()
         WorkManager.getInstance(this).enqueueUniquePeriodicWork(
-            "FridayPeriodicSync",
-            ExistingPeriodicWorkPolicy.KEEP,
+            PERIODIC_SYNC_WORK,
+            ExistingPeriodicWorkPolicy.UPDATE,
             periodicSync
         )
     }
@@ -63,8 +64,8 @@ class MainActivity : TauriActivity() {
         }
 
         // Request battery optimisation exemption once per session.
-        // Without this, Android Doze mode will kill the SyncService and block network access
-        // in the background, making notifications unreliable on most devices.
+        // Without this, Android Doze mode may delay WorkManager runs and block network
+        // access in the background, making notifications unreliable on most devices.
         if (!hasPromptedBatteryOpt && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             hasPromptedBatteryOpt = true
             val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
@@ -82,15 +83,9 @@ class MainActivity : TauriActivity() {
 
         // NOTE: Do NOT overwrite stored notification preferences here.
         // They are set by the frontend via Tauri's sync_notification_preferences command.
-        // Initialise defaults only on the very first launch (handled in SyncService.onCreate).
 
-        // Ensure the sync service is still running (it may have been killed by the OS).
-        val serviceIntent = Intent(this, SyncService::class.java)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            startForegroundService(serviceIntent)
-        } else {
-            startService(serviceIntent)
-        }
+        // NOTE: Do NOT trigger an extra sync on resume — WorkManager already guarantees
+        // the periodic job runs; resuming the app should not enqueue additional sync work.
     }
 
   /**
@@ -100,24 +95,28 @@ class MainActivity : TauriActivity() {
     val workRequest = androidx.work.OneTimeWorkRequestBuilder<SyncWorker>()
         .build()
     WorkManager.getInstance(this).enqueue(workRequest)
-    // Also immediately trigger via SyncService if running
-    val intent = Intent(this, SyncService::class.java).apply {
-        action = SyncService.ACTION_FORCE_SYNC
-    }
-    startService(intent)
   }
 
   /**
-   * Update the sync interval for the running SyncService.
-   * intervalSeconds: minimum 60, maximum 3600
+   * Update the periodic sync interval via WorkManager.
+   * intervalSeconds: minimum 900 (15 min WorkManager floor), maximum 86400.
    */
   fun setSyncInterval(intervalSeconds: Long) {
-    val clamped = intervalSeconds.coerceIn(60L, 3600L)
-    val intent = Intent(this, SyncService::class.java).apply {
-        action = SyncService.ACTION_SET_INTERVAL
-        putExtra(SyncService.EXTRA_INTERVAL_SECONDS, clamped)
-    }
-    startService(intent)
+    val clamped = intervalSeconds.coerceIn(900L, 86400L)
+    val minutes = clamped / 60L
+    getSharedPreferences("friday_prefs", Context.MODE_PRIVATE)
+        .edit().putLong(PREF_SYNC_INTERVAL, minutes).apply()
+    val constraints = Constraints.Builder()
+        .setRequiredNetworkType(NetworkType.CONNECTED)
+        .build()
+    val periodicSync = PeriodicWorkRequestBuilder<SyncWorker>(minutes, TimeUnit.MINUTES)
+        .setConstraints(constraints)
+        .build()
+    WorkManager.getInstance(this).enqueueUniquePeriodicWork(
+        PERIODIC_SYNC_WORK,
+        ExistingPeriodicWorkPolicy.UPDATE,
+        periodicSync
+    )
   }
 
   /**
@@ -125,8 +124,8 @@ class MainActivity : TauriActivity() {
    */
   fun getSyncInterval(): Long {
     val prefs = getSharedPreferences("friday_prefs", Context.MODE_PRIVATE)
-    val minutes = prefs.getLong(SyncService.PREF_SYNC_INTERVAL, 5L)
-    return minutes * 60L
+    val minutes = prefs.getLong(PREF_SYNC_INTERVAL, MIN_SYNC_INTERVAL_MINUTES)
+    return (minutes * 60L).coerceIn(900L, 86400L)
   }
 
   fun getNightSleepConfig(): String {

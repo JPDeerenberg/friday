@@ -30,7 +30,47 @@ class SyncWorker(appContext: Context, workerParams: WorkerParameters) :
         val dataDir = applicationContext.filesDir.parentFile?.absolutePath 
             ?: applicationContext.filesDir.absolutePath
         Log.d(TAG, "Starting background sync... dataDir=$dataDir")
-        
+
+        val prefs = applicationContext.getSharedPreferences("friday_prefs", Context.MODE_PRIVATE)
+
+        // Check if sync is paused due to storage issues
+        if (prefs.getBoolean("sync_paused_storage", false)) {
+            Log.w(TAG, "Sync skipped: storage full or low")
+            return Result.success()
+        }
+
+        // Check if night sleep is active
+        val nightSleepActive = prefs.getBoolean("disableSyncAtNight", false)
+        if (nightSleepActive) {
+            val startHour = prefs.getInt("disableSyncAtNightStart", 22)
+            val endHour = prefs.getInt("disableSyncAtNightEnd", 7)
+            val currentHour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
+
+            val isNightTime = if (startHour <= endHour) {
+                currentHour >= startHour && currentHour < endHour
+            } else {
+                currentHour >= startHour || currentHour < endHour
+            }
+
+            if (isNightTime) {
+                Log.w(TAG, "Sync skipped: night sleep is active")
+                return Result.success()
+            }
+        }
+
+        // Guard actual sync execution so two runs (e.g. periodic + manual "sync now")
+        // never execute the fetch-then-diff sequence concurrently. WorkManager can run
+        // workers concurrently; serializing here is the primary defense against the
+        // read-modify-write race, with the SyncStateManager locking as a safety net.
+        syncLock.lock()
+        try {
+            return doSyncInternal(dataDir)
+        } finally {
+            syncLock.unlock()
+        }
+    }
+
+    private fun doSyncInternal(dataDir: String): Result {
         val resultString = try {
             runSync(dataDir)
         } catch (e: Exception) {
@@ -180,6 +220,8 @@ class SyncWorker(appContext: Context, workerParams: WorkerParameters) :
     }
 
     companion object {
+        private val syncLock = java.util.concurrent.locks.ReentrantLock()
+
         @JvmStatic
         fun showNotification(context: Context, title: String, message: String) {
             NotificationHelper.showTestNotification(context, title, message)

@@ -614,7 +614,7 @@ pub fn get_sync_interval(app: AppHandle) -> Result<i64, String> {
                         &[],
                     );
 
-                    let mut result_seconds = 300; // default 5 mins
+                    let mut result_seconds = 900; // default 15 mins (WorkManager floor)
 
                     if let Ok(jni::objects::JValueGen::Long(seconds)) = res {
                         result_seconds = seconds;
@@ -631,11 +631,11 @@ pub fn get_sync_interval(app: AppHandle) -> Result<i64, String> {
         if let Ok(val) = rx.recv() {
             return Ok(val);
         } else {
-            return Ok(300);
+            return Ok(900);
         }
     }
     #[cfg(not(target_os = "android"))]
-    Ok(300)
+    Ok(900)
 }
 
 #[tauri::command]
@@ -904,10 +904,13 @@ pub fn get_notification_history(app: AppHandle) -> Result<String, String> {
     Ok(json)
 }
 
-/// Set the background sync interval in seconds. Calls SyncService.setSyncIntervalSeconds via JNI (Android only).
+/// Set the background sync interval in seconds. Calls MainActivity.setSyncInterval via JNI (Android only).
+/// WorkManager enforces a hard 15-minute floor, so clamp to that here as defense in depth
+/// (the Kotlin side clamps again before enqueueing).
 #[tauri::command]
 pub fn set_sync_interval(app: AppHandle, seconds: i64) -> Result<String, String> {
     let _ = &app;
+    let clamped = seconds.max(900);
     #[cfg(target_os = "android")]
     {
         let window = app.get_webview_window("main")
@@ -923,7 +926,7 @@ pub fn set_sync_interval(app: AppHandle, seconds: i64) -> Result<String, String>
                         &activity,
                         "setSyncInterval",
                         "(J)V",
-                        &[jni::objects::JValue::Long(seconds)],
+                        &[jni::objects::JValue::Long(clamped)],
                     );
                     if let Err(_) = res {
                         if let Ok(true) = env.exception_check() {
@@ -934,8 +937,8 @@ pub fn set_sync_interval(app: AppHandle, seconds: i64) -> Result<String, String>
             }
         }).map_err(|e| e.to_string())?;
 
-        return Ok(format!("Sync interval set to {} seconds", seconds));
+        return Ok(format!("Sync interval set to {} seconds", clamped));
     }
     #[cfg(not(target_os = "android"))]
-    Ok(format!("set_sync_interval({}) is only supported on Android", seconds))
+    Ok(format!("set_sync_interval({}) is only supported on Android", clamped))
 }

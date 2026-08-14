@@ -57,6 +57,7 @@ object SyncStateManager {
     /**
      * Load the previous sync state from file
      */
+    @Synchronized
     fun loadState(context: Context): JSONObject? {
         cachedState?.let { return it }
         
@@ -77,13 +78,24 @@ object SyncStateManager {
     /**
      * Save the current sync state to file
      */
+    @Synchronized
     fun saveState(context: Context, state: JSONObject) {
         try {
             val file = File(context.filesDir, STATE_FILE)
-            file.writeText(state.toString())
+            writeJsonAtomically(file, state.toString())
             cachedState = state
         } catch (e: Exception) {
             e.printStackTrace()
+        }
+    }
+
+    /** Write via a temp file + atomic rename so a concurrent reader never sees a torn write. */
+    private fun writeJsonAtomically(file: File, content: String) {
+        val tmp = File(file.parentFile, "${file.name}.tmp")
+        tmp.writeText(content)
+        if (!tmp.renameTo(file)) {
+            // Fallback if rename fails for any reason (should not happen on the same dir)
+            file.writeText(content)
         }
     }
 
@@ -108,7 +120,7 @@ object SyncStateManager {
                 val ts = map.optLong(key, 0L)
                 if (now - ts < DEADLINE_TTL_MS) pruned.put(key, ts)
             }
-            File(context.filesDir, NOTIFIED_DEADLINES_FILE).writeText(pruned.toString())
+            writeJsonAtomically(File(context.filesDir, NOTIFIED_DEADLINES_FILE), pruned.toString())
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -119,7 +131,13 @@ object SyncStateManager {
     /**
      * Detect changes between current data and previous state.
      * Returns a SyncChanges object with all detected changes.
+     *
+     * Synchronized: the whole read → diff → write sequence is one critical section so two
+     * overlapping sync runs can never both read the same baseline and then duplicate
+     * (or lose) notifications. Reentrant, so the @Synchronized load/saveState calls
+     * inside it are safe.
      */
+    @Synchronized
     fun detectChanges(
         context: Context,
         currentMessages: JSONArray,
@@ -191,7 +209,7 @@ object SyncStateManager {
         }
         
         val newMessages = mutableListOf<MessageInfo>()
-        for (i in 0 until minOf(10, current.length())) { // Check last 10 messages
+        for (i in 0 until current.length()) {
             val msg = current.getJSONObject(i)
             val id = msg.optLong("id")
             Log.d("SyncStateManager", "detectNewMessages: checking msg id=$id, inPrevious=${id in previousIds}")
@@ -356,7 +374,7 @@ object SyncStateManager {
         }
         
         val changes = mutableListOf<CalendarChangeInfo>()
-        for (i in 0 until minOf(20, current.length())) {
+        for (i in 0 until current.length()) {
             val event = current.getJSONObject(i)
             val id = event.optLong("Id")
             if (id > 0 && id !in previousIds) {
@@ -449,6 +467,7 @@ object SyncStateManager {
     /**
      * Clear the cached state (force full re-check on next sync)
      */
+    @Synchronized
     fun clearState(context: Context) {
         cachedState = null
         val file = File(context.filesDir, STATE_FILE)

@@ -20,7 +20,7 @@
   let syncStateVisible = $state(false);
   let clearStateResult = $state<string | null>(null);
   let forceSyncBusy = $state(false);
-  let intervalSeconds = $state(300); // 5 min default
+  let intervalSeconds = $state(900); // 15 min default (WorkManager minimum)
   let intervalResult = $state<string | null>(null);
   let disableSyncAtNight = $state(false);
   let disableSyncAtNightStart = $state(22);
@@ -223,9 +223,10 @@
   }
 
   async function applyInterval() {
-    addLog('info', `Setting interval to ${intervalSeconds}s (${Math.round(intervalSeconds/60)} min)...`);
+    const clamped = Math.max(900, intervalSeconds); // WorkManager 15-min floor
+    addLog('info', `Setting interval to ${clamped}s (${Math.round(clamped/60)} min)...`);
     try {
-      intervalResult = await setSyncInterval(intervalSeconds);
+      intervalResult = await setSyncInterval(clamped);
       addLog('info', `Interval set: ${intervalResult}`);
     } catch (e) {
       intervalResult = `Error: ${e}`;
@@ -804,12 +805,13 @@
             </div>
             <input
               type="range"
-              min="60" max="3600" step="60"
+              min="900" max="3600" step="300"
               bind:value={intervalSeconds}
               class="w-full h-2 bg-surface-800 rounded-full appearance-none cursor-pointer accent-amber-500 shadow-inner"
             />
+            <p class="text-label-small text-gray-600 text-center -mt-1">Android staat een minimum van 15 minuten toe voor achtergrondsynchronisatie.</p>
             <div class="flex gap-2">
-              {#each [60, 300, 900, 1800, 3600] as preset}
+              {#each [900, 1800, 3600] as preset}
                 <button
                   onclick={() => { intervalSeconds = preset; }}
                   class="flex-1 text-label-medium rounded-m3-full py-2
