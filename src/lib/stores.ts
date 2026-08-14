@@ -35,7 +35,7 @@ export function goBack() {
 }
 
 // Persistent Settings
-const DEFAULT_SETTINGS = {
+export const DEFAULT_SETTINGS = {
   roundedGraphs: true,
   showSummary: true,
   decimalPoints: 1,
@@ -44,6 +44,7 @@ const DEFAULT_SETTINGS = {
   insufficientThreshold: 5.5,
   zoomGraph: false,
   showWeekend: true,
+  weekView: "auto",
   themeColor: "violet",
   backgroundMode: "normal",
   // Notification toggles
@@ -60,7 +61,7 @@ const DEFAULT_SETTINGS = {
 };
 
 // Load settings from localStorage
-function loadSettings() {
+export function loadSettings() {
   if (typeof window === "undefined") return DEFAULT_SETTINGS;
 
   const savedSettings = localStorage.getItem("user_settings");

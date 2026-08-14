@@ -11,6 +11,53 @@
 
   let isMobile = $state(false);
   let testingNotification = $state<string | null>(null);
+  let activeSection = $state('ai');
+  let activeSectionTitle = $state('AI Assistent');
+  // Layout: viewport-based (matches the app's `md` breakpoint), used for sidebar vs master–detail.
+  let isDesktopLayout = $state(true);
+  // Mobile master–detail: 'list' shows the section list, 'detail' shows a section page
+  let mobilePanel = $state<'list' | 'detail'>('list');
+
+  // Section navigation items (sidebar on desktop, list on mobile)
+  const navItems = $derived.by(() => {
+    const items = sections
+      .filter(s => !s.hideIfDesktop || isMobile)
+      .map(s => ({ id: s.id, title: s.title }));
+    items.push({ id: 'debug', title: 'Systeem Debug' });
+    items.push({ id: 'about', title: 'Over de app' });
+    return items;
+  });
+
+  function sectionIcon(id: string): string {
+    const paths: Record<string, string> = {
+      ai: '<path d="M12 2v4M12 18v4M2 12h4M18 12h4M4.9 4.9l2.8 2.8M16.3 16.3l2.8 2.8M4.9 19.1l2.8-2.8M16.3 7.7l2.8-2.8"/><circle cx="12" cy="12" r="4"/>',
+      agenda: '<rect width="18" height="18" x="3" y="4" rx="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/>',
+      cijfers: '<path d="M7.105 13.123l2.895-2.123 2.895 2.123 5.105-4.123"/><path d="M3 21h18"/><path d="M3 3v18h18"/>',
+      thema: '<circle cx="13.5" cy="6.5" r=".5"/><circle cx="17.5" cy="10.5" r=".5"/><circle cx="8.5" cy="7.5" r=".5"/><circle cx="6.5" cy="12.5" r=".5"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/>',
+      exporteren: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>',
+      downloads: '<path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/>',
+      meldingen: '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>',
+      debug: '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
+      about: '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>'
+    };
+    return `<svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${paths[id] ?? paths.about}</svg>`;
+  }
+
+  function selectSection(id: string) {
+    activeSection = id;
+    const match = navItems.find(n => n.id === id);
+    if (match) activeSectionTitle = match.title;
+    if (!isDesktopLayout) {
+      mobilePanel = 'detail';
+    } else {
+      // Scroll the content area back to top for a clean section switch
+      document.querySelector('.settings-scroll')?.scrollTo({ top: 0 });
+    }
+  }
+
+  function goToSectionList() {
+    mobilePanel = 'list';
+  }
 
   // --- Debug panel state ---
   let debugOpen = $state(false);
@@ -59,6 +106,13 @@
 
   onMount(() => {
     isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+
+    // Viewport-based layout detection (matches the app's `md` Tailwind breakpoint = 768px)
+    const mq = window.matchMedia('(min-width: 768px)');
+    isDesktopLayout = mq.matches;
+    const onMqChange = (e: MediaQueryListEvent) => { isDesktopLayout = e.matches; };
+    mq.addEventListener('change', onMqChange);
+    window.addEventListener('resize', onMqChange as any);
 
     // Load sync interval from native
     getSyncInterval().then((interval) => {
@@ -359,14 +413,21 @@
 
   const sections: any[] = [
     {
+      id: 'ai',
       title: 'AI Assistent',
       description: 'Configureer AI voor studiedvies, cijferanalyse, samenvattingen en meer.',
       isAi: true,
     },
     {
+      id: 'agenda',
       title: 'Agenda',
       settings: [
         { id: 'showWeekend', label: 'Toon Weekend', description: 'Laat zaterdag en zondag zien in de agenda.', type: 'toggle' },
+        { id: 'weekView', label: 'Weekweergave', description: 'Toon een weekoverzicht met tijdlijn op grotere schermen.', type: 'select', options: [
+          { value: 'auto', label: 'Automatisch (desktop)' },
+          { value: 'on', label: 'Altijd aan' },
+          { value: 'off', label: 'Altijd uit' }
+        ]},
         { id: 'hideCancelled', label: 'Uitgevallen lessen verbergen', description: 'Verberg lessen die als uitgevallen zijn gemarkeerd.', type: 'toggle' },
         { id: 'combineLessons', label: 'Lessen combineren', description: 'Combineer opeenvolgende lessen van hetzelfde vak.', type: 'toggle' },
         { id: 'showBreakSeparator', label: 'Pauze Indicatie', description: 'Toon pauzes tussen lessen met hun duur.', type: 'toggle' },
@@ -374,6 +435,7 @@
       ]
     },
     {
+      id: 'cijfers',
       title: 'Cijfers',
       settings: [
         { id: 'roundedGraphs', label: 'Afgeronde Grafieken', description: 'Maak de lijnen in de grafieken gladder.', type: 'toggle' },
@@ -383,6 +445,7 @@
       ]
     },
     {
+      id: 'thema',
       title: 'Thema',
       settings: [
         { id: 'themeColor', label: 'Primaire Kleur', description: 'Kies de hoofdkleur van de app.', type: 'theme-picker' },
@@ -393,6 +456,7 @@
       ]
     },
     {
+      id: 'meldingen',
       title: 'Meldingen',
       settings: [
         { id: 'notifyMessages', label: 'Berichten', description: 'Melding bij nieuwe berichten.', type: 'toggle', notificationType: 'message' },
@@ -404,6 +468,7 @@
       hideIfDesktop: true
     },
     {
+      id: 'meldingen-testen',
       title: 'Meldingen Testen',
       settings: [
         { id: 'testMessage', label: 'Bericht Notificatie', description: 'Test bericht notificatie.', type: 'action', action: () => testNotificationType('message', 'Nieuw Bericht', 'Je hebt een nieuw bericht van Test Sender') },
@@ -416,12 +481,14 @@
       hideIfDesktop: true
     },
     {
+      id: 'exporteren',
       title: 'Exporteren',
       settings: [
         { id: 'exportAll', label: 'Alles Exporteren', description: 'Exporteer al je data (lessen, cijfers, opdrachten, etc.) naar JSON-bestanden.', type: 'action', action: () => doExport() },
       ]
     },
     {
+      id: 'downloads',
       title: 'Downloads',
       settings: [
         { id: 'downloadDir', label: 'Downloadmap', description: 'Kies waar gedownloade bestanden worden opgeslagen. Leeg = systeemstandaard.', type: 'download-dir' },
@@ -451,22 +518,72 @@
   }
 </script>
 
-<div class="flex flex-col bg-surface-950 min-h-full">
-  <!-- Sticky Header -->
-  <header class="sticky top-0 z-20 border-b border-surface-800/50 bg-surface-950/95 backdrop-blur px-4 py-3">
-    <div class="flex items-center gap-4">
-      <button onclick={goBack} class="p-2 rounded-full text-gray-500 hover:text-primary-400 transition-all" aria-label="Terug">
+<div class="flex flex-col h-full bg-surface-950">
+  <!-- Header -->
+  <header class="shrink-0 z-20 border-b border-surface-800/50 bg-surface-950/95 backdrop-blur px-4 py-3">
+    <div class="flex items-center gap-3">
+      <button
+        onclick={() => (!isDesktopLayout && mobilePanel === 'detail') ? goToSectionList() : goBack()}
+        class="p-2 -ml-2 rounded-full text-gray-500 hover:text-primary-400 transition-all"
+        aria-label="Terug"
+      >
         <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
       </button>
-      <h1 class="text-title-large text-gray-100">Instellingen</h1>
+      <h1 class="text-title-large text-gray-100 truncate">
+        {!isDesktopLayout && mobilePanel === 'detail' ? activeSectionTitle : 'Instellingen'}
+      </h1>
     </div>
   </header>
 
-  <main class="max-w-3xl mx-auto w-full p-6 space-y-10 pb-20">
+  {#if !isDesktopLayout && mobilePanel === 'list'}
+    <!-- Mobile: section list (master) -->
+    <nav class="flex-1 overflow-y-auto p-3 space-y-1">
+      {#each navItems as item}
+        <button
+          onclick={() => selectSection(item.id)}
+          class="w-full flex items-center gap-3 px-3 py-3.5 rounded-m3-md transition-all text-left border border-transparent hover:bg-surface-800/60 active:scale-[0.99]"
+        >
+          <span class="text-primary-400 flex items-center justify-center w-8 h-8 rounded-m3-sm bg-primary-500/10 shrink-0">
+            {@html sectionIcon(item.id)}
+          </span>
+          <span class="flex-1 text-title-small text-gray-100">{item.title}</span>
+          <svg class="w-4 h-4 text-gray-600 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+        </button>
+      {/each}
+    </nav>
+  {:else}
+    <div class="flex flex-1 min-h-0">
+    <!-- Desktop: section navigation sidebar -->
+    <aside class="hidden md:flex flex-col w-56 shrink-0 border-r border-surface-800/50 bg-surface-900/40 h-full">
+      <nav class="flex-1 py-4 px-2 space-y-1 overflow-y-auto no-scrollbar">
+        {#each navItems as item}
+          <button
+            onclick={() => selectSection(item.id)}
+            class="w-full flex items-center gap-3 px-3 py-2.5 rounded-m3-sm text-label-large transition-all text-left
+              {activeSection === item.id
+                ? 'bg-primary-container text-on-primary-container'
+                : 'text-gray-400 hover:bg-surface-800 hover:text-gray-200'}"
+          >
+            {@html sectionIcon(item.id)}
+            <span class="truncate">{item.title}</span>
+          </button>
+        {/each}
+      </nav>
+    </aside>
+
+    <main class="settings-scroll flex-1 overflow-y-auto">
+      <div class="max-w-3xl mx-auto w-full p-6 space-y-10 pb-20">
+        <!-- Desktop: active section title -->
+        <div class="hidden md:flex items-center justify-between">
+          <div>
+            <h1 class="text-title-large text-gray-100">{activeSectionTitle}</h1>
+            <p class="text-label-medium text-gray-500 mt-1">{sections.find(s => s.id === activeSection)?.description || 'Diagnoseer synchronisatie, notificaties en systeemstatus.'}</p>
+          </div>
+        </div>
+
     {#each sections as section, i}
-      {#if !section.hideIfDesktop || isMobile}
-        <section in:fly={{ y: 20, delay: i * 100 }} class="space-y-4">
-          <h2 class="text-label-medium text-gray-500 px-2">{section.title}</h2>
+      {#if (!section.hideIfDesktop || isMobile) && section.id === activeSection}
+        <section id="settings-{section.id}" in:fly={{ y: 20, delay: 0 }} class="space-y-4">
 
         {#if section.isAi}
           <!-- AI Configuration Card -->
@@ -751,14 +868,15 @@
     {/each}
 
     <!-- ===== DEBUG SECTION ===== -->
-    <section in:fly={{ y: 20, delay: sections.length * 100 }}>
+    {#if activeSection === 'debug'}
+    <section id="settings-debug" in:fly={{ y: 20, delay: 0 }}>
       <button
         onclick={toggleDebug}
         class="w-full flex items-center justify-between px-2 mb-4 group"
       >
         <h2 class="text-label-medium text-gray-600 group-hover:text-amber-500 transition-colors flex items-center gap-2">
-          <svg class="w-3 h-3 text-amber-500/70" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
-          Systeem Debug
+          <svg class="w-3 h-3 md:hidden text-amber-500/70" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+          <span class="md:hidden">Systeem Debug</span>
         </h2>
         <div class="flex items-center gap-2">
           <span class="text-label-small text-gray-700">
@@ -958,9 +1076,11 @@
         </div>
       {/if}
     </section>
+    {/if}
 
     <!-- ===== GITHUB REPO INFO ===== -->
-    <section in:fly={{ y: 20 }}>
+    {#if activeSection === 'about'}
+    <section id="settings-about" in:fly={{ y: 20 }}>
       <div class="glass p-6 rounded-m3-md border-white/5 space-y-4 hover:bg-surface-800/40 transition-all">
         <div class="flex items-center gap-3">
           <div class="w-10 h-10 rounded-m3-sm bg-surface-900 border border-surface-700/50 flex items-center justify-center text-gray-400 group-hover:rotate-6 transition-transform shadow-inner shrink-0">
@@ -1016,12 +1136,16 @@
         {/if}
       </div>
     </section>
+    {/if}
 
     <div class="pt-10 flex flex-col items-center gap-2">
       <div class="w-10 h-[1px] bg-surface-800"></div>
-      <p class="text-label-small text-gray-600 text-center">Version 1.3.1 • Friday App</p>
+      <p class="text-label-small text-gray-600 text-center">Version 2.1.0 • Friday App</p>
     </div>
-  </main>
+      </div>
+    </main>
+  </div>
+  {/if}
 </div>
 
 <style>

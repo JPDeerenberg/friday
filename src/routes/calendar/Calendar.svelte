@@ -17,6 +17,31 @@
   let editContent = $state('');
   let isCreating = $state(false);
 
+  // Week view state
+  let isDesktop = $state(false);
+  let now = $state(new Date());
+
+  $effect(() => {
+    if (typeof window === 'undefined') return;
+    const mq = window.matchMedia('(min-width: 768px)');
+    const update = () => { isDesktop = mq.matches; };
+    update();
+    mq.addEventListener('change', update);
+    return () => mq.removeEventListener('change', update);
+  });
+
+  $effect(() => {
+    const t = setInterval(() => { now = new Date(); }, 60000);
+    return () => clearInterval(t);
+  });
+
+  const showWeekView = $derived.by(() => {
+    const mode = $userSettings.weekView ?? 'auto';
+    if (mode === 'on') return true;
+    if (mode === 'off') return false;
+    return isDesktop;
+  });
+
   // New appointment state
   let newApp = $state({
     omschrijving: '',
@@ -396,34 +421,6 @@
     return 'Afspraak';
   }
 
-  const weekData = $derived.by(() => {
-    const d = new Date(selectedDate);
-    const day = d.getDay();
-    const diff = d.getDate() - day + (day === 0 ? -6 : 1); // Monday
-    const monday = new Date(d.setDate(diff));
-    const length = $userSettings.showWeekend ? 7 : 5;
-    
-    return Array.from({ length }, (_, i) => {
-      const date = new Date(monday);
-      date.setDate(date.getDate() + i);
-      const dayStr = date.toDateString();
-      
-      const dayApps = appointments.filter(a => {
-        if (!a.Start) return false;
-        const ad = new Date(a.Start);
-        return !isNaN(ad.getTime()) && ad.toDateString() === dayStr;
-      });
-      
-      return {
-        date,
-        isToday: dayStr === new Date().toDateString(),
-        isSelected: dayStr === selectedDate.toDateString(),
-        hasTest: dayApps.some(a => [2, 3, 4, 5].includes(a.InfoType)),
-        hasHomework: dayApps.some(a => a.InfoType === 1 && !a.Afgerond)
-      };
-    });
-  });
-
   const hiddenCancelledCount = $derived.by(() => {
     if (!$userSettings.hideCancelled) return 0;
     const currentDayStr = selectedDate.toDateString();
@@ -436,6 +433,104 @@
     }).length;
   });
 
+  // ===== Week view (desktop grid) =====
+  const PX_PER_HOUR = 72;
+
+  function minutesOf(iso: string | null | undefined): number | null {
+    if (!iso) return null;
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return null;
+    return d.getHours() * 60 + d.getMinutes();
+  }
+
+  const weekViewDays = $derived.by(() => {
+    const d = new Date(selectedDate);
+    const day = d.getDay();
+    const diff = d.getDate() - day + (day === 0 ? -6 : 1); // Monday
+    const monday = new Date(d.setDate(diff));
+    const length = $userSettings.showWeekend ? 7 : 5;
+
+    return Array.from({ length }, (_, i) => {
+      const date = new Date(monday);
+      date.setDate(date.getDate() + i);
+      const dayStr = date.toDateString();
+
+      let apps = appointments.filter(a => {
+        if (!a.Start) return false;
+        const ad = new Date(a.Start);
+        return !isNaN(ad.getTime()) && ad.toDateString() === dayStr;
+      });
+      if ($userSettings.hideCancelled) {
+        apps = apps.filter(a => a.Status !== 4 && a.Status !== 5);
+      }
+      apps.sort((a, b) => (a.Start ?? '').localeCompare(b.Start ?? ''));
+
+      return {
+        date,
+        isToday: dayStr === new Date().toDateString(),
+        isSelected: dayStr === selectedDate.toDateString(),
+        apps
+      };
+    });
+  });
+
+  // Replace weekData computation to reuse weekViewDays (keeps pill strip in sync)
+  const weekData = $derived.by(() => weekViewDays.map(d => ({
+    date: d.date,
+    isToday: d.isToday,
+    isSelected: d.isSelected,
+    hasTest: d.apps.some(a => [2, 3, 4, 5].includes(a.InfoType)),
+    hasHomework: d.apps.some(a => a.InfoType === 1 && !a.Afgerond)
+  })));
+
+  const grid = $derived.by(() => {
+    let minH = 8;
+    let maxH = 18;
+    for (const day of weekViewDays) {
+      for (const a of day.apps) {
+        const s = minutesOf(a.Start);
+        const e = minutesOf(a.Einde);
+        if (s !== null) minH = Math.min(minH, Math.floor(s / 60));
+        if (e !== null) maxH = Math.max(maxH, Math.ceil(e / 60));
+      }
+    }
+    minH = Math.max(6, minH);
+    maxH = Math.min(23, Math.max(18, maxH));
+    const hours: number[] = [];
+    for (let h = minH; h < maxH; h++) hours.push(h);
+    return { minH, maxH, hours, heightPx: (maxH - minH) * PX_PER_HOUR };
+  });
+
+  function appTopPx(a: any): number {
+    const s = minutesOf(a.Start);
+    if (s === null) return 0;
+    return ((s - grid.minH * 60) / 60) * PX_PER_HOUR;
+  }
+
+  function appHeightPx(a: any): number {
+    const s = minutesOf(a.Start);
+    const e = minutesOf(a.Einde);
+    if (s === null) return 26;
+    const dur = (e !== null ? e : s + 50) - s;
+    return Math.max(24, Math.round((dur / 60) * PX_PER_HOUR) - 3);
+  }
+
+  const weekAppCount = $derived(weekViewDays.reduce((sum, d) => sum + d.apps.length, 0));
+
+  const weekLabel = $derived.by(() => {
+    if (weekViewDays.length === 0) return '';
+    const first = weekViewDays[0].date;
+    const last = weekViewDays[weekViewDays.length - 1].date;
+    const f = first.toLocaleDateString('nl-NL', { day: 'numeric', month: 'long' });
+    const l = last.toLocaleDateString('nl-NL', { day: 'numeric', month: 'long', year: 'numeric' });
+    return `${f} – ${l}`;
+  });
+
+  const nowMinutes = $derived.by(() => {
+    const d = now;
+    return d.getHours() * 60 + d.getMinutes();
+  });
+
   // Swipe handling with live drag tracking
   let touchStartX = 0;
   let touchStartY = 0;
@@ -443,6 +538,7 @@
   let isHorizontalSwipe = false;
 
   function handleTouchStart(e: TouchEvent) {
+    if (showWeekView) return;
     touchStartX = e.touches[0].clientX;
     touchStartY = e.touches[0].clientY;
     isDragging = false;
@@ -450,6 +546,7 @@
   }
 
   function handleTouchMove(e: TouchEvent) {
+    if (showWeekView) return;
     const dx = e.touches[0].clientX - touchStartX;
     const dy = e.touches[0].clientY - touchStartY;
     
@@ -466,6 +563,7 @@
   }
 
   function handleTouchEnd(e: TouchEvent) {
+    if (showWeekView) return;
     const dx = e.changedTouches[0].clientX - touchStartX;
     if (isHorizontalSwipe && Math.abs(dx) > 40) {
       // Slide all the way out
@@ -556,28 +654,37 @@
             }
           }}
         />
-        <p class="text-label-small text-primary-400 group-hover:text-primary-300 transition-colors">
-          {selectedDate.toLocaleDateString('nl-NL', { month: 'long', year: 'numeric' })}
-        </p>
-        <h2 class="text-headline-small text-white leading-tight group-hover:text-gray-200 transition-colors">
-          {selectedDate.toLocaleDateString('nl-NL', { weekday: 'long', day: 'numeric' })}
-        </h2>
+        {#if showWeekView}
+          <p class="text-label-small text-primary-400 group-hover:text-primary-300 transition-colors">
+            Weekoverzicht
+          </p>
+          <h2 class="text-headline-small text-white leading-tight group-hover:text-gray-200 transition-colors">
+            {weekLabel}
+          </h2>
+        {:else}
+          <p class="text-label-small text-primary-400 group-hover:text-primary-300 transition-colors">
+            {selectedDate.toLocaleDateString('nl-NL', { month: 'long', year: 'numeric' })}
+          </p>
+          <h2 class="text-headline-small text-white leading-tight group-hover:text-gray-200 transition-colors">
+            {selectedDate.toLocaleDateString('nl-NL', { weekday: 'long', day: 'numeric' })}
+          </h2>
+        {/if}
       </label>
 
       <!-- Compact Navigation -->
       <div class="flex items-center bg-surface-900 rounded-m3-sm p-0.5 border border-white/5">
-        <button onclick={prevDay} class="p-1.5 text-gray-500 hover:text-white transition-colors" title="Vorige dag">
+        <button onclick={() => showWeekView ? prevWeek() : prevDay()} class="p-1.5 text-gray-500 hover:text-white transition-colors" title="Vorige week">
           <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
         </button>
         <div class="h-3 w-px bg-surface-700 mx-0.5"></div>
-        <button onclick={nextDay} class="p-1.5 text-gray-500 hover:text-white transition-colors" title="Volgende dag">
+        <button onclick={() => showWeekView ? nextWeek() : nextDay()} class="p-1.5 text-gray-500 hover:text-white transition-colors" title="Volgende week">
           <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
         </button>
       </div>
     </div>
 
-    <!-- Quick Week Picker — smaller pills -->
-    <div class="mt-2.5 flex justify-between gap-1 overflow-x-auto no-scrollbar">
+    <!-- Quick Week Picker — smaller pills (day view only; week grid shows its own day columns) -->
+    <div class="{showWeekView ? 'hidden' : ''} mt-2.5 flex justify-between gap-1 overflow-x-auto no-scrollbar">
       {#each weekData as { date, isToday, isSelected, hasTest, hasHomework }}
         <button
           onclick={() => { selectedDate = new Date(date); loadAppointments(); }}
@@ -635,6 +742,122 @@
         <div class="w-10 h-10 border-3 border-primary-500 border-t-transparent rounded-full animate-spin shadow-[0_0_20px_rgba(var(--color-primary-500),0.3)]"></div>
         <p class="text-label-medium text-gray-600 animate-pulse">Lessen ophalen...</p>
       </div>
+    {:else if showWeekView}
+      {#if weekAppCount === 0}
+        <div class="flex flex-col items-center justify-center py-16 text-center space-y-4">
+          <div class="w-20 h-20 rounded-full bg-surface-800/80 border border-surface-700/50 flex items-center justify-center">
+            <svg class="w-8 h-8 text-gray-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/><path d="M18 22 13 17l-3 3-5-5"/></svg>
+          </div>
+          <div>
+            <h3 class="text-headline-small text-white mb-1">Geen lessen deze week</h3>
+            <p class="text-body-medium text-gray-500 max-w-[200px] leading-relaxed">
+              Geniet van je vrije week!
+            </p>
+          </div>
+        </div>
+      {:else}
+        <div class="md:rounded-m3-lg md:border border-surface-800/40 overflow-hidden">
+          <div class="overflow-x-auto custom-scrollbar">
+            <div class="min-w-full flex">
+              <!-- Time gutter -->
+              <div class="w-16 shrink-0 flex flex-col">
+                <!-- Corner spacer -->
+                <div class="shrink-0 h-[52px] border-b border-surface-800/40 bg-surface-900/40"></div>
+                <!-- Hour labels -->
+                <div class="relative" style="height: {grid.heightPx}px;">
+                  {#each grid.hours as h}
+                    <div class="absolute right-2 -translate-y-1/2 text-label-medium text-gray-500 tabular-nums" style="top: {(h - grid.minH) * PX_PER_HOUR}px;">
+                      {String(h).padStart(2, '0')}:00
+                    </div>
+                  {/each}
+                </div>
+              </div>
+
+              <!-- Day columns -->
+              {#each weekViewDays as day}
+                <div class="flex-1 min-w-[140px] border-l border-surface-800/30">
+                  <!-- Day header -->
+                  <button
+                    onclick={() => { selectedDate = new Date(day.date); loadAppointments(); }}
+                    class="w-full flex flex-col items-center justify-center gap-0.5 h-[52px] border-b border-surface-800/40 transition-colors
+  {day.isSelected ? 'bg-primary-container text-on-primary-container' : day.isToday ? 'bg-primary-500/10' : 'bg-surface-900/40 hover:bg-surface-800/40'}"
+                  >
+                    <span class="text-label-medium {day.isSelected ? 'text-on-primary-container' : 'text-gray-500'}">
+                      {day.date.toLocaleDateString('nl-NL', { weekday: 'short' })}
+                    </span>
+                    <span class="text-title-medium {day.isSelected ? 'text-on-primary-container' : 'text-white'} leading-none">
+                      {day.date.getDate()}
+                    </span>
+                    <span class="flex gap-0.5 h-1">
+                      {#if day.apps.some(a => [2, 3, 4, 5].includes(a.InfoType))}
+                        <span class="w-1 h-1 rounded-full bg-red-500"></span>
+                      {:else if day.apps.some(a => a.InfoType === 1 && !a.Afgerond)}
+                        <span class="w-1 h-1 rounded-full bg-primary-400"></span>
+                      {/if}
+                    </span>
+                  </button>
+
+                  <!-- Time column -->
+                  <div class="relative" style="height: {grid.heightPx}px;">
+                    <!-- Hour grid lines -->
+                    {#each grid.hours as h}
+                      <div class="absolute left-0 right-0 border-t border-surface-800/30 pointer-events-none" style="top: {(h - grid.minH) * PX_PER_HOUR}px;"></div>
+                    {/each}
+
+                    <!-- Today highlight -->
+                    {#if day.isToday}
+                      <div class="absolute inset-0 bg-primary-500/5 pointer-events-none"></div>
+                    {/if}
+
+                    <!-- Now indicator -->
+                    {#if day.isToday && nowMinutes >= grid.minH * 60 && nowMinutes <= grid.maxH * 60}
+                      <div class="absolute left-0 right-0 z-10 pointer-events-none" style="top: {((nowMinutes - grid.minH * 60) / 60) * PX_PER_HOUR}px;">
+                        <div class="h-0.5 bg-red-500 rounded-full relative">
+                          <div class="absolute -left-1 -top-[4px] w-2 h-2 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)]"></div>
+                        </div>
+                      </div>
+                    {/if}
+
+                    <!-- Appointments -->
+                    {#each day.apps as app}
+                      <button
+                        onclick={() => openDetail(app)}
+                        class="absolute left-1 right-1 rounded-m3-sm border px-2 py-1.5 text-left overflow-hidden transition-all active:scale-[0.98] hover:brightness-125 cursor-pointer
+  {app.InfoType === 1 && !app.Afgerond
+  ? 'bg-primary-500/15 border-primary-500/30'
+  : app.Status === 4 || app.Status === 5
+  ? 'bg-red-500/10 border-red-500/30'
+  : app.Afgerond
+  ? 'bg-surface-800/50 border-surface-700/40 opacity-70'
+  : 'bg-surface-800/80 border-surface-700/50 hover:bg-surface-700/70'}"
+                        style="top: {appTopPx(app)}px; height: {appHeightPx(app)}px;"
+                        title="{(app.Vakken?.[0]?.Omschrijving || app.Omschrijving || 'Vrij')} · {formatTime(app.Start)} – {formatTime(app.Einde)}"
+                      >
+                        <div class="flex flex-col min-w-0 h-full">
+                          <p class="text-title-small leading-tight truncate {app.Status === 4 || app.Status === 5 ? 'text-red-400 line-through' : app.Afgerond ? 'text-gray-400 line-through' : 'text-white'}">
+                            {app.Vakken?.[0]?.Omschrijving || app.Omschrijving || 'Vrij'}
+                          </p>
+                          <div class="flex items-center gap-1 text-label-medium text-gray-400 mt-0.5">
+                            <span class="tabular-nums shrink-0">{formatTime(app.Start)}</span>
+                            {#if app.Lokatie}
+                              <span class="truncate">· {app.Lokatie}</span>
+                            {/if}
+                          </div>
+                        </div>
+                        {#if app.InfoType === 1 && !app.Afgerond}
+                          <div class="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-primary-400"></div>
+                        {:else if [2, 3, 4, 5].includes(app.InfoType)}
+                          <div class="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-red-500"></div>
+                        {/if}
+                      </button>
+                    {/each}
+                  </div>
+                </div>
+              {/each}
+            </div>
+          </div>
+        </div>
+      {/if}
     {:else if dayAppointments.length === 0}
       <div class="flex flex-col items-center justify-center py-16 text-center space-y-4">
         <div class="w-20 h-20 rounded-full bg-surface-800/80 border border-surface-700/50 flex items-center justify-center">
