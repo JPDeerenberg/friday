@@ -810,6 +810,63 @@ pub fn set_disable_all_notifications(app: AppHandle, enabled: bool) -> Result<St
     Ok(format!("set_disable_all_notifications is only supported on Android"))
 }
 
+/// Whether the app has Android "Notification policy access" (DND access) granted.
+/// The UI uses this to warn when Automatisch Niet Storen is enabled but cannot work.
+#[tauri::command]
+pub fn get_dnd_access_status(app: AppHandle) -> Result<bool, String> {
+    let _ = &app;
+    #[cfg(target_os = "android")]
+    {
+        let window = app.get_webview_window("main")
+            .or_else(|| app.webview_windows().values().next().cloned())
+            .ok_or_else(|| "No active window found for JNI access".to_string())?;
+
+        let (tx, rx) = std::sync::mpsc::channel();
+
+        window.with_webview(move |webview| {
+            #[cfg(target_os = "android")]
+            {
+                let _ = webview.jni_handle().exec(move |env, activity, _webview| {
+                    let class = match find_app_class(env, &activity, "com.joris.friday.NotificationHelper") {
+                        Ok(c) => c,
+                        Err(e) => {
+                            let _ = env.exception_clear();
+                            eprintln!("JNI ERROR: Failed to find NotificationHelper: {:?}", e);
+                            let _ = tx.send(false);
+                            return;
+                        }
+                    };
+
+                    let res = env.call_static_method(
+                        &class,
+                        "hasDndAccess",
+                        "(Landroid/content/Context;)Z",
+                        &[jni::objects::JValue::from(&activity)],
+                    );
+
+                    let mut result = false;
+                    if let Ok(jni::objects::JValueGen::Bool(b)) = res {
+                        result = b != 0;
+                    } else if let Err(_) = res {
+                        if let Ok(true) = env.exception_check() {
+                            let _ = env.exception_clear();
+                        }
+                    }
+                    let _ = tx.send(result);
+                });
+            }
+        }).map_err(|e| e.to_string())?;
+
+        if let Ok(val) = rx.recv() {
+            return Ok(val);
+        } else {
+            return Ok(false);
+        }
+    }
+    #[cfg(not(target_os = "android"))]
+    Ok(true) // desktop has no DND-policy concept; treat as "not blocking"
+}
+
 /// Get the current relevance threshold for AI notification filtering.
 /// Returns a value between 0 and 100.
 #[tauri::command]

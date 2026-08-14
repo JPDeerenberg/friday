@@ -2,7 +2,7 @@
   import { userSettings } from '$lib/stores';
   import { currentPage } from '$lib/stores';
   import { triggerTestNotification, notifyNewMessage, notifyNewGrade, notifyDeadline, notifyCalendarChange,
-           triggerSync, getDebugInfo, getSyncStateDebug, clearSyncState, setSyncInterval, getSyncInterval, getNightSleepConfig, setNightSleepConfig, getDisableAllNotifications, setDisableAllNotifications,
+           triggerSync, getDebugInfo, getSyncStateDebug, clearSyncState, setSyncInterval, getSyncInterval, getNightSleepConfig, setNightSleepConfig, getDisableAllNotifications, setDisableAllNotifications, getDndAccessStatus,
            exportAllData } from '$lib/api';
   import { getAiConfig, setAiConfig, validateAiKey, listAiModels, type AiConfig, type AiProviderType, AI_PROVIDERS } from '$lib/ai';
   import { fade, fly, slide } from 'svelte/transition';
@@ -26,6 +26,7 @@
   let disableSyncAtNightStart = $state(22);
   let disableSyncAtNightEnd = $state(7);
   let disableAllNotifications = $state(false);
+  let dndAccessGranted = $state<boolean | null>(null);
   let logs = $state<{ time: string; level: 'info' | 'warn' | 'error'; msg: string }[]>([]);
   let exportBusy = $state(false);
   let exportResult = $state<string | null>(null);
@@ -82,6 +83,18 @@
         disableAllNotifications = disabled;
     }).catch(e => {
         console.error("Failed to load disable all notifications config", e);
+    });
+
+    getDndAccessStatus().then((granted) => {
+        dndAccessGranted = granted;
+    }).catch(e => {
+        console.error("Failed to load DND access status", e);
+    });
+
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        getDndAccessStatus().then((granted) => { dndAccessGranted = granted; }).catch(() => {});
+      }
     });
 
     // Fetch GitHub repo stats
@@ -717,6 +730,19 @@
                 {/if}
               {/if}
             </div>
+            {#if setting.id === 'notifyAutoDnd' && $userSettings.notifyAutoDnd && dndAccessGranted === false}
+              <div class="glass p-4 rounded-m3-md border border-amber-500/20 bg-amber-500/5 flex items-center justify-between gap-4 -mt-1">
+                <p class="text-label-medium text-amber-400 leading-relaxed">
+                  Niet Storen-toegang is nog niet verleend. Automatisch Niet Storen werkt hierdoor niet.
+                </p>
+                <button
+                  onclick={openDndSettings}
+                  class="shrink-0 bg-amber-500/15 text-amber-400 text-label-medium rounded-m3-full px-4 py-2 hover:bg-amber-500/25 transition-all active:scale-95 border border-amber-500/20"
+                >
+                  Toegang verlenen
+                </button>
+              </div>
+            {/if}
           {/each}
         </div>
       {/if}

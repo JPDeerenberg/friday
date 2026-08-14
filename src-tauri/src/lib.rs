@@ -130,6 +130,7 @@ pub fn run() {
             commands::notifications::set_night_sleep_config,
             commands::notifications::get_disable_all_notifications,
             commands::notifications::set_disable_all_notifications,
+            commands::notifications::get_dnd_access_status,
             // AI relevance scoring
             commands::notifications::get_relevance_threshold,
             commands::notifications::set_relevance_threshold,

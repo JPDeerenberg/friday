@@ -6,7 +6,16 @@
 
 - [ ] **Bronnen** — fixen, nu staat er niks
 - [ ] **Notificaties** — robuust maken, werkt nu niet betrouwbaar
+      🔎 Root cause gevonden: `SyncService` (elke 5 min) en `SyncWorker`/WorkManager (elke 15 min)
+      draaiden onafhankelijk van elkaar en race'ten op hetzelfde `sync_state.json` bestand
+      zonder locking → gemiste/dubbele notificaties, en 2-3x zoveel netwerk-/CPU-gebruik dan nodig.
+      Fix-plan staat in `friday-notification-bug-diagnosis.md` (naar Deepseek voor implementatie):
+      `SyncService` weg, alleen `WorkManager` (15 min minimum), locking om `SyncStateManager`,
+      Tokio-runtime hergebruiken i.p.v. per sync-call aanmaken. Zie ook debug-instellingen-menu
+      wijzigingen die daarbij horen (sync-interval slider/presets, 15 min floor).
 - [ ] **Rate limiting** — zorg dat je niet gerate-limited wordt
+      ↳ Volgt automatisch uit de notificatie-fix hierboven: één sync-engine i.p.v. twee, en een
+      15-minuten minimum interval i.p.v. tot 1 minuut instelbaar, scheelt flink in requests naar Magister.
 - [ ] **'Te laat'-filter** — werkend krijgen bij opdrachten filters
 - [ ] **Do not disturb** — werkend krijgen
 - [ ] **Exporteren** — JSON-bestanden exporteren werkend krijgen voor alles (lessen, cijfers, etc.)

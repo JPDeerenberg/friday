@@ -173,6 +173,11 @@ object DndScheduler {
                 // Skip cancelled events (status 4 = cancelled, status 5 = auto-cancelled)
                 if (status == 4 || status == 5) continue
 
+                // Only real timetabled lessons carry a LesuurVan (lesson-hour) value —
+                // matches the lesson-detection convention used in Dashboard.svelte /
+                // Calendar.svelte. Skip personal/school-wide/other calendar entries.
+                if (event.isNull("LesuurVan") || !event.has("LesuurVan")) continue
+
                 if (startStr.isEmpty() || endStr.isEmpty()) continue
 
                 val startMs = parseMagisterDate(startStr) ?: continue

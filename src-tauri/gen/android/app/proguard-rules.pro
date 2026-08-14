@@ -25,3 +25,6 @@
 -keep class com.joris.friday.SyncStateManager { *; }
 -keep class com.joris.friday.MainActivity { *; }
 -keep class com.joris.friday.SyncWorker { *; }
+-keep class com.joris.friday.DndScheduler { *; }
+-keep class com.joris.friday.DndReceiver { *; }
+-keep class com.joris.friday.BootReceiver { *; }

@@ -469,6 +469,10 @@ export async function getDisableAllNotifications(): Promise<boolean> {
   return invoke("get_disable_all_notifications");
 }
 
+export async function getDndAccessStatus(): Promise<boolean> {
+  return invoke("get_dnd_access_status");
+}
+
 export async function setDisableAllNotifications(
   enabled: boolean,
 ): Promise<string> {
