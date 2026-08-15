@@ -19,6 +19,7 @@ Discipulus
 .vscode/
 *.swp
 .agents/
+fixes/
 
 # Build Output & Logs
 dist/

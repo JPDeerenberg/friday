@@ -18,6 +18,7 @@
   let currentItems = $state<any[]>([]);
   let loading = $state(true);
   let pathHistory = $state<any[]>([]); // To support back navigation
+  let openError = $state(false); // True when no usable link was found for source/folder
 
   onMount(async () => {
     const cachedItems = localStorage.getItem('bronnen_current_items');
@@ -53,8 +54,9 @@
 
   async function enterSource(source: any) {
     loading = true;
+    openError = false;
     // Try multiple rel names — Magister uses different ones per API version
-    const path = findLink(source.Links, 'items', 'self', 'content', 'children');
+    const path = findLink(source.Links, 'children', 'contents', 'self');
     console.log('[Bronnen] enterSource', source.Naam, 'path =', path, 'links =', JSON.stringify(source.Links));
     if (path) {
       try {
@@ -70,6 +72,7 @@
       }
     } else {
       console.warn('[Bronnen] No usable link found in source links:', JSON.stringify(source.Links));
+      openError = true;
       currentItems = [];
       pathHistory = [{ Naam: source.Naam, Href: '' }];
     }
@@ -78,7 +81,8 @@
 
   async function enterFolder(folder: any) {
     loading = true;
-    const path = findLink(folder.Links, 'items', 'self', 'content', 'children');
+    openError = false;
+    const path = findLink(folder.Links, 'children', 'contents', 'self');
     if (path) {
       try {
         currentItems = await getBronnen(path);
@@ -88,6 +92,10 @@
       } catch (e) {
         console.error('Error entering folder:', e);
       }
+    } else {
+      console.warn('[Bronnen] No usable link found in folder links:', JSON.stringify(folder.Links));
+      openError = true;
+      currentItems = [];
     }
     loading = false;
   }
@@ -95,6 +103,7 @@
   async function goBack() {
     if (pathHistory.length <= 1) return;
     loading = true;
+    openError = false;
     const newHistory = pathHistory.slice(0, -1);
     const last = newHistory[newHistory.length - 1];
     try {
@@ -171,6 +180,16 @@
         <div class="flex flex-col items-center justify-center py-40 gap-4">
           <div class="w-10 h-10 border-4 border-primary-500/20 border-t-primary-500 rounded-full animate-spin"></div>
           <p class="text-label-medium text-gray-600 animate-pulse">Bestanden zoeken...</p>
+        </div>
+      {:else if openError}
+        <div in:fade class="glass rounded-m3-md p-16 text-center space-y-6 border-surface-800/50 bg-surface-900/[0.02] shadow-2xl">
+          <div class="w-20 h-20 bg-surface-900 rounded-m3-md flex items-center justify-center mx-auto text-amber-500 border border-amber-500/20 shadow-inner">
+            <svg class="w-8 h-8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          </div>
+          <div class="space-y-1">
+            <h3 class="text-headline-small text-white">Kon deze map niet openen</h3>
+            <p class="text-gray-600 text-body-medium leading-relaxed">Geen geldige link gevonden voor deze map. Dit kan een probleem zijn met de Magister API.</p>
+          </div>
         </div>
       {:else if currentItems.length === 0}
         <div in:fade class="glass rounded-m3-md p-16 text-center space-y-6 border-surface-800/50 bg-surface-900/[0.02] shadow-2xl">

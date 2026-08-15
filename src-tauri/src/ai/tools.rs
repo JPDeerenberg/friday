@@ -936,7 +936,22 @@ pub async fn execute_tool(
                 };
             }
 
-            match client.get_bytes_with_content_type(url).await {
+            // Magister's download/Self links are indirection links — resolve to the
+            // real content URL first (same two-call sequence as download_file).
+            let path = url.trim_start_matches("/api/");
+            let resolved = match client.get_redirect_location(path).await {
+                Ok(resolved) => resolved,
+                Err(e) => {
+                    return ToolResult {
+                        tool: tool_name.to_string(),
+                        success: false,
+                        data: Value::Null,
+                        error: Some(format!("Kon download-link niet resolven: {}", e)),
+                    };
+                }
+            };
+
+            match client.get_bytes_with_content_type(&resolved).await {
                 Ok((bytes, content_type)) => {
                     let size = bytes.len();
                     let data = serde_json::json!({

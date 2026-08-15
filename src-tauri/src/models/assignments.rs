@@ -33,6 +33,8 @@ pub struct Assignment {
     pub opnieuw_inleveren: bool,
     #[serde(rename = "Afgesloten")]
     pub afgesloten: bool,
+    #[serde(rename = "IsTeLaat")]
+    pub is_te_laat: Option<bool>,
     #[serde(rename = "MagInleveren")]
     pub mag_inleveren: bool,
     #[serde(rename = "Bijlagen")]

@@ -249,6 +249,53 @@ pub extern "system" fn Java_com_joris_friday_SyncStateManager_syncPreferencesFro
     }
 }
 
+// Open/share a downloaded file on Android via the app's FileProvider so the user
+// is shown a chooser instead of the file sitting in an app-private cache path.
+// Called from the `download_file` Tauri command; reuses the same JNI pattern as the
+// rest of this module (attach the current thread, then call into a Kotlin helper).
+// The JavaVM comes from ndk-context, which the Tauri/tao Android runtime initializes
+// before main.
+pub fn share_downloaded_file(file_path: &std::path::Path) -> Result<(), String> {
+    use jni::objects::JValue;
+    use jni::JavaVM;
+
+    let ctx = ndk_context::android_context();
+    let vm = unsafe { JavaVM::from_raw(ctx.vm() as *mut jni::sys::JavaVM) }
+        .map_err(|e| format!("Failed to get JavaVM: {}", e))?;
+    let mut env = vm
+        .attach_current_thread()
+        .map_err(|e| format!("Failed to attach current thread to JVM: {}", e))?;
+
+    let class = env
+        .find_class("com/joris/friday/ShareHelper")
+        .map_err(|e| format!("Failed to find ShareHelper: {}", e))?;
+    let context = unsafe { jni::objects::JObject::from_raw(ctx.context() as jni::sys::jobject) };
+    let mime = mime_guess::from_path(file_path).first_or_octet_stream().to_string();
+    let j_path = env
+        .new_string(file_path.to_string_lossy().as_ref())
+        .map_err(|e| e.to_string())?;
+    let j_mime = env.new_string(&mime).map_err(|e| e.to_string())?;
+
+    env.call_static_method(
+        &class,
+        "shareFile",
+        "(Landroid/content/Context;Ljava/lang/String;Ljava/lang/String;)V",
+        &[
+            JValue::from(&context),
+            JValue::from(&j_path),
+            JValue::from(&j_mime),
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+
+    if let Ok(true) = env.exception_check() {
+        let _ = env.exception_clear();
+        return Err("Android share call threw an exception".to_string());
+    }
+
+    Ok(())
+}
+
 #[cfg(target_os = "android")]
 async fn do_sync(data_dir: &str) -> String {
     use crate::client::TokenSet;

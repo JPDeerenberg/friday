@@ -97,11 +97,7 @@
     if (a.Afgesloten) return { label: 'Afgesloten', key: 'closed' };
     if (a.BeoordeeldOp) return { label: 'Beoordeeld', key: 'graded' };
     if (a.IngeleverdOp) return { label: 'Ingeleverd', key: 'submitted' };
-    // Check if overdue: not submitted and deadline has passed
-    const deadline = a.Inlevermoment || a.InleverMoment || a.Deadline;
-    if (deadline && !a.IngeleverdOp && new Date(deadline) < new Date()) {
-      return { label: 'Te laat', key: 'overdue' };
-    }
+    if (isOverdue(a)) return { label: 'Te laat', key: 'overdue' };
     if (a.MagInleveren) return { label: 'In te leveren', key: 'open' };
     return { label: 'Openstaand', key: 'open' };
   }
@@ -180,7 +176,8 @@
       if (!url) return;
       downloadingFile = bijlage.Naam;
       const downloadDir = get(userSettings).downloadDir || '';
-      await downloadFile(url, bijlage.Naam, downloadDir);
+      const path = await downloadFile(url, bijlage.Naam, downloadDir);
+      alert(`Bestand gedownload naar: ${path}`);
     } catch (e) {
       console.error('Download mislukt:', e);
     } finally {
@@ -228,6 +225,8 @@
   }
 
   function isOverdue(a: any) {
+    if (a.IsTeLaat === true) return true;
+    if (a.IsTeLaat !== undefined && a.IsTeLaat !== null) return false;
     return !a.IngeleverdOp && !a.Afgesloten && new Date(a.InleverenVoor) < new Date();
   }
 </script>

@@ -166,9 +166,14 @@ pub async fn get_absences(
     Ok(res.items)
 }
 
+/// Download an attachment to disk. Magister's `Self`/`Contents`/`download`
+/// links are *indirection* links, not the file bytes — resolve them to a real,
+/// short-lived content URL first (same two-call sequence as
+/// `get_leermiddel_launch_url`), then fetch the bytes from that URL.
 #[tauri::command]
 pub async fn download_file(
     client: State<'_, SharedClient>,
+    app: tauri::AppHandle,
     url: String,
     filename: String,
     download_dir: Option<String>,
@@ -176,35 +181,133 @@ pub async fn download_file(
     use std::io::Write;
     let mut c = client.lock().await;
 
-    // Use provided download directory, or fall back to system default
-    let download_dir = if let Some(ref dir) = download_dir {
-        if !dir.is_empty() {
-            std::path::PathBuf::from(dir)
+    #[cfg(desktop)]
+    let _ = &app;
+    #[cfg(mobile)]
+    let _ = &download_dir;
+
+    // Resolve the indirection link to the real content URL before fetching bytes.
+    let url = url.replace("/api/", "");
+    let resolved = c
+        .get_redirect_location(&url)
+        .await
+        .map_err(|e: crate::client::ClientError| format!("Failed to resolve download link: {}", e))?;
+
+    let bytes = c
+        .get_bytes(&resolved)
+        .await
+        .map_err(|e: crate::client::ClientError| e.to_string())?
+        .ok_or_else(|| "File not found".to_string())?;
+
+    // On mobile there is no user-facing Downloads folder (Android scoped storage) —
+    // write to an app-private cache path instead; the file is handed to the OS below.
+    #[cfg(mobile)]
+    let save_dir = {
+        use tauri::Manager;
+        app.path()
+            .app_cache_dir()
+            .map_err(|e| e.to_string())?
+            .join("downloads")
+    };
+
+    // Desktop keeps the current behaviour: user-selected dir or system Downloads.
+    #[cfg(desktop)]
+    let save_dir = {
+        if let Some(ref dir) = download_dir {
+            if !dir.is_empty() {
+                std::path::PathBuf::from(dir)
+            } else {
+                dirs::download_dir()
+                    .or_else(|| dirs::home_dir().map(|h| h.join("Downloads")))
+                    .ok_or_else(|| "Could not find downloads directory".to_string())?
+            }
         } else {
             dirs::download_dir()
                 .or_else(|| dirs::home_dir().map(|h| h.join("Downloads")))
                 .ok_or_else(|| "Could not find downloads directory".to_string())?
         }
-    } else {
-        dirs::download_dir()
-            .or_else(|| dirs::home_dir().map(|h| h.join("Downloads")))
-            .ok_or_else(|| "Could not find downloads directory".to_string())?
     };
 
-    if !download_dir.exists() {
-        std::fs::create_dir_all(&download_dir).map_err(|e| e.to_string())?;
+    if !save_dir.exists() {
+        std::fs::create_dir_all(&save_dir).map_err(|e| e.to_string())?;
     }
 
-    let save_path = download_dir.join(&filename);
-
-    // Fetch the file
-    let url = url.replace("/api/", "");
-    let bytes = c.get_bytes(&url).await.map_err(|e: crate::client::ClientError| e.to_string())?
-        .ok_or_else(|| "File not found".to_string())?;
-    
+    let save_path = save_dir.join(&filename);
     let mut file = std::fs::File::create(&save_path).map_err(|e: std::io::Error| e.to_string())?;
     file.write_all(&bytes).map_err(|e: std::io::Error| e.to_string())?;
 
+    // Hand the file to the OS via the FileProvider so the user sees a share/open
+    // sheet instead of it landing in an invisible location.
+    #[cfg(target_os = "android")]
+    crate::jni::share_downloaded_file(&save_path)
+        .map_err(|e| format!("Failed to share downloaded file: {}", e))?;
+
     Ok(save_path.to_string_lossy().to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::client::{MagisterClient, TokenSet};
+    use chrono::{Duration, Utc};
+    use wiremock::matchers::{header, method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    fn token_set(endpoint: &str) -> TokenSet {
+        TokenSet {
+            access_token: "mock_access_token".to_string(),
+            id_token: "mock_id_token".to_string(),
+            refresh_token: "mock_refresh_token".to_string(),
+            expires_at: Utc::now() + Duration::seconds(3600),
+            api_endpoint: endpoint.to_string(),
+            person_id: Some(123),
+            account_uuid: None,
+        }
+    }
+
+    /// `download_file` resolves Magister's indirection link to a real content URL
+    /// before fetching bytes (same two-call sequence as `get_leermiddel_launch_url`).
+    /// Without this resolve step, `get_bytes` on the raw `Self`/`download` link
+    /// returns the small JSON `{"location": "..."}` wrapper instead of the file.
+    #[tokio::test]
+    async fn test_download_resolve_then_fetch() {
+        let mock_server = MockServer::start().await;
+
+        // Step 1: the attachment's Self/download link answers with a JSON location.
+        Mock::given(method("GET"))
+            .and(path("/afspraken/1/bijlagen/2"))
+            .and(header("Authorization", "Bearer mock_access_token"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "location": format!("{}/contents/file", mock_server.uri()),
+            })))
+            .mount(&mock_server)
+            .await;
+
+        // Step 2: the resolved content URL returns the real file bytes.
+        Mock::given(method("GET"))
+            .and(path("/contents/file"))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(b"%PDF-1.4 real content".to_vec()))
+            .mount(&mock_server)
+            .await;
+
+        let mut client = MagisterClient::new();
+        client.token_set = Some(token_set(&mock_server.uri()));
+
+        // The attachment's Self/download link (absolute, no `/api/` prefix — the
+        // command's `.replace("/api/", "")` normalization is a no-op here).
+        let url = format!("{}/afspraken/1/bijlagen/2", mock_server.uri());
+
+        let resolved = client
+            .get_redirect_location(&url)
+            .await
+            .expect("should resolve the indirection link");
+        assert_eq!(resolved, format!("{}/contents/file", mock_server.uri()));
+
+        let bytes = client
+            .get_bytes(&resolved)
+            .await
+            .expect("should fetch bytes from the resolved URL")
+            .expect("bytes should be present");
+        assert_eq!(bytes, b"%PDF-1.4 real content".to_vec());
+    }
 }
 
