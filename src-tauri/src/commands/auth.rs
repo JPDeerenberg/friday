@@ -95,10 +95,17 @@ async fn handle_auth_callback_internal(
 
     let auth = c.auth_flow.take().ok_or("No auth flow in progress")?;
 
+    // Verify the state parameter (CSRF protection) before exchanging the code.
+    auth.verify_state(&redirect_url).map_err(|e| e.to_string())?;
+
     // Exchange code for tokens
     let token_resp = auth
         .exchange_code(&redirect_url)
         .await
+        .map_err(|e| e.to_string())?;
+
+    // Verify the id_token's nonce claim ties it to this login attempt.
+    auth.verify_id_token_nonce(&token_resp.id_token)
         .map_err(|e| e.to_string())?;
 
     // Discover API endpoint

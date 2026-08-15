@@ -22,19 +22,23 @@ fn generate_random_hex(length: usize) -> String {
 
 pub struct AuthFlow {
     pub code_verifier: String,
+    pub state: String,
+    pub nonce: String,
 }
 
 impl AuthFlow {
     pub fn new() -> Self {
         Self {
             code_verifier: generate_random_string(50),
+            state: generate_random_string(50),
+            nonce: generate_random_hex(32),
         }
     }
 
     /// Generate Magister OAuth2 login URL with PKCE S256 challenge.
     pub fn generate_login_url(&self, tenant: Option<&str>, username: Option<&str>) -> String {
-        let nonce = generate_random_hex(32);
-        let state = generate_random_string(50);
+        let state = &self.state;
+        let nonce = &self.nonce;
 
         // SHA256 hash of code_verifier, base64url encoded
         let hash = Sha256::digest(self.code_verifier.as_bytes());
@@ -108,6 +112,45 @@ impl AuthFlow {
         Ok(token)
     }
 
+    /// Verify that the `state` query parameter in the callback URL matches the
+    /// one generated for this auth flow (CSRF protection). Must be checked
+    /// before exchanging the authorization code.
+    pub fn verify_state(&self, redirect_url: &str) -> Result<(), AuthError> {
+        let url_with_query = redirect_url.replace('#', "?");
+        let parsed = url::Url::parse(&url_with_query).map_err(|_| AuthError::InvalidRedirectUrl)?;
+        let state = parsed
+            .query_pairs()
+            .find(|(k, _)| k == "state")
+            .map(|(_, v)| v.to_string())
+            .ok_or(AuthError::MissingState)?;
+        if state != self.state {
+            return Err(AuthError::StateMismatch);
+        }
+        Ok(())
+    }
+
+    /// Decode the `id_token` payload (base64url middle segment) and verify its
+    /// `nonce` claim ties the token to this specific login attempt.
+    pub fn verify_id_token_nonce(&self, id_token: &str) -> Result<(), AuthError> {
+        let payload = id_token
+            .split('.')
+            .nth(1)
+            .ok_or(AuthError::InvalidIdToken)?;
+        let decoded = URL_SAFE_NO_PAD
+            .decode(payload)
+            .map_err(|_| AuthError::InvalidIdToken)?;
+        let claims: serde_json::Value =
+            serde_json::from_slice(&decoded).map_err(|_| AuthError::InvalidIdToken)?;
+        let nonce = claims
+            .get("nonce")
+            .and_then(|v| v.as_str())
+            .ok_or(AuthError::InvalidIdToken)?;
+        if nonce != self.nonce {
+            return Err(AuthError::NonceMismatch);
+        }
+        Ok(())
+    }
+
     /// Discover the API endpoint for the authenticated user.
     pub async fn discover_api_endpoint(access_token: &str) -> Result<String, AuthError> {
         let client = reqwest::Client::new();
@@ -172,6 +215,14 @@ pub enum AuthError {
     InvalidRedirectUrl,
     #[error("Missing authorization code in redirect URL")]
     MissingCode,
+    #[error("Missing state parameter in callback URL")]
+    MissingState,
+    #[error("State parameter mismatch (CSRF protection)")]
+    StateMismatch,
+    #[error("Invalid id_token")]
+    InvalidIdToken,
+    #[error("id_token nonce mismatch")]
+    NonceMismatch,
     #[error("HTTP request failed: {0}")]
     RequestFailed(String),
     #[error("Token exchange failed: {0}")]
@@ -190,5 +241,77 @@ impl serde::Serialize for AuthError {
         S: serde::Serializer,
     {
         serializer.serialize_str(&self.to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn flow_with(state: &str, nonce: &str) -> AuthFlow {
+        AuthFlow {
+            code_verifier: "verifier".to_string(),
+            state: state.to_string(),
+            nonce: nonce.to_string(),
+        }
+    }
+
+    fn id_token_with_nonce(nonce: &str) -> String {
+        let payload = serde_json::json!({ "nonce": nonce, "sub": "123" }).to_string();
+        let payload_b64 = URL_SAFE_NO_PAD.encode(payload.as_bytes());
+        format!("header.{payload_b64}.signature")
+    }
+
+    #[test]
+    fn verify_state_accepts_matching_state() {
+        let flow = flow_with("abc123", "nonce");
+        let url = "m6loapp://oauth2redirect/?code=xyz&state=abc123&id_token=tok";
+        assert!(flow.verify_state(url).is_ok());
+    }
+
+    #[test]
+    fn verify_state_rejects_mismatched_state() {
+        let flow = flow_with("abc123", "nonce");
+        let url = "m6loapp://oauth2redirect/?code=xyz&state=attacker&id_token=tok";
+        let err = flow.verify_state(url).unwrap_err().to_string();
+        assert!(err.contains("mismatch"), "unexpected error: {err}");
+    }
+
+    #[test]
+    fn verify_state_rejects_missing_state() {
+        let flow = flow_with("abc123", "nonce");
+        let url = "m6loapp://oauth2redirect/?code=xyz&id_token=tok";
+        let err = flow.verify_state(url).unwrap_err().to_string();
+        assert!(err.contains("Missing state"), "unexpected error: {err}");
+    }
+
+    #[test]
+    fn verify_state_handles_fragment_redirect() {
+        let flow = flow_with("abc123", "nonce");
+        let url = "m6loapp://oauth2redirect/#code=xyz&state=abc123&id_token=tok";
+        assert!(flow.verify_state(url).is_ok());
+    }
+
+    #[test]
+    fn verify_nonce_accepts_matching_nonce() {
+        let flow = flow_with("state", "nonce-123");
+        assert!(flow.verify_id_token_nonce(&id_token_with_nonce("nonce-123")).is_ok());
+    }
+
+    #[test]
+    fn verify_nonce_rejects_mismatched_nonce() {
+        let flow = flow_with("state", "nonce-123");
+        let err = flow
+            .verify_id_token_nonce(&id_token_with_nonce("nonce-attacker"))
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("nonce mismatch"), "unexpected error: {err}");
+    }
+
+    #[test]
+    fn verify_nonce_rejects_invalid_token() {
+        let flow = flow_with("state", "nonce-123");
+        assert!(flow.verify_id_token_nonce("not-a-jwt").is_err());
+        assert!(flow.verify_id_token_nonce("a.b.c").is_err());
     }
 }
