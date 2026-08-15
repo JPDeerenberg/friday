@@ -19,7 +19,14 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": {
+        "default-src": "'self'",
+        "connect-src": "ipc: http://ipc.localhost https://api.github.com",
+        "font-src": "'self' https://fonts.gstatic.com",
+        "img-src": "'self' data: https:",
+        "style-src": "'self' 'unsafe-inline' https://fonts.googleapis.com",
+        "script-src": "'self'"
+      }
     }
   },
   "bundle": {

@@ -23,6 +23,7 @@
     "@tiptap/extension-underline": "^3.26.1",
     "@tiptap/pm": "^3.26.1",
     "@tiptap/starter-kit": "^3.26.1",
+    "dompurify": "^3.4.13",
     "idb": "^8.0.3",
     "svelte-tiptap": "^3.0.1"
   },

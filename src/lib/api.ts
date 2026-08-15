@@ -1,4 +1,52 @@
 import { invoke } from "@tauri-apps/api/core";
+import { sanitizeHtml } from "$lib/sanitize";
+
+// Sanitize HTML fields at the boundary where remote data enters the frontend.
+// Every {@html} call site downstream receives already-safe markup.
+
+function sanitizeMessage(msg: any): any {
+  if (msg && typeof msg.inhoud === "string") {
+    msg.inhoud = sanitizeHtml(msg.inhoud);
+  }
+  return msg;
+}
+
+function sanitizeAssignment(a: any): any {
+  if (a && typeof a.Omschrijving === "string") {
+    a.Omschrijving = sanitizeHtml(a.Omschrijving);
+  }
+  return a;
+}
+
+function sanitizeActivity(a: any): any {
+  if (a && typeof a.Details === "string") {
+    a.Details = sanitizeHtml(a.Details);
+  }
+  return a;
+}
+
+function sanitizeStudiewijzerDetail(detail: any): any {
+  if (!detail) return detail;
+  if (typeof detail.Omschrijving === "string") {
+    detail.Omschrijving = sanitizeHtml(detail.Omschrijving);
+  }
+  const items = detail.Onderdelen?.Items;
+  if (Array.isArray(items)) {
+    for (const onderdeel of items) {
+      if (onderdeel && typeof onderdeel.Omschrijving === "string") {
+        onderdeel.Omschrijving = sanitizeHtml(onderdeel.Omschrijving);
+      }
+    }
+  }
+  return detail;
+}
+
+function sanitizeCalendarEvent(event: any): any {
+  if (event && typeof event.Inhoud === "string") {
+    event.Inhoud = sanitizeHtml(event.Inhoud);
+  }
+  return event;
+}
 
 // === Auth ===
 export async function getLoginUrl(
@@ -63,7 +111,8 @@ export async function getCalendarEvents(
   start: string,
   end: string,
 ): Promise<any[]> {
-  return invoke("get_calendar_events", { personId, start, end });
+  const events = await invoke("get_calendar_events", { personId, start, end });
+  return (events as any[]).map(sanitizeCalendarEvent);
 }
 
 export async function getAbsences(
@@ -78,7 +127,8 @@ export async function getCalendarEvent(
   personId: number,
   eventId: number,
 ): Promise<any> {
-  return invoke("get_calendar_event", { personId, eventId });
+  const event = await invoke("get_calendar_event", { personId, eventId });
+  return sanitizeCalendarEvent(event);
 }
 
 export async function downloadFile(
@@ -195,11 +245,18 @@ export async function getMessages(
   skip?: number,
   query?: string,
 ): Promise<any[]> {
-  return invoke("get_messages", { berichtenLink, top, skip, query });
+  const messages = await invoke("get_messages", {
+    berichtenLink,
+    top,
+    skip,
+    query,
+  });
+  return (messages as any[]).map(sanitizeMessage);
 }
 
 export async function getMessageDetail(selfLink: string): Promise<any> {
-  return invoke("get_message_detail", { selfLink });
+  const msg = await invoke("get_message_detail", { selfLink });
+  return sanitizeMessage(msg);
 }
 
 export async function sendMessage(params: {
@@ -251,11 +308,17 @@ export async function getAssignments(
   start: string,
   end: string,
 ): Promise<any[]> {
-  return invoke("get_assignments", { personId, start, end });
+  const assignments = await invoke("get_assignments", {
+    personId,
+    start,
+    end,
+  });
+  return (assignments as any[]).map(sanitizeAssignment);
 }
 
 export async function getAssignmentDetail(selfUrl: string): Promise<any> {
-  return invoke("get_assignment_detail", { selfUrl });
+  const assignment = await invoke("get_assignment_detail", { selfUrl });
+  return sanitizeAssignment(assignment);
 }
 
 export async function handInAssignment(
@@ -283,14 +346,19 @@ export async function getLeermiddelLaunchUrl(href: string): Promise<string> {
 
 // === Activities ===
 export async function getActivities(personId: number): Promise<any[]> {
-  return invoke("get_activities", { personId });
+  const activities = await invoke("get_activities", { personId });
+  return (activities as any[]).map(sanitizeActivity);
 }
 
 export async function getActivityElements(
   personId: number,
   activityId: number,
 ): Promise<any[]> {
-  return invoke("get_activity_elements", { personId, activityId });
+  const elements = await invoke("get_activity_elements", {
+    personId,
+    activityId,
+  });
+  return (elements as any[]).map(sanitizeActivity);
 }
 
 // === Bronnen ===
@@ -312,7 +380,12 @@ export async function getStudiewijzerDetail(
   id: number,
   isProject: boolean,
 ): Promise<any> {
-  return invoke("get_studiewijzer_detail", { personId, id, isProject });
+  const detail = await invoke("get_studiewijzer_detail", {
+    personId,
+    id,
+    isProject,
+  });
+  return sanitizeStudiewijzerDetail(detail);
 }
 
 export async function getStudiewijzerOnderdeelDetail(
@@ -321,12 +394,13 @@ export async function getStudiewijzerOnderdeelDetail(
   onderdeelId: number,
   isProject: boolean,
 ): Promise<any> {
-  return invoke("get_studiewijzer_onderdeel_detail", {
+  const detail = await invoke("get_studiewijzer_onderdeel_detail", {
     personId,
     swId,
     onderdeelId,
     isProject,
   });
+  return sanitizeStudiewijzerDetail(detail);
 }
 
 export async function triggerTestNotification(): Promise<void> {

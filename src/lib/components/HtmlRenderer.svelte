@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { sanitizeHtml } from '$lib/sanitize';
+
   interface Props {
     html: string;
   }
@@ -8,23 +10,15 @@
   // This is better than raw {@html} because we can control the layout and styling in Svelte
   function parseHtml(raw: string) {
     if (!raw) return [];
-    
-    // This is a naive parser. For complex HTML, a real DOMParser or library would be better.
-    // However, Magister HTML is usually quite simple.
-    // We'll normalize some common patterns.
-    let cleaned = raw
-      .replace(/<o:p>&nbsp;<\/o:p>/g, '')
-      .replace(/&nbsp;/g, ' ')
-      .trim();
+
+    // Sanitize once at the boundary — every {@html} below only ever receives
+    // markup that has been through DOMPurify.
+    const cleaned = sanitizeHtml(raw);
 
     // To make it a "parser", we'll split into block elements
     // We'll use a simple regex to find tags
     const blocks: { tag: string; content: string }[] = [];
-    
-    // Note: This is an extremely simplified parser for demonstration
-    // In a real app, I'd use DOMParser().parseFromString(html, 'text/html')
-    // but here I'll try to follow the "parser" request literally.
-    
+
     // Check if we are in a browser environment to use DOMParser
     if (typeof window !== 'undefined' && typeof DOMParser !== 'undefined') {
         const parser = new DOMParser();
