@@ -56,6 +56,8 @@ jobs:
 
     runs-on: ${{ matrix.settings.platform }}
     name: Build (${{ matrix.settings.name }})
+    env:
+      RUSTC_WRAPPER: ""
     steps:
       - uses: actions/checkout@v4
 
@@ -117,8 +119,6 @@ jobs:
 
       - name: Build Android App (Aarch64 APK)
         if: ${{ matrix.settings.is-android }}
-        env:
-          RUSTC_WRAPPER: ""
         run: |
           # Your preferred lean build
           pnpm tauri android build --apk --target aarch64 --split-per-abi
