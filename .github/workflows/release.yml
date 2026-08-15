@@ -117,6 +117,8 @@ jobs:
 
       - name: Build Android App (Aarch64 APK)
         if: ${{ matrix.settings.is-android }}
+        env:
+          RUSTC_WRAPPER: ""
         run: |
           # Your preferred lean build
           pnpm tauri android build --apk --target aarch64 --split-per-abi
