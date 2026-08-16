@@ -657,7 +657,7 @@
 
               <!-- Provider -->
               <div class="space-y-2">
-                <label class="text-label-medium text-gray-500">AI Provider</label>
+                <span class="text-label-medium text-gray-500">AI Provider</span>
                 <div class="grid grid-cols-2 gap-2">
                   {#each Object.entries(AI_PROVIDERS) as [key, info]}
                     <button

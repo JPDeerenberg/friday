@@ -595,6 +595,7 @@
                 {@const hw = getLessonHomework(event)}
                 {@const hasHw = !!(hw.inhoud || hw.assignments.length > 0)}
                 {@const isOpen = expandedLesson === i}
+                <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
                 <div
                   in:fly={{ y: 10, delay: i * 60, duration: 400 }}
                   class="rounded-m3-md border transition-all overflow-hidden
@@ -603,7 +604,7 @@
  : 'bg-surface-800/40 border-white/5'}
  {isOpen ? 'border-amber-500/50' : ''}"
                   role={hasHw ? 'button' : undefined}
-                  tabindex={hasHw ? '0' : undefined}
+                  tabindex={hasHw ? 0 : undefined}
                   onclick={() => hasHw && toggleLesson(i)}
                   onkeydown={(e) => { if (hasHw && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); toggleLesson(i); } }}
                 >
@@ -1024,15 +1025,6 @@
     animation: gradient-x 12s ease infinite;
   }
 
-  @keyframes gradient-y {
-    0%, 100% { background-position: 50% 0%; }
-    50% { background-position: 50% 100%; }
-  }
-  .animate-gradient-y {
-    background-size: 100% 200%;
-    animation: gradient-y 8s ease infinite;
-  }
-
   @keyframes header-pulse {
     0%, 100% { transform: scale(1); opacity: 0.05; }
     50% { transform: scale(1.1); opacity: 0.1; }
@@ -1090,10 +1082,6 @@
 
   .shadow-3xl {
     box-shadow: 0 40px 100px -20px rgba(0, 0, 0, 0.7);
-  }
-
-  .bg-grid-white {
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32' width='32' height='32' fill='none' stroke='white' stroke-opacity='1' %3E%3Cpath d='M0 .5H31.5V32' /%3E%3C/svg%3E");
   }
 
   .mask-radial-gradient {

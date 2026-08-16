@@ -626,6 +626,7 @@
       <div class="flex items-center gap-1.5">
         <button
           onclick={() => isCreating = true}
+          aria-label="Nieuwe afspraak toevoegen"
           class="p-1.5 rounded-full bg-primary-500/15 border border-primary-500/25 text-primary-400 hover:bg-primary-500/25 transition-all"
         >
           <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
@@ -969,6 +970,7 @@
               {#if app.InfoType === 1}
                 <button 
                   onclick={(e) => { e.stopPropagation(); toggleDone(app); }}
+                  aria-label={app.Afgerond ? 'Markeer als niet afgerond' : 'Markeer als afgerond'}
                   class="w-7 h-7 md:w-8 md:h-8 rounded-full border-2 transition-all flex items-center justify-center
  {app.Afgerond 
  ? 'bg-emerald-500 border-emerald-400 text-white shadow-sm shadow-emerald-500/30' 
@@ -1004,7 +1006,7 @@
 {#if selectedAppointment}
   <div class="fixed inset-0 z-50 flex items-end md:items-center justify-center p-0 md:p-6" transition:fade={{ duration: 150 }}>
     <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-    <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" onclick={() => { selectedAppointment = null; editMode = false; }}></div>
+    <div role="presentation" class="absolute inset-0 bg-black/70 backdrop-blur-sm" onclick={() => { selectedAppointment = null; editMode = false; }}></div>
     
     <div 
       class="relative w-full max-w-lg bg-surface-900 border-t md:border border-white/10 rounded-t-m3-xl md:rounded-m3-xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh] z-10"
@@ -1188,7 +1190,7 @@
 {#if isCreating}
   <div class="fixed inset-0 z-50 flex items-center justify-center p-3 md:p-4" transition:fade={{ duration: 150 }}>
     <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-    <div class="absolute inset-0 bg-black/80 backdrop-blur-sm" onclick={() => isCreating = false}></div>
+    <div role="presentation" class="absolute inset-0 bg-black/80 backdrop-blur-sm" onclick={() => isCreating = false}></div>
     
     <div 
       class="relative w-full max-w-md bg-surface-900 border border-white/10 rounded-m3-xl shadow-2xl overflow-hidden flex flex-col z-10"

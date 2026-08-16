@@ -36,11 +36,11 @@
     xl: 'rounded-m3-xl',  // 28px — old app used 40-48px, well past even this
   };
 
-  const variantClasses: Record<Variant, string> = {
+  const variantClasses = $derived<Record<Variant, string>>({
     elevated: glass ? 'glass' : 'elevation-1 hover:elevation-2',
     filled: 'bg-surface-800 border border-transparent',
     outlined: 'bg-transparent border border-surface-700/60',
-  };
+  });
 </script>
 
 <div class="p-8 {shapeClasses[shape]} {variantClasses[variant]} {className}" {...rest}>

@@ -229,7 +229,7 @@
 {#if isOpen}
   <div
     class="fixed z-50 bottom-36 md:bottom-24 right-4 md:right-8 w-[calc(100vw-2rem)] md:w-[400px] max-h-[600px] h-[60vh] md:h-[500px] rounded-3xl bg-surface-900/95 backdrop-blur-2xl border border-white/10 shadow-3xl flex flex-col overflow-hidden"
-    transition:scale={{ start: 0.9, y: 20, duration: 200 }}
+    transition:scale={{ start: 0.9, duration: 200 }}
   >
     <!-- Header -->
     <div class="shrink-0 px-5 py-4 border-b border-white/10 flex items-center justify-between bg-surface-900/80">
@@ -256,7 +256,7 @@
     </div>
 
     <!-- Messages -->
-    <div class="flex-1 overflow-y-auto px-5 py-4 space-y-4 no-scrollbar scroll-smooth" bind:this={undefined}>
+    <div class="flex-1 overflow-y-auto px-5 py-4 space-y-4 no-scrollbar scroll-smooth">
       {#each messages as msg, i (i)}
         <div
           class="flex {msg.role === 'user' ? 'justify-end' : 'justify-start'}"

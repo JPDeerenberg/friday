@@ -4,6 +4,7 @@
   import { tryAiInsight, getAiConfig } from '$lib/ai';
   import { cacheGet, cacheRefresh } from '$lib/cache';
   import { onMount } from 'svelte';
+  import { fly } from 'svelte/transition';
 
   let schoolyears = $state<any[]>([]);
   let selectedYear = $state<any>(null);
