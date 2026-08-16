@@ -55,7 +55,6 @@ tauri-plugin-deep-link = "2"
 tauri-plugin-mcp-bridge = "0.12"
 jni = "0.21.1"
 dirs = "5"
-once_cell = "1.19"
 async-trait = "0.1"
 
 # Desktop (Linux/Windows/macOS): OS keychain via keyring's `v1` feature.
