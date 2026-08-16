@@ -77,18 +77,43 @@ export function loadSettings() {
 
 export const userSettings = writable(loadSettings());
 
+const NOTIFICATION_SETTING_KEYS = [
+  "notifyMessages",
+  "notifyGrades",
+  "notifyDeadlines",
+  "notifyCalendar",
+  "notifyAutoDnd",
+] as const;
+
+function pickNotificationSettings(
+  settings: typeof DEFAULT_SETTINGS,
+): Record<(typeof NOTIFICATION_SETTING_KEYS)[number], boolean> {
+  return {
+    notifyMessages: settings.notifyMessages,
+    notifyGrades: settings.notifyGrades,
+    notifyDeadlines: settings.notifyDeadlines,
+    notifyCalendar: settings.notifyCalendar,
+    notifyAutoDnd: settings.notifyAutoDnd,
+  };
+}
+
 if (typeof window !== "undefined") {
+  let lastSyncedNotifPrefs: Record<
+    (typeof NOTIFICATION_SETTING_KEYS)[number],
+    boolean
+  > | null = null;
+
   userSettings.subscribe((val) => {
     localStorage.setItem("user_settings", JSON.stringify(val));
 
-    // Sync notification preferences to Android
-    if (
-      val.notifyMessages !== undefined ||
-      val.notifyGrades !== undefined ||
-      val.notifyDeadlines !== undefined ||
-      val.notifyCalendar !== undefined ||
-      val.notifyAutoDnd !== undefined
-    ) {
+    // Sync notification preferences to Android only when an actual
+    // notification-related value changed (not on every settings write).
+    const notifPrefs = pickNotificationSettings(val);
+    const changed =
+      lastSyncedNotifPrefs === null ||
+      NOTIFICATION_SETTING_KEYS.some((key) => notifPrefs[key] !== lastSyncedNotifPrefs![key]);
+    if (changed) {
+      lastSyncedNotifPrefs = notifPrefs;
       syncPreferencesToAndroid(val);
     }
   });
