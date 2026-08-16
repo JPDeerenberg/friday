@@ -29,7 +29,7 @@
 
     try {
       const config = await getAiConfig();
-      if (!config.enabled || !config.api_key) {
+      if (!config.enabled || !config.has_api_key) {
         aiSummary = '⚠️ AI is niet ingesteld. Ga naar Instellingen > AI.';
         return;
       }

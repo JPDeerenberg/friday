@@ -1,5 +1,13 @@
 <script lang="ts">
-  import { aiChat, aiChatWithTools, getAiConfig, type AiMessage, type AiConfig } from "$lib/ai";
+  import {
+    aiChat,
+    aiChatWithTools,
+    confirmPendingAction,
+    getAiConfig,
+    type AiConfig,
+    type AiMessage,
+    type PendingActionInfo,
+  } from "$lib/ai";
   import { currentPage, accountInfo, personId } from "$lib/stores";
   import { onMount } from "svelte";
   import { fly, scale } from "svelte/transition";
@@ -10,6 +18,8 @@
   let isLoading = $state(false);
   let isConfigured = $state(false);
   let firstOpen = $state(true);
+  let pendingActions = $state<PendingActionInfo[]>([]);
+  let confirmingActionId = $state<string | null>(null);
 
   // Generate a simple page context string from the current page
   function getPageContext(): string {
@@ -44,7 +54,7 @@
   async function checkConfig() {
     try {
       const config = await getAiConfig();
-      isConfigured = config.enabled && !!config.api_key;
+      isConfigured = config.enabled && config.has_api_key;
       useDataAccess = config.use_data_access;
     } catch {
       isConfigured = false;
@@ -87,11 +97,16 @@
 
       // Use aiChatWithTools when data access is enabled AND we have a personId
       const canUseTools = useDataAccess && currentPersonId !== null;
-      const response = canUseTools
-        ? await aiChatWithTools(messagePayload, context, currentPersonId!)
-        : await aiChat(messagePayload, context);
-
-      messages = [...messages, { role: "assistant", content: response }];
+      if (canUseTools) {
+        const result = await aiChatWithTools(messagePayload, context, currentPersonId!);
+        messages = [...messages, { role: "assistant", content: result.content }];
+        if (result.pending_actions.length > 0) {
+          pendingActions = [...pendingActions, ...result.pending_actions];
+        }
+      } else {
+        const response = await aiChat(messagePayload, context);
+        messages = [...messages, { role: "assistant", content: response }];
+      }
     } catch (e) {
       let errorMsg = "Er is iets misgegaan. Probeer het opnieuw.";
       if (String(e).includes("niet geconfigureerd")) {
@@ -115,6 +130,7 @@
   function clearChat() {
     messages = [];
     inputText = "";
+    pendingActions = [];
   }
 
   // Quick actions
@@ -136,16 +152,53 @@
       ];
 
       const canUseTools = useDataAccess && currentPersonId !== null;
-      const response = canUseTools
-        ? await aiChatWithTools(messagePayload, context, currentPersonId!)
-        : await aiChat(messagePayload, context);
-
-      messages = [...messages, { role: "assistant", content: response }];
+      if (canUseTools) {
+        const result = await aiChatWithTools(messagePayload, context, currentPersonId!);
+        messages = [...messages, { role: "assistant", content: result.content }];
+        if (result.pending_actions.length > 0) {
+          pendingActions = [...pendingActions, ...result.pending_actions];
+        }
+      } else {
+        const response = await aiChat(messagePayload, context);
+        messages = [...messages, { role: "assistant", content: response }];
+      }
     } catch (e) {
       messages = [...messages, { role: "assistant", content: "⚠️ " + String(e) }];
     } finally {
       isLoading = false;
     }
+  }
+
+  async function confirmAction(action: PendingActionInfo) {
+    if (confirmingActionId !== null) return;
+    confirmingActionId = action.action_id;
+    try {
+      await confirmPendingAction(action.action_id);
+      const done =
+        action.action_type === "send_message"
+          ? "✅ Bericht verzonden."
+          : "✅ Actie bevestigd en uitgevoerd.";
+      messages = [...messages, { role: "assistant", content: done }];
+    } catch (e) {
+      messages = [...messages, { role: "assistant", content: "⚠️ " + String(e) }];
+    } finally {
+      pendingActions = pendingActions.filter((a) => a.action_id !== action.action_id);
+      confirmingActionId = null;
+    }
+  }
+
+  function dismissAction(action: PendingActionInfo) {
+    if (confirmingActionId !== null) return;
+    pendingActions = pendingActions.filter((a) => a.action_id !== action.action_id);
+    messages = [
+      ...messages,
+      { role: "assistant", content: "❌ Actie geannuleerd — er is niets verzonden." },
+    ];
+  }
+
+  function formatRecipients(recipients?: PendingActionInfo["recipients"]): string {
+    if (!recipients || recipients.length === 0) return "—";
+    return recipients.map((r) => `#${r.id}${r.type ? ` (${r.type})` : ""}`).join(", ");
   }
 </script>
 
@@ -220,6 +273,63 @@
         </div>
       {/each}
 
+      {#each pendingActions as action (action.action_id)}
+        <div class="flex justify-start" in:fly={{ y: 10, duration: 200 }}>
+          <div
+            class="max-w-[92%] w-full rounded-2xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-gray-200"
+          >
+            <p class="text-[11px] font-black uppercase tracking-widest text-amber-400 mb-1">
+              ⚠️ Bevestiging vereist
+            </p>
+            <p class="text-[12px] text-gray-300 mb-2">
+              De AI wil namens jou
+              {action.action_type === "send_message"
+                ? "een bericht verzenden"
+                : "berichten als gelezen markeren"}
+              . Er is nog niets verzonden.
+            </p>
+            {#if action.action_type === "send_message"}
+              <div class="space-y-1 text-[13px]">
+                <p class="break-words">
+                  <span class="font-bold text-white">Naar:</span> {formatRecipients(action.recipients)}
+                </p>
+                <p class="break-words">
+                  <span class="font-bold text-white">Onderwerp:</span> {action.subject ?? "—"}
+                </p>
+                <p class="break-words whitespace-pre-wrap">
+                  <span class="font-bold text-white">Inhoud:</span> {action.body ?? "—"}
+                </p>
+              </div>
+            {:else if action.action_type === "mark_messages_read"}
+              <p class="text-[13px] break-words">
+                <span class="font-bold text-white">Bericht-ID's:</span>
+                {(action.message_ids ?? []).join(", ")}
+              </p>
+            {/if}
+            <div class="flex gap-2 mt-3">
+              <button
+                onclick={() => confirmAction(action)}
+                disabled={confirmingActionId !== null}
+                class="flex-1 px-3 py-2 rounded-xl bg-emerald-500 text-white text-[11px] font-bold uppercase tracking-wide hover:bg-emerald-400 transition-all active:scale-95 disabled:opacity-50"
+              >
+                {confirmingActionId === action.action_id
+                  ? "Bezig..."
+                  : action.action_type === "send_message"
+                    ? "Bevestig en verzend"
+                    : "Bevestigen"}
+              </button>
+              <button
+                onclick={() => dismissAction(action)}
+                disabled={confirmingActionId !== null}
+                class="flex-1 px-3 py-2 rounded-xl bg-surface-800 border border-white/10 text-[11px] font-bold uppercase tracking-wide text-gray-300 hover:text-white hover:bg-surface-700 transition-all active:scale-95 disabled:opacity-50"
+              >
+                Annuleren
+              </button>
+            </div>
+          </div>
+        </div>
+      {/each}
+
       {#if isLoading}
         <div class="flex justify-start" in:fly={{ y: 10, duration: 200 }}>
           <div class="bg-surface-800/60 border border-white/5 rounded-2xl rounded-tl-md px-5 py-4">
@@ -250,7 +360,7 @@
     <!-- Quick actions -->
     {#if messages.length <= 1}
       <div class="shrink-0 px-5 pb-2 flex flex-wrap gap-2">
-        {#each quickActions as action}
+        {#each quickActions as action (action.label)}
           <button
             onclick={() => quickAction(action.query)}
             disabled={isLoading || !isConfigured}

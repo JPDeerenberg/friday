@@ -18,9 +18,15 @@ class SyncWorker(appContext: Context, workerParams: WorkerParameters) :
     // Declare the native method
     private external fun runSync(dataDir: String): String
 
+    // Initialize ndk-context so the Rust keyring store can access the app context.
+    // Must be called before any native call that reads/writes secrets. Safe to call
+    // multiple times (guarded inside Rust).
+    private external fun initNdkContext(context: Context)
+
     init {
         try {
             System.loadLibrary("friday_lib")
+            initNdkContext(applicationContext)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to load friday_lib", e)
         }

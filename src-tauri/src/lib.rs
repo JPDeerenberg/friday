@@ -4,6 +4,7 @@ mod auth;
 mod client;
 mod commands;
 mod models;
+mod secure_store;
 
 #[cfg(target_os = "android")]
 pub mod jni;
@@ -143,6 +144,7 @@ pub fn run() {
             commands::ai::ai_chat_with_tools,
             commands::ai::ai_page_insight,
             commands::ai::list_ai_models,
+            commands::ai::confirm_pending_action,
             // Export
             commands::export::export_all_data,
         ])

@@ -438,7 +438,7 @@
     if (aiGradeLoading || subjects.length === 0) return;
     try {
       const config = await getAiConfig();
-      if (!config.enabled || !config.api_key) return;
+      if (!config.enabled || !config.has_api_key) return;
 
       aiGradeLoading = true;
       const data = subjects.map(s => ({

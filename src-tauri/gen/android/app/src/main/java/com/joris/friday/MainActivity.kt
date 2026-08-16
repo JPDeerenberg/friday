@@ -24,6 +24,11 @@ class MainActivity : TauriActivity() {
     private var hasPromptedPermissions = false
     private var hasPromptedBatteryOpt = false
 
+    // Initialize ndk-context so the Rust keyring store can access the app context.
+    // tao's glue usually does this on Activity creation, but behavior varies across
+    // Tauri versions — ensure it explicitly (guarded inside Rust, safe to repeat).
+    private external fun initNdkContext(context: Context)
+
     companion object {
         const val PREF_SYNC_INTERVAL = "sync_interval_minutes"
         const val PERIODIC_SYNC_WORK = "FridayPeriodicSync"
@@ -33,6 +38,7 @@ class MainActivity : TauriActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+        initNdkContext(this.applicationContext)
 
         // Schedule the periodic sync via WorkManager. WorkManager is the sole sync
         // driver — it is OS-managed and survives process kills, Doze mode, and reboots.

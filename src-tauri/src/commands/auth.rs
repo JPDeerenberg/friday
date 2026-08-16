@@ -279,12 +279,8 @@ pub async fn logout(client: State<'_, SharedClient>, app: tauri::AppHandle) -> R
     c.token_set = None;
     c.auth_flow = None;
 
-    // Remove token file
-    use tauri::Manager;
-    if let Ok(path) = app.path().app_data_dir() {
-        let token_path = path.join("tokens.json");
-        std::fs::remove_file(token_path).ok();
-    }
+    // Remove all persisted token data (metadata file + keyring entries).
+    c.clear_persisted_tokens(&app);
 
     Ok(())
 }
@@ -299,37 +295,35 @@ pub async fn restore_session(
 
     use tauri::Manager;
     let path = app.path().app_data_dir().map_err(|e| e.to_string())?;
-    let token_path = path.join("tokens.json");
 
-    if token_path.exists() {
-        let data = std::fs::read_to_string(&token_path).map_err(|e| e.to_string())?;
-        let token_set: TokenSet = serde_json::from_str(&data).map_err(|e| e.to_string())?;
-        c.token_set = Some(token_set);
+    // Load tokens from secure storage; fall back to migrating any legacy
+    // plaintext tokens.json left over from before this feature.
+    let token_set = crate::client::TokenSetPersistence::load(&path)
+        .or_else(|| crate::client::migrate_legacy_tokens(&path));
 
-        // Try refreshing if expired
-        if let Err(_) = c.ensure_valid_token().await {
-            c.token_set = None;
-            std::fs::remove_file(token_path).ok();
-            return Ok(false);
-        }
+    let token_set = match token_set {
+        Some(ts) => ts,
+        None => return Ok(false),
+    };
+    c.token_set = Some(token_set);
 
-        // Save refreshed tokens
-        save_tokens_to_disk(&c, &app);
-        Ok(true)
-    } else {
-        Ok(false)
+    // Try refreshing if expired
+    if let Err(_) = c.ensure_valid_token().await {
+        c.token_set = None;
+        c.clear_persisted_tokens(&app);
+        return Ok(false);
     }
+
+    // Save refreshed tokens
+    save_tokens_to_disk(&c, &app);
+    Ok(true)
 }
 
 fn save_tokens_to_disk(client: &MagisterClient, app: &tauri::AppHandle) {
     if let Some(ref token_set) = client.token_set {
         use tauri::Manager;
         if let Ok(path) = app.path().app_data_dir() {
-            std::fs::create_dir_all(&path).ok();
-            let token_path = path.join("tokens.json");
-            if let Ok(data) = serde_json::to_string_pretty(token_set) {
-                std::fs::write(token_path, data).ok();
-            }
+            crate::client::TokenSetPersistence::save(&path, token_set);
         }
     }
 }

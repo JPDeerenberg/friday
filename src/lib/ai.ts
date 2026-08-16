@@ -9,6 +9,8 @@ export interface AiConfig {
   enabled: boolean;
   provider: AiProviderType;
   use_data_access: boolean;
+  /** True when an API key is stored (the key itself is never sent to the frontend). */
+  has_api_key: boolean;
 }
 
 export interface AiMessage {
@@ -24,6 +26,24 @@ export interface AiMessage {
   }>;
 }
 
+/** A side-effecting action the AI staged that still awaits user confirmation. */
+export interface PendingActionInfo {
+  status: string;
+  action_id: string;
+  action_type: string;
+  recipients?: Array<{ id: number; type?: string }>;
+  subject?: string;
+  body?: string;
+  message_ids?: number[];
+  message?: string;
+}
+
+/** Result of a tools-enabled AI chat. */
+export interface AiChatWithToolsResult {
+  content: string;
+  pending_actions: PendingActionInfo[];
+}
+
 export const DEFAULT_AI_CONFIG: AiConfig = {
   api_key: "",
   base_url: "https://api.openai.com/v1",
@@ -31,6 +51,7 @@ export const DEFAULT_AI_CONFIG: AiConfig = {
   enabled: false,
   provider: "openai",
   use_data_access: true,
+  has_api_key: false,
 };
 
 /** Provider display names and default models */
@@ -150,20 +171,36 @@ export async function aiChat(
  * @param messages Array of chat messages
  * @param pageContext Optional context about the current page
  * @param personId The person ID for fetching school data
- * @returns The AI response text
+ * @returns The AI response text plus any staged actions awaiting confirmation
  */
 export async function aiChatWithTools(
   messages: AiMessage[],
   pageContext?: string,
   personId?: number,
-): Promise<string> {
-  let result: string;
+): Promise<AiChatWithToolsResult> {
+  let result: AiChatWithToolsResult;
   try {
     result = await invoke("ai_chat_with_tools", {
       messagesJson: JSON.stringify(messages),
       pageContext: pageContext || null,
       personId: personId || 0,
     });
+  } catch (e) {
+    throw new Error(e as string);
+  }
+  return result;
+}
+
+/**
+ * Confirm and execute a previously-staged AI action (e.g. sending a message).
+ * This is the only path that actually sends data on the user's behalf.
+ * @param actionId The id of the staged action to confirm
+ * @returns A JSON string describing the outcome
+ */
+export async function confirmPendingAction(actionId: string): Promise<string> {
+  let result: string;
+  try {
+    result = await invoke("confirm_pending_action", { actionId });
   } catch (e) {
     throw new Error(e as string);
   }
@@ -233,7 +270,7 @@ export async function tryAiInsight(
 ): Promise<string | null> {
   try {
     const config = await getAiConfig();
-    if (!config.enabled || !config.api_key) {
+    if (!config.enabled || !config.has_api_key) {
       return null; // AI not configured
     }
     return await aiPageInsight(page, data, query);

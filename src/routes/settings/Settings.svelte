@@ -92,6 +92,8 @@
   let aiSaving = $state(false);
   let aiLoaded = $state(false);
   let aiShowKey = $state(false);
+  /** True when an API key is stored on-device (the key itself is never sent to the frontend). */
+  let aiHasKey = $state(false);
 
   // --- GitHub repo info ---
   let repoStats = $state<{ stars: number; forks: number; openIssues: number } | null>(null);
@@ -167,6 +169,7 @@
     // Load AI config
     getAiConfig().then((config: AiConfig) => {
       aiApiKey = config.api_key;
+      aiHasKey = config.has_api_key;
       aiBaseUrl = config.base_url;
       aiModel = config.model;
       aiEnabled = config.enabled;
@@ -613,16 +616,22 @@
                     id="aiApiKey"
                     type={aiShowKey ? 'text' : 'password'}
                     bind:value={aiApiKey}
-                    placeholder="sk-..."
+                    placeholder={aiHasKey ? '•••••••• (opgeslagen)' : 'sk-...'}
                     class="flex-1 bg-surface-800/80 border border-white/10 rounded-m3-xs px-4 py-3 text-body-medium text-white placeholder-gray-600 focus:outline-none focus:border-primary-500/50 transition-all font-mono"
                   />
                   <button
                     onclick={() => aiShowKey = !aiShowKey}
-                    class="px-3 py-2 rounded-m3-full bg-surface-800/60 border border-white/10 text-gray-400 hover:text-white transition-all text-label-medium"
+                    disabled={!aiApiKey}
+                    class="px-3 py-2 rounded-m3-full bg-surface-800/60 border border-white/10 text-gray-400 hover:text-white transition-all text-label-medium disabled:opacity-40"
                   >
                     {aiShowKey ? 'Verberg' : 'Toon'}
                   </button>
                 </div>
+                {#if aiHasKey && !aiApiKey}
+                  <p class="text-label-small text-gray-500">
+                    Er is al een sleutel opgeslagen. Laat dit veld leeg om de huidige te behouden, of voer een nieuwe sleutel in om deze te vervangen.
+                  </p>
+                {/if}
               </div>
 
               <!-- Base URL -->
@@ -727,7 +736,7 @@
                 </button>
                 <button
                   onclick={testAiConnection}
-                  disabled={aiTesting || !aiApiKey}
+                  disabled={aiTesting || (!aiApiKey && !aiHasKey)}
                   class="flex-1 py-3 rounded-m3-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20 transition-all text-label-large disabled:opacity-50"
                 >
                   {aiTesting ? '⏳ Testen...' : 'Test verbinding'}

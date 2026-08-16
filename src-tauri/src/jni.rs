@@ -30,6 +30,60 @@ fn sync_runtime() -> &'static Mutex<Runtime> {
 }
 
 #[cfg(target_os = "android")]
+fn ensure_ndk_context<'local>(
+    env: &mut JNIEnv<'local>,
+    context: jni::objects::JObject<'local>,
+) {
+    use std::ffi::c_void;
+
+    let already_initialized = std::panic::catch_unwind(|| {
+        let _ = ndk_context::android_context();
+    })
+    .is_ok();
+    if already_initialized {
+        return;
+    }
+
+    let vm = env.get_java_vm().ok();
+    let Some(vm) = vm else { return };
+    if let Ok(ref_) = env.new_global_ref(&context) {
+        unsafe {
+            ndk_context::initialize_android_context(
+                vm.get_java_vm_pointer() as *mut c_void,
+                ref_.as_obj().as_raw() as *mut c_void,
+            );
+        }
+    }
+}
+
+#[cfg(target_os = "android")]
+#[no_mangle]
+pub extern "system" fn Java_com_joris_friday_SyncWorker_initNdkContext<'local>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    context: jni::objects::JObject<'local>,
+) {
+    // Initialize the Android ndk-context so the keyring store can find the app
+    // context. tao normally does this when the Activity is created, but the
+    // WorkManager sync can run in a fresh process with no Activity ever created
+    // (e.g. after reboot), so initialize it here if it isn't already set.
+    ensure_ndk_context(&mut env, context);
+}
+
+#[cfg(target_os = "android")]
+#[no_mangle]
+pub extern "system" fn Java_com_joris_friday_MainActivity_initNdkContext<'local>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    context: jni::objects::JObject<'local>,
+) {
+    // Belt-and-suspenders for the UI process: tao's glue usually initializes
+    // ndk-context on Activity creation, but behavior differs across versions, so
+    // ensure it explicitly (guarded — safe to call repeatedly).
+    ensure_ndk_context(&mut env, context);
+}
+
+#[cfg(target_os = "android")]
 #[no_mangle]
 pub extern "system" fn Java_com_joris_friday_SyncWorker_runSync<'local>(
     mut env: JNIEnv<'local>,
@@ -298,67 +352,27 @@ pub fn share_downloaded_file(file_path: &std::path::Path) -> Result<(), String> 
 
 #[cfg(target_os = "android")]
 async fn do_sync(data_dir: &str) -> String {
-    use crate::client::TokenSet;
-    use std::path::{Path, PathBuf};
+    use crate::client::{TokenSetPersistence, migrate_legacy_tokens};
+    use std::path::PathBuf;
 
     let dir = PathBuf::from(data_dir);
     eprintln!("=== FridaySync (Rust): do_sync started ===");
     eprintln!("FridaySync (Rust): app_data_dir: {:?}", dir);
-    
-    // Token search paths - ordered by likelihood:
-    // Path 1: app_data_dir/tokens.json (Tauri 2 default — caller should pass this)
-    // Path 2: app_data_dir/files/tokens.json (if caller passes filesDir by mistake)
-    // Path 3: parent of caller dir + tokens.json (extra fallback)
-    let paths = vec![
-        dir.join("tokens.json"),
-        dir.join("files/tokens.json"),
-        dir.join("com.joris.friday/tokens.json"),
-        dir.parent().unwrap_or(Path::new("/")).join("tokens.json"),
-    ];
 
-    let mut token_data = None;
-    let mut successful_path = None;
-    
-    for (idx, path) in paths.iter().enumerate() {
-        let exists = path.exists();
-        eprintln!("FridaySync (Rust): Path {}: {:?} - exists: {}", idx + 1, path, exists);
-        if exists {
-            match std::fs::read_to_string(path) {
-                Ok(data) => {
-                    eprintln!("FridaySync (Rust): ✓ Successfully read tokens from path {}", idx + 1);
-                    token_data = Some(data);
-                    successful_path = Some(path.clone());
-                    break;
-                }
-                Err(e) => {
-                    eprintln!("FridaySync (Rust): Failed to read from {:?}: {}", path, e);
-                }
-            }
-        }
-    }
-
-    let token_content = match token_data {
-        Some(data) => {
-            eprintln!("FridaySync (Rust): Token content loaded: {} bytes", data.len());
-            data
-        },
-        None => {
-            eprintln!("FridaySyncWorker (Rust): ERROR: Could not find tokens.json in any of these locations:");
-            for (idx, path) in paths.iter().enumerate() {
-                eprintln!("  Path {}: {:?}", idx + 1, path);
-            }
-            return "ERROR: NO_TOKENS".to_string()
-        },
-    };
-
-    let token_set: TokenSet = match serde_json::from_str(&token_content) {
-        Ok(ts) => {
-            eprintln!("FridaySync (Rust): ✓ Tokens parsed successfully");
+    // Load tokens from secure storage (keyring), migrating any legacy plaintext
+    // tokens.json left over from before this feature.
+    let token_set = TokenSetPersistence::load(&dir)
+        .or_else(|| migrate_legacy_tokens(&dir))
+        .map(|ts| {
+            eprintln!("FridaySync (Rust): ✓ Tokens loaded from secure storage");
             ts
-        },
-        Err(e) => {
-            eprintln!("FridaySyncWorker (Rust): ERROR: Failed to parse tokens: {}", e);
-            return "ERROR: INVALID_TOKENS".to_string()
+        });
+
+    let token_set = match token_set {
+        Some(ts) => ts,
+        None => {
+            eprintln!("FridaySyncWorker (Rust): ERROR: Could not load tokens from secure storage (checked data_dir {:?})", dir);
+            return "ERROR: NO_TOKENS".to_string()
         },
     };
 
@@ -373,8 +387,8 @@ async fn do_sync(data_dir: &str) -> String {
     eprintln!("FridaySync (Rust): ✓ Token is valid");
 
     // Save refreshed token if needed
-    if let (Some(path), Ok(new_data)) = (successful_path, serde_json::to_string_pretty(&client.token_set)) {
-        let _ = std::fs::write(path, new_data);
+    if let Some(ts) = &client.token_set {
+        TokenSetPersistence::save(&dir, ts);
         eprintln!("FridaySync (Rust): Token refreshed and saved");
     }
 

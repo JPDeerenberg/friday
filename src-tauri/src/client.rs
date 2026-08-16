@@ -7,6 +7,8 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use crate::auth::{AuthFlow, TokenResponse};
+use crate::secure_store;
+use std::path::Path;
 
 /// Persistent token state saved to disk.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -48,6 +50,140 @@ pub struct MagisterClient {
     /// can persist a mid-session refresh to disk (bug: refreshed tokens were only
     /// kept in memory, tokens.json was only written at login/logout/restore).
     app_handle: Option<tauri::AppHandle>,
+}
+
+/// Non-secret token metadata persisted to `tokens.json`. The actual token
+/// values (access/id/refresh) live in the OS keyring, see [`TokenSetPersistence`].
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct TokenMetadata {
+    expires_at: DateTime<Utc>,
+    api_endpoint: String,
+    person_id: Option<i64>,
+    account_uuid: Option<String>,
+}
+
+impl From<&TokenSet> for TokenMetadata {
+    fn from(ts: &TokenSet) -> Self {
+        Self {
+            expires_at: ts.expires_at,
+            api_endpoint: ts.api_endpoint.clone(),
+            person_id: ts.person_id,
+            account_uuid: ts.account_uuid.clone(),
+        }
+    }
+}
+
+/// Split persistence of a [`TokenSet`]: secrets go to the OS keyring
+/// ([`crate::secure_store`]), the non-secret metadata goes to `tokens.json`.
+///
+/// This keeps long-lived secrets (refresh token) out of plaintext JSON files.
+pub struct TokenSetPersistence;
+
+impl TokenSetPersistence {
+    /// Persist both halves. Errors are best-effort logged, never fatal.
+    pub fn save(data_dir: &Path, ts: &TokenSet) {
+        let _ = std::fs::create_dir_all(data_dir);
+        let meta = TokenMetadata::from(ts);
+        if let Ok(data) = serde_json::to_string_pretty(&meta) {
+            let path = data_dir.join("tokens.json");
+            if let Err(e) = std::fs::write(&path, data) {
+                eprintln!("Failed to write token metadata: {}", e);
+            }
+        }
+        for (username, value) in [
+            (secure_store::USER_ACCESS_TOKEN, &ts.access_token),
+            (secure_store::USER_ID_TOKEN, &ts.id_token),
+            (secure_store::USER_REFRESH_TOKEN, &ts.refresh_token),
+        ] {
+            if let Err(e) = secure_store::set_secret(username, value) {
+                eprintln!("Failed to store {} in keyring: {}", username, e);
+            }
+        }
+    }
+
+    /// Load both halves. Returns `None` if no usable session exists.
+    pub fn load(data_dir: &Path) -> Option<TokenSet> {
+        let meta: TokenMetadata = serde_json::from_str(&std::fs::read_to_string(data_dir.join("tokens.json")).ok()?).ok()?;
+        let access_token = secure_store::get_secret(secure_store::USER_ACCESS_TOKEN).ok().flatten()?;
+        let id_token = secure_store::get_secret(secure_store::USER_ID_TOKEN).ok().flatten()?;
+        let refresh_token = secure_store::get_secret(secure_store::USER_REFRESH_TOKEN).ok().flatten()?;
+        Some(TokenSet {
+            access_token,
+            id_token,
+            refresh_token,
+            expires_at: meta.expires_at,
+            api_endpoint: meta.api_endpoint,
+            person_id: meta.person_id,
+            account_uuid: meta.account_uuid,
+        })
+    }
+
+    /// Remove the metadata file and every keyring entry.
+    fn clear(data_dir: &Path) {
+        let _ = std::fs::remove_file(data_dir.join("tokens.json"));
+        for username in [
+            secure_store::USER_ACCESS_TOKEN,
+            secure_store::USER_ID_TOKEN,
+            secure_store::USER_REFRESH_TOKEN,
+        ] {
+            let _ = secure_store::delete_secret(username);
+        }
+    }
+}
+
+/// Legacy on-disk format (pre-secure-storage): the full `TokenSet`, tokens
+/// included, was serialized directly to `tokens.json`. Used only for migration.
+#[derive(Debug, Deserialize)]
+struct LegacyTokenSet {
+    access_token: String,
+    id_token: String,
+    refresh_token: String,
+    expires_at: DateTime<Utc>,
+    api_endpoint: String,
+    person_id: Option<i64>,
+    account_uuid: Option<String>,
+}
+
+impl From<LegacyTokenSet> for TokenSet {
+    fn from(l: LegacyTokenSet) -> Self {
+        Self {
+            access_token: l.access_token,
+            id_token: l.id_token,
+            refresh_token: l.refresh_token,
+            expires_at: l.expires_at,
+            api_endpoint: l.api_endpoint,
+            person_id: l.person_id,
+            account_uuid: l.account_uuid,
+        }
+    }
+}
+
+/// Migrate a pre-secure-storage `tokens.json` (full `TokenSet` inline) into the
+/// split layout: move the secrets into the keyring, leave only metadata behind.
+///
+/// Detection is explicit (presence of a token field) because serde ignores
+/// unknown fields, so a legacy file would otherwise also parse as metadata.
+pub fn migrate_legacy_tokens(data_dir: &Path) -> Option<TokenSet> {
+    let path = data_dir.join("tokens.json");
+    let raw = std::fs::read_to_string(&path).ok()?;
+    let value: serde_json::Value = serde_json::from_str(&raw).ok()?;
+    let has_legacy_token = value
+        .get("access_token")
+        .and_then(|v| v.as_str())
+        .map(|s| !s.is_empty())
+        .unwrap_or(false)
+        || value
+            .get("refresh_token")
+            .and_then(|v| v.as_str())
+            .map(|s| !s.is_empty())
+            .unwrap_or(false);
+    if !has_legacy_token {
+        return None;
+    }
+    let legacy: LegacyTokenSet = serde_json::from_value(value).ok()?;
+    let ts: TokenSet = legacy.into();
+    TokenSetPersistence::save(data_dir, &ts);
+    Some(ts)
 }
 
 /// A lightweight, cheaply-cloneable snapshot of what's needed to make an
@@ -207,31 +343,31 @@ impl MagisterClient {
         self.app_handle = Some(handle);
     }
 
-    /// Load tokens from disk if available.
+    /// Load tokens from secure storage if available.
     #[allow(dead_code)]
     pub fn load_tokens(&mut self, app_handle: &tauri::AppHandle) {
         if let Ok(path) = app_handle.path_resolver_data_dir() {
-            let token_path = path.join("tokens.json");
-            if token_path.exists() {
-                if let Ok(data) = std::fs::read_to_string(&token_path) {
-                    if let Ok(token_set) = serde_json::from_str::<TokenSet>(&data) {
-                        self.token_set = Some(token_set);
-                    }
-                }
+            if let Some(token_set) = TokenSetPersistence::load(&path) {
+                self.token_set = Some(token_set);
+            } else if let Some(token_set) = migrate_legacy_tokens(&path) {
+                self.token_set = Some(token_set);
             }
         }
     }
 
-    /// Save tokens to disk.
+    /// Save tokens to secure storage.
     pub fn save_tokens(&self, app_handle: &tauri::AppHandle) {
         if let Some(ref token_set) = self.token_set {
             if let Ok(path) = app_handle.path_resolver_data_dir() {
-                std::fs::create_dir_all(&path).ok();
-                let token_path = path.join("tokens.json");
-                if let Ok(data) = serde_json::to_string_pretty(token_set) {
-                    std::fs::write(token_path, data).ok();
-                }
+                TokenSetPersistence::save(&path, token_set);
             }
+        }
+    }
+
+    /// Remove all persisted token data (metadata file + keyring entries).
+    pub fn clear_persisted_tokens(&self, app_handle: &tauri::AppHandle) {
+        if let Ok(path) = app_handle.path_resolver_data_dir() {
+            TokenSetPersistence::clear(&path);
         }
     }
 

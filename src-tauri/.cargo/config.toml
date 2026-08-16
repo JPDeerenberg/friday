@@ -1,5 +1,8 @@
-[build]
-rustc-wrapper = "sccache"
-
-[target.x86_64-unknown-linux-gnu]
-rustflags = ["-C", "link-arg=-fuse-ld=mold"]
+[target.aarch64-linux-android]
+linker = "/home/joris/android-sdk/ndk/26.1.10909125/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android26-clang"
+[target.armv7-linux-androideabi]
+linker = "/home/joris/android-sdk/ndk/26.1.10909125/toolchains/llvm/prebuilt/linux-x86_64/bin/armv7a-linux-androideabi26-clang"
+[target.i686-linux-android]
+linker = "/home/joris/android-sdk/ndk/26.1.10909125/toolchains/llvm/prebuilt/linux-x86_64/bin/i686-linux-android26-clang"
+[target.x86_64-linux-android]
+linker = "/home/joris/android-sdk/ndk/26.1.10909125/toolchains/llvm/prebuilt/linux-x86_64/bin/x86_64-linux-android26-clang"

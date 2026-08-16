@@ -46,6 +46,10 @@ pub struct AiConfig {
     pub enabled: bool,
     pub provider: AiProviderType,
     pub use_data_access: bool,
+    /// Set by `get_ai_config` to let the frontend know a key is stored without
+    /// round-tripping the raw secret. `api_key` itself is returned empty.
+    #[serde(default)]
+    pub has_api_key: bool,
 }
 
 impl Default for AiConfig {
@@ -57,6 +61,7 @@ impl Default for AiConfig {
             enabled: false,
             provider: AiProviderType::OpenAI,
             use_data_access: true,
+            has_api_key: false,
         }
     }
 }

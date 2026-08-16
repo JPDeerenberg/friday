@@ -1,5 +1,9 @@
+use rand::Rng;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::HashMap;
+use std::sync::Mutex;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Definition of a tool that the AI can call.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -292,13 +296,56 @@ pub struct ToolResult {
     pub error: Option<String>,
 }
 
+/// A side-effecting action the AI wants to perform, staged until the user
+/// explicitly confirms it via `confirm_pending_action`. Write tools never
+/// execute directly — they store a `PendingAction` and return a
+/// "pending_user_confirmation" payload through the normal tool-result channel.
+#[derive(Debug, Clone)]
+pub struct PendingAction {
+    /// Tool name that staged the action ("send_message", "mark_messages_read", ...).
+    pub action_type: String,
+    /// Original tool arguments, replayed verbatim when the action is confirmed.
+    pub args: Value,
+    /// Unix timestamp (seconds) of when the action was staged, for expiry.
+    pub created_at: u64,
+}
+
+/// In-memory store of pending actions awaiting user confirmation.
+pub type PendingActionStore = Mutex<HashMap<String, PendingAction>>;
+
+/// How long a pending action stays confirmable before it expires. A stale
+/// "confirm" button from an old conversation can never fire after this window.
+pub const PENDING_ACTION_TTL_SECS: u64 = 15 * 60;
+
+/// Generate a unique id for a pending action.
+pub fn generate_action_id() -> String {
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos() as u64)
+        .unwrap_or(0);
+    let random: u64 = rand::thread_rng().gen();
+    format!("act-{:016x}-{:016x}", nanos, random)
+}
+
+fn now_secs() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
 /// Execute an AI tool call and return the result.
 /// `client` must be locked before calling.
+/// Write tools (send_message, mark_messages_read, ...) do NOT perform their
+/// side effect here — they stage a [`PendingAction`] in `pending_actions` and
+/// return a "pending_user_confirmation" payload that the user must confirm
+/// before anything is actually sent. Read-only tools execute immediately.
 pub async fn execute_tool(
     client: &mut crate::client::MagisterClient,
     tool_name: &str,
     args: &Value,
     person_id: i64,
+    pending_actions: &PendingActionStore,
 ) -> ToolResult {
     match tool_name {
         "get_calendar_events" => {
@@ -809,46 +856,53 @@ pub async fn execute_tool(
             }
         }
 
-        // Nieuw:
+        // Write tool: never send directly. Stage the message for explicit user
+        // confirmation; the real POST only happens via confirm_pending_action.
         "send_message" => {
-            let subject = args.get("subject").and_then(|v| v.as_str()).unwrap_or("");
-            let body = args.get("body").and_then(|v| v.as_str()).unwrap_or("");
-            let recipients = args.get("recipients").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+            let subject = args.get("subject").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let body = args.get("body").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let recipients: Vec<Value> = args.get("recipients").and_then(|v| v.as_array()).cloned().unwrap_or_default();
 
-            let ontvangers: Vec<serde_json::Value> = recipients.iter().map(|r| {
-                serde_json::json!({
-                    "id": r.get("id").and_then(|v| v.as_i64()).unwrap_or(0),
-                    "type": r.get("type").and_then(|v| v.as_str()).unwrap_or("leerling")
-                })
-            }).collect();
-
-            let req_body = serde_json::json!({
-                "ontvangers": ontvangers,
-                "kopieOntvangers": [],
-                "blindeKopieOntvangers": [],
-                "heeftPrioriteit": false,
-                "inhoud": body,
-                "onderwerp": subject,
-                "verzendOptie": "standaard",
-                "bijlagen": []
-            });
-
-            match client.post("berichten/verzenden", &req_body).await {
-                Ok(_) => ToolResult {
-                    tool: tool_name.to_string(),
-                    success: true,
-                    data: serde_json::json!({ "status": "verzonden", "subject": subject }),
-                    error: None,
-                },
-                Err(e) => ToolResult {
+            if subject.trim().is_empty() || body.trim().is_empty() || recipients.is_empty() {
+                return ToolResult {
                     tool: tool_name.to_string(),
                     success: false,
                     data: Value::Null,
-                    error: Some(e.to_string()),
-                },
+                    error: Some("Bericht ontbreekt: onderwerp, inhoud en minstens één ontvanger zijn verplicht.".to_string()),
+                };
+            }
+
+            let action_id = generate_action_id();
+            let action = PendingAction {
+                action_type: "send_message".to_string(),
+                args: args.clone(),
+                created_at: now_secs(),
+            };
+            if let Ok(mut store) = pending_actions.lock() {
+                store.insert(action_id.clone(), action);
+            }
+
+            ToolResult {
+                tool: tool_name.to_string(),
+                success: true,
+                data: serde_json::json!({
+                    "status": "pending_user_confirmation",
+                    "action_id": action_id,
+                    "action_type": "send_message",
+                    "recipients": recipients,
+                    "subject": subject,
+                    "body": body,
+                    "message": format!(
+                        "Het bericht '{}' is klaargezet en wacht op bevestiging door de gebruiker. Er is nog NIETS verzonden. Vertel de gebruiker dat het bericht klaarstaat en dat hij/zij het expliciet moet bevestigen voordat het daadwerkelijk wordt verstuurd.",
+                        subject
+                    )
+                }),
+                error: None,
             }
         }
 
+        // Write tool: never mark directly. Stage the action for explicit user
+        // confirmation; the real PUT only happens via confirm_pending_action.
         "mark_messages_read" => {
             let message_ids = args.get("message_ids")
                 .and_then(|v| v.as_array())
@@ -864,21 +918,27 @@ pub async fn execute_tool(
                 };
             }
 
-            let body = serde_json::json!({"BerichtIds": message_ids});
+            let action_id = generate_action_id();
+            let action = PendingAction {
+                action_type: "mark_messages_read".to_string(),
+                args: args.clone(),
+                created_at: now_secs(),
+            };
+            if let Ok(mut store) = pending_actions.lock() {
+                store.insert(action_id.clone(), action);
+            }
 
-            match client.put("berichten/gelezen", &body).await {
-                Ok(()) => ToolResult {
-                    tool: tool_name.to_string(),
-                    success: true,
-                    data: serde_json::json!({ "status": "gemarkeerd", "aantal": message_ids.len() }),
-                    error: None,
-                },
-                Err(e) => ToolResult {
-                    tool: tool_name.to_string(),
-                    success: false,
-                    data: Value::Null,
-                    error: Some(e.to_string()),
-                },
+            ToolResult {
+                tool: tool_name.to_string(),
+                success: true,
+                data: serde_json::json!({
+                    "status": "pending_user_confirmation",
+                    "action_id": action_id,
+                    "action_type": "mark_messages_read",
+                    "message_ids": message_ids,
+                    "message": "De berichten zijn klaargezet om als gelezen te markeren en wachten op bevestiging door de gebruiker. Er is nog NIETS gemarkeerd. Vertel de gebruiker dat er bevestiging nodig is."
+                }),
+                error: None,
             }
         }
 
@@ -983,3 +1043,166 @@ pub async fn execute_tool(
         },
     }
 }
+
+/// Execute a previously-staged action after the user confirmed it.
+///
+/// This is the ONLY path that performs real write operations on the user's
+/// behalf (e.g. the Magister send-message endpoint). `execute_tool` only
+/// stages actions; nothing with a real side effect ever runs without the user
+/// tapping confirm on a pending action.
+pub async fn execute_pending_action(
+    client: &mut crate::client::MagisterClient,
+    action: &PendingAction,
+) -> Result<Value, String> {
+    match action.action_type.as_str() {
+        "send_message" => {
+            let subject = action.args.get("subject").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let body = action.args.get("body").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let recipients = action.args.get("recipients").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+
+            let ontvangers: Vec<serde_json::Value> = recipients.iter().map(|r| {
+                serde_json::json!({
+                    "id": r.get("id").and_then(|v| v.as_i64()).unwrap_or(0),
+                    "type": r.get("type").and_then(|v| v.as_str()).unwrap_or("leerling")
+                })
+            }).collect();
+
+            let req_body = serde_json::json!({
+                "ontvangers": ontvangers,
+                "kopieOntvangers": [],
+                "blindeKopieOntvangers": [],
+                "heeftPrioriteit": false,
+                "inhoud": body,
+                "onderwerp": subject,
+                "verzendOptie": "standaard",
+                "bijlagen": []
+            });
+
+            client.post("berichten/verzenden", &req_body).await.map_err(|e| e.to_string())?;
+            Ok(serde_json::json!({ "status": "verzonden", "subject": subject }))
+        }
+        "mark_messages_read" => {
+            let message_ids = action.args.get("message_ids")
+                .and_then(|v| v.as_array())
+                .map(|arr| arr.iter().filter_map(|v| v.as_i64()).collect::<Vec<i64>>())
+                .unwrap_or_default();
+
+            let body = serde_json::json!({"BerichtIds": message_ids});
+            client.put("berichten/gelezen", &body).await.map_err(|e| e.to_string())?;
+            Ok(serde_json::json!({ "status": "gemarkeerd", "aantal": message_ids.len() }))
+        }
+        _ => Err(format!("Onbekende actie: {}", action.action_type)),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::client::MagisterClient;
+    use chrono::Utc;
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    fn mock_token_set(endpoint: &str) -> crate::client::TokenSet {
+        crate::client::TokenSet {
+            access_token: "mock_access_token".to_string(),
+            id_token: "mock_id_token".to_string(),
+            refresh_token: "mock_refresh_token".to_string(),
+            expires_at: Utc::now() + chrono::Duration::seconds(3600),
+            api_endpoint: endpoint.to_string(),
+            person_id: Some(123),
+            account_uuid: None,
+        }
+    }
+
+    fn client_with_token(endpoint: &str) -> MagisterClient {
+        let mut client = MagisterClient::new();
+        client.token_set = Some(mock_token_set(endpoint));
+        client
+    }
+
+    fn send_message_args() -> Value {
+        serde_json::json!({
+            "subject": "Vraag over huiswerk",
+            "body": "Hallo! Wanneer moet het verslag ingeleverd worden?",
+            "recipients": [
+                { "id": 456, "type": "docent" }
+            ]
+        })
+    }
+
+    #[tokio::test]
+    async fn send_message_stages_pending_action_without_sending() {
+        let store: PendingActionStore = Mutex::new(HashMap::new());
+        // No network configured at all — if execute_tool tried to POST, it
+        // would fail (no token set), so success proves nothing was sent.
+        let mut client = MagisterClient::new();
+
+        let result = execute_tool(&mut client, "send_message", &send_message_args(), 123, &store).await;
+
+        assert!(result.success, "expected pending result, got error: {:?}", result.error);
+        assert_eq!(result.data["status"], "pending_user_confirmation");
+        assert_eq!(result.data["action_type"], "send_message");
+        assert_eq!(result.data["subject"], "Vraag over huiswerk");
+        assert_eq!(result.data["body"], "Hallo! Wanneer moet het verslag ingeleverd worden?");
+
+        // The staged action must be stored so confirm_pending_action can run it.
+        let action_id = result.data["action_id"].as_str().expect("action_id present");
+        let stored = store.lock().unwrap();
+        let action = stored.get(action_id).expect("pending action stored");
+        assert_eq!(action.action_type, "send_message");
+    }
+
+    #[tokio::test]
+    async fn mark_messages_read_stages_pending_action_without_marking() {
+        let store: PendingActionStore = Mutex::new(HashMap::new());
+        let mut client = MagisterClient::new();
+
+        let args = serde_json::json!({ "message_ids": [10, 11] });
+        let result = execute_tool(&mut client, "mark_messages_read", &args, 123, &store).await;
+
+        assert!(result.success, "expected pending result, got error: {:?}", result.error);
+        assert_eq!(result.data["status"], "pending_user_confirmation");
+        assert_eq!(result.data["action_type"], "mark_messages_read");
+
+        let action_id = result.data["action_id"].as_str().expect("action_id present");
+        assert!(store.lock().unwrap().contains_key(action_id));
+    }
+
+    #[tokio::test]
+    async fn confirm_send_message_posts_to_magister() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/berichten/verzenden"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({})))
+            .mount(&mock_server)
+            .await;
+
+        let store: PendingActionStore = Mutex::new(HashMap::new());
+        let mut client = client_with_token(&mock_server.uri());
+
+        // Stage the action exactly like execute_tool would.
+        let result = execute_tool(&mut client, "send_message", &send_message_args(), 123, &store).await;
+        assert!(result.success);
+        let action_id = result.data["action_id"].as_str().unwrap().to_string();
+
+        let action = store.lock().unwrap().remove(&action_id).unwrap();
+        let outcome = execute_pending_action(&mut client, &action).await.expect("send succeeds");
+        assert_eq!(outcome["status"], "verzonden");
+        assert_eq!(outcome["subject"], "Vraag over huiswerk");
+    }
+
+    #[tokio::test]
+    async fn unknown_action_is_rejected() {
+        let mut client = MagisterClient::new();
+        let action = PendingAction {
+            action_type: "nope".to_string(),
+            args: serde_json::json!({}),
+            created_at: now_secs(),
+        };
+        let outcome = execute_pending_action(&mut client, &action).await;
+        assert!(outcome.is_err());
+    }
+}
+

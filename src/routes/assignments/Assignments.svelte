@@ -44,7 +44,7 @@
     if (aiAssignmentLoading || assignments.length === 0) return;
     try {
       const config = await getAiConfig();
-      if (!config.enabled || !config.api_key) return;
+      if (!config.enabled || !config.has_api_key) return;
       aiAssignmentLoading = true;
       const data = assignments.map(a => ({
         title: a.Titel,

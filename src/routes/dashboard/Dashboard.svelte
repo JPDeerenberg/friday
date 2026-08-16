@@ -38,7 +38,7 @@
   async function checkAiAndLoadInsight() {
     try {
       const config = await getAiConfig();
-      aiConfigured = config.enabled && !!config.api_key;
+      aiConfigured = config.enabled && config.has_api_key;
       if (aiConfigured && refreshTrigger >= 0) {
         loadAiInsight();
       }

@@ -1,20 +1,31 @@
 use crate::ai::providers::{self, AiConfig, AiMessage, AiProviderType};
-use crate::ai::tools::{self, execute_tool};
+use crate::ai::tools::{self, execute_pending_action, execute_tool, PendingAction, PendingActionStore};
 use crate::client::SharedClient;
-use std::sync::Mutex;
-use tauri::State;
+use crate::secure_store;
+use serde::Serialize;
+use serde_json::Value;
+use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::Mutex;
+use std::time::{SystemTime, UNIX_EPOCH};
+use tauri::State;
 
 /// Shared state for AI configuration, stored in memory + synced to disk.
+///
+/// The API key is the only secret and lives in the OS keyring
+/// ([`crate::secure_store`]); everything else (base_url, model, provider,
+/// enabled flags) is persisted to `ai_config.json` in plaintext.
 pub struct AiState {
     pub config: Mutex<AiConfig>,
+    /// Side-effecting AI actions awaiting explicit user confirmation.
+    pub pending_actions: PendingActionStore,
     config_path: PathBuf,
 }
 
 impl AiState {
     pub fn new(app_data_dir: PathBuf) -> Self {
         let config_path = app_data_dir.join("ai_config.json");
-        let config = if config_path.exists() {
+        let mut config = if config_path.exists() {
             std::fs::read_to_string(&config_path)
                 .ok()
                 .and_then(|s| serde_json::from_str(&s).ok())
@@ -22,15 +33,30 @@ impl AiState {
         } else {
             AiConfig::default()
         };
+
+        // Load the API key from secure storage (never persisted to disk).
+        config.api_key = secure_store::get_secret(secure_store::USER_AI_API_KEY)
+            .ok()
+            .flatten()
+            .unwrap_or_default();
+
         Self {
             config: Mutex::new(config),
+            pending_actions: Mutex::new(HashMap::new()),
             config_path,
         }
     }
 
     fn save(&self) {
         if let Ok(config) = self.config.lock() {
-            if let Ok(json) = serde_json::to_string(&*config) {
+            // Persist the key to the keyring, and the rest to ai_config.json
+            // (with the key cleared so it never lands in plaintext).
+            if !config.api_key.is_empty() {
+                let _ = secure_store::set_secret(secure_store::USER_AI_API_KEY, &config.api_key);
+            }
+            let mut disk = config.clone();
+            disk.api_key.clear();
+            if let Ok(json) = serde_json::to_string(&disk) {
                 let _ = std::fs::write(&self.config_path, json);
             }
         }
@@ -41,10 +67,16 @@ impl AiState {
 #[tauri::command]
 pub fn get_ai_config(state: State<'_, AiState>) -> Result<AiConfig, String> {
     let config = state.config.lock().map_err(|e| e.to_string())?;
-    Ok(config.clone())
+    let mut out = config.clone();
+    out.has_api_key = !out.api_key.is_empty();
+    out.api_key.clear();
+    Ok(out)
 }
 
 /// Set the AI configuration (API key, base URL, model, enabled, provider).
+///
+/// An empty `api_key` keeps the currently stored key (used by the frontend to
+/// round-trip the config without ever receiving the raw secret back).
 #[tauri::command]
 pub fn set_ai_config(
     state: State<'_, AiState>,
@@ -56,7 +88,9 @@ pub fn set_ai_config(
     use_data_access: bool,
 ) -> Result<(), String> {
     let mut config = state.config.lock().map_err(|e| e.to_string())?;
-    config.api_key = api_key;
+    if !api_key.is_empty() {
+        config.api_key = api_key;
+    }
     config.base_url = base_url;
     config.model = model;
     config.enabled = enabled;
@@ -111,6 +145,17 @@ pub async fn ai_chat(
     crate::ai_client::send_chat(&config, &messages).await
 }
 
+/// Result of a tools-enabled AI chat: the assistant's reply text plus any
+/// side-effecting actions that were staged for user confirmation during the run.
+#[derive(Debug, Clone, Serialize)]
+pub struct AiChatWithToolsResult {
+    pub content: String,
+    /// Each entry is a "pending_user_confirmation" payload (action_id,
+    /// action_type, recipient/subject/body or message_ids, ...) that the
+    /// frontend renders as a confirm/cancel card.
+    pub pending_actions: Vec<Value>,
+}
+
 /// Send a chat message with full Magister data access via tool calling.
 /// This version has access to execute tools that fetch real school data.
 #[tauri::command]
@@ -120,7 +165,7 @@ pub async fn ai_chat_with_tools(
     messages_json: String,
     page_context: Option<String>,
     person_id: i64,
-) -> Result<String, String> {
+) -> Result<AiChatWithToolsResult, String> {
     let config = state.config.lock().map_err(|e| e.to_string())?.clone();
 
     let mut messages: Vec<providers::AiMessage> =
@@ -139,6 +184,7 @@ pub async fn ai_chat_with_tools(
 
     let mut current_messages = messages.clone();
     let mut final_content = String::new();
+    let mut staged_pending_actions: Vec<Value> = Vec::new();
     let max_rounds = 5;
 
     for round in 0..max_rounds {
@@ -172,7 +218,8 @@ pub async fn ai_chat_with_tools(
             let mut c = client.lock().await;
             let mut results = Vec::new();
             for tool_call in &result.tool_calls {
-                let tool_result = execute_tool(&mut c, &tool_call.name, &tool_call.arguments, person_id).await;
+                let tool_result =
+                    execute_tool(&mut c, &tool_call.name, &tool_call.arguments, person_id, &state.pending_actions).await;
                 results.push((tool_call.id.clone(), tool_call.name.clone(), tool_result));
             }
             results
@@ -195,6 +242,17 @@ pub async fn ai_chat_with_tools(
             });
         }
 
+        // Surface staged write actions to the frontend so it can render a
+        // confirm/cancel card for each one.
+        for (_, _, tool_result) in &tool_results {
+            if tool_result.success
+                && tool_result.data.get("status").and_then(|v| v.as_str())
+                    == Some("pending_user_confirmation")
+            {
+                staged_pending_actions.push(tool_result.data.clone());
+            }
+        }
+
         // If this was the last round and the AI still wants tools, summarize
         if round == max_rounds - 1 && !tool_results.is_empty() {
             if final_content.is_empty() {
@@ -203,7 +261,39 @@ pub async fn ai_chat_with_tools(
         }
     }
 
-    Ok(final_content)
+    Ok(AiChatWithToolsResult {
+        content: final_content,
+        pending_actions: staged_pending_actions,
+    })
+}
+
+/// Confirm and execute a previously-staged AI action (e.g. sending a message).
+///
+/// This is the only path that performs real write operations on the user's
+/// behalf. The pending action is consumed: it can only be confirmed once and
+/// expires after [`crate::ai::tools::PENDING_ACTION_TTL_SECS`] seconds.
+#[tauri::command]
+pub async fn confirm_pending_action(
+    state: State<'_, AiState>,
+    client: State<'_, SharedClient>,
+    action_id: String,
+) -> Result<String, String> {
+    let action: PendingAction = {
+        let mut store = state.pending_actions.lock().map_err(|e| e.to_string())?;
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        // Prune expired actions so a stale confirm button can never fire.
+        store.retain(|_, a| now.saturating_sub(a.created_at) < tools::PENDING_ACTION_TTL_SECS);
+        store.remove(&action_id).ok_or_else(|| {
+            "De actie is niet meer beschikbaar (verlopen of al bevestigd).".to_string()
+        })?
+    };
+
+    let mut c = client.lock().await;
+    let result = execute_pending_action(&mut c, &action).await?;
+    Ok(serde_json::to_string(&result).unwrap_or_else(|_| "Actie uitgevoerd.".to_string()))
 }
 
 /// Get a quick AI insight for a specific page.
