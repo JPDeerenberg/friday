@@ -6,6 +6,7 @@
   import { onMount } from 'svelte';
   import { get } from 'svelte/store';
   import { fade, fly, slide } from 'svelte/transition';
+  import Button from '$lib/components/Button.svelte';
 
   let studiewijzers = $state<any[]>([]);
   let selectedSW = $state<any>(null);
@@ -134,9 +135,9 @@
              <h3 class="text-headline-small text-white">Foutmelding</h3>
              <p class="text-gray-500 text-body-medium leading-relaxed">{error}</p>
           </div>
-          <button onclick={() => loadInitialData(true)} class="w-full py-4 rounded-m3-full bg-surface-800 text-white text-label-large transition-all hover:bg-surface-700 active:scale-95 shadow-lg border border-white/5">
+          <Button variant="tonal" onclick={() => loadInitialData(true)} class="w-full">
              Opnieuw Proberen
-          </button>
+          </Button>
        </div>
     {:else if !selectedSW}
       <div class="max-w-6xl mx-auto p-5 md:p-10 space-y-8" in:fade>

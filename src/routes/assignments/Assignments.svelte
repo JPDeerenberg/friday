@@ -17,6 +17,8 @@
   import { fade, fly, slide } from 'svelte/transition';
   import { open } from '@tauri-apps/plugin-dialog';
   import RichTextEditor from '$lib/components/RichTextEditor.svelte';
+  import Button from '$lib/components/Button.svelte';
+  import Chip from '$lib/components/Chip.svelte';
   import type { Assignment, AssignmentAttachment, AssignmentLink, AssignmentVersion, Docent } from '$lib/types';
 
   let assignments = $state<Assignment[]>([]);
@@ -261,24 +263,16 @@
         { id: 'submitted', label: 'Ingeleverd', count: assignments.filter(a => getStatus(a).key === 'submitted').length },
         { id: 'graded', label: 'Beoordeeld', count: assignments.filter(a => getStatus(a).key === 'graded').length },
       ] as f}
-        <button
+        <Chip
+          variant="filter"
+          selected={filter === f.id}
           onclick={() => filter = f.id as any}
-          class="flex items-center gap-1.5 px-3 py-1.5 rounded-m3-sm text-label-medium transition-all whitespace-nowrap shrink-0
- {filter === f.id && f.id === 'overdue'
- ? 'bg-red-500 text-white shadow-lg shadow-red-500/30'
- : filter === f.id
- ? 'bg-primary-500 text-white shadow-lg shadow-primary-500/30'
- : f.id === 'overdue' && f.count > 0
- ? 'bg-red-500/10 text-red-400 hover:text-red-300 border border-red-500/20'
- : 'bg-surface-800/70 text-gray-400 hover:text-gray-200 border border-white/5'}"
         >
           {f.label}
           {#if f.count > 0}
-            <span class="text-label-small {filter === f.id ? 'bg-white/20' : 'bg-surface-700'} px-1.5 py-0.5 rounded-full">
-              {f.count}
-            </span>
+            <span class="text-label-small px-1.5 py-0.5 rounded-full bg-surface-700">{f.count}</span>
           {/if}
-        </button>
+        </Chip>
       {/each}
     </div>
   </header>
@@ -551,29 +545,29 @@
                 {/if}
 
                 <div class="flex items-center justify-between">
-                  <button
+                  <Button
+                    variant="text"
                     onclick={handlePickFile}
                     disabled={uploadLoading || isSubmitting}
-                    class="flex items-center gap-2 px-4 py-2 rounded-m3-full text-label-large text-gray-400 hover:text-gray-200 hover:bg-surface-700 transition-all disabled:opacity-50"
+                    class="px-4"
                   >
                     <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
                     Bijlage toevoegen
-                  </button>
+                  </Button>
 
-                  <button
+                  <Button
+                    variant="filled"
                     onclick={handleSubmit}
                     disabled={isSubmitting || uploadLoading || (!submissionText.trim() && attachments.length === 0)}
-                    class="flex items-center gap-2 px-6 py-2.5 rounded-m3-full bg-primary-500 text-white text-label-large 
- hover:bg-primary-400 shadow-lg shadow-primary-500/30
- active:scale-95 transition-all disabled:opacity-40 disabled:shadow-none"
+                    class="px-6"
                   >
                     {#if isSubmitting}
-                      <div class="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                      <div class="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
                     {:else}
                       <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
                     {/if}
                     Inleveren
-                  </button>
+                  </Button>
                 </div>
               </div>
             </div>

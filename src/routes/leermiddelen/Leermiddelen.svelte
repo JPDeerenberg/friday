@@ -6,6 +6,7 @@
   import { openUrl } from '@tauri-apps/plugin-opener';
   import { onMount } from 'svelte';
   import { fade, fly } from 'svelte/transition';
+  import Button from '$lib/components/Button.svelte';
 
   let leermiddelen = $state<any[]>([]);
   let loading = $state(true);
@@ -102,9 +103,9 @@
               <h3 class="text-headline-small text-white">Inladen mislukt</h3>
               <p class="text-gray-500 text-body-medium leading-relaxed">{error}</p>
            </div>
-           <button onclick={() => loadData(true)} class="w-full py-4 rounded-m3-full bg-surface-800 text-white text-label-large transition-all hover:bg-surface-700 active:scale-95 shadow-lg border border-white/5">
+           <Button variant="tonal" onclick={() => loadData(true)} class="w-full">
               Herhalen
-           </button>
+           </Button>
         </div>
       {:else if filteredMaterials().length === 0}
         <div in:fade class="glass rounded-m3-md p-24 text-center space-y-4 border-white/5 shadow-2xl flex flex-col items-center">

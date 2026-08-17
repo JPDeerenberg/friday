@@ -5,6 +5,7 @@
   let downloadingFile = $state<string | null>(null);
 
   import HtmlRenderer from '$lib/components/HtmlRenderer.svelte';
+  import Button from '$lib/components/Button.svelte';
   import { onMount } from 'svelte';
   import { fade, fly, slide, scale } from 'svelte/transition';
   import type { CalendarAttachment, CalendarEvent, Link } from '$lib/types';
@@ -1023,7 +1024,7 @@
     <div role="presentation" class="absolute inset-0 bg-black/70 backdrop-blur-sm" onclick={() => { selectedAppointment = null; editMode = false; }}></div>
     
     <div 
-      class="relative w-full max-w-lg bg-surface-900 border-t md:border border-white/10 rounded-t-m3-xl md:rounded-m3-xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh] z-10"
+      class="relative w-full max-w-lg elevation-3 border-t md:border border-white/10 rounded-t-m3-xl md:rounded-m3-xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh] z-10"
       transition:fly={{ y: 30, duration: 300, easing: (t) => 1 - Math.pow(1 - t, 3) }}
     >
       <!-- Top Handle -->
@@ -1104,12 +1105,13 @@
                 class="w-full h-32 md:h-40 bg-surface-950 border border-primary-500/30 rounded-m3-xs p-3 md:p-4 text-body-large text-gray-200 focus:outline-none focus:border-primary-500 transition-colors"
                 placeholder="Huiswerk bewerken..."
               ></textarea>
-              <button
+              <Button
+                variant="filled"
                 onclick={saveLocalOverride}
-                class="w-full py-2.5 md:py-3 rounded-m3-full bg-primary-500 text-white text-label-large hover:bg-primary-400 transition-all shadow-lg shadow-primary-500/20"
+                class="w-full"
               >
                 Opslaan (Lokaal)
-              </button>
+              </Button>
             </div>
           {:else if selectedAppointment.Inhoud}
              {#if selectedAppointment.InfoType === 1}
@@ -1188,12 +1190,13 @@
       
       <!-- Footer Button (Close) -->
       <div class="p-3 pt-0 shrink-0 md:hidden">
-        <button 
+        <Button 
+          variant="tonal"
           onclick={() => { showDetail = false; selectedAppointment = null; editMode = false; }}
-          class="w-full py-2.5 rounded-m3-full bg-surface-800 text-white text-label-large hover:bg-surface-700 transition-all"
+          class="w-full"
         >
           Sluiten
-        </button>
+        </Button>
       </div>
     </div>
   </div>
@@ -1207,7 +1210,7 @@
     <div role="presentation" class="absolute inset-0 bg-black/80 backdrop-blur-sm" onclick={() => isCreating = false}></div>
     
     <div 
-      class="relative w-full max-w-md bg-surface-900 border border-white/10 rounded-m3-xl shadow-2xl overflow-hidden flex flex-col z-10"
+      class="relative w-full max-w-md elevation-3 border border-white/10 rounded-m3-xl shadow-2xl overflow-hidden flex flex-col z-10"
       transition:scale={{ start: 0.95, duration: 250 }}
     >
       <div class="p-4 md:p-6 space-y-4 md:space-y-6">
@@ -1278,12 +1281,13 @@
         {#if createError}
           <p class="text-body-small text-red-400 bg-red-500/10 border border-red-500/20 rounded-m3-sm px-3 py-2">{createError}</p>
         {/if}
-        <button 
+        <Button 
+          variant="filled"
           onclick={createAppointment}
-          class="w-full py-3 md:py-4 rounded-m3-full bg-primary-500 text-white text-label-large hover:bg-primary-400 transition-all shadow-lg shadow-primary-500/25 active:scale-[0.98]"
+          class="w-full"
         >
           Toevoegen
-        </button>
+        </Button>
       </div>
     </div>
   </div>

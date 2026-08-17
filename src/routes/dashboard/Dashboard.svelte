@@ -6,6 +6,7 @@
   import { tryAiInsight, getAiConfig } from '$lib/ai';
   import { cacheGet, cacheRefresh } from '$lib/cache';
   import { fade, fly, scale } from 'svelte/transition';
+  import Button from '$lib/components/Button.svelte';
   import type { Assignment, CalendarEvent, Grade } from '$lib/types';
 
   // Svelte 5 State
@@ -793,15 +794,16 @@
               <div class="w-2 h-7 bg-primary-500 rounded-full shadow-[0_0_20px_rgba(200,100,255,0.6)] animate-pulse"></div>
               Jouw Rooster
             </h2>
-            <button
+            <Button
+              variant="outlined"
               onclick={() => currentPage.set('calendar')}
-              class="text-label-large text-primary-400 hover:text-primary-300 transition-all hover:gap-4 flex items-center gap-3 group/all bg-primary-500/5 px-5 py-2.5 rounded-m3-full border border-primary-500/10 hover:border-primary-500/30"
+              class="group/all"
             >
               Bekijk alles <svg class="w-4 h-4 group-hover/all:translate-x-1 transition-transform" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="m9 18 6-6-6-6"/></svg>
-            </button>
+            </Button>
           </div>
 
-          <div class="rounded-m3-md p-3 md:p-5 relative overflow-hidden group border border-white/10 bg-surface-800/50 min-h-[300px] flex flex-col">
+          <div class="rounded-m3-md p-3 md:p-5 relative overflow-hidden group border border-white/10 elevation-2 min-h-[300px] flex flex-col">
              <div class="absolute inset-0 bg-gradient-to-br from-primary-500/8 via-transparent to-transparent opacity-60 group-hover:opacity-100 transition-opacity duration-700 pointer-events-none"></div>
 
              {#if loadingEvents}
@@ -866,12 +868,13 @@
               <div class="w-2 h-7 bg-accent-500 rounded-full shadow-[0_0_20px_rgba(200,100,255,0.6)]"></div>
               Resultaten
             </h2>
-            <button
+            <Button
+              variant="outlined"
               onclick={() => currentPage.set('grades')}
-              class="text-label-large text-accent-400 hover:text-accent-300 transition-all hover:gap-3 md:hover:gap-4 flex items-center gap-2 md:gap-3 group/grades bg-accent-500/5 px-4 md:px-5 py-2 md:py-2.5 rounded-m3-full border border-accent-500/10 hover:border-accent-500/30"
+              class="group/grades"
             >
               Alle cijfers <svg class="w-3.5 h-3.5 md:w-4 md:h-4 group-hover/grades:translate-x-1 transition-transform" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="m9 18 6-6-6-6"/></svg>
-            </button>
+            </Button>
           </div>
 
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-5">
@@ -913,9 +916,9 @@
                 <div class="sm:col-span-2 py-10 rounded-m3-md flex flex-col items-center justify-center text-center border border-dashed border-white/15 bg-surface-800/30" in:fade>
                   <svg class="w-10 h-10 text-gray-600 mb-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/></svg>
                   <p class="text-title-small text-gray-400">Nog geen cijfers</p>
-                  <button onclick={() => currentPage.set('grades')} class="mt-3 text-label-medium text-primary-400 hover:text-primary-300 flex items-center gap-1">
+                  <Button variant="text" onclick={() => currentPage.set('grades')} class="mt-3">
                     Bekijk cijferpagina <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="m9 18 6-6-6-6"/></svg>
-                  </button>
+                  </Button>
                 </div>
               {/each}
             {/if}
@@ -968,15 +971,13 @@
               </div>
             {/if}
 
-            <button
+            <Button
+              variant="filled"
               onclick={() => currentPage.set('assignments')}
-              class="w-full py-5 md:py-7 rounded-m3-full bg-gradient-to-r from-primary-600 to-primary-400 text-white text-label-large shadow-2xl md:shadow-3xl shadow-primary-500/40 hover:scale-[1.03] hover:brightness-110 transition-all active:scale-95 border border-white/20 ring-[6px] md:ring-8 ring-primary-500/10 relative overflow-hidden group/btn mt-auto"
+              class="w-full py-6 rounded-m3-full group/btn mt-auto"
             >
-              <div class="absolute inset-0 bg-white/20 translate-x-[-100%] group-hover/btn:translate-x-[100%] transition-transform duration-1000 skew-x-12"></div>
-              <span class="relative z-10 flex items-center justify-center gap-4">
-                 Open Portaal <svg class="w-6 h-6 animate-bounce-horizontal" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-              </span>
-            </button>
+              Open Portaal <svg class="w-5 h-5 animate-bounce-horizontal" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+            </Button>
           </div>
         </section>
 

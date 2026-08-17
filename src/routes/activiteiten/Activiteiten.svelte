@@ -4,6 +4,7 @@
   import { cacheGet } from '$lib/cache';
   import { onMount } from 'svelte';
   import { fade, fly, slide } from 'svelte/transition';
+  import Button from '$lib/components/Button.svelte';
 
   let activities = $state<any[]>([]);
   let selectedActivity = $state<any>(null);
@@ -187,9 +188,9 @@
                        </div>
                        
                        {#if element.IsOpInTeSchrijven && !element.IsIngeschreven}
-                         <button class="bg-primary-500 hover:bg-primary-600 text-white text-label-large px-8 py-3.5 rounded-m3-full transition-all shadow-xl shadow-primary-500/20 active:scale-95 border border-primary-400/30">
+                         <Button variant="filled" class="px-8">
                            Inschrijven
-                         </button>
+                         </Button>
                        {/if}
                     </div>
                   </div>

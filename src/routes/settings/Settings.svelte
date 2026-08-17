@@ -7,6 +7,8 @@
   import { getAiConfig, setAiConfig, validateAiKey, listAiModels, type AiConfig, type AiProviderType, AI_PROVIDERS } from '$lib/ai';
   import { sectionIcon } from '$lib/icons';
   import ColorSwatchPicker from '$lib/components/ColorSwatchPicker.svelte';
+  import Switch from '$lib/components/Switch.svelte';
+  import Button from '$lib/components/Button.svelte';
   import { fade, fly, slide } from 'svelte/transition';
   import { onMount } from 'svelte';
   import { open } from '@tauri-apps/plugin-dialog';
@@ -587,10 +589,11 @@
                   <p class="text-title-small text-gray-100">AI Assistent inschakelen</p>
                   <p class="text-label-medium text-gray-500 mt-1">Zet AI aan voor alle pagina's</p>
                 </div>
-                <label class="relative inline-flex items-center cursor-pointer">
-                  <input type="checkbox" bind:checked={aiEnabled} onchange={saveAiConfig} class="sr-only peer">
-                  <div class="w-11 h-6 bg-surface-700 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-500 shadow-inner"></div>
-                </label>
+                <Switch
+                  checked={aiEnabled}
+                  onCheckedChange={(v) => { aiEnabled = v; saveAiConfig(); }}
+                  ariaLabel="AI Assistent inschakelen"
+                />
               </div>
 
               <div class="w-full h-px bg-white/5"></div>
@@ -687,10 +690,11 @@
                     Laat AI je rooster, cijfers, opdrachten en berichten uitlezen via tool calling
                   </p>
                 </div>
-                <label class="relative inline-flex items-center cursor-pointer">
-                  <input type="checkbox" bind:checked={aiUseDataAccess} class="sr-only peer">
-                  <div class="w-11 h-6 bg-surface-700 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500 shadow-inner"></div>
-                </label>
+                <Switch
+                  checked={aiUseDataAccess}
+                  onCheckedChange={(v) => aiUseDataAccess = v}
+                  ariaLabel="Toegang tot schoolgegevens"
+                />
               </div>
 
               {#if aiUseDataAccess}
@@ -714,13 +718,14 @@
 
               <!-- Actions -->
               <div class="flex gap-3 pt-2">
-                <button
+                <Button
+                  variant="filled"
                   onclick={saveAiConfig}
                   disabled={aiSaving}
-                  class="flex-1 py-3 rounded-m3-full bg-primary-500/20 border border-primary-500/30 text-primary-400 hover:bg-primary-500/30 transition-all text-label-large disabled:opacity-50"
+                  class="flex-1"
                 >
                   {aiSaving ? '⏳ Opslaan...' : 'Opslaan'}
-                </button>
+                </Button>
                 <button
                   onclick={testAiConnection}
                   disabled={aiTesting || (!aiApiKey && !aiHasKey)}
@@ -751,15 +756,11 @@
               </div>
 
               {#if setting.type === 'toggle'}
-                <label class="relative inline-flex items-center cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={$userSettings[setting.id]}
-                    onchange={(e) => updateToggle(setting.id, e.currentTarget.checked)}
-                    class="sr-only peer"
-                  >
-                  <div class="w-11 h-6 bg-surface-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-500/80 shadow-inner"></div>
-                </label>
+                <Switch
+                  checked={$userSettings[setting.id]}
+                  onCheckedChange={(v) => updateToggle(setting.id, v)}
+                  ariaLabel={setting.label}
+                />
               {:else if setting.type === 'number'}
                 <input
                   type="number"
@@ -787,10 +788,11 @@
                   {/each}
                 </select>
               {:else if setting.type === 'action'}
-                <button
+                <Button
+                  variant="tonal"
                   onclick={() => setting.action()}
                   disabled={setting.id === 'exportAll' ? exportBusy : (testingNotification === setting.id.split('test')[1])}
-                  class="bg-primary-500/15 text-primary-400 text-label-large rounded-m3-full px-5 py-2.5 hover:bg-primary-500/25 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-wait border border-primary-500/10 shadow-sm"
+                  class="px-5"
                 >
                   {#if setting.id === 'exportAll'}
                     {#if exportBusy}
@@ -803,7 +805,7 @@
                   {:else}
                     Testen
                   {/if}
-                </button>
+                </Button>
                 {#if setting.id === 'exportAll' && exportResult}
                   <p class="text-label-small text-gray-400 font-mono mt-2 text-right max-w-[200px] leading-relaxed">{exportResult}</p>
                 {/if}
@@ -817,13 +819,14 @@
                       Herstel
                     </button>
                   {/if}
-                  <button
+                  <Button
+                    variant="tonal"
                     onclick={pickDownloadDir}
                     disabled={pickingDir}
-                    class="bg-primary-500/15 text-primary-400 text-label-large rounded-m3-full px-5 py-2.5 hover:bg-primary-500/25 transition-all active:scale-95 disabled:opacity-50 border border-primary-500/10 shadow-sm"
+                    class="px-5"
                   >
                     {pickingDir ? '⏳ ...' : 'Map Kiezen'}
-                  </button>
+                  </Button>
                 </div>
                 {#if $userSettings.downloadDir}
                   <p class="text-label-small text-gray-500 font-mono mt-2 text-right max-w-[200px] truncate leading-relaxed" title={$userSettings.downloadDir}>
@@ -967,10 +970,11 @@
             <div class="space-y-4">
                 <div class="flex items-center justify-between">
                   <p class="debug-label">Nachtrust</p>
-                  <label class="relative inline-flex items-center cursor-pointer">
-                    <input type="checkbox" bind:checked={disableSyncAtNight} onchange={applyNightSleep} class="sr-only peer">
-                    <div class="w-11 h-6 bg-surface-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-500"></div>
-                  </label>
+                  <Switch
+                    checked={disableSyncAtNight}
+                    onCheckedChange={(v) => { disableSyncAtNight = v; applyNightSleep(); }}
+                    ariaLabel="Nachtrust"
+                  />
                 </div>
                 {#if disableSyncAtNight}
                   <div class="flex gap-4 items-center" transition:slide>
@@ -993,10 +997,11 @@
                     <p class="debug-label">Notificaties Uitzetten</p>
                     <p class="text-body-small text-red-400 mt-1 max-w-[200px]">Stopt alle achtergrond notificaties volledig</p>
                 </div>
-                <label class="relative inline-flex items-center cursor-pointer">
-                    <input type="checkbox" bind:checked={disableAllNotifications} onchange={applyDisableAllNotifications} class="sr-only peer">
-                    <div class="w-11 h-6 bg-surface-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-red-500"></div>
-                </label>
+                <Switch
+                    checked={disableAllNotifications}
+                    onCheckedChange={(v) => { disableAllNotifications = v; applyDisableAllNotifications(); }}
+                    ariaLabel="Notificaties uitzetten"
+                  />
             </div>
           </div>
 
@@ -1127,7 +1132,7 @@
 
     <div class="pt-10 flex flex-col items-center gap-2">
       <div class="w-10 h-[1px] bg-surface-800"></div>
-      <p class="text-label-small text-gray-600 text-center">Version 2.1.0 • Friday App</p>
+      <p class="text-label-small text-gray-600 text-center">Version 2.2.0 • Friday App</p>
     </div>
       </div>
     </main>

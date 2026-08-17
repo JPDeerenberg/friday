@@ -9,6 +9,8 @@
   import { buildSmoothPath, computeChartData, buildTrendPath, type ChartData } from '$lib/charts';
   import { onMount } from 'svelte';
   import { fly } from 'svelte/transition';
+  import Button from '$lib/components/Button.svelte';
+  import Chip from '$lib/components/Chip.svelte';
   import type { Grade, Schoolyear } from '$lib/types';
 
   type SubjectSummary = {
@@ -601,7 +603,7 @@
         <p class="text-xs text-gray-500 font-bold uppercase tracking-widest animate-pulse">Cijfers ophalen...</p>
       </div>
     {:else if errorMessage}
-      <div class="glass p-8 rounded-[2rem] flex flex-col items-center text-center gap-6 border-red-500/20">
+      <div class="elevation-3 p-8 rounded-[2rem] flex flex-col items-center text-center gap-6 border-red-500/20">
         <div class="w-16 h-16 rounded-3xl bg-red-500/10 flex items-center justify-center text-red-500">
           <svg class="w-8 h-8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
         </div>
@@ -609,12 +611,13 @@
           <h3 class="text-xl font-black text-white italic tracking-tighter">Oeps! Er ging iets mis</h3>
           <p class="text-sm text-gray-500 max-w-xs">{errorMessage}</p>
         </div>
-        <button
+        <Button
+          variant="filled"
           onclick={() => init(true)}
-          class="px-8 py-3 rounded-2xl bg-white text-black text-xs font-black uppercase tracking-widest hover:scale-105 active:scale-95 transition-all shadow-xl shadow-white/10"
+          class="px-8"
         >
           Opnieuw Proberen
-        </button>
+        </Button>
       </div>
     {:else}
 
@@ -908,15 +911,13 @@
             { id: 'week', label: 'Deze week' },
             { id: 'all', label: 'Alles' },
           ] as f}
-            <button
+            <Chip
+              variant="filter"
+              selected={recentFilter === f.id}
               onclick={() => recentFilter = f.id as any}
-              class="px-3 py-1.5 rounded-full text-xs font-black uppercase tracking-wide transition-all whitespace-nowrap
-                     {recentFilter === f.id
-                       ? 'bg-primary-500 text-white shadow-lg shadow-primary-500/25'
-                       : 'bg-surface-800 text-gray-400 hover:text-gray-200 border border-white/5'}"
             >
               {f.label}
-            </button>
+            </Chip>
           {/each}
           <span class="ml-auto text-xs text-gray-600 font-bold">{getRecentGrades().length} cijfer{getRecentGrades().length !== 1 ? 's' : ''}</span>
         </div>
@@ -1518,9 +1519,9 @@
                 <h2 class="text-xl font-black text-white italic tracking-tighter">Voortgang Jaren</h2>
               </div>
               {#if historicalAverages.length === 0}
-                <button onclick={() => loadHistoricalAverages()} disabled={loadingHistory} class="px-4 py-2 bg-surface-800 text-xs font-black text-gray-300 uppercase tracking-widest rounded-xl hover:bg-surface-700 hover:text-white transition active:scale-95 disabled:opacity-50 disabled:active:scale-100">
+                <Button variant="tonal" onclick={() => loadHistoricalAverages()} disabled={loadingHistory} class="px-4">
                   {loadingHistory ? 'Laden...' : 'Laad Data'}
-                </button>
+                </Button>
               {/if}
             </div>
 
@@ -1619,10 +1620,10 @@
                 </div>
                 <h2 class="text-xl font-black text-white italic tracking-tighter">Snapshots</h2>
               </div>
-              <button onclick={createSnapshot} class="flex items-center gap-1.5 px-4 py-2 rounded-2xl bg-primary-500 text-white text-xs font-black uppercase tracking-widest active:scale-95 transition-all shadow-lg shadow-primary-500/25">
+              <Button variant="filled" onclick={createSnapshot} class="px-4">
                 <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M12 5v14M5 12h14"/></svg>
                 Nieuw
-              </button>
+              </Button>
             </div>
 
             {#if snapshots.length === 0}
