@@ -17,8 +17,8 @@ pub async fn get_studiewijzers(
     let sw_url = format!("leerlingen/{}/studiewijzers?peildatum={}", person_id, now);
     let proj_url = format!("leerlingen/{}/projecten?peildatum={}", person_id, now);
 
-    println!("Fetching studiewijzers from: {}", sw_url);
-    println!("Fetching projecten from: {}", proj_url);
+    log::debug!("Fetching studiewijzers from: {}", sw_url);
+    log::debug!("Fetching projecten from: {}", proj_url);
 
     let mut all_items = Vec::new();
 
@@ -32,18 +32,18 @@ pub async fn get_studiewijzers(
     match sw_result {
         Ok(sw_response) => match serde_json::from_value::<StudiewijzersResponse>(sw_response) {
             Ok(sws) => all_items.extend(sws.items),
-            Err(e) => println!("Warning: Failed to parse studiewijzers: {}", e),
+            Err(e) => log::warn!("Failed to parse studiewijzers: {}", e),
         },
-        Err(e) => println!("Warning: Failed to fetch studiewijzers: {}", e),
+        Err(e) => log::warn!("Failed to fetch studiewijzers: {}", e),
     }
 
     // Try fetching projects
     match proj_result {
         Ok(proj_response) => match serde_json::from_value::<StudiewijzersResponse>(proj_response) {
             Ok(projs) => all_items.extend(projs.items),
-            Err(e) => println!("Warning: Failed to parse projects: {}", e),
+            Err(e) => log::warn!("Failed to parse projects: {}", e),
         },
-        Err(e) => println!("Warning: Failed to fetch projects: {}", e),
+        Err(e) => log::warn!("Failed to fetch projects: {}", e),
     }
 
     Ok(all_items)

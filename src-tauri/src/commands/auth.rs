@@ -176,15 +176,15 @@ pub async fn get_profile_info(
         c.request_context().await.map_err(|e| e.to_string())?
     };
     let url = format!("personen/{}/profiel", person_id);
-    println!("Fetching profile info: {}", url);
+    log::debug!("Fetching profile info: {}", url);
     let response = crate::client::get_with_context(&ctx, &url).await.map_err(|e| {
-        println!("Error fetching profile info: {}", e);
+        log::error!("Error fetching profile info: {}", e);
         e.to_string()
     })?;
-    println!("Profile Info response: {}", response);
+    log::debug!("Profile Info response: {}", response);
     let info: crate::models::account::ProfileInfo = serde_json::from_value(response.clone())
         .map_err(|e| {
-            println!("Failed to parse profile info: {}", e);
+            log::error!("Failed to parse profile info: {}", e);
             format!("Failed to parse profile info: {}", e)
         })?;
     Ok(info)
@@ -200,9 +200,9 @@ pub async fn get_profile_addresses(
         c.request_context().await.map_err(|e| e.to_string())?
     };
     let url = format!("personen/{}/adressen", person_id);
-    println!("Fetching profile addresses: {}", url);
+    log::debug!("Fetching profile addresses: {}", url);
     let response = crate::client::get_with_context(&ctx, &url).await.map_err(|e| {
-        println!("Error fetching addresses: {}", e);
+        log::error!("Error fetching addresses: {}", e);
         e.to_string()
     })?;
     let res: crate::models::account::ProfileAddressResponse = serde_json::from_value(response)
@@ -220,15 +220,15 @@ pub async fn get_career_info(
         c.request_context().await.map_err(|e| e.to_string())?
     };
     let url = format!("personen/{}/opleidinggegevensprofiel", person_id);
-    println!("Fetching career info: {}", url);
+    log::debug!("Fetching career info: {}", url);
     let response = crate::client::get_with_context(&ctx, &url).await.map_err(|e| {
-        println!("Error fetching career info: {}", e);
+        log::error!("Error fetching career info: {}", e);
         e.to_string()
     })?;
-    println!("Career Info response: {}", response);
+    log::debug!("Career Info response: {}", response);
     let career: crate::models::account::ProfileCareer = serde_json::from_value(response.clone())
         .map_err(|e| {
-            println!("Failed to parse career info: {}", e);
+            log::error!("Failed to parse career info: {}", e);
             format!("Failed to parse career info: {}", e)
         })?;
     Ok(career)
@@ -254,19 +254,19 @@ pub async fn get_profile_picture(
         c.request_context().await.map_err(|e| e.to_string())?
     };
     let url = format!("leerlingen/{person_id}/foto");
-    println!("Fetching profile picture: {}", url);
+    log::debug!("Fetching profile picture: {}", url);
     match crate::client::get_bytes_with_context(&ctx, &url).await {
         Ok(Some(bytes)) => {
             use base64::{engine::general_purpose::STANDARD, Engine};
-            println!("Got profile picture bytes: {}", bytes.len());
+            log::debug!("Got profile picture bytes: {}", bytes.len());
             Ok(Some(STANDARD.encode(bytes)))
         }
         Ok(None) => {
-            println!("No profile picture found");
+            log::debug!("No profile picture found");
             Ok(None)
         }
         Err(e) => {
-            println!("Warning: Failed to fetch profile picture: {}", e);
+            log::warn!("Failed to fetch profile picture: {}", e);
             Ok(None) // Return None instead of Err to avoid breaking Promise.all
         }
     }

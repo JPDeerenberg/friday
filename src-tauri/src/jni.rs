@@ -143,7 +143,7 @@ pub extern "system" fn Java_com_joris_friday_SyncWorker_showNotificationWithType
         Ok(c) => c,
         Err(_) => {
             let _ = env.exception_clear();
-            eprintln!("JNI ERROR: Failed to find NotificationHelper");
+            log::error!("JNI ERROR: Failed to find NotificationHelper");
             return;
         }
     };
@@ -356,22 +356,22 @@ async fn do_sync(data_dir: &str) -> String {
     use std::path::PathBuf;
 
     let dir = PathBuf::from(data_dir);
-    eprintln!("=== FridaySync (Rust): do_sync started ===");
-    eprintln!("FridaySync (Rust): app_data_dir: {:?}", dir);
+    log::debug!("=== FridaySync (Rust): do_sync started ===");
+    log::debug!("FridaySync (Rust): app_data_dir: {:?}", dir);
 
     // Load tokens from secure storage (keyring), migrating any legacy plaintext
     // tokens.json left over from before this feature.
     let token_set = TokenSetPersistence::load(&dir)
         .or_else(|| migrate_legacy_tokens(&dir))
         .map(|ts| {
-            eprintln!("FridaySync (Rust): ✓ Tokens loaded from secure storage");
+            log::debug!("FridaySync (Rust): ✓ Tokens loaded from secure storage");
             ts
         });
 
     let token_set = match token_set {
         Some(ts) => ts,
         None => {
-            eprintln!("FridaySyncWorker (Rust): ERROR: Could not load tokens from secure storage (checked data_dir {:?})", dir);
+            log::error!("FridaySyncWorker (Rust): ERROR: Could not load tokens from secure storage (checked data_dir {:?})", dir);
             return "ERROR: NO_TOKENS".to_string()
         },
     };
@@ -379,37 +379,37 @@ async fn do_sync(data_dir: &str) -> String {
     let mut client = MagisterClient::new();
     client.token_set = Some(token_set.clone());
 
-    eprintln!("FridaySync (Rust): Ensuring valid token...");
+    log::debug!("FridaySync (Rust): Ensuring valid token...");
     if let Err(e) = client.ensure_valid_token().await {
-        eprintln!("FridaySync (Rust): ERROR: Token validation failed: {}", e);
+        log::error!("FridaySync (Rust): ERROR: Token validation failed: {}", e);
         return format!("AUTH_ERROR: {}", e);
     }
-    eprintln!("FridaySync (Rust): ✓ Token is valid");
+    log::debug!("FridaySync (Rust): ✓ Token is valid");
 
     // Save refreshed token if needed
     if let Some(ts) = &client.token_set {
         TokenSetPersistence::save(&dir, ts);
-        eprintln!("FridaySync (Rust): Token refreshed and saved");
+        log::debug!("FridaySync (Rust): Token refreshed and saved");
     }
 
     let person_id = match client.token_set.as_ref().unwrap().person_id {
         Some(id) => {
-            eprintln!("FridaySync (Rust): Person ID: {}", id);
+            log::debug!("FridaySync (Rust): Person ID: {}", id);
             id
         },
         None => {
-            eprintln!("FridaySync (Rust): ERROR: No person_id in token");
+            log::error!("FridaySync (Rust): ERROR: No person_id in token");
             return "ERROR: NO_PERSON_ID".to_string()
         }
     };
 
-    eprintln!("FridaySync (Rust): Fetching data from Magister...");
+    log::debug!("FridaySync (Rust): Fetching data from Magister...");
     // Take a cheap snapshot of the client (http + token) so the four fetches can run
     // concurrently without holding the client's mutable state.
     let ctx = match client.request_context().await {
         Ok(ctx) => ctx,
         Err(e) => {
-            eprintln!("FridaySync (Rust): ERROR: Failed to build request context: {}", e);
+            log::error!("FridaySync (Rust): ERROR: Failed to build request context: {}", e);
             return format!("AUTH_ERROR: {}", e);
         }
     };
@@ -425,19 +425,19 @@ async fn do_sync(data_dir: &str) -> String {
         fetch_calendar(&ctx, person_id, &today, &tomorrow),
     );
     let messages_result = messages_result.unwrap_or_else(|e| {
-        eprintln!("FridaySync (Rust): fetch_messages failed: {}", e);
+        log::warn!("FridaySync (Rust): fetch_messages failed: {}", e);
         serde_json::json!([])
     });
     let grades_result = grades_result.unwrap_or_else(|e| {
-        eprintln!("FridaySync (Rust): fetch_recent_grades failed: {}", e);
+        log::warn!("FridaySync (Rust): fetch_recent_grades failed: {}", e);
         serde_json::json!([])
     });
     let assignments_result = assignments_result.unwrap_or_else(|e| {
-        eprintln!("FridaySync (Rust): fetch_assignments failed: {}", e);
+        log::warn!("FridaySync (Rust): fetch_assignments failed: {}", e);
         serde_json::json!([])
     });
     let calendar_result = calendar_result.unwrap_or_else(|e| {
-        eprintln!("FridaySync (Rust): fetch_calendar failed: {}", e);
+        log::warn!("FridaySync (Rust): fetch_calendar failed: {}", e);
         serde_json::json!([])
     });
 
@@ -446,7 +446,7 @@ async fn do_sync(data_dir: &str) -> String {
     let assignments_count = assignments_result.as_array().map(|a| a.len()).unwrap_or(0);
     let calendar_count = calendar_result.as_array().map(|a| a.len()).unwrap_or(0);
 
-    eprintln!("FridaySync (Rust): Data fetched - messages: {}, grades: {}, assignments: {}, calendar: {}", 
+    log::debug!("FridaySync (Rust): Data fetched - messages: {}, grades: {}, assignments: {}, calendar: {}", 
         msg_count, grades_count, assignments_count, calendar_count);
 
     // Build JSON result with all data for change detection
@@ -458,7 +458,7 @@ async fn do_sync(data_dir: &str) -> String {
         "syncTimestamp": chrono::Utc::now().timestamp()
     });
 
-    eprintln!("FridaySync (Rust): ✓ Sync completed successfully");
+    log::debug!("FridaySync (Rust): ✓ Sync completed successfully");
     serde_json::to_string(&sync_data).unwrap_or_else(|_| "SYNC_SUCCESS".to_string())
 }
 

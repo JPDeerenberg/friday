@@ -155,12 +155,12 @@ pub async fn get_absences(
     let end_date = if tot.len() >= 10 { &tot[0..10] } else { &tot };
 
     let url = format!("personen/{}/absenties?van={}&tot={}", person_id, start_date, end_date);
-    println!("Fetching absences from: {}", url);
+    log::debug!("Fetching absences from: {}", url);
     let response = crate::client::get_with_context(&ctx, &url).await.map_err(|e| e.to_string())?;
 
     let res: crate::models::calendar::AbsencesResponse = serde_json::from_value(response.clone())
         .map_err(|e| {
-        println!("Failed to parse absences. Response: {:?}", response);
+        log::error!("Failed to parse absences. Response: {:?}", response);
         format!("Failed to parse absences: {}", e)
     })?;
     Ok(res.items)

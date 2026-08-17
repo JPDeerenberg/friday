@@ -12,13 +12,13 @@ pub async fn get_leermiddelen(
         c.request_context().await.map_err(|e| e.to_string())?
     };
     let url = format!("personen/{}/lesmateriaal", person_id);
-    println!("Fetching leermiddelen from: {}", url);
+    log::debug!("Fetching leermiddelen from: {}", url);
 
     let response = crate::client::get_with_context(&ctx, &url).await.map_err(|e| e.to_string())?;
     let leermiddelen: LeermiddelenResponse = serde_json::from_value(response)
         .map_err(|e| format!("Failed to parse leermiddelen: {}", e))?;
 
-    println!("Found {} leermiddelen", leermiddelen.items.len());
+    log::debug!("Found {} leermiddelen", leermiddelen.items.len());
     Ok(leermiddelen.items)
 }
 
@@ -36,14 +36,14 @@ pub async fn get_leermiddel_launch_url(
         href.trim_start_matches("/api/").to_string()
     };
 
-    println!("Fetching launch URL for material. Path: {}", path);
+    log::debug!("Fetching launch URL for material. Path: {}", path);
 
     let location = client.get_redirect_location(&path).await.map_err(|e| {
         let err_msg = format!("Failed to fetch launch URL from Magister: {}", e);
-        println!("{}", err_msg);
+        log::error!("{}", err_msg);
         err_msg
     })?;
 
-    println!("Successfully obtained launch URL: {}", location);
+    log::debug!("Successfully obtained launch URL: {}", location);
     Ok(location)
 }

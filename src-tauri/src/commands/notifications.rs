@@ -67,7 +67,7 @@ pub fn trigger_test_notification(app: AppHandle) -> Result<(), String> {
                         Ok(c) => c,
                         Err(e) => {
                             let _ = env.exception_clear();
-                            eprintln!("JNI ERROR: Failed to find NotificationHelper: {:?}", e);
+                            log::error!("JNI ERROR: Failed to find NotificationHelper: {:?}", e);
                             return;
                         }
                     };
@@ -106,7 +106,7 @@ pub fn trigger_test_notification(app: AppHandle) -> Result<(), String> {
     
     #[cfg(not(target_os = "android"))]
     {
-        println!("Test notification triggered (Desktop)");
+        log::debug!("Test notification triggered (Desktop)");
     }
     
     Ok(())
@@ -142,7 +142,7 @@ pub fn show_notification(
                         Ok(c) => c,
                         Err(e) => {
                             let _ = env.exception_clear();
-                            eprintln!("JNI ERROR: Failed to find NotificationHelper: {:?}", e);
+                            log::error!("JNI ERROR: Failed to find NotificationHelper: {:?}", e);
                             return;
                         }
                     };
@@ -191,7 +191,7 @@ pub fn show_notification(
     
     #[cfg(not(target_os = "android"))]
     {
-        println!("Notification triggered (Desktop): {:?} - {}", notification_type, title);
+        log::debug!("Notification triggered (Desktop): {:?} - {}", notification_type, title);
     }
     
     Ok(())
@@ -351,7 +351,7 @@ pub fn clear_sync_state(app: AppHandle) -> Result<String, String> {
                         Ok(c) => c,
                         Err(e) => {
                             let _ = env.exception_clear();
-                            eprintln!("JNI ERROR: Failed to find SyncStateManager: {:?}", e);
+                            log::error!("JNI ERROR: Failed to find SyncStateManager: {:?}", e);
                             return;
                         }
                     };
@@ -831,7 +831,7 @@ pub fn get_dnd_access_status(app: AppHandle) -> Result<bool, String> {
                         Ok(c) => c,
                         Err(e) => {
                             let _ = env.exception_clear();
-                            eprintln!("JNI ERROR: Failed to find NotificationHelper: {:?}", e);
+                            log::error!("JNI ERROR: Failed to find NotificationHelper: {:?}", e);
                             let _ = tx.send(false);
                             return;
                         }

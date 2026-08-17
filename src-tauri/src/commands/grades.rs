@@ -40,7 +40,7 @@ pub async fn get_schoolyears(
             serde_json::from_value::<SchoolyearsResponse>(data.clone()).map(|r| r.items)
         })
         .map_err(|e| {
-            eprintln!("Failed to parse schoolyears. Raw data keys: {:?}", data.as_object().map(|o| o.keys().collect::<Vec<_>>()));
+            log::error!("Failed to parse schoolyears. Raw data keys: {:?}", data.as_object().map(|o| o.keys().collect::<Vec<_>>()));
             format!("Failed to parse schoolyears: {}", e)
         })?;
 
@@ -227,9 +227,9 @@ pub async fn get_recent_grades(
     let limit = top.unwrap_or(5);
     let path = format!("personen/{person_id}/cijfers/laatste?top={limit}&skip=0");
 
-    println!("Fetching recent grades: {}", path);
+    log::debug!("Fetching recent grades: {}", path);
     let data = crate::client::get_with_context(&ctx, &path).await.map_err(|e| {
-        println!("Error fetching recent grades: {}", e);
+        log::error!("Error fetching recent grades: {}", e);
         e.to_string()
     })?;
 

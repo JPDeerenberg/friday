@@ -87,7 +87,7 @@ impl TokenSetPersistence {
         if let Ok(data) = serde_json::to_string_pretty(&meta) {
             let path = data_dir.join("tokens.json");
             if let Err(e) = std::fs::write(&path, data) {
-                eprintln!("Failed to write token metadata: {}", e);
+                log::error!("Failed to write token metadata: {}", e);
             }
         }
         for (username, value) in [
@@ -96,7 +96,7 @@ impl TokenSetPersistence {
             (secure_store::USER_REFRESH_TOKEN, &ts.refresh_token),
         ] {
             if let Err(e) = secure_store::set_secret(username, value) {
-                eprintln!("Failed to store {} in keyring: {}", username, e);
+                log::error!("Failed to store {} in keyring: {}", username, e);
             }
         }
     }
@@ -275,7 +275,7 @@ pub async fn get_with_context(ctx: &RequestContext, path: &str) -> Result<serde_
             if attempt < MAX_RATE_LIMIT_RETRIES {
                 attempt += 1;
                 let backoff = std::time::Duration::from_secs(1u64 << attempt);
-                eprintln!("API rate limited (GET {}), retrying in {:?} (attempt {}/{})", url, backoff, attempt, MAX_RATE_LIMIT_RETRIES);
+                log::warn!("API rate limited (GET {}), retrying in {:?} (attempt {}/{})", url, backoff, attempt, MAX_RATE_LIMIT_RETRIES);
                 tokio::time::sleep(backoff).await;
                 continue;
             }
@@ -285,7 +285,7 @@ pub async fn get_with_context(ctx: &RequestContext, path: &str) -> Result<serde_
         if !resp.status().is_success() {
             let status = resp.status().as_u16();
             let text = resp.text().await.unwrap_or_default();
-            eprintln!("API Error (GET, unlocked): URL={}, Status={}, Body={}", url, status, text);
+            log::error!("API Error (GET, unlocked): URL={}, Status={}, Body={}", url, status, text);
             return Err(ClientError::ApiError(status, text));
         }
 
@@ -314,7 +314,7 @@ pub async fn get_bytes_with_context(ctx: &RequestContext, path: &str) -> Result<
     if !resp.status().is_success() {
         let status = resp.status().as_u16();
         let text = resp.text().await.unwrap_or_default();
-        eprintln!("API Error (BYTES, unlocked): URL={}, Status={}, Body={}", url, status, text);
+        log::error!("API Error (BYTES, unlocked): URL={}, Status={}, Body={}", url, status, text);
         return Err(ClientError::ApiError(status, text));
     }
 
@@ -380,7 +380,7 @@ impl MagisterClient {
                 if attempt < MAX_RATE_LIMIT_RETRIES {
                     attempt += 1;
                     let backoff = std::time::Duration::from_secs(1u64 << attempt); // 2s, 4s, 8s
-                    eprintln!(
+                    log::warn!(
                         "API rate limited ({} {}), retrying in {:?} (attempt {}/{})",
                         method, url, backoff, attempt, MAX_RATE_LIMIT_RETRIES
                     );
@@ -527,7 +527,7 @@ impl MagisterClient {
         if !resp.status().is_success() {
             let status = resp.status().as_u16();
             let text = resp.text().await.unwrap_or_default();
-            eprintln!("API Error (GET): URL={}, Status={}, Body={}", url, status, text);
+            log::error!("API Error (GET): URL={}, Status={}, Body={}", url, status, text);
             return Err(ClientError::ApiError(status, text));
         }
 
@@ -556,7 +556,7 @@ impl MagisterClient {
         if !resp.status().is_success() {
             let status = resp.status().as_u16();
             let text = resp.text().await.unwrap_or_default();
-            eprintln!("API Error (BYTES): URL={}, Status={}, Body={}", url, status, text);
+            log::error!("API Error (BYTES): URL={}, Status={}, Body={}", url, status, text);
             return Err(ClientError::ApiError(status, text));
         }
 
@@ -598,7 +598,7 @@ impl MagisterClient {
         if !resp.status().is_success() {
             let status = resp.status().as_u16();
             let text = resp.text().await.unwrap_or_default();
-            eprintln!("API Error (BYTES): URL={}, Status={}, Body={}", url, status, text);
+            log::error!("API Error (BYTES): URL={}, Status={}, Body={}", url, status, text);
             return Err(ClientError::ApiError(status, text));
         }
 
@@ -638,7 +638,7 @@ impl MagisterClient {
         if !resp.status().is_success() {
             let status = resp.status().as_u16();
             let text = resp.text().await.unwrap_or_default();
-            eprintln!("API Error (POST): URL={}, Status={}, Body={}", url, status, text);
+            log::error!("API Error (POST): URL={}, Status={}, Body={}", url, status, text);
             return Err(ClientError::ApiError(status, text));
         }
 
@@ -668,7 +668,7 @@ impl MagisterClient {
         if !resp.status().is_success() {
             let status = resp.status().as_u16();
             let text = resp.text().await.unwrap_or_default();
-            eprintln!("API Error (PUT): URL={}, Status={}, Body={}", url, status, text);
+            log::error!("API Error (PUT): URL={}, Status={}, Body={}", url, status, text);
             return Err(ClientError::ApiError(status, text));
         }
         Ok(())
@@ -705,7 +705,7 @@ impl MagisterClient {
         if !resp.status().is_success() {
             let status = resp.status().as_u16();
             let text = resp.text().await.unwrap_or_default();
-            eprintln!("API Error (DELETE): URL={}, Status={}, Body={}", url, status, text);
+            log::error!("API Error (DELETE): URL={}, Status={}, Body={}", url, status, text);
             return Err(ClientError::ApiError(status, text));
         }
         Ok(())
@@ -729,7 +729,7 @@ impl MagisterClient {
         if !resp.status().is_success() {
             let status = resp.status().as_u16();
             let text = resp.text().await.unwrap_or_default();
-            eprintln!("API Error (PATCH): URL={}, Status={}, Body={}", url, status, text);
+            log::error!("API Error (PATCH): URL={}, Status={}, Body={}", url, status, text);
             return Err(ClientError::ApiError(status, text));
         }
         Ok(())
