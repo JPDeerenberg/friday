@@ -6,6 +6,7 @@
            exportAllData } from '$lib/api';
   import { getAiConfig, setAiConfig, validateAiKey, listAiModels, type AiConfig, type AiProviderType, AI_PROVIDERS } from '$lib/ai';
   import { sectionIcon } from '$lib/icons';
+  import ColorSwatchPicker from '$lib/components/ColorSwatchPicker.svelte';
   import { fade, fly, slide } from 'svelte/transition';
   import { onMount } from 'svelte';
   import { open } from '@tauri-apps/plugin-dialog';
@@ -743,7 +744,7 @@
         {:else}
         <div class="space-y-2">
           {#each section.settings as setting}
-            <div class="glass p-5 rounded-m3-md border-white/5 flex items-center justify-between gap-6 transition-all hover:bg-surface-800/40">
+            <div class="glass p-5 rounded-m3-md border-white/5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-6 transition-all hover:bg-surface-800/40">
               <div class="flex-1">
                 <p class="text-title-small text-gray-100">{setting.label}</p>
                 <p class="text-label-medium text-gray-500 mt-1 leading-relaxed">{setting.description}</p>
@@ -770,20 +771,11 @@
                   class="w-20 px-3 py-2 rounded-m3-xs bg-surface-950 border border-surface-700 text-title-small text-gray-100 text-center focus:outline-none focus:border-primary-500 shadow-inner"
                 />
               {:else if setting.type === 'theme-picker'}
-                <div class="grid grid-cols-4 gap-3 py-1">
-                  {#each themeColors as color}
-                    <button
-                      onclick={() => updateSetting(setting.id, color.id)}
-                      class="group flex flex-col items-center gap-1.5"
-                    >
-                      <div class="w-10 h-10 rounded-full {color.bg} transition-all border-2
- {$userSettings[setting.id] === color.id
- ? 'border-white scale-110 shadow-lg shadow-white/20'
- : 'border-transparent opacity-60 group-hover:opacity-100 group-hover:scale-105 shadow-inner'}"></div>
-                      <span class="text-label-small text-gray-600 group-hover:text-gray-400 transition-colors">{color.label}</span>
-                    </button>
-                  {/each}
-                </div>
+                <ColorSwatchPicker
+                  colors={themeColors}
+                  value={$userSettings[setting.id]}
+                  onSelect={(id) => updateSetting(setting.id, id)}
+                />
               {:else if setting.type === 'select'}
                 <select
                   value={$userSettings[setting.id]}
