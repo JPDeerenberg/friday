@@ -27,6 +27,11 @@
 
   type DayItem = DayAppointment | BreakSeparator;
 
+  type WeekAppointment = CalendarEvent & {
+    _column: number;
+    _columnCount: number;
+  };
+
   let appointments = $state<CalendarEvent[]>([]);
   let selectedDate = $state(new Date());
   let loading = $state(true);
@@ -458,6 +463,57 @@
     return d.getHours() * 60 + d.getMinutes();
   }
 
+  function assignColumns(apps: CalendarEvent[]): WeekAppointment[] {
+    const sorted = [...apps].sort((a, b) => {
+      const sa = minutesOf(a.Start);
+      const sb = minutesOf(b.Start);
+      if (sa === null && sb === null) return 0;
+      if (sa === null) return 1;
+      if (sb === null) return -1;
+      if (sa !== sb) return sa - sb;
+      return (minutesOf(a.Einde) ?? sa + 50) - (minutesOf(b.Einde) ?? sb + 50);
+    });
+
+    const result: WeekAppointment[] = [];
+    const clusters: { maxEnd: number; items: WeekAppointment[] }[] = [];
+
+    for (const app of sorted) {
+      const s = minutesOf(app.Start);
+      if (s === null) {
+        result.push({ ...app, _column: 0, _columnCount: 1 });
+        continue;
+      }
+      const e = minutesOf(app.Einde) ?? s + 50;
+      let cluster = clusters[clusters.length - 1];
+      if (!cluster || s >= cluster.maxEnd) {
+        cluster = { maxEnd: e, items: [] };
+        clusters.push(cluster);
+      } else {
+        cluster.maxEnd = Math.max(cluster.maxEnd, e);
+      }
+      cluster.items.push({ ...app, _column: 0, _columnCount: 1 });
+    }
+
+    for (const cluster of clusters) {
+      const lanes: number[] = [];
+      for (const app of cluster.items) {
+        const s = minutesOf(app.Start)!;
+        const e = minutesOf(app.Einde) ?? s + 50;
+        let lane = lanes.findIndex((end) => end <= s);
+        if (lane === -1) {
+          lane = lanes.length;
+          lanes.push(e);
+        } else {
+          lanes[lane] = e;
+        }
+        app._column = lane;
+      }
+      for (const app of cluster.items) app._columnCount = lanes.length;
+      result.push(...cluster.items);
+    }
+    return result;
+  }
+
   const weekViewDays = $derived.by(() => {
     const d = new Date(selectedDate);
     const day = d.getDay();
@@ -478,13 +534,12 @@
       if ($userSettings.hideCancelled) {
         apps = apps.filter(a => a.Status !== 4 && a.Status !== 5);
       }
-      apps.sort((a, b) => (a.Start ?? '').localeCompare(b.Start ?? ''));
 
       return {
         date,
         isToday: dayStr === new Date().toDateString(),
         isSelected: dayStr === selectedDate.toDateString(),
-        apps
+        apps: assignColumns(apps)
       };
     });
   });
@@ -839,7 +894,7 @@
                     {#each day.apps as app}
                       <button
                         onclick={() => openDetail(app)}
-                        class="absolute left-1 right-1 rounded-m3-sm border px-2 py-1.5 text-left overflow-hidden transition-all active:scale-[0.98] hover:brightness-125 cursor-pointer
+                        class="absolute rounded-m3-sm border px-2 py-1.5 text-left overflow-hidden transition-all active:scale-[0.98] hover:brightness-125 cursor-pointer
   {app.InfoType === 1 && !app.Afgerond
   ? 'bg-primary-500/15 border-primary-500/30'
   : app.Status === 4 || app.Status === 5
@@ -847,7 +902,7 @@
   : app.Afgerond
   ? 'bg-surface-800/50 border-surface-700/40 opacity-70'
   : 'bg-surface-800/80 border-surface-700/50 hover:bg-surface-700/70'}"
-                        style="top: {appTopPx(app)}px; height: {appHeightPx(app)}px;"
+                        style="top: {appTopPx(app)}px; height: {appHeightPx(app)}px; left: calc({app._column} / {app._columnCount} * 100% + 4px); width: calc(100% / {app._columnCount} - 8px);"
                         title="{(app.Vakken?.[0]?.Naam || app.Omschrijving || 'Vrij')} · {formatTime(app.Start)} – {formatTime(app.Einde)}"
                       >
                         <div class="flex flex-col min-w-0 h-full">
