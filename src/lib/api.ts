@@ -20,6 +20,11 @@ import type {
 // Sanitize HTML fields at the boundary where remote data enters the frontend.
 // Every {@html} call site downstream receives already-safe markup.
 
+function stripApiPrefix(href: string): string {
+  if (href.startsWith("/api/")) return href.slice("/api/".length);
+  throw new Error("Unexpected event href shape: " + href);
+}
+
 function sanitizeMessage(msg: Message): Message {
   if (msg && typeof msg.inhoud === "string") {
     msg.inhoud = sanitizeHtml(msg.inhoud);
@@ -200,9 +205,11 @@ export async function deleteCalendarEvent(selfUrl: string): Promise<void> {
 export async function toggleCalendarEventDone(event: CalendarEvent): Promise<void> {
   const updatedEvent = { ...event, Afgerond: !event.Afgerond };
   // Ensure we have a selfUrl
-  const url =
-    event.self_url ||
-    event.Links?.find((l: Link) => l.Rel === "Self")?.Href.replace("/api/", "");
+  let url = event.self_url;
+  if (!url) {
+    const href = event.Links?.find((l: Link) => l.Rel === "Self")?.Href;
+    if (href) url = stripApiPrefix(href);
+  }
   if (!url) throw new Error("No selfUrl found for event");
   return updateCalendarEvent(url, JSON.stringify(updatedEvent));
 }
