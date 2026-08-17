@@ -16,6 +16,7 @@
   let messages = $state<AiMessage[]>([]);
   let inputText = $state("");
   let isLoading = $state(false);
+  let messagesContainer: HTMLDivElement | undefined = $state();
   let isConfigured = $state(false);
   let firstOpen = $state(true);
   let pendingActions = $state<PendingActionInfo[]>([]);
@@ -63,6 +64,19 @@
   }
 
   onMount(checkConfig);
+
+  // Auto-scroll to the newest message when one is added, unless the user has
+  // scrolled up to read earlier chat history.
+  $effect(() => {
+    const last = messages[messages.length - 1];
+    if (!last || !messagesContainer) return;
+    const el = messagesContainer;
+    const nearBottom =
+      el.scrollTop + el.clientHeight >= el.scrollHeight - 80;
+    if (nearBottom) {
+      el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+    }
+  });
 
   // Add greeting message when first opened. Re-check config every time the panel opens,
   // so users who just saved their API key in settings see it immediately.
@@ -256,7 +270,7 @@
     </div>
 
     <!-- Messages -->
-    <div class="flex-1 overflow-y-auto px-5 py-4 space-y-4 no-scrollbar scroll-smooth">
+    <div class="flex-1 overflow-y-auto px-5 py-4 space-y-4 no-scrollbar scroll-smooth" bind:this={messagesContainer}>
       {#each messages as msg, i (i)}
         <div
           class="flex {msg.role === 'user' ? 'justify-end' : 'justify-start'}"
