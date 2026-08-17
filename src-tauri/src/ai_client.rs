@@ -1,6 +1,8 @@
 //! Unified AI client that delegates to the appropriate provider.
 //! Supports OpenAI, Anthropic, Gemini, and OpenAI-compatible providers.
 
+use chrono::Datelike;
+
 use crate::ai::providers::get_provider;
 
 /// Re-export for backwards compatibility with existing code.
@@ -45,12 +47,23 @@ pub async fn list_models(config: &AiConfig) -> Result<Vec<String>, String> {
 /// Build the system prompt with school context.
 /// When `tools_enabled` is true, include tool descriptions for data access.
 pub fn build_school_context_system_prompt(page_context: Option<&str>, tools_enabled: bool) -> String {
-    let base = "Je bent Friday AI, een behulpzame assistent voor scholieren in het Nederlandse middelbaar onderwijs. \
+    let now = chrono::Local::now();
+    let date_context = format!(
+        "Vandaag is {}, {} ({} uur, tijdzone Europe/Amsterdam). \
+         Gebruik altijd deze datum als 'vandaag' bij het bepalen van datumbereiken voor tools zoals \
+         get_calendar_events, get_assignments en get_full_grade_overview — verzin nooit zelf een datum.",
+        dutch_weekday(now.weekday()),
+        now.format("%Y-%m-%d"),
+        now.format("%H:%M"),
+    );
+
+    let base = format!("{}\n\n{}", date_context, "Je bent Friday AI, een behulpzame assistent voor scholieren in het Nederlandse middelbaar onderwijs. \
                 Je helpt met schoolgerelateerde vragen, planning, studieadvies en uitleg. \
                 Je spreekt altijd Nederlands en reageert bondig en helder. \
                 Gebruik waar mogelijk opsommingen en concrete voorbeelden. \
                 Wees aanmoedigend maar realistisch. \
-                Als je iets niet weet, zeg dat dan eerlijk.".to_string();
+                Als je iets niet weet, zeg dat dan eerlijk."
+    );
 
     let tools_prompt = "\n\nJe hebt toegang tot de volgende tools om schoolgegevens op te vragen en acties uit te voeren:\n\
              - get_calendar_events: Lesrooster en afspraken voor een datumbereik\n\
@@ -97,9 +110,64 @@ pub fn build_school_context_system_prompt(page_context: Option<&str>, tools_enab
     }
 }
 
+fn dutch_weekday(weekday: chrono::Weekday) -> &'static str {
+    match weekday {
+        chrono::Weekday::Mon => "maandag",
+        chrono::Weekday::Tue => "dinsdag",
+        chrono::Weekday::Wed => "woensdag",
+        chrono::Weekday::Thu => "donderdag",
+        chrono::Weekday::Fri => "vrijdag",
+        chrono::Weekday::Sat => "zaterdag",
+        chrono::Weekday::Sun => "zondag",
+    }
+}
+
 fn validate_config(config: &AiConfig) -> Result<(), String> {
     if !config.enabled || config.api_key.is_empty() {
         return Err("AI is niet geconfigureerd. Ga naar Instellingen > AI om een API-sleutel in te stellen.".to_string());
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn dutch_weekday_name(d: chrono::NaiveDate) -> &'static str {
+        dutch_weekday(d.weekday())
+    }
+
+    #[test]
+    fn system_prompt_includes_real_today_date() {
+        let prompt = build_school_context_system_prompt(None, true);
+        let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+        let weekday = dutch_weekday_name(chrono::Local::now().date_naive());
+
+        assert!(prompt.contains("Vandaag is"), "moet de actuele datum bevatten");
+        assert!(
+            prompt.contains(&format!("{}", today)),
+            "moet de echte datum {} bevatten, kreeg: {}",
+            today,
+            prompt.lines().next().unwrap_or("")
+        );
+        assert!(
+            prompt.contains(weekday),
+            "moet de weekdag {} bevatten",
+            weekday
+        );
+        assert!(
+            prompt.contains("Gebruik altijd deze datum als 'vandaag'"),
+            "moet de instructie bevatten om deze datum als vandaag te gebruiken"
+        );
+    }
+
+    #[test]
+    fn system_prompt_date_context_present_for_all_modes() {
+        for tools_enabled in [true, false] {
+            let with_page = build_school_context_system_prompt(Some("Testpagina"), tools_enabled);
+            let without_page = build_school_context_system_prompt(None, tools_enabled);
+            assert!(with_page.contains("Vandaag is"));
+            assert!(without_page.contains("Vandaag is"));
+        }
+    }
 }
