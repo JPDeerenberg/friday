@@ -3,6 +3,9 @@
   import { getSchoolyears, getGrades, formatDate, getBulkGradeExtraInfo, formatTeacherName } from '$lib/api';
   import { tryAiInsight, getAiConfig } from '$lib/ai';
   import { cacheGet, cacheRefresh } from '$lib/cache';
+  import { computeStats, getDistribution, getTrendDirection, getTrendLabel, getNumericValue, isPassing, pct } from '$lib/grades/stats';
+  import { calcPredicted, calcRequiredGrade, calcPredictedAverage, calcMinGradeForPass, calcAverageForGrade, calcNewOverallAverage, calcNewOverallForGrade } from '$lib/grades/predictor';
+  import { buildSmoothPath, computeChartData, buildTrendPath, type ChartData } from '$lib/charts';
   import { onMount } from 'svelte';
   import { fly } from 'svelte/transition';
 
@@ -51,52 +54,7 @@
     return sorted;
   }
 
-  // === Analytical functions ===
-
-  /** Compute statistics for a set of valid grade values */
-  function computeStats(values: number[]): { median: number; stdDev: number; min: number; max: number; range: number; q1: number; q3: number } {
-    if (values.length === 0) return { median: 0, stdDev: 0, min: 0, max: 0, range: 0, q1: 0, q3: 0 };
-    const sorted = [...values].sort((a, b) => a - b);
-    const n = sorted.length;
-    const mid = Math.floor(n / 2);
-    const median = n % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
-    const mean = values.reduce((a, b) => a + b, 0) / n;
-    const variance = values.reduce((sum, v) => sum + (v - mean) ** 2, 0) / n;
-    const stdDev = Math.sqrt(variance);
-    const min = sorted[0];
-    const max = sorted[n - 1];
-    const range = max - min;
-    const q1 = sorted[Math.floor(n * 0.25)];
-    const q3 = sorted[Math.floor(n * 0.75)];
-    return { median, stdDev, min, max, range, q1, q3 };
-  }
-
-  /** Distribution buckets [1-2, 2-3, ..., 9-10] */
-  function getDistribution(values: number[]): { label: string; count: number; pct: number }[] {
-    const buckets = [1, 2, 3, 4, 5, 6, 7, 8, 9];
-    return buckets.map(b => {
-      const count = values.filter(v => v >= b && v < b + 1).length;
-      return { label: `${b}-${b + 1}`, count, pct: values.length > 0 ? (count / values.length) * 100 : 0 };
-    });
-  }
-
-  /** Trend direction: 1 = improving, -1 = declining, 0 = stable */
-  function getTrendDirection(values: number[]): number {
-    if (values.length < 3) return 0;
-    const recent = values.slice(-3);
-    const firstHalf = recent.slice(0, 2);
-    const secondHalf = recent.slice(-2);
-    const avgFirst = firstHalf.reduce((a, b) => a + b, 0) / firstHalf.length;
-    const avgSecond = secondHalf.reduce((a, b) => a + b, 0) / secondHalf.length;
-    const diff = avgSecond - avgFirst;
-    if (diff > 0.2) return 1;
-    if (diff < -0.2) return -1;
-    return 0;
-  }
-
-  function getTrendLabel(dir: number): string {
-    return dir === 1 ? 'Stijgend 📈' : dir === -1 ? 'Dalend 📉' : 'Stabiel ➡️';
-  }
+  // === Analytical functions (moved to $lib/grades/stats) ===
 
   /** All valid chronological grade values across all subjects */
   function getAllChronologicalValues(): { value: number; date: string; subject: string }[] {
@@ -160,14 +118,9 @@
   let predictGrade = $state(6.5);
   let targetPeriodGrade = $state(6.0);
 
-  // Prediction helper - computed via inline expression in template
-  function calcPredicted(subject: any, remainingTests: number, expectedGrade: number) {
-    const totalNow = subject.totalPoints || 0;
-    const weightNow = subject.totalWeight || 0;
-    const predictedPoints = totalNow + expectedGrade * remainingTests;
-    const predictedWeight = weightNow + remainingTests;
-    const predictedEnd = predictedWeight > 0 ? predictedPoints / predictedWeight : 0;
-    return { totalNow, weightNow, predictedPoints, predictedWeight, predictedEnd };
+  // Prediction helper (math in $lib/grades/predictor)
+  function getPredictedEnd(subject: any): number {
+    return calcPredicted(subject, predictRemainingTests, predictGrade).predictedEnd;
   }
 
   // Weight analysis view
@@ -182,43 +135,10 @@
       .sort((a: any, b: any) => a.DatumIngevoerd.localeCompare(b.DatumIngevoerd));
   }
 
-  /** Build a smooth SVG path from [x,y] points using monotone cubic interpolation */
-  function buildSmoothPath(points: { x: number; y: number }[]): string {
-    if (points.length === 0) return '';
-    if (points.length === 1) return `M ${points[0].x},${points[0].y}`;
-    let d = `M ${points[0].x},${points[0].y}`;
-    for (let i = 0; i < points.length - 1; i++) {
-      const p0 = points[Math.max(i - 1, 0)];
-      const p1 = points[i];
-      const p2 = points[i + 1];
-      const p3 = points[Math.min(i + 2, points.length - 1)];
-      const tension = 0.3;
-      const cp1x = p1.x + (p2.x - p0.x) * tension;
-      const cp1y = p1.y + (p2.y - p0.y) * tension;
-      const cp2x = p2.x - (p3.x - p1.x) * tension;
-      const cp2y = p2.y - (p3.y - p1.y) * tension;
-      d += ` C ${cp1x},${cp1y} ${cp2x},${cp2y} ${p2.x},${p2.y}`;
-    }
-    return d;
-  }
-
+  /** Build the overall-trend smooth SVG path from chronological grades (charts math in $lib/charts) */
   function getOverallTrendPath() {
     const chrono = getChronologicalGrades();
-    if (chrono.length < 2) return '';
-    const values = chrono.map(g => getNumericValue(g.CijferStr));
-    const minVal = Math.max(1, Math.min(...values) - 0.5);
-    const maxVal = Math.min(10, Math.max(...values) + 0.5);
-    const range = maxVal - minVal || 1;
-    const count = chrono.length;
-    const w = 300, h = 100;
-    // Use the full width — no padding hack. Each point gets equal spacing.
-    const stepX = count > 1 ? w / (count - 1) : w / 2;
-    const offsetX = count > 1 ? 0 : w / 4;
-    const points = chrono.map((g, i) => ({
-      x: i * stepX + offsetX,
-      y: h - ((getNumericValue(g.CijferStr) - minVal) / range) * h
-    }));
-    return buildSmoothPath(points);
+    return buildTrendPath(chrono.map((g: any) => getNumericValue(g.CijferStr)));
   }
 
   async function init(force = false) {
@@ -377,35 +297,18 @@
     return list;
   }
 
-  function getNumericValue(str: string): number {
-    return parseFloat(str.replace(',', '.'));
-  }
-
   function isVoldoende(grade: any): boolean {
     const val = typeof grade === 'number' ? grade : getNumericValue(grade.CijferStr);
-    return val >= $userSettings.insufficientThreshold;
+    return isPassing(val, $userSettings.insufficientThreshold);
   }
 
-  /** Compute chart bounds and evenly-spaced points for a subject */
-  function getSubjectChartData(subject: any): { values: number[]; minY: number; maxY: number; points: { x: number; y: number }[]; w: number; h: number } | null {
+  /** Compute chart bounds and evenly-spaced points for a subject (chart math in $lib/charts) */
+  function getSubjectChartData(subject: any): ChartData | null {
     const vals = [...subject.grades]
       .filter((g: any) => g.CijferStr && g.TeltMee && !isNaN(getNumericValue(g.CijferStr)))
       .sort((a: any, b: any) => (a.DatumIngevoerd ?? '').localeCompare(b.DatumIngevoerd ?? ''))
       .map((g: any) => getNumericValue(g.CijferStr));
-    if (vals.length < 2) return null;
-    const w = 100, h = 40;
-    let minY = 1, maxY = 10;
-    if ($userSettings.zoomGraph) {
-      minY = Math.max(1, Math.min(...vals) - 0.5);
-      maxY = Math.min(10, Math.max(...vals) + 0.5);
-    }
-    const range = maxY - minY || 1;
-    const stepX = vals.length > 1 ? w / (vals.length - 1) : w / 2;
-    const points = vals.map((v, i) => ({
-      x: i * stepX,
-      y: h - ((v - minY) / range) * h
-    }));
-    return { values: vals, minY, maxY, points, w, h };
+    return computeChartData(vals, { zoom: $userSettings.zoomGraph });
   }
 
   function getTrendPath(subject: any): string {
@@ -480,29 +383,24 @@
   }
 
   function getRequiredGrade(subject: any): string {
-    if (subject.totalWeight === 0) return '?';
-    let simulatedPoints = 0, simulatedWeight = 0;
-    for (const g of simulationGrades) { simulatedPoints += g.value * g.weight; simulatedWeight += g.weight; }
-    const currentPoints = subject.totalPoints + simulatedPoints;
-    const currentWeight = subject.totalWeight + simulatedWeight;
-    const required = (calcTargetAvg * (currentWeight + calcWeight) - currentPoints) / calcWeight;
-    if (required > 10) return 'Onmogelijk (>10)';
-    if (required < 1) return '1.0';
-    return required.toFixed($userSettings.decimalPoints);
+    return calcRequiredGrade({
+      totalPoints: subject.totalPoints,
+      totalWeight: subject.totalWeight,
+      targetAverage: calcTargetAvg,
+      gradeWeight: calcWeight,
+      simulationGrades,
+      decimalPoints: $userSettings.decimalPoints,
+    });
   }
 
   function getPredictedAverage(subject: any): string {
-    let simulatedPoints = 0, simulatedWeight = 0;
-    for (const g of simulationGrades) { simulatedPoints += g.value * g.weight; simulatedWeight += g.weight; }
-    const totalP = (subject.totalPoints || 0) + (includeSimInAvg ? simulatedPoints : 0);
-    const totalW = (subject.totalWeight || 0) + (includeSimInAvg ? simulatedWeight : 0);
-    return totalW > 0 ? (totalP / totalW).toFixed($userSettings.decimalPoints) : '0';
-  }
-
-  /** Clamp a 1-10 grade value to a 0-100% position for progress bars. */
-  function pct(value: number): number {
-    if (isNaN(value)) return 0;
-    return Math.min(100, Math.max(0, (value / 10) * 100));
+    return calcPredictedAverage({
+      totalPoints: subject.totalPoints || 0,
+      totalWeight: subject.totalWeight || 0,
+      simulationGrades,
+      includeSimulation: includeSimInAvg,
+      decimalPoints: $userSettings.decimalPoints,
+    });
   }
 
   function getProgressPercent(subject: any): number {
@@ -511,46 +409,41 @@
   }
 
   function getMinGradeForPass(subject: any): string | null {
-    if (subject.totalWeight === 0) return null;
-    const threshold = $userSettings.insufficientThreshold;
-    const required = (threshold * (subject.totalWeight + 1) - subject.totalPoints) / 1;
-    if (required <= 1) return null; // Already passing without any extra
-    if (required > 10) return null; // Pass impossible
-    return required.toFixed(1);
+    return calcMinGradeForPass({
+      totalPoints: subject.totalPoints,
+      totalWeight: subject.totalWeight,
+      threshold: $userSettings.insufficientThreshold,
+    });
   }
 
   function getNewOverallAverage(subject: any): string {
-    const validSubjects = subjects.filter((s: any) => s.avg > 0);
-    if (validSubjects.length === 0) return getPredictedAverage(subject);
-    let totalAverages = 0;
-    for (const sub of validSubjects) {
-      if (sub.name === subject.name) {
-         totalAverages += parseFloat(getPredictedAverage(subject));
-      } else {
-         totalAverages += sub.avg;
-      }
-    }
-    return (totalAverages / validSubjects.length).toFixed($userSettings.decimalPoints);
+    return calcNewOverallAverage({
+      subjects,
+      subjectName: subject.name,
+      predictedAverage: getPredictedAverage(subject),
+      decimalPoints: $userSettings.decimalPoints,
+    });
   }
 
   /** Reverse mode: given a grade + weight, return the new subject average. */
   function getAverageForGrade(subject: any): string {
-    const totalP = (subject.totalPoints || 0) + calcExpectedGrade * calcWeight;
-    const totalW = (subject.totalWeight || 0) + calcWeight;
-    return totalW > 0 ? (totalP / totalW).toFixed($userSettings.decimalPoints) : '0';
+    return calcAverageForGrade({
+      totalPoints: subject.totalPoints || 0,
+      totalWeight: subject.totalWeight || 0,
+      grade: calcExpectedGrade,
+      weight: calcWeight,
+      decimalPoints: $userSettings.decimalPoints,
+    });
   }
 
   /** Reverse mode: new overall average given an expected grade. */
   function getNewOverallForGrade(subject: any): string {
-    const validSubjects = subjects.filter((s: any) => s.avg > 0);
-    if (validSubjects.length === 0) return getAverageForGrade(subject);
-    let totalAverages = 0;
-    for (const sub of validSubjects) {
-      totalAverages += sub.name === subject.name
-        ? parseFloat(getAverageForGrade(subject))
-        : sub.avg;
-    }
-    return (totalAverages / validSubjects.length).toFixed($userSettings.decimalPoints);
+    return calcNewOverallForGrade({
+      subjects,
+      subjectName: subject.name,
+      newAverage: getAverageForGrade(subject),
+      decimalPoints: $userSettings.decimalPoints,
+    });
   }
 
   let historicalAverages = $state<{ year: string; avg: number; id: number }[]>([]);
@@ -1467,8 +1360,8 @@
                         <div class="absolute -inset-0.5 bg-gradient-to-r from-accent-500 to-emerald-500 rounded-3xl blur opacity-20 group-hover:opacity-40 transition duration-1000"></div>
                         <div class="relative bg-surface-900 border border-white/10 rounded-3xl p-6 flex flex-col items-center justify-center shadow-2xl">
                           <p class="text-[10px] text-gray-500 font-black uppercase tracking-[0.2em] mb-1">Verwacht eindgemiddelde</p>
-                          <span class="text-5xl font-black italic tracking-tighter drop-shadow-sm {(() => { const t = (s.totalPoints||0) + predictGrade * predictRemainingTests; const w = (s.totalWeight||0) + predictRemainingTests; return w > 0 ? t/w : 0; })() >= $userSettings.insufficientThreshold ? 'text-transparent bg-clip-text bg-gradient-to-br from-white via-accent-400 to-emerald-400' : 'text-red-400'}">
-                            {(() => { const t = (s.totalPoints||0) + predictGrade * predictRemainingTests; const w = (s.totalWeight||0) + predictRemainingTests; return (w > 0 ? t/w : 0).toFixed($userSettings.decimalPoints); })()}
+                          <span class="text-5xl font-black italic tracking-tighter drop-shadow-sm {getPredictedEnd(s) >= $userSettings.insufficientThreshold ? 'text-transparent bg-clip-text bg-gradient-to-br from-white via-accent-400 to-emerald-400' : 'text-red-400'}">
+                            {getPredictedEnd(s).toFixed($userSettings.decimalPoints)}
                           </span>
                         </div>
                       </div>
@@ -1477,10 +1370,10 @@
                       <div class="space-y-1">
                         <div class="flex justify-between text-[9px] font-black uppercase tracking-widest">
                           <span class="text-gray-500">Huidig: {s.avg.toFixed(1)}</span>
-                          <span class="text-gray-500">Verwacht: {(() => { const t = (s.totalPoints||0) + predictGrade * predictRemainingTests; const w = (s.totalWeight||0) + predictRemainingTests; return (w > 0 ? t/w : 0).toFixed(1); })()}</span>
+                          <span class="text-gray-500">Verwacht: {getPredictedEnd(s).toFixed(1)}</span>
                         </div>
                         <div class="relative h-2.5 bg-surface-800 rounded-full overflow-hidden border border-surface-700/50">
-                          <div class="h-full rounded-full bg-gradient-to-r from-primary-600 to-accent-400 transition-all duration-500" style="width: {pct((() => { const t = (s.totalPoints||0) + predictGrade * predictRemainingTests; const w = (s.totalWeight||0) + predictRemainingTests; return w > 0 ? t/w : 0; })())}%"></div>
+                          <div class="h-full rounded-full bg-gradient-to-r from-primary-600 to-accent-400 transition-all duration-500" style="width: {pct(getPredictedEnd(s))}%"></div>
                           <div class="absolute top-0 bottom-0 w-0.5 bg-white/80" style="left: calc({pct(s.avg)}% - 1px)" title="Huidig: {s.avg.toFixed(1)}"></div>
                         </div>
                       </div>
