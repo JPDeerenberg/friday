@@ -7,12 +7,13 @@
   import Button from '$lib/components/Button.svelte';
   import Card from '$lib/components/Card.svelte';
   import Chip from '$lib/components/Chip.svelte';
+  import type { Account, ProfileAddress, ProfileCareer, ProfileInfo } from '$lib/types';
 
-  let info = $state<any>(null);
-  let addresses = $state<any[]>([]);
-  let career = $state<any>(null);
+  let info = $state<ProfileInfo | null>(null);
+  let addresses = $state<ProfileAddress[]>([]);
+  let career = $state<ProfileCareer | null>(null);
   let profilePic = $state<string | null>(null);
-  let account = $state<any>(null);
+  let account = $state<Account | null>(null);
   let loading = $state(true);
   let error = $state<string | null>(null);
 
@@ -20,8 +21,20 @@
     await loadProfile();
   });
 
-  async function fetchAllProfileData(pid: number) {
-    const result = { info: undefined as any, addresses: [] as any[], career: undefined as any, profilePic: null as string | null, account: undefined as any };
+  async function fetchAllProfileData(pid: number): Promise<{
+    info: ProfileInfo | null;
+    addresses: ProfileAddress[];
+    career: ProfileCareer | null;
+    profilePic: string | null;
+    account: Account | null;
+  }> {
+    const result = {
+      info: null as ProfileInfo | null,
+      addresses: [] as ProfileAddress[],
+      career: null as ProfileCareer | null,
+      profilePic: null as string | null,
+      account: null as Account | null,
+    };
     const tasks = [
       getProfileInfo(pid).then(r => result.info = r).catch(e => console.error('Info fail:', e)),
       getProfileAddresses(pid).then(r => result.addresses = r).catch(e => console.error('Addr fail:', e)),
@@ -62,10 +75,10 @@
   // ── Derived getters ──────────────────────────────────────────────────────
 
   const displayName = $derived.by(() => {
-    const persoon = account?.Persoon ?? account?.persoon;
-    const roepnaam = persoon?.Roepnaam ?? info?.Roepnaam ?? '';
-    const tussenvoegsel = persoon?.Tussenvoegsel ?? persoon?.tussenvoegsel ?? '';
-    const achternaamRaw = persoon?.Achternaam ?? info?.Achternaam ?? '';
+    const persoon = account?.Persoon;
+    const roepnaam = persoon?.Roepnaam ?? '';
+    const tussenvoegsel = persoon?.Tussenvoegsel ?? '';
+    const achternaamRaw = persoon?.Achternaam ?? '';
     const achternaam = tussenvoegsel ? `${tussenvoegsel} ${achternaamRaw}` : achternaamRaw;
     return { roepnaam, achternaam };
   });
@@ -103,13 +116,13 @@
   }
 
   const age = $derived.by(() => {
-    const persoon = account?.Persoon ?? account?.persoon;
-    return calcAge(persoon?.Geboortedatum ?? persoon?.geboortedatum);
+    const persoon = account?.Persoon;
+    return calcAge(persoon?.Geboortedatum);
   });
 
   const birthdate = $derived.by(() => {
-    const persoon = account?.Persoon ?? account?.persoon;
-    return formatDate(persoon?.Geboortedatum ?? persoon?.geboortedatum);
+    const persoon = account?.Persoon;
+    return formatDate(persoon?.Geboortedatum);
   });
 
   const progress = $derived(schoolYearProgress());
@@ -169,11 +182,11 @@
 
           <div class="mt-8 space-y-3">
             <h2 class="text-headline-large text-white">
-               {displayName.roepnaam || info?.Roepnaam || 'Gebruiker'} {displayName.achternaam || info?.Achternaam || ''}
+               {displayName.roepnaam || 'Gebruiker'} {displayName.achternaam || ''}
             </h2>
             <div class="flex flex-wrap items-center justify-center gap-2">
-               <Chip variant="assist">{career?.Studie || career?.opleiding || 'Opleiding'}</Chip>
-               <Chip variant="assist">Klas {career?.Klas || career?.groep || '—'}</Chip>
+               <Chip variant="assist">{career?.Studie || 'Opleiding'}</Chip>
+               <Chip variant="assist">Klas {career?.Klas || '—'}</Chip>
                {#if age}
                  <Chip variant="assist">{age} jaar</Chip>
                {/if}
@@ -215,11 +228,11 @@
               <div class="grid gap-5">
                 <div class="space-y-1">
                   <span class="text-label-small text-primary-400 block">Privé e-mail</span>
-                  <p class="text-body-large text-gray-100 break-all">{info?.EmailAdres || info?.email || 'Niet ingevuld'}</p>
+                  <p class="text-body-large text-gray-100 break-all">{info?.EmailAdres || 'Niet ingevuld'}</p>
                 </div>
                 <div class="space-y-1">
                   <span class="text-label-small text-primary-400 block">Telefoonnummer</span>
-                  <p class="text-body-large text-gray-100">{info?.Mobiel || info?.mobiel || 'Niet beschikbaar'}</p>
+                  <p class="text-body-large text-gray-100">{info?.Mobiel || 'Niet beschikbaar'}</p>
                 </div>
                 {#if birthdate !== '—'}
                   <div class="space-y-1">
@@ -242,12 +255,12 @@
               <div class="grid gap-5">
                 <div class="space-y-1">
                   <span class="text-label-small text-accent-400 block">Stamnummer</span>
-                  <p class="text-body-large text-gray-100">{career?.StamNr || career?.stamnummer || 'Onbekend'}</p>
+                  <p class="text-body-large text-gray-100">{career?.StamNr || 'Onbekend'}</p>
                 </div>
-                {#if career?.Klas || career?.groep}
+                {#if career?.Klas}
                   <div class="space-y-1">
                     <span class="text-label-small text-accent-400 block">Klas</span>
-                    <p class="text-body-large text-gray-100">{career?.Klas || career?.groep}</p>
+                    <p class="text-body-large text-gray-100">{career?.Klas}</p>
                   </div>
                 {/if}
                 <div class="space-y-1">

@@ -17,9 +17,10 @@
   import { fade, fly, slide } from 'svelte/transition';
   import { open } from '@tauri-apps/plugin-dialog';
   import RichTextEditor from '$lib/components/RichTextEditor.svelte';
+  import type { Assignment, AssignmentAttachment, AssignmentLink, AssignmentVersion, Docent } from '$lib/types';
 
-  let assignments = $state<any[]>([]);
-  let selectedAssignment = $state<any>(null);
+  let assignments = $state<Assignment[]>([]);
+  let selectedAssignment = $state<Assignment | null>(null);
   let loadingList = $state(true);
   let loadingDetail = $state(false);
   let filter = $state<'all' | 'open' | 'submitted' | 'graded' | 'overdue'>('all');
@@ -94,7 +95,7 @@
     }
   }
 
-  function getStatus(a: any) {
+  function getStatus(a: Assignment) {
     if (a.Afgesloten) return { label: 'Afgesloten', key: 'closed' };
     if (a.BeoordeeldOp) return { label: 'Beoordeeld', key: 'graded' };
     if (a.IngeleverdOp) return { label: 'Ingeleverd', key: 'submitted' };
@@ -124,13 +125,13 @@
         })
   );
 
-  async function selectAssignment(assignment: any) {
+  async function selectAssignment(assignment: Assignment) {
     if (selectedAssignment?.Id === assignment.Id) return;
     loadingDetail = true;
     submissionText = "";
     attachments = [];
     try {
-      const selfLink = assignment.Links?.find((l: any) => l.Rel === 'Self')?.Href;
+      const selfLink = assignment.Links?.find((l: AssignmentLink) => l.Rel === 'Self')?.Href;
       if (selfLink) {
         selectedAssignment = await getAssignmentDetail(selfLink);
       } else {
@@ -170,10 +171,10 @@
     attachments = attachments.filter((_, i) => i !== idx);
   }
 
-  async function handleDownload(bijlage: any) {
+  async function handleDownload(bijlage: AssignmentAttachment) {
     if (downloadingFile) return;
     try {
-      const url = bijlage.Links?.find((l: any) => l.Rel === 'Self')?.Href ?? bijlage.Url;
+      const url = bijlage.Links?.find((l: AssignmentLink) => l.Rel === 'Self')?.Href ?? bijlage.Url;
       if (!url) return;
       downloadingFile = bijlage.Naam;
       const downloadDir = get(userSettings).downloadDir || '';
@@ -189,8 +190,8 @@
   async function handleSubmit() {
     if (!selectedAssignment || isSubmitting) return;
     const lastVersion = selectedAssignment.VersieNavigatieItems?.[0];
-    const selfUrl = lastVersion?.Links?.find((l: any) => l.Rel === 'Self')?.Href;
-    if (!selfUrl) { alert("Geen inlever-link gevonden voor deze opdracht."); return; }
+    const selfUrl = lastVersion?.Links?.find((l: AssignmentLink) => l.Rel === 'Self')?.Href;
+    if (!selfUrl || !lastVersion) { alert("Geen inlever-link gevonden voor deze opdracht."); return; }
     isSubmitting = true;
     try {
       const submissionBody = {
@@ -207,7 +208,7 @@
       };
       await handInAssignment(selfUrl, selectedAssignment.Id, JSON.stringify(submissionBody));
       await loadAssignments(true);
-      await selectAssignment(assignments.find(a => a.Id === selectedAssignment.Id));
+      await selectAssignment(assignments.find(a => a.Id === selectedAssignment!.Id)!);
       submissionText = "";
       attachments = [];
     } catch (e) {
@@ -218,7 +219,7 @@
     }
   }
 
-  function isOverdue(a: any) {
+  function isOverdue(a: Assignment) {
     if (a.IsTeLaat === true) return true;
     if (a.IsTeLaat !== undefined && a.IsTeLaat !== null) return false;
     return !a.IngeleverdOp && !a.Afgesloten && new Date(a.InleverenVoor) < new Date();
@@ -454,7 +455,7 @@
                   <svg class="w-3 h-3 text-gray-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
                   <p class="text-label-small text-gray-500">Docent</p>
                 </div>
-                <p class="text-body-small text-gray-200 truncate">{selectedAssignment.Docenten?.map((d: any) => formatTeacherName(d.Naam)).join(', ') || 'N.v.t.'}</p>
+                <p class="text-body-small text-gray-200 truncate">{selectedAssignment.Docenten?.map((d: Docent) => formatTeacherName(d.Naam)).join(', ') || 'N.v.t.'}</p>
               </div>
             </div>
           </div>
@@ -579,14 +580,15 @@
           {/if}
 
           <!-- History -->
-          {#if selectedAssignment.VersieNavigatieItems?.length > 1}
+          {#if (selectedAssignment.VersieNavigatieItems?.length ?? 0) > 1}
+            {@const versies = selectedAssignment.VersieNavigatieItems ?? []}
             <div class="space-y-3">
               <h3 class="text-title-small text-gray-500 flex items-center gap-2">
                 <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="10"/></svg>
                 Geschiedenis
               </h3>
               <div class="space-y-2">
-                {#each selectedAssignment.VersieNavigatieItems.slice(1) as version}
+                {#each versies.slice(1) as version}
                   <div class="glass p-4 rounded-m3-md flex items-center justify-between opacity-60 hover:opacity-100 transition-opacity">
                     <div class="flex items-center gap-4">
                       <div class="w-9 h-9 rounded-full bg-surface-800 flex items-center justify-center text-xs font-black text-gray-500 border border-surface-700">

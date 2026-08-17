@@ -4,11 +4,20 @@
   import { cacheGet, cacheRefresh } from '$lib/cache';
   import { onMount } from 'svelte';
   import { slide, fade } from 'svelte/transition';
+  import type { Contact, Message, MessagesFolder } from '$lib/types';
 
-  let folders = $state<any[]>([]);
-  let selectedFolder = $state<any>(null);
-  let messages = $state<any[]>([]);
-  let selectedMessage = $state<any>(null);
+  type Recipient = {
+    id: number;
+    naam?: string;
+    roepnaam?: string | null;
+    voorletters?: string | null;
+    achternaam?: string;
+  };
+
+  let folders = $state<MessagesFolder[]>([]);
+  let selectedFolder = $state<MessagesFolder | null>(null);
+  let messages = $state<Message[]>([]);
+  let selectedMessage = $state<Message | null>(null);
   let loading = $state(true);
   let loadingMessages = $state(false);
   let loadingDetail = $state(false);
@@ -73,15 +82,16 @@
   let composeSubject = $state('');
   let composeContent = $state('');
   let composeQuery = $state('');
-  let composeContacts = $state<any[]>([]);
-  let composeRecipients = $state<any[]>([]);
+  let composeContacts = $state<Contact[]>([]);
+  let composeRecipients = $state<Recipient[]>([]);
   let composeSending = $state(false);
 
   onMount(async () => {
     try {
       folders = await cacheGet('messages_folders', () => getMessageFolders(), 5 * 60 * 1000);
+      const current = selectedFolder;
       if (folders.length > 0) {
-        if (!selectedFolder || !folders.find(f => f.id === selectedFolder.id)) {
+        if (!current || !folders.find(f => f.id === current.id)) {
           selectedFolder = folders[0];
         }
         await loadMessages();
@@ -93,20 +103,21 @@
   });
 
   async function loadMessages(force = false) {
-    if (!selectedFolder?.links?.berichten?.href) return;
+    const href = selectedFolder?.links?.berichten?.href;
+    if (!href) return;
     if (messages.length === 0) loadingMessages = true;
     try {
-      const fetcher = () => getMessages(selectedFolder.links.berichten.href, 50, 0);
+      const fetcher = () => getMessages(href, 50, 0);
       messages = force
-        ? await cacheRefresh(`messages_${selectedFolder.id}`, fetcher, 5 * 60 * 1000)
-        : await cacheGet(`messages_${selectedFolder.id}`, fetcher, 5 * 60 * 1000);
+        ? await cacheRefresh(`messages_${selectedFolder?.id ?? ''}`, fetcher, 5 * 60 * 1000)
+        : await cacheGet(`messages_${selectedFolder?.id ?? ''}`, fetcher, 5 * 60 * 1000);
     } catch (e) {
       console.error('Error loading messages:', e);
     }
     loadingMessages = false;
   }
 
-  async function selectFolder(folder: any) {
+  async function selectFolder(folder: MessagesFolder) {
     selectedFolder = folder;
     selectedMessage = null;
     panel = 'list';
@@ -115,7 +126,7 @@
     await loadMessages();
   }
 
-  async function openMessage(msg: any) {
+  async function openMessage(msg: Message) {
     loadingDetail = true;
     panel = 'detail';
     try {
@@ -145,7 +156,7 @@
     try { composeContacts = await searchContacts(composeQuery); } catch (_) {}
   }
 
-  function addRecipient(c: any) {
+  function addRecipient(c: Contact) {
     if (!composeRecipients.find(r => r.id === c.id)) composeRecipients = [...composeRecipients, c];
     composeQuery = '';
     composeContacts = [];
@@ -178,9 +189,9 @@
 
   function replyToMessage() {
     if (!selectedMessage) return;
-    composeRecipients = [selectedMessage.afzender];
+    if (selectedMessage.afzender) composeRecipients = [selectedMessage.afzender];
     composeSubject = `Re: ${selectedMessage.onderwerp ?? ''}`;
-    composeContent = `\n\n--- Oorspronkelijk bericht ---\nVan: ${selectedMessage.afzender?.naam}\nVerzonden: ${new Date(selectedMessage.verzondenOp).toLocaleString()}\n\n${selectedMessage.inhoud?.replace(/<[^>]*>/g, '')}`;
+    composeContent = `\n\n--- Oorspronkelijk bericht ---\nVan: ${selectedMessage.afzender?.naam}\nVerzonden: ${new Date(selectedMessage.verzondenOp ?? '').toLocaleString()}\n\n${selectedMessage.inhoud?.replace(/<[^>]*>/g, '')}`;
     showCompose = true;
   }
 
@@ -368,7 +379,7 @@
                     {msg.afzender?.naam ?? 'Onbekend'}
                   </p>
                 </div>
-                <span class="text-label-small text-gray-600 shrink-0">{formatDate(msg.verzondenOp ?? msg.laatsteWijzigingDatumTijd ?? '')}</span>
+                <span class="text-label-small text-gray-600 shrink-0">{formatDate(msg.verzondenOp ?? '')}</span>
               </div>
               <p class="text-body-small text-gray-500 truncate mt-0.5 pl-4.5">{msg.onderwerp ?? '(geen onderwerp)'}</p>
               {#if msg.heeftPrioriteit}
@@ -428,7 +439,7 @@
               disabled={aiSummaryLoading}
               class="flex items-center gap-2 px-4 py-2 rounded-m3-full bg-primary-500/10 border border-primary-500/20 text-primary-400 hover:bg-primary-500/20 transition-all text-label-large disabled:opacity-50"
             >
-              {#if aiSummaryLoading && aiMessageId === selectedMessage?.Id}
+              {#if aiSummaryLoading && aiMessageId === selectedMessage?.id}
                 <div class="w-3 h-3 border-2 border-primary-400 border-t-transparent rounded-full animate-spin"></div>
                 Samenvatten...
               {:else}
@@ -436,7 +447,7 @@
                 Samenvatting (AI)
               {/if}
             </button>
-            {#if aiSummary && aiMessageId === selectedMessage?.Id}
+            {#if aiSummary && aiMessageId === selectedMessage?.id}
               <div class="p-4 rounded-m3-md bg-primary-500/5 border border-primary-500/10 text-body-medium text-gray-200 leading-relaxed">
                 {aiSummary}
               </div>
@@ -506,7 +517,7 @@
                 disabled={aiSummaryLoading}
                 class="flex items-center justify-center gap-2 py-2.5 rounded-m3-full bg-primary-500/10 border border-primary-500/20 text-primary-400 hover:bg-primary-500/20 transition-all text-label-large w-full disabled:opacity-50"
               >
-                {#if aiSummaryLoading && aiMessageId === selectedMessage?.Id}
+{#if aiSummaryLoading && aiMessageId === selectedMessage?.id}
                   <div class="w-3 h-3 border-2 border-primary-400 border-t-transparent rounded-full animate-spin"></div>
                   Samenvatten...
                 {:else}
@@ -514,7 +525,7 @@
                   Samenvatting (AI)
                 {/if}
               </button>
-              {#if aiSummary && aiMessageId === selectedMessage?.Id}
+              {#if aiSummary && aiMessageId === selectedMessage?.id}
                 <div class="p-3 rounded-m3-md bg-primary-500/5 border border-primary-500/10 text-body-medium text-gray-200 leading-relaxed">
                   {aiSummary}
                 </div>

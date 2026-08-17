@@ -7,12 +7,30 @@
   import HtmlRenderer from '$lib/components/HtmlRenderer.svelte';
   import { onMount } from 'svelte';
   import { fade, fly, slide, scale } from 'svelte/transition';
+  import type { CalendarAttachment, CalendarEvent, Link } from '$lib/types';
 
-  let appointments = $state<any[]>([]);
+  type DayAppointment = CalendarEvent & {
+    IsCombined?: boolean;
+    displayType?: 'break';
+    Duration?: number;
+    Lesuur?: string | number;
+  };
+
+  type BreakSeparator = {
+    id: string;
+    displayType: 'break';
+    Duration: number;
+    Start: string;
+    Einde: string;
+  };
+
+  type DayItem = DayAppointment | BreakSeparator;
+
+  let appointments = $state<CalendarEvent[]>([]);
   let selectedDate = $state(new Date());
   let loading = $state(true);
   let showDetail = $state(false);
-  let selectedAppointment = $state<any>(null);
+  let selectedAppointment = $state<CalendarEvent | null>(null);
   let loadingDetail = $state(false);
   let editMode = $state(false);
   let editContent = $state('');
@@ -100,7 +118,7 @@
     }
   }
 
-  const dayAppointments = $derived.by(() => {
+  const dayAppointments = $derived.by((): DayItem[] => {
     let filtered = appointments.filter(a => {
       if (!a.Start) return false;
       const d = new Date(a.Start);
@@ -114,6 +132,8 @@
 
     filtered.sort((a, b) => (a.Start ?? '').localeCompare(b.Start ?? ''));
 
+    // `processed` mixes full events with synthetic break-separator entries, so
+    // the pipeline stays loosely typed; the derived's public type is DayItem[].
     let processed: any[] = [];
 
     // 2. Combine lessons if setting is on
@@ -123,7 +143,7 @@
         
         // Match same subject, teacher, location and exact consecutive timing
         const isSameSubject = last && 
-                             (last.Vakken?.[0]?.Omschrijving === app.Vakken?.[0]?.Omschrijving) &&
+                             (last.Vakken?.[0]?.Naam === app.Vakken?.[0]?.Naam) &&
                              (last.Docenten?.[0]?.Naam === app.Docenten?.[0]?.Naam) &&
                              (last.Lokatie === app.Lokatie);
         const isConsecutive = last && last.Einde && app.Start && last.Einde === app.Start;
@@ -242,10 +262,10 @@
     navigateToDay(new Date());
   }
 
-  async function handleDownload(bijlage: any) {
+  async function handleDownload(bijlage: CalendarAttachment) {
     if (downloadingFile) return;
     try {
-      const url = bijlage.Links.find((l: any) => l.Rel === 'Self')?.Href;
+      const url = bijlage.Links?.find((l: Link) => l.Rel === 'Self')?.Href;
       if (!url) return;
       downloadingFile = bijlage.Naam;
       const downloadDir = $userSettings.downloadDir || '';
@@ -258,7 +278,7 @@
     }
   }
 
-  async function openDetail(app: any) {
+  async function openDetail(app: DayItem) {
     if (app.displayType === 'break') return;
     loadingDetail = true;
     showDetail = true;
@@ -286,13 +306,14 @@
 
 
   function saveLocalOverride() {
-    if (!selectedAppointment) return;
-    localOverrides[selectedAppointment.Id] = editContent;
+    const sel = selectedAppointment;
+    if (!sel) return;
+    localOverrides[sel.Id] = editContent;
     localStorage.setItem('calendar_overrides', JSON.stringify(localOverrides));
-    selectedAppointment.Inhoud = editContent;
+    sel.Inhoud = editContent;
     editMode = false;
     // Update main appointments array as well
-    appointments = appointments.map(a => a.Id === selectedAppointment.Id ? {...a, Inhoud: editContent} : a);
+    appointments = appointments.map(a => a.Id === sel.Id ? {...a, Inhoud: editContent} : a);
   }
 
   let createError = $state('');
@@ -361,9 +382,8 @@
 
   async function deleteAppointment() {
     if (!selectedAppointment) return;
-    const selfUrl = selectedAppointment.SelfUrl
-      || selectedAppointment.self_url
-      || selectedAppointment.Links?.find((l: any) => l.Rel === 'Self')?.Href?.replace('/api/', '');
+    const selfUrl = selectedAppointment.self_url
+      || selectedAppointment.Links?.find((l: Link) => l.Rel === 'Self')?.Href?.replace('/api/', '');
     if (!selfUrl) {
       alert('Kan afspraak niet verwijderen: geen Self-URL gevonden.');
       return;
@@ -383,7 +403,7 @@
     }
   }
 
-  async function toggleDone(app: any) {
+  async function toggleDone(app: DayAppointment) {
     try {
       // Find the app in appointments to ensure we have the latest ref
       const target = appointments.find(a => a.Id === app.Id);
@@ -495,13 +515,13 @@
     return { minH, maxH, hours, heightPx: (maxH - minH) * PX_PER_HOUR };
   });
 
-  function appTopPx(a: any): number {
+  function appTopPx(a: DayAppointment): number {
     const s = minutesOf(a.Start);
     if (s === null) return 0;
     return ((s - grid.minH * 60) / 60) * PX_PER_HOUR;
   }
 
-  function appHeightPx(a: any): number {
+  function appHeightPx(a: DayAppointment): number {
     const s = minutesOf(a.Start);
     const e = minutesOf(a.Einde);
     if (s === null) return 26;
@@ -826,11 +846,11 @@
   ? 'bg-surface-800/50 border-surface-700/40 opacity-70'
   : 'bg-surface-800/80 border-surface-700/50 hover:bg-surface-700/70'}"
                         style="top: {appTopPx(app)}px; height: {appHeightPx(app)}px;"
-                        title="{(app.Vakken?.[0]?.Omschrijving || app.Omschrijving || 'Vrij')} · {formatTime(app.Start)} – {formatTime(app.Einde)}"
+                        title="{(app.Vakken?.[0]?.Naam || app.Omschrijving || 'Vrij')} · {formatTime(app.Start)} – {formatTime(app.Einde)}"
                       >
                         <div class="flex flex-col min-w-0 h-full">
                           <p class="text-title-small leading-tight truncate {app.Status === 4 || app.Status === 5 ? 'text-red-400 line-through' : app.Afgerond ? 'text-gray-400 line-through' : 'text-white'}">
-                            {app.Vakken?.[0]?.Omschrijving || app.Omschrijving || 'Vrij'}
+{app.Vakken?.[0]?.Naam || app.Omschrijving || 'Vrij'}
                           </p>
                           <div class="flex items-center gap-1 text-label-medium text-gray-400 mt-0.5">
                             <span class="tabular-nums shrink-0">{formatTime(app.Start)}</span>
@@ -918,7 +938,7 @@
             <div class="flex-1 min-w-0 flex flex-col justify-center relative z-10">
               <div class="flex items-center justify-between gap-1.5 mb-0.5">
                 <span class="text-title-medium {app.Status === 4 || app.Status === 5 ? 'text-red-400 line-through' : 'text-white'} truncate">
-                  {app.Vakken?.[0]?.Omschrijving || app.Omschrijving || 'Vrij'}
+                  {app.Vakken?.[0]?.Naam || app.Omschrijving || 'Vrij'}
                 </span>
                 {#if app.Docenten?.[0]}
                   <span class="text-label-small text-gray-500 shrink-0 bg-surface-900/60 px-1.5 py-0.5 rounded-m3-sm border border-white/5">
@@ -1046,7 +1066,7 @@
             </div>
           </div>
           <h2 class="text-headline-medium text-white leading-tight">
-            {selectedAppointment.Vakken?.[0]?.Omschrijving || selectedAppointment.Omschrijving || 'Vrij'}
+            {selectedAppointment.Vakken?.[0]?.Naam || selectedAppointment.Omschrijving || 'Vrij'}
           </h2>
           <div class="flex flex-wrap gap-1.5 md:gap-2">
             <span class="flex items-center gap-1.5 text-label-small text-gray-300 bg-surface-800/80 px-2 py-1 rounded-m3-sm border border-white/5">
@@ -1094,7 +1114,7 @@
           {:else if selectedAppointment.Inhoud}
              {#if selectedAppointment.InfoType === 1}
                <button 
-                onclick={() => toggleDone(selectedAppointment)}
+                onclick={() => toggleDone(selectedAppointment!)}
                 class="w-full flex items-center justify-center gap-2 py-3 rounded-m3-full border-2 transition-all mb-3
  {selectedAppointment.Afgerond 
  ? 'bg-emerald-500/10 border-emerald-500/50 text-emerald-400' 

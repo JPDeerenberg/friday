@@ -1,8 +1,9 @@
 import { writable } from "svelte/store";
+import type { Account } from "$lib/types";
 
 export const isLoggedIn = writable(false);
 export const personId = writable<number | null>(null);
-export const accountInfo = writable<any>(null);
+export const accountInfo = writable<Account | null>(null);
 export const profilePicture = writable<string | null>(null);
 export const currentPage = writable<string>("dashboard");
 export const navigationStack = writable<string[]>([]);
@@ -120,7 +121,7 @@ if (typeof window !== "undefined") {
 }
 
 // Sync preferences to Android via Tauri bridge
-function syncPreferencesToAndroid(settings: any) {
+function syncPreferencesToAndroid(settings: typeof DEFAULT_SETTINGS) {
   // Store in localStorage for Android to read
   localStorage.setItem(
     "friday_notification_prefs",

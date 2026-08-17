@@ -1,17 +1,33 @@
 import { invoke } from "@tauri-apps/api/core";
 import { sanitizeHtml } from "$lib/sanitize";
+import type {
+  Absence,
+  Account,
+  Assignment,
+  CalendarEvent,
+  Contact,
+  Grade,
+  GradeExtraInfo,
+  Link,
+  Message,
+  MessagesFolder,
+  ProfileAddress,
+  ProfileCareer,
+  ProfileInfo,
+  Schoolyear,
+} from "$lib/types";
 
 // Sanitize HTML fields at the boundary where remote data enters the frontend.
 // Every {@html} call site downstream receives already-safe markup.
 
-function sanitizeMessage(msg: any): any {
+function sanitizeMessage(msg: Message): Message {
   if (msg && typeof msg.inhoud === "string") {
     msg.inhoud = sanitizeHtml(msg.inhoud);
   }
   return msg;
 }
 
-function sanitizeAssignment(a: any): any {
+function sanitizeAssignment(a: Assignment): Assignment {
   if (a && typeof a.Omschrijving === "string") {
     a.Omschrijving = sanitizeHtml(a.Omschrijving);
   }
@@ -41,7 +57,7 @@ function sanitizeStudiewijzerDetail(detail: any): any {
   return detail;
 }
 
-function sanitizeCalendarEvent(event: any): any {
+function sanitizeCalendarEvent(event: CalendarEvent): CalendarEvent {
   if (event && typeof event.Inhoud === "string") {
     event.Inhoud = sanitizeHtml(event.Inhoud);
   }
@@ -63,7 +79,7 @@ export async function startLoginFlow(
   return invoke("start_login_flow", { tenant, username });
 }
 
-export async function handleAuthCallback(redirectUrl: string): Promise<any> {
+export async function handleAuthCallback(redirectUrl: string): Promise<Account> {
   return invoke("handle_auth_callback", { redirectUrl });
 }
 
@@ -71,7 +87,7 @@ export async function isAuthenticated(): Promise<boolean> {
   return invoke("is_authenticated");
 }
 
-export async function getAccount(): Promise<any> {
+export async function getAccount(): Promise<Account> {
   return invoke("get_account");
 }
 
@@ -93,15 +109,17 @@ export async function restoreSession(): Promise<boolean> {
   return invoke("restore_session");
 }
 
-export async function getProfileInfo(personId: number): Promise<any> {
+export async function getProfileInfo(personId: number): Promise<ProfileInfo> {
   return invoke("get_profile_info", { personId });
 }
 
-export async function getProfileAddresses(personId: number): Promise<any[]> {
+export async function getProfileAddresses(
+  personId: number,
+): Promise<ProfileAddress[]> {
   return invoke("get_profile_addresses", { personId });
 }
 
-export async function getCareerInfo(personId: number): Promise<any> {
+export async function getCareerInfo(personId: number): Promise<ProfileCareer> {
   return invoke("get_career_info", { personId });
 }
 
@@ -110,24 +128,27 @@ export async function getCalendarEvents(
   personId: number,
   start: string,
   end: string,
-): Promise<any[]> {
+): Promise<CalendarEvent[]> {
   const events = await invoke("get_calendar_events", { personId, start, end });
-  return (events as any[]).map(sanitizeCalendarEvent);
+  return (events as CalendarEvent[]).map(sanitizeCalendarEvent);
 }
 
 export async function getAbsences(
   personId: number,
   van: string,
   tot: string,
-): Promise<any[]> {
+): Promise<Absence[]> {
   return invoke("get_absences", { personId, van, tot });
 }
 
 export async function getCalendarEvent(
   personId: number,
   eventId: number,
-): Promise<any> {
-  const event = await invoke("get_calendar_event", { personId, eventId });
+): Promise<CalendarEvent> {
+  const event = (await invoke("get_calendar_event", {
+    personId,
+    eventId,
+  })) as CalendarEvent;
   return sanitizeCalendarEvent(event);
 }
 
@@ -176,12 +197,12 @@ export async function deleteCalendarEvent(selfUrl: string): Promise<void> {
   return invoke("delete_calendar_event", { selfUrl });
 }
 
-export async function toggleCalendarEventDone(event: any): Promise<void> {
+export async function toggleCalendarEventDone(event: CalendarEvent): Promise<void> {
   const updatedEvent = { ...event, Afgerond: !event.Afgerond };
   // Ensure we have a selfUrl
   const url =
     event.self_url ||
-    event.Links?.find((l: any) => l.Rel === "Self")?.Href.replace("/api/", "");
+    event.Links?.find((l: Link) => l.Rel === "Self")?.Href.replace("/api/", "");
   if (!url) throw new Error("No selfUrl found for event");
   return updateCalendarEvent(url, JSON.stringify(updatedEvent));
 }
@@ -191,7 +212,7 @@ export async function getSchoolyears(
   personId: number,
   start?: string,
   end?: string,
-): Promise<any[]> {
+): Promise<Schoolyear[]> {
   return invoke("get_schoolyears", { personId, start, end });
 }
 
@@ -199,7 +220,7 @@ export async function getGrades(
   personId: number,
   schoolyearId: number,
   einde: string,
-): Promise<any[]> {
+): Promise<Grade[]> {
   return invoke("get_grades", { personId, schoolyearId, einde });
 }
 
@@ -207,7 +228,7 @@ export async function getGradeExtraInfo(
   personId: number,
   schoolyearId: number,
   kolomId: number,
-): Promise<any> {
+): Promise<GradeExtraInfo> {
   return await invoke("get_grade_extra_info", {
     personId,
     schoolyearId,
@@ -219,7 +240,7 @@ export async function getBulkGradeExtraInfo(
   personId: number,
   schoolyearId: number,
   kolomIds: number[],
-): Promise<Record<number, any>> {
+): Promise<Record<number, GradeExtraInfo>> {
   return await invoke("get_bulk_grade_extra_info", {
     personId,
     schoolyearId,
@@ -230,12 +251,12 @@ export async function getBulkGradeExtraInfo(
 export async function getRecentGrades(
   personId: number,
   top?: number,
-): Promise<any[]> {
+): Promise<Grade[]> {
   return await invoke("get_recent_grades", { personId, top });
 }
 
 // === Messages ===
-export async function getMessageFolders(): Promise<any[]> {
+export async function getMessageFolders(): Promise<MessagesFolder[]> {
   return invoke("get_message_folders");
 }
 
@@ -244,18 +265,18 @@ export async function getMessages(
   top?: number,
   skip?: number,
   query?: string,
-): Promise<any[]> {
+): Promise<Message[]> {
   const messages = await invoke("get_messages", {
     berichtenLink,
     top,
     skip,
     query,
   });
-  return (messages as any[]).map(sanitizeMessage);
+  return (messages as Message[]).map(sanitizeMessage);
 }
 
-export async function getMessageDetail(selfLink: string): Promise<any> {
-  const msg = await invoke("get_message_detail", { selfLink });
+export async function getMessageDetail(selfLink: string): Promise<Message> {
+  const msg = (await invoke("get_message_detail", { selfLink })) as Message;
   return sanitizeMessage(msg);
 }
 
@@ -298,7 +319,7 @@ export async function deleteMessages(
 export async function searchContacts(
   query: string,
   maxResults?: number,
-): Promise<any[]> {
+): Promise<Contact[]> {
   return invoke("search_contacts", { query, maxResults });
 }
 
@@ -307,17 +328,19 @@ export async function getAssignments(
   personId: number,
   start: string,
   end: string,
-): Promise<any[]> {
+): Promise<Assignment[]> {
   const assignments = await invoke("get_assignments", {
     personId,
     start,
     end,
   });
-  return (assignments as any[]).map(sanitizeAssignment);
+  return (assignments as Assignment[]).map(sanitizeAssignment);
 }
 
-export async function getAssignmentDetail(selfUrl: string): Promise<any> {
-  const assignment = await invoke("get_assignment_detail", { selfUrl });
+export async function getAssignmentDetail(selfUrl: string): Promise<Assignment> {
+  const assignment = (await invoke("get_assignment_detail", {
+    selfUrl,
+  })) as Assignment;
   return sanitizeAssignment(assignment);
 }
 

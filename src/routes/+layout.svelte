@@ -8,13 +8,14 @@
   import { get } from 'svelte/store';
   import { fade } from 'svelte/transition';
   import AIAssistant from '$lib/components/AIAssistant.svelte';
+  import type { Account } from '$lib/types';
 
   let { children } = $props();
   let loading = $state(true);
   let sidebarCollapsed = $state(false);
   let mobileSidebarOpen = $state(false);
 
-  async function handleLogin(account: any) {
+  async function handleLogin(account: Account) {
     accountInfo.set(account);
     const pid = await getPersonId();
     personId.set(pid);
@@ -40,7 +41,7 @@
       });
 
       unlistenSuccess = await listen('auth-success', async (event) => {
-        await handleLogin(event.payload);
+        await handleLogin(event.payload as Account);
       });
 
       unlistenError = await listen('auth-error', (event) => {

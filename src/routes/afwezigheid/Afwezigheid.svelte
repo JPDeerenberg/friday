@@ -4,9 +4,10 @@
   import { cacheGet } from '$lib/cache';
   import { onMount } from 'svelte';
   import { fade, fly, slide } from 'svelte/transition';
+  import type { Absence, Schoolyear } from '$lib/types';
 
-  let absences = $state<any[]>([]);
-  let schoolyears = $state<any[]>([]);
+  let absences = $state<Absence[]>([]);
+  let schoolyears = $state<Schoolyear[]>([]);
   let selectedYearId = $state<number | null>(null);
   let loading = $state(true);
   let initialLoading = $state(true);
@@ -84,7 +85,7 @@
     }
   }
 
-  function getAbsenceType(typeId: number, code: string) {
+  function getAbsenceType(typeId: number | null, code: string | null) {
     const iconBase = `<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">`;
     if (typeId === 2 || code === 'L') return { label: 'Te Laat', color: 'text-amber-400 bg-amber-400/10 border-amber-400/20', icon: iconBase + '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>' };
     if (typeId === 3 || code === 'S' || code === 'Z') return { label: 'Ziek', color: 'text-red-400 bg-red-400/10 border-red-400/20', icon: iconBase + '<path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/></svg>' };
@@ -102,13 +103,14 @@
     return { total, unexcused, late, sick };
   });
 
-  function getSubjectName(absence: any): string | null {
-    if (absence.Afspraak?.Vakken?.length > 0) {
-      const naam = absence.Afspraak.Vakken[0].Naam || absence.Afspraak.Vakken[0].naam;
+  function getSubjectName(absence: Absence): string | null {
+    const afspraak = absence.Afspraak;
+    if (afspraak?.Vakken?.length) {
+      const naam = afspraak.Vakken[0].Naam;
       if (naam) return naam;
     }
-    if (absence.Afspraak?.Omschrijving) {
-      return absence.Afspraak.Omschrijving;
+    if (afspraak?.Omschrijving) {
+      return afspraak.Omschrijving;
     }
     return null;
   }

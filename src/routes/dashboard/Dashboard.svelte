@@ -6,12 +6,13 @@
   import { tryAiInsight, getAiConfig } from '$lib/ai';
   import { cacheGet, cacheRefresh } from '$lib/cache';
   import { fade, fly, scale } from 'svelte/transition';
+  import type { Assignment, CalendarEvent, Grade } from '$lib/types';
 
   // Svelte 5 State
-  let todayEvents = $state<any[]>([]);
-  let latestGrades = $state<any[]>([]);
+  let todayEvents = $state<CalendarEvent[]>([]);
+  let latestGrades = $state<Grade[]>([]);
   let unreadCount = $state(0);
-  let upcomingAssignments = $state<any[]>([]);
+  let upcomingAssignments = $state<Assignment[]>([]);
 
   // Section-specific loading states
   let loadingEvents = $state(true);
@@ -19,8 +20,8 @@
   let loadingMessages = $state(true);
   let loadingAssignments = $state(true);
 
-  let tomorrowEvents = $state<any[]>([]);
-  let tomorrowAssignments = $state<any[]>([]);
+  let tomorrowEvents = $state<CalendarEvent[]>([]);
+  let tomorrowAssignments = $state<Assignment[]>([]);
   let nextSchoolDayDate = $state<string>('');
   let loadingTomorrow = $state(true);
   let expandedLesson = $state<number | null>(null);
@@ -120,7 +121,15 @@
     const now = new Date();
     const today = formatDate(now);
     const nextWeek = formatDate(new Date(now.getTime() + 7 * 86400000));
-    const result: any = {
+    const result: {
+      todayEvents: CalendarEvent[];
+      latestGrades: Grade[];
+      unreadCount: number;
+      upcomingAssignments: Assignment[];
+      tomorrowEvents: CalendarEvent[];
+      tomorrowAssignments: Assignment[];
+      nextSchoolDayDate: string;
+    } = {
       todayEvents: [], latestGrades: [], unreadCount: 0, upcomingAssignments: [],
       tomorrowEvents: [], tomorrowAssignments: [],
       nextSchoolDayDate: formatDate(new Date(now.getTime() + 86400000)),
@@ -152,11 +161,11 @@
       // 3. Grades — use the dedicated recent grades endpoint, fall back to
       //    school-year lookup if it returns nothing or throws (e.g. fresh account).
       (async () => {
-        let recentGrades: any[] | null = null;
+        let recentGrades: Grade[] | null = null;
         try {
           const recent = await getRecentGrades(pid, 5);
           if (recent && recent.length > 0) {
-            recentGrades = recent.filter((g: any) => g.CijferStr);
+            recentGrades = recent.filter((g) => g.CijferStr);
           }
         } catch (e) {
           console.warn('Dashboard: getRecentGrades failed, trying fallback', e);
@@ -166,15 +175,15 @@
           try {
             const schoolyears = await getSchoolyears(pid, '2020-01-01', today);
             if (schoolyears.length > 0) {
-              const currentYear = schoolyears.find((y: any) => {
+              const currentYear = schoolyears.find((y) => {
                 if (!y.begin || !y.einde) return false;
                 return new Date(y.begin) <= now && new Date(y.einde) >= now;
               }) || schoolyears[schoolyears.length - 1];
               if (currentYear?.id) {
                 const fetchedGrades = await getGrades(pid, currentYear.id, currentYear.einde);
                 recentGrades = fetchedGrades
-                  .filter((g: any) => g.CijferStr && g.CijferKolom?.KolomSoort === 1)
-                  .sort((a: any, b: any) => (b.DatumIngevoerd ?? '').localeCompare(a.DatumIngevoerd ?? ''))
+                  .filter((g) => g.CijferStr && g.CijferKolom?.KolomSoort === 1)
+                  .sort((a, b) => (b.DatumIngevoerd ?? '').localeCompare(a.DatumIngevoerd ?? ''))
                   .slice(0, 5);
               }
             }
@@ -200,7 +209,7 @@
             .sort((a, b) => a.Start.localeCompare(b.Start));
 
           // Group by date and find the first day with events
-          const eventsByDate: Record<string, any[]> = {};
+          const eventsByDate: Record<string, CalendarEvent[]> = {};
           for (const event of filtered) {
             const date = event.Start.substring(0, 10);
             if (!eventsByDate[date]) eventsByDate[date] = [];
@@ -306,7 +315,7 @@
     if (tomorrowEvents.length === 0) return [];
     const threshold = $userSettings.breakThresholdMinutes ?? 20;
     for (let i = 0; i < tomorrowEvents.length - 1; i++) {
-      const endCurrent = new Date(tomorrowEvents[i].Einde ?? tomorrowEvents[i].End ?? tomorrowEvents[i].Start);
+      const endCurrent = new Date(tomorrowEvents[i].Einde ?? tomorrowEvents[i].Start);
       const startNext = new Date(tomorrowEvents[i + 1].Start);
       const gapMinutes = (startNext.getTime() - endCurrent.getTime()) / 60000;
       if (gapMinutes > threshold) return tomorrowEvents.slice(0, i + 1);
@@ -315,7 +324,7 @@
   });
 
   // Check if a calendar event has open homework (in Inhoud or a matching open assignment)
-  function lessonHasHomework(event: any): boolean {
+  function lessonHasHomework(event: CalendarEvent): boolean {
     if (event.Afgerond) return false;
     if (event.Inhoud && event.Inhoud.trim().length > 0) return true;
     const subjectName = event.Vakken?.[0]?.Naam?.toLowerCase() ?? '';
@@ -336,7 +345,7 @@
     const result: {
       type: 'packed' | 'extra';
       subject: string;
-      lessonHour: string;
+      lessonHour: string | number;
       index: number;
       event: any;
       hw: { inhoud: string | null; assignments: any[]; isCompleted: boolean };
@@ -361,7 +370,7 @@
   });
 
   // Get extended homework info for a lesson: Inhoud + matching assignments
-  function getLessonHomework(event: any): { inhoud: string | null; assignments: any[]; isCompleted: boolean } {
+  function getLessonHomework(event: CalendarEvent): { inhoud: string | null; assignments: any[]; isCompleted: boolean } {
     const inhoud = (event.Inhoud?.trim()) || null;
     const subjectName = event.Vakken?.[0]?.Naam?.toLowerCase() ?? '';
     const assignments = subjectName
@@ -377,7 +386,7 @@
     expandedLesson = expandedLesson === index ? null : index;
   }
 
-  async function markLessonDone(event: any, index: number) {
+  async function markLessonDone(event: CalendarEvent, index: number) {
     try {
       await toggleCalendarEventDone(event);
       // Toggle the local Afgerond flag so UI updates immediately
@@ -394,8 +403,8 @@
     return doc.body.textContent || '';
   }
 
-  function isVoldoende(grade: any): boolean {
-    const val = parseFloat(grade.CijferStr.replace(',', '.'));
+  function isVoldoende(grade: Grade): boolean {
+    const val = parseFloat((grade.CijferStr ?? '0').replace(',', '.'));
     // Non-numeric grade strings (e.g. "Vrijgesteld"/"V" for exempted, "n.b.") parse
     // to NaN, and NaN >= threshold is always false in JS — so these were silently
     // rendered as failing/red whenever highlightFailing is on, even though they're
@@ -877,7 +886,7 @@
                  </div>
                {/each}
             {:else}
-              {#each latestGrades as grade, i (grade.Id || i)}
+              {#each latestGrades as grade, i (grade.CijferId || i)}
                 <button
                   onclick={() => currentPage.set('grades')}
                   in:scale={{ delay: i * 120, duration: 600, start: 0.9 }}

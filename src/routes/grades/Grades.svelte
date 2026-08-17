@@ -9,15 +9,35 @@
   import { buildSmoothPath, computeChartData, buildTrendPath, type ChartData } from '$lib/charts';
   import { onMount } from 'svelte';
   import { fly } from 'svelte/transition';
+  import type { Grade, Schoolyear } from '$lib/types';
 
-  let schoolyears = $state<any[]>([]);
-  let selectedYear = $state<any>(null);
-  let grades = $state<any[]>([]);
-  let subjects = $state<any[]>([]);
-  let snapshots = $state<{ id: string; date: string; name: string; subjects: any[] }[]>([]);
+  type SubjectSummary = {
+    name: string;
+    abbr: string;
+    grades: Grade[];
+    avg: number;
+    totalPoints: number;
+    totalWeight: number;
+    validGrades: { value: number; weight: number }[];
+    trend?: number;
+    trendDirection?: number;
+  };
+
+  type Snapshot = {
+    id: string;
+    date: string;
+    name: string;
+    subjects: SubjectSummary[];
+  };
+
+  let schoolyears = $state<Schoolyear[]>([]);
+  let selectedYear = $state<Schoolyear | null>(null);
+  let grades = $state<Grade[]>([]);
+  let subjects = $state<SubjectSummary[]>([]);
+  let snapshots = $state<Snapshot[]>([]);
   let loading = $state(true);
   let selectedSubject = $state<string | null>(null);
-  let activeSnapshot = $state<any | null>(null);
+  let activeSnapshot = $state<Snapshot | null>(null);
   let errorMessage = $state<string | null>(null);
 
   // New tab: Analyse
@@ -57,29 +77,37 @@
 
   // === Analytical functions (moved to $lib/grades/stats) ===
 
+  /** Parse a grade's CijferStr into a number (0 when missing). */
+  function gradeValue(g: Grade): number {
+    return getNumericValue(g.CijferStr ?? '0');
+  }
+
   /** All valid chronological grade values across all subjects */
   function getAllChronologicalValues(): { value: number; date: string; subject: string }[] {
-    return subjects.flatMap((s: any) =>
+    return subjects.flatMap((s) =>
       s.grades
-        .filter((g: any) => g.CijferStr && g.TeltMee && !isNaN(getNumericValue(g.CijferStr)))
-        .map((g: any) => ({ value: getNumericValue(g.CijferStr), date: g.DatumIngevoerd, subject: s.name }))
-    ).sort((a: any, b: any) => a.date.localeCompare(b.date));
+        .filter((g) => !!g.CijferStr && !!g.DatumIngevoerd && g.TeltMee && !isNaN(gradeValue(g)))
+        .map((g) => ({ value: gradeValue(g), date: g.DatumIngevoerd ?? '', subject: s.name }))
+    ).sort((a, b) => a.date.localeCompare(b.date));
   }
 
   /** Best and worst performing subjects */
   const bestWorst = $derived(() => {
-    const valid = subjects.filter((s: any) => s.avg > 0);
+    const valid = subjects.filter((s) => s.avg > 0);
     if (valid.length === 0) return { best: null, worst: null };
     const sorted = [...valid].sort((a, b) => b.avg - a.avg);
     return { best: sorted[0], worst: sorted[sorted.length - 1] };
   });
 
+  const bestSubject = $derived(bestWorst().best);
+  const worstSubject = $derived(bestWorst().worst);
+
   /** All grade values flattened */
   const allGradeValues = $derived(() => {
-    return subjects.flatMap((s: any) =>
+    return subjects.flatMap((s) =>
       s.grades
-        .filter((g: any) => g.CijferStr && g.TeltMee && !isNaN(getNumericValue(g.CijferStr)))
-        .map((g: any) => getNumericValue(g.CijferStr))
+        .filter((g) => !!g.CijferStr && g.TeltMee && !isNaN(gradeValue(g)))
+        .map((g) => gradeValue(g))
     );
   });
 
@@ -120,7 +148,7 @@
   let targetPeriodGrade = $state(6.0);
 
   // Prediction helper (math in $lib/grades/predictor)
-  function getPredictedEnd(subject: any): number {
+  function getPredictedEnd(subject: SubjectSummary): number {
     return calcPredicted(subject, predictRemainingTests, predictGrade).predictedEnd;
   }
 
@@ -131,15 +159,15 @@
   let recentFilter = $state<'today' | 'week' | 'all'>('all');
 
   function getChronologicalGrades() {
-    return subjects.flatMap((s: any) => s.grades.map((g: any) => ({ ...g, subAbbr: s.abbr, subName: s.name })))
-      .filter((g: any) => g.CijferStr && g.DatumIngevoerd && !isNaN(getNumericValue(g.CijferStr)))
-      .sort((a: any, b: any) => a.DatumIngevoerd.localeCompare(b.DatumIngevoerd));
+    return subjects.flatMap((s) => s.grades.map((g) => ({ ...g, subAbbr: s.abbr, subName: s.name })))
+      .filter((g) => !!g.CijferStr && !!g.DatumIngevoerd && !isNaN(gradeValue(g)))
+      .sort((a, b) => (a.DatumIngevoerd ?? '').localeCompare(b.DatumIngevoerd ?? ''));
   }
 
   /** Build the overall-trend smooth SVG path from chronological grades (charts math in $lib/charts) */
   function getOverallTrendPath() {
     const chrono = getChronologicalGrades();
-    return buildTrendPath(chrono.map((g: any) => getNumericValue(g.CijferStr)));
+    return buildTrendPath(chrono.map((g) => gradeValue(g)));
   }
 
   async function init(force = false) {
@@ -246,8 +274,8 @@
     localStorage.setItem('grade_snapshots', JSON.stringify(snapshots));
   }
 
-  function getSubjects(): { name: string; abbr: string; grades: any[]; avg: number }[] {
-    const subjectMap = new Map<string, any[]>();
+  function getSubjects(): SubjectSummary[] {
+    const subjectMap = new Map<string, Grade[]>();
     for (const grade of grades) {
       if (!grade.Vak || grade.CijferKolom.KolomSoort !== 1) continue;
       const key = grade.Vak.Omschrijving;
@@ -258,20 +286,22 @@
       let totalPoints = 0, totalWeight = 0;
       const validGrades: { value: number; weight: number }[] = [];
       subGrades.filter(g => g.CijferStr && g.TeltMee).forEach(g => {
-        const val = parseFloat(g.CijferStr.replace(',', '.'));
+        const cs = g.CijferStr;
+        if (!cs) return;
+        const val = parseFloat(cs.replace(',', '.'));
         const w = typeof g.Weging === 'number' ? g.Weging : 1;
         if (!isNaN(val)) { totalPoints += val * w; totalWeight += w; validGrades.push({ value: val, weight: w }); }
       });
       const avg = totalWeight > 0 ? totalPoints / totalWeight : 0;
       return {
         name, abbr: subGrades[0]?.Vak?.Afkorting ?? '',
-        grades: subGrades.sort((a: any, b: any) => (b.DatumIngevoerd ?? '').localeCompare(a.DatumIngevoerd ?? '')),
+        grades: subGrades.sort((a, b) => (b.DatumIngevoerd ?? '').localeCompare(a.DatumIngevoerd ?? '')),
         validGrades, totalPoints, totalWeight, avg,
       };
     }).sort((a, b) => a.name.localeCompare(b.name));
   }
 
-  async function selectYear(year: any) {
+  async function selectYear(year: Schoolyear) {
     selectedYear = year;
     selectedSubject = null;
     await loadGrades();
@@ -280,41 +310,41 @@
   function getRecentGrades() {
     let list = [...grades]
       .filter(g => g.CijferStr && g.DatumIngevoerd && g.CijferKolom?.KolomSoort === 1)
-      .sort((a, b) => b.DatumIngevoerd.localeCompare(a.DatumIngevoerd));
+      .sort((a, b) => (b.DatumIngevoerd ?? '').localeCompare(a.DatumIngevoerd ?? ''));
 
     if (recentFilter === 'today') {
       const today = new Date().toDateString();
-      list = list.filter(g => new Date(g.DatumIngevoerd).toDateString() === today);
+      list = list.filter(g => new Date(g.DatumIngevoerd ?? '').toDateString() === today);
     } else if (recentFilter === 'week') {
       const now = new Date();
       const dayOfWeek = now.getDay() === 0 ? 6 : now.getDay() - 1; // Monday=0
       const monday = new Date(now); monday.setDate(now.getDate() - dayOfWeek); monday.setHours(0,0,0,0);
-      list = list.filter(g => new Date(g.DatumIngevoerd) >= monday);
+      list = list.filter(g => new Date(g.DatumIngevoerd ?? '') >= monday);
     }
     return list;
   }
 
-  function isVoldoende(grade: any): boolean {
-    const val = typeof grade === 'number' ? grade : getNumericValue(grade.CijferStr);
+  function isVoldoende(grade: Grade | number): boolean {
+    const val = typeof grade === 'number' ? grade : gradeValue(grade);
     return isPassing(val, $userSettings.insufficientThreshold);
   }
 
   /** Compute chart bounds and evenly-spaced points for a subject (chart math in $lib/charts) */
-  function getSubjectChartData(subject: any): ChartData | null {
+  function getSubjectChartData(subject: SubjectSummary): ChartData | null {
     const vals = [...subject.grades]
-      .filter((g: any) => g.CijferStr && g.TeltMee && !isNaN(getNumericValue(g.CijferStr)))
-      .sort((a: any, b: any) => (a.DatumIngevoerd ?? '').localeCompare(b.DatumIngevoerd ?? ''))
-      .map((g: any) => getNumericValue(g.CijferStr));
+      .filter((g) => !!g.CijferStr && g.TeltMee && !isNaN(gradeValue(g)))
+      .sort((a, b) => (a.DatumIngevoerd ?? '').localeCompare(b.DatumIngevoerd ?? ''))
+      .map((g) => gradeValue(g));
     return computeChartData(vals, { zoom: $userSettings.zoomGraph });
   }
 
-  function getTrendPath(subject: any): string {
+  function getTrendPath(subject: SubjectSummary): string {
     const data = getSubjectChartData(subject);
     if (!data) return '';
     return buildSmoothPath(data.points);
   }
 
-  function viewSnapshot(snapshot: any) {
+  function viewSnapshot(snapshot: Snapshot) {
     subjects = snapshot.subjects;
     activeSnapshot = snapshot;
     currentTab = 'vakken';
@@ -379,7 +409,7 @@
     simulationGrades = simulationGrades.filter((_, i) => i !== index);
   }
 
-  function getRequiredGrade(subject: any): string {
+  function getRequiredGrade(subject: SubjectSummary): string {
     return calcRequiredGrade({
       totalPoints: subject.totalPoints,
       totalWeight: subject.totalWeight,
@@ -390,7 +420,7 @@
     });
   }
 
-  function getPredictedAverage(subject: any): string {
+  function getPredictedAverage(subject: SubjectSummary): string {
     return calcPredictedAverage({
       totalPoints: subject.totalPoints || 0,
       totalWeight: subject.totalWeight || 0,
@@ -400,12 +430,12 @@
     });
   }
 
-  function getProgressPercent(subject: any): number {
+  function getProgressPercent(subject: SubjectSummary): number {
     const predicted = parseFloat(getPredictedAverage(subject));
     return pct(predicted);
   }
 
-  function getMinGradeForPass(subject: any): string | null {
+  function getMinGradeForPass(subject: SubjectSummary): string | null {
     return calcMinGradeForPass({
       totalPoints: subject.totalPoints,
       totalWeight: subject.totalWeight,
@@ -413,7 +443,7 @@
     });
   }
 
-  function getNewOverallAverage(subject: any): string {
+  function getNewOverallAverage(subject: SubjectSummary): string {
     return calcNewOverallAverage({
       subjects,
       subjectName: subject.name,
@@ -423,7 +453,7 @@
   }
 
   /** Reverse mode: given a grade + weight, return the new subject average. */
-  function getAverageForGrade(subject: any): string {
+  function getAverageForGrade(subject: SubjectSummary): string {
     return calcAverageForGrade({
       totalPoints: subject.totalPoints || 0,
       totalWeight: subject.totalWeight || 0,
@@ -434,7 +464,7 @@
   }
 
   /** Reverse mode: new overall average given an expected grade. */
-  function getNewOverallForGrade(subject: any): string {
+  function getNewOverallForGrade(subject: SubjectSummary): string {
     return calcNewOverallForGrade({
       subjects,
       subjectName: subject.name,
@@ -454,7 +484,7 @@
     const fetcher = async () => {
       const results = [];
       for (const year of schoolyears) {
-        if (!year.einde) continue;
+        if (!year.einde || !year.id) continue;
         try {
           const peildatum = year.einde.split('T')[0];
           const fetchedGrades = await getGrades(pid, year.id, peildatum);
@@ -899,7 +929,7 @@
         {:else}
           <div class="space-y-2.5">
             {#each getRecentGrades() as grade}
-              {@const d = new Date(grade.DatumIngevoerd)}
+              {@const d = new Date(grade.DatumIngevoerd ?? '')}
               <div class="glass flex items-center justify-between p-4 rounded-2xl gap-3">
                 <div class="flex items-center gap-3.5">
                   <div class="w-12 h-12 rounded-2xl bg-surface-800 border border-surface-700/50 flex flex-col items-center justify-center shrink-0">
@@ -1075,9 +1105,9 @@
                 <span class="text-lg">🏆</span>
                 <h3 class="text-[10px] font-black text-emerald-400 uppercase tracking-widest">Beste Vak</h3>
               </div>
-              {#if bestWorst().best}
-                <p class="text-lg font-black text-white">{bestWorst().best.name}</p>
-                <p class="text-2xl font-black text-emerald-400 mt-1">{bestWorst().best.avg.toFixed($userSettings.decimalPoints)}</p>
+              {#if bestSubject}
+                <p class="text-lg font-black text-white">{bestSubject.name}</p>
+                <p class="text-2xl font-black text-emerald-400 mt-1">{bestSubject.avg.toFixed($userSettings.decimalPoints)}</p>
               {:else}
                 <p class="text-xs text-gray-600">Nog geen data</p>
               {/if}
@@ -1087,9 +1117,9 @@
                 <span class="text-lg">⚠️</span>
                 <h3 class="text-[10px] font-black text-red-400 uppercase tracking-widest">Zwakste Vak</h3>
               </div>
-              {#if bestWorst().worst}
-                <p class="text-lg font-black text-white">{bestWorst().worst.name}</p>
-                <p class="text-2xl font-black text-red-400 mt-1">{bestWorst().worst.avg.toFixed($userSettings.decimalPoints)}</p>
+              {#if worstSubject}
+                <p class="text-lg font-black text-white">{worstSubject.name}</p>
+                <p class="text-2xl font-black text-red-400 mt-1">{worstSubject.avg.toFixed($userSettings.decimalPoints)}</p>
               {:else}
                 <p class="text-xs text-gray-600">Nog geen data</p>
               {/if}
@@ -1542,7 +1572,7 @@
                     </div>
                     <div class="space-y-2 max-h-60 overflow-y-auto pr-1">
                       {#each sub.grades.filter((g: any) => g.CijferStr && g.TeltMee) as grade}
-                        {@const val = getNumericValue(grade.CijferStr)}
+                        {@const val = gradeValue(grade)}
                         {@const w = typeof grade.Weging === 'number' ? grade.Weging : 1}
                         {@const weightPct = sub.totalWeight > 0 ? (w / sub.totalWeight) * 100 : 0}
                         <div class="flex items-center gap-3 p-2.5 rounded-xl bg-surface-800/40 border border-white/5">
