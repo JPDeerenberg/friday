@@ -1,6 +1,7 @@
 <script lang="ts">
   import { personId, userSettings } from '$lib/stores';
   import { getSchoolyears, getGrades, formatDate, getBulkGradeExtraInfo, formatTeacherName } from '$lib/api';
+  import { formatDateShort } from '$lib/format';
   import { tryAiInsight, getAiConfig } from '$lib/ai';
   import { cacheGet, cacheRefresh } from '$lib/cache';
   import { computeStats, getDistribution, getTrendDirection, getTrendLabel, getNumericValue, isPassing, pct } from '$lib/grades/stats';
@@ -268,10 +269,6 @@
         validGrades, totalPoints, totalWeight, avg,
       };
     }).sort((a, b) => a.name.localeCompare(b.name));
-  }
-
-  function formatDateShort(iso: string): string {
-    return new Date(iso).toLocaleDateString('nl-NL', { day: 'numeric', month: 'short', year: 'numeric' });
   }
 
   async function selectYear(year: any) {

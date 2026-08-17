@@ -1,6 +1,8 @@
 <script lang="ts">
   import { personId, accountInfo, userSettings, currentPage } from '$lib/stores';
   import { getCalendarEvents, getGrades, getSchoolyears, getRecentGrades, getMessageFolders, getAssignments, formatDate, formatTeacherName, toggleCalendarEventDone } from '$lib/api';
+  import { getSubjectIcon } from '$lib/icons';
+  import { formatTime } from '$lib/format';
   import { tryAiInsight, getAiConfig } from '$lib/ai';
   import { cacheGet, cacheRefresh } from '$lib/cache';
   import { fade, fly, scale } from 'svelte/transition';
@@ -390,28 +392,6 @@
   function stripHtml(html: string): string {
     const doc = new DOMParser().parseFromString(html, 'text/html');
     return doc.body.textContent || '';
-  }
-
-  function getSubjectIcon(subject: string): string {
-    const s = subject.toLowerCase();
-    const iconBase = `<svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">`;
-
-    if (s.includes('wiskunde') || s.includes('rekenen')) return iconBase + `<path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"/><path d="m10 10 4 4"/><path d="m14 10-4 4"/></svg>`;
-    if (s.includes('taal') || s.includes('nederlands') || s.includes('engels') || s.includes('frans') || s.includes('duits') || s.includes('spaans')) return iconBase + `<path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"/><path d="M8 7h6"/><path d="M8 11h8"/></svg>`;
-    if (s.includes('geschiedenis') || s.includes('maatschappij')) return iconBase + `<circle cx="12" cy="10" r="3"/><path d="M7 21l3-10h4l3 10"/><path d="M8 21h8"/></svg>`;
-    if (s.includes('aardrijkskunde')) return iconBase + `<circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>`;
-    if (s.includes('natuur') || s.includes('scheikunde') || s.includes('biologie') || s.includes('science')) return iconBase + `<path d="M10 2v8L4.72 20.55a1 1 0 0 0 .9 1.45h12.76a1 1 0 0 0 .9-1.45L14 10V2"/><path d="M8.5 2h7"/><path d="M7 16h10"/></svg>`;
-    if (s.includes('economie')) return iconBase + `<line x1="12" x2="12" y1="2" y2="22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>`;
-    if (s.includes('gym') || s.includes('lo')) return iconBase + `<path d="M6 18h8"/><path d="M3 22h18"/><path d="M9 10a5 5 0 1 0 5 5"/><path d="M19 10a5 5 0 1 0-5 5"/></svg>`;
-    if (s.includes('kunst') || s.includes('tekenen') || s.includes('handvaardigheid')) return iconBase + `<path d="m12 19 7-7 3 3-7 7-3-3Z"/><path d="m18 13-1.5-7.5L2 2l3.5 14.5L13 18l5-5Z"/><path d="m2 2 5 2"/><path d="m2 2 2 5"/><path d="m11 8 1 1"/><path d="m16 12 1 1"/></svg>`;
-    if (s.includes('muziek')) return iconBase + `<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>`;
-    if (s.includes('informatica') || s.includes('it')) return iconBase + `<rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg>`;
-
-    return iconBase + `<path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"/></svg>`;
-  }
-
-  function formatTime(iso: string): string {
-    return new Date(iso).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' });
   }
 
   function isVoldoende(grade: any): boolean {

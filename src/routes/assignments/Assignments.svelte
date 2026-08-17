@@ -10,6 +10,7 @@
     formatTeacherName,
     downloadFile
   } from '$lib/api';
+  import { formatDateFull } from '$lib/format';
   import { tryAiInsight, getAiConfig } from '$lib/ai';
   import { cacheGet, cacheRefresh } from '$lib/cache';
   import { onMount } from 'svelte';
@@ -215,13 +216,6 @@
     } finally {
       isSubmitting = false;
     }
-  }
-
-  function formatDateFull(iso: string) {
-    if (!iso) return '-';
-    return new Date(iso).toLocaleDateString('nl-NL', {
-      weekday: 'short', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit'
-    });
   }
 
   function isOverdue(a: any) {

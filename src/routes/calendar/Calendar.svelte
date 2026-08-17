@@ -1,6 +1,7 @@
 <script lang="ts">
   import { personId, userSettings } from '$lib/stores';
   import { getCalendarEvents, formatDate, getCalendarEvent, toggleCalendarEventDone, downloadFile, createCalendarEvent, deleteCalendarEvent } from '$lib/api';
+  import { formatTime } from '$lib/format';
   let downloadingFile = $state<string | null>(null);
 
   import HtmlRenderer from '$lib/components/HtmlRenderer.svelte';
@@ -397,13 +398,6 @@
     } catch (e) {
       console.error('Error toggling done:', e);
     }
-  }
-
-  function formatTime(iso: string | null | undefined): string {
-    if (!iso) return '—';
-    const d = new Date(iso);
-    if (isNaN(d.getTime())) return '—';
-    return d.toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' });
   }
 
   function getInfoColor(info: number) {

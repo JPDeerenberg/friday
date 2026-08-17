@@ -4,6 +4,7 @@
   import { listen } from '@tauri-apps/api/event';
   import { isLoggedIn, personId, accountInfo, profilePicture, currentPage, userSettings } from '$lib/stores';
   import { restoreSession, getAccount, getPersonId, getProfilePicture, handleAuthCallback, logout } from '$lib/api';
+  import { navIcon } from '$lib/icons';
   import { get } from 'svelte/store';
   import { fade } from 'svelte/transition';
   import AIAssistant from '$lib/components/AIAssistant.svelte';
@@ -175,14 +176,6 @@
   function isBottomActive(id: string): boolean {
     if (id === 'more') return mobileSidebarOpen || !bottomNavItems.slice(0, 4).some(i => i.id === $currentPage);
     return $currentPage === id;
-  }
-
-  // M3 nav icons distinguish active/inactive state via a filled vs. outlined
-  // glyph. Rather than sourcing a second (filled) icon asset per nav item,
-  // synthesize the filled look from the same path data: swap the outline's
-  // fill="none" for a soft tonal fill while keeping the crisp stroke on top.
-  function navIcon(svg: string, active: boolean): string {
-    return active ? svg.replace('fill="none"', 'fill="currentColor" fill-opacity="0.2"') : svg;
   }
 </script>
 
