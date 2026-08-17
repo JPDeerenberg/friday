@@ -373,7 +373,7 @@
     {/if}
 
     <!-- Main content — on mobile add bottom padding so content isn't behind the tab bar -->
-    <main class="flex-1 overflow-y-auto {$isLoggedIn ? 'pb-[64px] md:pb-0' : ''}">
+    <main class="flex-1 overflow-y-auto {$isLoggedIn ? 'pb-[calc(64px+env(safe-area-inset-bottom))] md:pb-0' : ''}">
       {@render children()}
     </main>
 
@@ -384,18 +384,20 @@
 
     <!-- ====== MOBILE: Fixed bottom tab bar ====== -->
     {#if $isLoggedIn}
-      <nav class="fixed md:hidden bottom-0 left-0 right-0 z-30 bg-surface-950/95 backdrop-blur-md border-t border-surface-800/50 flex items-stretch h-[64px] pb-[env(safe-area-inset-bottom)]">
-        {#each bottomNavItems as item}
-          <button
-            onclick={() => handleBottomNav(item.id)}
-            class="flex-1 flex flex-col items-center justify-center gap-1 transition-all {isBottomActive(item.id) ? 'text-primary-400' : 'text-gray-500'}"
-          >
-            <span class="px-4 py-0.5 rounded-m3-full transition-colors {isBottomActive(item.id) ? 'bg-primary-container text-on-primary-container' : ''}">
-              {@html navIcon(item.icon, isBottomActive(item.id))}
-            </span>
-            <span class="text-label-medium">{item.label}</span>
-          </button>
-        {/each}
+      <nav class="fixed md:hidden bottom-0 left-0 right-0 z-30 bg-surface-950/95 backdrop-blur-md border-t border-surface-800/50 pb-[env(safe-area-inset-bottom)]">
+        <div class="flex items-stretch h-[64px]">
+          {#each bottomNavItems as item}
+            <button
+              onclick={() => handleBottomNav(item.id)}
+              class="flex-1 flex flex-col items-center justify-center gap-1 transition-all {isBottomActive(item.id) ? 'text-primary-400' : 'text-gray-500'}"
+            >
+              <span class="px-4 py-0.5 rounded-m3-full transition-colors {isBottomActive(item.id) ? 'bg-primary-container text-on-primary-container' : ''}">
+                {@html navIcon(item.icon, isBottomActive(item.id))}
+              </span>
+              <span class="text-label-medium">{item.label}</span>
+            </button>
+          {/each}
+        </div>
       </nav>
     {/if}
   </div>
