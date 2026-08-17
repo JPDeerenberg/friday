@@ -553,7 +553,6 @@
   let isHorizontalSwipe = false;
 
   function handleTouchStart(e: TouchEvent) {
-    if (showWeekView) return;
     touchStartX = e.touches[0].clientX;
     touchStartY = e.touches[0].clientY;
     isDragging = false;
@@ -561,13 +560,12 @@
   }
 
   function handleTouchMove(e: TouchEvent) {
-    if (showWeekView) return;
     const dx = e.touches[0].clientX - touchStartX;
     const dy = e.touches[0].clientY - touchStartY;
     
     // Determine swipe axis on first significant movement
-    if (!isDragging && Math.hypot(dx, dy) > 8) {
-      isHorizontalSwipe = Math.abs(dx) > Math.abs(dy);
+    if (!isDragging && Math.hypot(dx, dy) > 5) {
+      isHorizontalSwipe = Math.abs(dx) > Math.abs(dy) * 1.5;
       isDragging = true;
     }
 
@@ -578,7 +576,6 @@
   }
 
   function handleTouchEnd(e: TouchEvent) {
-    if (showWeekView) return;
     const dx = e.changedTouches[0].clientX - touchStartX;
     if (isHorizontalSwipe && Math.abs(dx) > 40) {
       // Slide all the way out
@@ -586,7 +583,11 @@
       isAnimating = true;
       // Navigate while off-screen, then snap back from opposite side
       setTimeout(() => {
-        if (dx > 0) prevDay(true); else nextDay(true);
+        if (showWeekView) {
+          if (dx > 0) prevWeek(); else nextWeek();
+        } else {
+          if (dx > 0) prevDay(true); else nextDay(true);
+        }
 
         // Disable transitions for the jump to the opposite side
         noTransition = true;
@@ -688,12 +689,12 @@
       </label>
 
       <!-- Compact Navigation -->
-      <div class="flex items-center bg-surface-900 rounded-m3-sm p-0.5 border border-white/5">
-        <button onclick={() => showWeekView ? prevWeek() : prevDay()} class="p-1.5 text-gray-500 hover:text-white transition-colors" title="Vorige week">
+      <div class="hidden md:flex items-center bg-surface-900 rounded-m3-sm p-0.5 border border-white/5">
+        <button onclick={prevWeek} class="p-1.5 text-gray-500 hover:text-white transition-colors" title="Vorige week">
           <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
         </button>
         <div class="h-3 w-px bg-surface-700 mx-0.5"></div>
-        <button onclick={() => showWeekView ? nextWeek() : nextDay()} class="p-1.5 text-gray-500 hover:text-white transition-colors" title="Volgende week">
+        <button onclick={nextWeek} class="p-1.5 text-gray-500 hover:text-white transition-colors" title="Volgende week">
           <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
         </button>
       </div>
