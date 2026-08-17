@@ -343,6 +343,57 @@ impl MagisterClient {
         self.app_handle = Some(handle);
     }
 
+    /// Build the full request URL from a path or absolute URL. Shared by all
+    /// verb methods so URL construction lives in exactly one place.
+    fn build_url(api_endpoint: &str, path: &str) -> String {
+        if path.starts_with("http") {
+            path.to_string()
+        } else {
+            format!(
+                "{}/{}",
+                api_endpoint.trim_end_matches('/'),
+                path.trim_start_matches('/')
+            )
+        }
+    }
+
+    /// Send a request, retrying on 429 (rate limited) with exponential backoff
+    /// (2s, 4s, 8s), up to MAX_RATE_LIMIT_RETRIES times before giving up. Any
+    /// other status is returned as-is for the caller to handle. Shared by the
+    /// verb methods that already performed this retry, so the backoff behavior
+    /// lives in exactly one place.
+    async fn send_with_retry(
+        &self,
+        method: &str,
+        url: &str,
+        req_builder_fn: impl Fn() -> reqwest::RequestBuilder,
+    ) -> Result<reqwest::Response, ClientError> {
+        const MAX_RATE_LIMIT_RETRIES: u32 = 3;
+        let mut attempt = 0;
+        loop {
+            let resp = req_builder_fn()
+                .send()
+                .await
+                .map_err(|e| ClientError::RequestFailed(e.to_string()))?;
+
+            if resp.status().as_u16() == 429 {
+                if attempt < MAX_RATE_LIMIT_RETRIES {
+                    attempt += 1;
+                    let backoff = std::time::Duration::from_secs(1u64 << attempt); // 2s, 4s, 8s
+                    eprintln!(
+                        "API rate limited ({} {}), retrying in {:?} (attempt {}/{})",
+                        method, url, backoff, attempt, MAX_RATE_LIMIT_RETRIES
+                    );
+                    tokio::time::sleep(backoff).await;
+                    continue;
+                }
+                return Err(ClientError::RateLimited);
+            }
+
+            return Ok(resp);
+        }
+    }
+
     /// Load tokens from secure storage if available.
     #[allow(dead_code)]
     pub fn load_tokens(&mut self, app_handle: &tauri::AppHandle) {
@@ -371,8 +422,10 @@ impl MagisterClient {
         }
     }
 
-    /// Ensure the access token is valid, refreshing if needed.
-    pub async fn ensure_valid_token(&mut self) -> Result<(), ClientError> {
+    /// Ensure the access token is valid, refreshing if needed, and return the
+    /// validated token so callers don't have to re-fetch it via a separate
+    /// (fallible) `unwrap()`.
+    pub async fn ensure_valid_token(&mut self) -> Result<TokenSet, ClientError> {
         let token_set = self
             .token_set
             .as_ref()
@@ -407,7 +460,9 @@ impl MagisterClient {
             }
         }
 
-        Ok(())
+        self.token_set
+            .clone()
+            .ok_or(ClientError::NotAuthenticated)
     }
 
     /// Ensure the token is valid (refreshing + persisting if needed — same
@@ -417,117 +472,79 @@ impl MagisterClient {
     /// lock. See `RequestContext` (defined above this impl block) for the
     /// full rationale.
     pub async fn request_context(&mut self) -> Result<RequestContext, ClientError> {
-        self.ensure_valid_token().await?;
-        let token_set = self.token_set.as_ref().unwrap();
+        let token = self.ensure_valid_token().await?;
         Ok(RequestContext {
             http: self.http.clone(),
-            access_token: token_set.access_token.clone(),
-            api_endpoint: token_set.api_endpoint.clone(),
+            access_token: token.access_token,
+            api_endpoint: token.api_endpoint,
         })
     }
 
     /// Make an authenticated GET request to the Magister API.
     pub async fn get(&mut self, path: &str) -> Result<serde_json::Value, ClientError> {
-        self.ensure_valid_token().await?;
-        let token_set = self.token_set.as_ref().unwrap();
+        let token = self.ensure_valid_token().await?;
+        let url = Self::build_url(&token.api_endpoint, path);
 
-        let url = if path.starts_with("http") {
-            path.to_string()
-        } else {
-            format!("{}/{}", token_set.api_endpoint.trim_end_matches('/'), path.trim_start_matches('/'))
-        };
-
-        // Part B 5A: retry on 429 (rate limited) with exponential backoff. Every
-        // other branch below is unchanged from before — it still returns
-        // immediately. Only the 429 case loops (via `continue`), up to
+        // Retry on 429 (rate limited) with exponential backoff is handled by
+        // send_with_retry. Every other branch below returns immediately. Only
+        // the 429 case loops (via send_with_retry), up to
         // MAX_RATE_LIMIT_RETRIES times, before finally giving up.
-        const MAX_RATE_LIMIT_RETRIES: u32 = 3;
-        let mut attempt = 0;
-        loop {
-            let token_set = self.token_set.as_ref().unwrap();
-            let resp = self
-                .http
-                .get(&url)
-                .header(
-                    "Authorization",
-                    format!("Bearer {}", token_set.access_token),
-                )
-                .header("Accept", "application/json")
-                .send()
-                .await
-                .map_err(|e| ClientError::RequestFailed(e.to_string()))?;
+        let resp = self
+            .send_with_retry("GET", &url, || {
+                self.http
+                    .get(&url)
+                    .header("Authorization", format!("Bearer {}", token.access_token))
+                    .header("Accept", "application/json")
+            })
+            .await?;
 
-            // Handle token expired mid-request
-            if resp.status().as_u16() == 401 {
-                let text = resp.text().await.unwrap_or_default();
-                if text.contains("SecurityToken Expired") || text.contains("invalid_token") {
-                    self.token_set.as_mut().unwrap().expires_at = Utc::now(); // Force refresh
-                    self.ensure_valid_token().await?;
-                    let token_set = self.token_set.as_ref().unwrap();
-                    let resp = self
-                        .http
-                        .get(&url)
-                        .header(
-                            "Authorization",
-                            format!("Bearer {}", token_set.access_token),
-                        )
-                        .header("Content-Type", "application/json")
-                        .header("Accept", "application/json")
-                        .send()
-                        .await
-                        .map_err(|e| ClientError::RequestFailed(e.to_string()))?;
-
-                    return resp
-                        .json()
-                        .await
-                        .map_err(|e| ClientError::ParseFailed(e.to_string()));
+        // Handle token expired mid-request
+        if resp.status().as_u16() == 401 {
+            let text = resp.text().await.unwrap_or_default();
+            if text.contains("SecurityToken Expired") || text.contains("invalid_token") {
+                if let Some(ts) = self.token_set.as_mut() {
+                    ts.expires_at = Utc::now(); // Force refresh
                 }
-                return Err(ClientError::Unauthorized(text));
-            }
+                let token = self.ensure_valid_token().await?;
+                let resp = self
+                    .http
+                    .get(&url)
+                    .header("Authorization", format!("Bearer {}", token.access_token))
+                    .header("Content-Type", "application/json")
+                    .header("Accept", "application/json")
+                    .send()
+                    .await
+                    .map_err(|e| ClientError::RequestFailed(e.to_string()))?;
 
-            if resp.status().as_u16() == 429 {
-                if attempt < MAX_RATE_LIMIT_RETRIES {
-                    attempt += 1;
-                    let backoff = std::time::Duration::from_secs(1u64 << attempt); // 2s, 4s, 8s
-                    eprintln!("API rate limited (GET {}), retrying in {:?} (attempt {}/{})", url, backoff, attempt, MAX_RATE_LIMIT_RETRIES);
-                    tokio::time::sleep(backoff).await;
-                    continue;
-                }
-                return Err(ClientError::RateLimited);
+                return resp
+                    .json()
+                    .await
+                    .map_err(|e| ClientError::ParseFailed(e.to_string()));
             }
-
-            if !resp.status().is_success() {
-                let status = resp.status().as_u16();
-                let text = resp.text().await.unwrap_or_default();
-                eprintln!("API Error (GET): URL={}, Status={}, Body={}", url, status, text);
-                return Err(ClientError::ApiError(status, text));
-            }
-
-            return resp
-                .json()
-                .await
-                .map_err(|e| ClientError::ParseFailed(e.to_string()));
+            return Err(ClientError::Unauthorized(text));
         }
+
+        if !resp.status().is_success() {
+            let status = resp.status().as_u16();
+            let text = resp.text().await.unwrap_or_default();
+            eprintln!("API Error (GET): URL={}, Status={}, Body={}", url, status, text);
+            return Err(ClientError::ApiError(status, text));
+        }
+
+        resp.json()
+            .await
+            .map_err(|e| ClientError::ParseFailed(e.to_string()))
     }
 
     /// Make an authenticated GET request that returns raw bytes (for images).
     pub async fn get_bytes(&mut self, path: &str) -> Result<Option<Vec<u8>>, ClientError> {
-        self.ensure_valid_token().await?;
-        let token_set = self.token_set.as_ref().unwrap();
-
-        let url = if path.starts_with("http") {
-            path.to_string()
-        } else {
-            format!("{}/{}", token_set.api_endpoint.trim_end_matches('/'), path.trim_start_matches('/'))
-        };
+        let token = self.ensure_valid_token().await?;
+        let url = Self::build_url(&token.api_endpoint, path);
 
         let resp = self
             .http
             .get(&url)
-            .header(
-                "Authorization",
-                format!("Bearer {}", token_set.access_token),
-            )
+            .header("Authorization", format!("Bearer {}", token.access_token))
             .send()
             .await
             .map_err(|e| ClientError::RequestFailed(e.to_string()))?;
@@ -556,22 +573,13 @@ impl MagisterClient {
         &mut self,
         path: &str,
     ) -> Result<(Vec<u8>, String), ClientError> {
-        self.ensure_valid_token().await?;
-        let token_set = self.token_set.as_ref().unwrap();
-
-        let url = if path.starts_with("http") {
-            path.to_string()
-        } else {
-            format!("{}/{}", token_set.api_endpoint.trim_end_matches('/'), path.trim_start_matches('/'))
-        };
+        let token = self.ensure_valid_token().await?;
+        let url = Self::build_url(&token.api_endpoint, path);
 
         let resp = self
             .http
             .get(&url)
-            .header(
-                "Authorization",
-                format!("Bearer {}", token_set.access_token),
-            )
+            .header("Authorization", format!("Bearer {}", token.access_token))
             .send()
             .await
             .map_err(|e| ClientError::RequestFailed(e.to_string()))?;
@@ -609,82 +617,48 @@ impl MagisterClient {
         path: &str,
         body: &serde_json::Value,
     ) -> Result<serde_json::Value, ClientError> {
-        self.ensure_valid_token().await?;
-        let token_set = self.token_set.as_ref().unwrap();
+        let token = self.ensure_valid_token().await?;
+        let url = Self::build_url(&token.api_endpoint, path);
 
-        let url = if path.starts_with("http") {
-            path.to_string()
-        } else {
-            format!("{}/{}", token_set.api_endpoint.trim_end_matches('/'), path.trim_start_matches('/'))
-        };
+        // Same 429 retry treatment as get(), handled by send_with_retry. Also
+        // preserves the small inconsistency fix: post() distinguishes 429 from
+        // other errors (returning ClientError::RateLimited) instead of falling
+        // into the generic ApiError branch.
+        let resp = self
+            .send_with_retry("POST", &url, || {
+                self.http
+                    .post(&url)
+                    .header("Authorization", format!("Bearer {}", token.access_token))
+                    .header("Content-Type", "application/json")
+                    .header("Accept", "application/json")
+                    .json(body)
+            })
+            .await?;
 
-        // Part B 5A: same 429 retry treatment as get(). Also fixes a small
-        // inconsistency found while doing this: post() previously didn't
-        // distinguish 429 from other errors at all — it fell into the generic
-        // ApiError branch below instead of ClientError::RateLimited.
-        const MAX_RATE_LIMIT_RETRIES: u32 = 3;
-        let mut attempt = 0;
-        loop {
-            let token_set = self.token_set.as_ref().unwrap();
-            let resp = self
-                .http
-                .post(&url)
-                .header(
-                    "Authorization",
-                    format!("Bearer {}", token_set.access_token),
-                )
-                .header("Content-Type", "application/json")
-                .header("Accept", "application/json")
-                .json(body)
-                .send()
-                .await
-                .map_err(|e| ClientError::RequestFailed(e.to_string()))?;
-
-            if resp.status().as_u16() == 429 {
-                if attempt < MAX_RATE_LIMIT_RETRIES {
-                    attempt += 1;
-                    let backoff = std::time::Duration::from_secs(1u64 << attempt);
-                    eprintln!("API rate limited (POST {}), retrying in {:?} (attempt {}/{})", url, backoff, attempt, MAX_RATE_LIMIT_RETRIES);
-                    tokio::time::sleep(backoff).await;
-                    continue;
-                }
-                return Err(ClientError::RateLimited);
-            }
-
-            if !resp.status().is_success() {
-                let status = resp.status().as_u16();
-                let text = resp.text().await.unwrap_or_default();
-                eprintln!("API Error (POST): URL={}, Status={}, Body={}", url, status, text);
-                return Err(ClientError::ApiError(status, text));
-            }
-
+        if !resp.status().is_success() {
+            let status = resp.status().as_u16();
             let text = resp.text().await.unwrap_or_default();
-            return if text.is_empty() {
-                Ok(serde_json::Value::Null)
-            } else {
-                serde_json::from_str(&text).map_err(|e| ClientError::ParseFailed(e.to_string()))
-            };
+            eprintln!("API Error (POST): URL={}, Status={}, Body={}", url, status, text);
+            return Err(ClientError::ApiError(status, text));
         }
+
+        let text = resp.text().await.unwrap_or_default();
+        return if text.is_empty() {
+            Ok(serde_json::Value::Null)
+        } else {
+            serde_json::from_str(&text).map_err(|e| ClientError::ParseFailed(e.to_string()))
+        };
     }
 
     /// Make an authenticated PUT request.
     pub async fn put(&mut self, path: &str, body: &serde_json::Value) -> Result<(), ClientError> {
-        self.ensure_valid_token().await?;
-        let token_set = self.token_set.as_ref().unwrap();
-
-        let url = if path.starts_with("http") {
-            path.to_string()
-        } else {
-            format!("{}/{}", token_set.api_endpoint.trim_end_matches('/'), path.trim_start_matches('/'))
-        };
+        let token = self.ensure_valid_token().await?;
+        let url = Self::build_url(&token.api_endpoint, path);
 
         let resp = self
             .http
             .put(&url)
-            .header(
-                "Authorization",
-                format!("Bearer {}", token_set.access_token),
-            )
+            .header("Authorization", format!("Bearer {}", token.access_token))
             .header("Content-Type", "application/json")
             .json(body)
             .send()
@@ -711,19 +685,13 @@ impl MagisterClient {
         path: &str,
         body: &serde_json::Value,
     ) -> Result<(), ClientError> {
-        self.ensure_valid_token().await?;
-        let token_set = self.token_set.as_ref().unwrap();
+        let token = self.ensure_valid_token().await?;
+        let url = Self::build_url(&token.api_endpoint, path);
 
-        let url = if path.starts_with("http") {
-            path.to_string()
-        } else {
-            format!("{}/{}", token_set.api_endpoint.trim_end_matches('/'), path.trim_start_matches('/'))
-        };
-
-        let mut rb = self.http.delete(&url).header(
-            "Authorization",
-            format!("Bearer {}", token_set.access_token),
-        );
+        let mut rb = self
+            .http
+            .delete(&url)
+            .header("Authorization", format!("Bearer {}", token.access_token));
 
         if !body.is_null() {
             rb = rb.header("Content-Type", "application/json").json(body);
@@ -745,22 +713,13 @@ impl MagisterClient {
 
     /// Make an authenticated PATCH request.
     pub async fn patch(&mut self, path: &str, body: &serde_json::Value) -> Result<(), ClientError> {
-        self.ensure_valid_token().await?;
-        let token_set = self.token_set.as_ref().unwrap();
-
-        let url = if path.starts_with("http") {
-            path.to_string()
-        } else {
-            format!("{}/{}", token_set.api_endpoint.trim_end_matches('/'), path.trim_start_matches('/'))
-        };
+        let token = self.ensure_valid_token().await?;
+        let url = Self::build_url(&token.api_endpoint, path);
 
         let resp = self
             .http
             .patch(&url)
-            .header(
-                "Authorization",
-                format!("Bearer {}", token_set.access_token),
-            )
+            .header("Authorization", format!("Bearer {}", token.access_token))
             .header("Content-Type", "application/json")
             .json(body)
             .send()
@@ -778,14 +737,8 @@ impl MagisterClient {
 
     /// Make an authenticated GET request, do NOT follow redirects, and return the Location header.
     pub async fn get_redirect_location(&mut self, path: &str) -> Result<String, ClientError> {
-        self.ensure_valid_token().await?;
-        let token_set = self.token_set.as_ref().unwrap();
-
-        let url = if path.starts_with("http") {
-            path.to_string()
-        } else {
-            format!("{}/{}", token_set.api_endpoint.trim_end_matches('/'), path.trim_start_matches('/'))
-        };
+        let token = self.ensure_valid_token().await?;
+        let url = Self::build_url(&token.api_endpoint, path);
 
         let no_redirect_client = reqwest::Client::builder()
             .redirect(reqwest::redirect::Policy::none())
@@ -794,10 +747,7 @@ impl MagisterClient {
 
         let resp = no_redirect_client
             .get(&url)
-            .header(
-                "Authorization",
-                format!("Bearer {}", token_set.access_token),
-            )
+            .header("Authorization", format!("Bearer {}", token.access_token))
             .header("Accept", "application/json")
             .send()
             .await
