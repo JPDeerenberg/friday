@@ -7,6 +7,32 @@ use serde_json::Value;
 
 use super::tools::{ToolDef, ToolResult};
 
+/// Truncate a string to at most `max_chars` characters, appending an ellipsis.
+pub(crate) fn truncate(s: &str, max_chars: usize) -> String {
+    if s.chars().count() <= max_chars {
+        s.to_string()
+    } else {
+        let cut: String = s.chars().take(max_chars).collect();
+        format!("{}… (afgekapt)", cut)
+    }
+}
+
+/// Extract a provider error message from an error response body. Tries the
+/// common `{"error": {"message": "..."}}` shape first; falls back to the raw
+/// body (truncated) so an unexpected error shape still surfaces something
+/// actionable instead of a generic "Onbekende fout".
+pub(crate) fn extract_error_message(raw_body: &str, max_chars: usize) -> String {
+    serde_json::from_str::<Value>(raw_body)
+        .ok()
+        .and_then(|b| {
+            b.get("error")
+                .and_then(|e| e.get("message"))
+                .and_then(|m| m.as_str())
+                .map(|s| s.to_string())
+        })
+        .unwrap_or_else(|| format!("Onverwacht foutformaat: {}", truncate(raw_body, max_chars)))
+}
+
 /// Supported AI provider types.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum AiProviderType {

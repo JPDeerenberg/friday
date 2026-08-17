@@ -220,6 +220,14 @@ pub async fn ai_chat_with_tools(
             for tool_call in &result.tool_calls {
                 let tool_result =
                     execute_tool(&mut c, &tool_call.name, &tool_call.arguments, person_id, &state.pending_actions).await;
+                if !tool_result.success {
+                    log::error!(
+                        "AI tool '{}' failed. Arguments: {} Error: {}",
+                        tool_call.name,
+                        tool_call.arguments,
+                        tool_result.error.as_deref().unwrap_or("Onbekende fout")
+                    );
+                }
                 results.push((tool_call.id.clone(), tool_call.name.clone(), tool_result));
             }
             results

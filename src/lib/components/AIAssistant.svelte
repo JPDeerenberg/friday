@@ -122,11 +122,14 @@
         messages = [...messages, { role: "assistant", content: response }];
       }
     } catch (e) {
-      let errorMsg = "Er is iets misgegaan. Probeer het opnieuw.";
-      if (String(e).includes("niet geconfigureerd")) {
+      console.error("[AIAssistant] sendMessage failed:", e);
+      let errorMsg = String(e);
+      if (errorMsg.includes("niet geconfigureerd")) {
         errorMsg =
           "⚠️ AI is nog niet ingesteld. Ga naar Instellingen > AI om je API-sleutel in te voeren.";
         isConfigured = false;
+      } else {
+        errorMsg = "⚠️ " + errorMsg;
       }
       messages = [...messages, { role: "assistant", content: errorMsg }];
     } finally {
@@ -177,6 +180,7 @@
         messages = [...messages, { role: "assistant", content: response }];
       }
     } catch (e) {
+      console.error("[AIAssistant] quickAction failed:", e);
       messages = [...messages, { role: "assistant", content: "⚠️ " + String(e) }];
     } finally {
       isLoading = false;

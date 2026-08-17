@@ -121,19 +121,19 @@ impl AiProvider for OpenAiProvider {
             .map_err(|e| format!("AI-verbinding mislukt: {}", e))?;
 
         let status = response.status();
-        let body: Value = response
-            .json()
+        let raw_body = response
+            .text()
             .await
             .map_err(|e| format!("Kon antwoord niet lezen: {}", e))?;
 
         if !status.is_success() {
-            let error_msg = body
-                .get("error")
-                .and_then(|e| e.get("message"))
-                .and_then(|m| m.as_str())
-                .unwrap_or("Onbekende fout");
+            let error_msg = extract_error_message(&raw_body, 500);
+            log::error!("OpenAI API error ({}): {}", status.as_u16(), error_msg);
             return Err(format!("AI-fout ({}): {}", status.as_u16(), error_msg));
         }
+
+        let body: Value = serde_json::from_str(&raw_body)
+            .map_err(|e| format!("Kon antwoord niet lezen: {}", e))?;
 
         // Parse response
         let choice = body
