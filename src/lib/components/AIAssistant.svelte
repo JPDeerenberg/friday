@@ -218,6 +218,19 @@
     if (!recipients || recipients.length === 0) return "—";
     return recipients.map((r) => `#${r.id}${r.type ? ` (${r.type})` : ""}`).join(", ");
   }
+
+  function actionLabel(actionType: string): string {
+    switch (actionType) {
+      case "send_message":
+        return "een bericht verzenden";
+      case "mark_messages_read":
+        return "berichten als gelezen markeren";
+      case "create_calendar_event":
+        return "een agenda-afspraak aanmaken";
+      default:
+        return "een actie uitvoeren";
+    }
+  }
 </script>
 
 <!-- Floating button -->
@@ -300,11 +313,7 @@
               ⚠️ Bevestiging vereist
             </p>
             <p class="text-[12px] text-gray-300 mb-2">
-              De AI wil namens jou
-              {action.action_type === "send_message"
-                ? "een bericht verzenden"
-                : "berichten als gelezen markeren"}
-              . Er is nog niets verzonden.
+              De AI wil namens jou {actionLabel(action.action_type)}. Er is nog niets uitgevoerd.
             </p>
             {#if action.action_type === "send_message"}
               <div class="space-y-1 text-[13px]">
@@ -323,6 +332,18 @@
                 <span class="font-bold text-white">Bericht-ID's:</span>
                 {(action.message_ids ?? []).join(", ")}
               </p>
+            {:else if action.action_type === "create_calendar_event"}
+              <div class="space-y-1 text-[13px]">
+                <p class="break-words">
+                  <span class="font-bold text-white">Afspraak:</span> {action.omschrijving ?? "—"}
+                </p>
+                <p class="break-words">
+                  <span class="font-bold text-white">Start:</span> {action.start ?? "—"}
+                </p>
+                <p class="break-words">
+                  <span class="font-bold text-white">Einde:</span> {action.einde ?? "—"}
+                </p>
+              </div>
             {/if}
             <div class="flex gap-2 mt-3">
               <button

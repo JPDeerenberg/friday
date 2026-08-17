@@ -36,6 +36,9 @@ export interface PendingActionInfo {
   body?: string;
   message_ids?: number[];
   message?: string;
+  start?: string;
+  einde?: string;
+  omschrijving?: string;
 }
 
 /** Result of a tools-enabled AI chat. */

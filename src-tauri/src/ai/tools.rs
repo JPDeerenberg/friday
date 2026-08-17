@@ -274,8 +274,82 @@ pub fn get_all_tool_defs() -> Vec<ToolDef> {
             }),
         },
         ToolDef {
+            name: "read_attachment_text".to_string(),
+            description: "Lees de tekstinhoud van een bijlage (PDF, Word .docx of tekstbestand). Gebruik dit als een opdracht een bijlage heeft en de gebruiker hulp wil met de inhoud, of als je de inhoud van een document moet kennen om te kunnen antwoorden. Geeft de ruwe tekst terug; afbeeldingen/diagrammen worden niet beschreven (best-effort, alleen tekst).".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "url": { "type": "string", "description": "URL van de bijlage (uit get_assignment_detail of get_message_content)" },
+                    "filename": { "type": "string", "description": "Bestandsnaam van de bijlage; helpt bij het bepalen van het bestandstype" }
+                },
+                "required": ["url"]
+            }),
+        },
+        ToolDef {
+            name: "calculate_grade_scenario".to_string(),
+            description: "Bereken cijfer-scenario's voor een vak: benodigd cijfer voor de volgende toets om een streefcijfer te halen, voorspeld gemiddelde na een hypothetisch cijfer, minimum cijfer om te slagen, en het effect op je totale gemiddelde. Geef de huidige cijfers mee (grades: lijst van {value, weight}) óf een schoolyear_id + subject zodat de tool ze zelf ophaalt. Gebruik dit voor 'wat heb ik nodig'-vragen over cijfers.".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "schoolyear_id": { "type": "integer", "description": "ID van het schooljaar (uit get_schoolyears). Nodig als je geen grades meegeeft." },
+                    "subject": { "type": "string", "description": "Naam of afkorting van het vak (bv. 'Wiskunde'). Nodig als je geen grades meegeeft." },
+                    "grades": {
+                        "type": "array",
+                        "description": "Optioneel: lijst van huidige cijfers, elk met value (cijfer) en weight (weging) — of cijfer/weging zoals get_full_grade_overview ze teruggeeft. Als dit gegeven is, worden schoolyear_id/subject genegeerd.",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "value": { "type": "number", "description": "Het cijfer, bv. 7.5 (ook 'cijfer' geaccepteerd)" },
+                                "cijfer": { "type": "number", "description": "Het cijfer, bv. 7.5 (alias voor value)" },
+                                "weight": { "type": "number", "description": "Weging (default 1)" },
+                                "weging": { "type": "number", "description": "Weging (alias voor weight)" }
+                            },
+                            "required": []
+                        }
+                    },
+                    "peildatum": { "type": "string", "description": "Peildatum yyyy-MM-dd (default: vandaag)" },
+                    "target_average": { "type": "number", "description": "Streefcijfer (bv. 6.0) om te berekenen welk cijfer je voor de volgende toets nodig hebt." },
+                    "next_grade": { "type": "number", "description": "Hypothetisch cijfer voor de volgende toets, om het voorspelde gemiddelde te berekenen." },
+                    "next_grade_weight": { "type": "number", "description": "Weging van de volgende toets (default 1)" },
+                    "remaining_tests": { "type": "integer", "description": "Aantal nog komende toetsen, om een eindgemiddelde-projectie te berekenen." },
+                    "threshold": { "type": "number", "description": "Voldoende-grens (default 5.5) voor het minimum-cijfer-om-te-slagen." },
+                    "simulation_grades": {
+                        "type": "array",
+                        "description": "Optioneel: extra cijfers om mee te simuleren (zoals in de app-rekenmachine).",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "value": { "type": "number" },
+                                "weight": { "type": "number", "default": 1 }
+                            },
+                            "required": ["value"]
+                        }
+                    },
+                    "include_simulation": { "type": "boolean", "description": "Of simulatiecijfers meetellen in voorspellingen (default true)" },
+                    "decimal_points": { "type": "integer", "description": "Aantal decimalen (default 2)" }
+                },
+                "required": []
+            }),
+        },
+        ToolDef {
+            name: "create_calendar_event".to_string(),
+            description: "Maak een persoonlijke agenda-afspraak/herinnering aan (bijv. een studiemoment of deadline-reminder). Deze actie wordt pas uitgevoerd nadat de gebruiker deze bevestigt.".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "start": { "type": "string", "description": "Startdatum/tijd in ISO-formaat (yyyy-MM-ddTHH:mm:ss)" },
+                    "einde": { "type": "string", "description": "Einddatum/tijd in ISO-formaat (yyyy-MM-ddTHH:mm:ss)" },
+                    "omschrijving": { "type": "string", "description": "Titel/korte omschrijving van de afspraak" },
+                    "duurt_hele_dag": { "type": "boolean", "description": "Hele dag (default false)", "default": false },
+                    "lokatie": { "type": "string", "description": "Locatie (optioneel)" },
+                    "inhoud": { "type": "string", "description": "Volledige omschrijving (optioneel)" }
+                },
+                "required": ["start", "einde", "omschrijving"]
+            }),
+        },
+        ToolDef {
             name: "download_file".to_string(),
-            description: "Download een bestand van een opgegeven URL (uit de Magister API). Geeft de bestandsgrootte en het MIME-type terug. De AI kan de inhoud niet lezen, maar kan de gebruiker informeren.".to_string(),
+            description: "Download een bestand van een opgegeven URL (uit de Magister API). Geeft de bestandsgrootte en het MIME-type terug. Gebruik read_attachment_text als je de inhoud van een PDF/Word/tekstbestand wilt lezen.".to_string(),
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -332,6 +406,162 @@ fn now_secs() -> u64 {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0)
+}
+
+/// Compute (totalPoints, totalWeight, gradeCount) from a vak node of the
+/// `cijferoverzichtvooraanmelding` response, using the same filter rules as
+/// `getSubjects()` in `src/routes/grades/Grades.svelte`: only grades with a
+/// CijferStr, that count (`TeltMee`), with a parseable value.
+fn subject_totals_from_overview(vak: &Value) -> (f64, f64, usize) {
+    let mut tp = 0.0;
+    let mut tw = 0.0;
+    let mut count = 0usize;
+    if let Some(cijfers) = vak.get("Cijfers").and_then(|c| c.as_array()) {
+        for c in cijfers {
+            let str = c.get("CijferStr").and_then(|v| v.as_str()).unwrap_or("");
+            if str.is_empty() {
+                continue;
+            }
+            let telt_mee = c.get("TeltMee").and_then(|v| v.as_bool()).unwrap_or(true);
+            if !telt_mee {
+                continue;
+            }
+            let Some(val) = crate::ai::grade_calc::parse_dutch_grade(str) else {
+                continue;
+            };
+            let w = c.get("Weging").and_then(|v| v.as_f64()).unwrap_or(1.0);
+            tp += val * w;
+            tw += w;
+            count += 1;
+        }
+    }
+    (tp, tw, count)
+}
+
+/// Resolve a subject's current grade totals for `calculate_grade_scenario`:
+/// either from an explicit `grades` array in `args`, or by fetching the grade
+/// overview for a schoolyear and matching the subject name/abbreviation.
+/// Returns (total_points, total_weight, grade_count, subject_name,
+/// all_subjects_averages).
+async fn resolve_scenario_grades(
+    client: &mut crate::client::MagisterClient,
+    args: &Value,
+    person_id: i64,
+    peildatum: &str,
+) -> Result<(f64, f64, usize, String, Vec<(String, f64)>), String> {
+    use crate::ai::grade_calc::{weighted_sum, GradePoint};
+
+    let mut subject_name = args
+        .get("subject")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+
+    if let Some(grades_arr) = args.get("grades").and_then(|v| v.as_array()) {
+        let points: Vec<GradePoint> = grades_arr
+            .iter()
+            .filter_map(|g| {
+                // Accept both {value, weight} and the shape get_full_grade_overview
+                // returns ({cijfer, weging}) so the model can pass data through as-is.
+                let value = g
+                    .get("value")
+                    .and_then(|v| v.as_f64())
+                    .or_else(|| g.get("cijfer").and_then(|v| v.as_f64()))
+                    .or_else(|| {
+                        g.get("cijfer")
+                            .and_then(|v| v.as_str())
+                            .and_then(crate::ai::grade_calc::parse_dutch_grade)
+                    })?;
+                let weight = g
+                    .get("weight")
+                    .and_then(|v| v.as_f64())
+                    .or_else(|| g.get("weging").and_then(|v| v.as_f64()))
+                    .unwrap_or(1.0);
+                Some(GradePoint { value, weight })
+            })
+            .collect();
+        let (tp, tw) = weighted_sum(&points);
+        return Ok((tp, tw, points.len(), subject_name, Vec::new()));
+    }
+
+    let schoolyear_id = args.get("schoolyear_id").and_then(|v| v.as_i64()).unwrap_or(0);
+    let subject_query = subject_name.trim().to_lowercase();
+    if schoolyear_id == 0 || subject_query.is_empty() {
+        return Err(
+            "Geef `grades` (lijst van {value, weight}) óf `schoolyear_id` + `subject` op."
+                .to_string(),
+        );
+    }
+
+    let path = format!(
+        "personen/{}/aanmeldingen/{}/cijfers/cijferoverzichtvooraanmelding?actievePerioden=false&alleenBerekendeKolommen=false&alleenPTAKolommen=false&peildatum={}",
+        person_id, schoolyear_id, peildatum
+    );
+
+    let data = client.get(&path).await.map_err(|e| e.to_string())?;
+
+    let vakken = data
+        .get("CijferVakken")
+        .or_else(|| data.get("CijferOverzicht").and_then(|co| co.get("CijferVakken")))
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+
+    let found = vakken.iter().find(|vak| {
+        let name = vak
+            .get("Vak")
+            .and_then(|v| v.get("Omschrijving"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_lowercase();
+        let abbr = vak
+            .get("Vak")
+            .and_then(|v| v.get("Afkorting"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_lowercase();
+        name == subject_query
+            || abbr == subject_query
+            || (!name.is_empty() && name.contains(&subject_query))
+            || (!subject_query.is_empty() && subject_query.contains(&name))
+    });
+
+    // Collect all subject averages for the overall-average effect.
+    let mut all_subjects: Vec<(String, f64)> = Vec::new();
+    for vak in &vakken {
+        let name = vak
+            .get("Vak")
+            .and_then(|v| v.get("Omschrijving"))
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string();
+        let (tp, tw, _) = subject_totals_from_overview(vak);
+        if tw > 0.0 {
+            all_subjects.push((name, tp / tw));
+        }
+    }
+
+    let vak = found.ok_or_else(|| {
+        let known: Vec<&str> = vakken
+            .iter()
+            .filter_map(|v| v.get("Vak").and_then(|v| v.get("Omschrijving")).and_then(|v| v.as_str()))
+            .collect();
+        format!(
+            "Vak '{}' niet gevonden in het cijferoverzicht. Bekende vakken: {}",
+            subject_query,
+            known.join(", ")
+        )
+    })?;
+
+    subject_name = vak
+        .get("Vak")
+        .and_then(|v| v.get("Omschrijving"))
+        .and_then(|v| v.as_str())
+        .unwrap_or(&subject_name)
+        .to_string();
+    let (tp, tw, count) = subject_totals_from_overview(vak);
+
+    Ok((tp, tw, count, subject_name, all_subjects))
 }
 
 /// Execute an AI tool call and return the result.
@@ -984,6 +1214,312 @@ pub async fn execute_tool(
             }
         }
 
+        "read_attachment_text" => {
+            let url = args.get("url").and_then(|v| v.as_str()).unwrap_or("");
+            let filename = args
+                .get("filename")
+                .and_then(|v| v.as_str())
+                .unwrap_or("bijlage")
+                .to_string();
+
+            if url.is_empty() {
+                return ToolResult {
+                    tool: tool_name.to_string(),
+                    success: false,
+                    data: Value::Null,
+                    error: Some("Geen URL opgegeven.".to_string()),
+                };
+            }
+
+            // Magister's download/Self links are indirection links — resolve to the
+            // real content URL first (same two-call sequence as download_file).
+            let path = url.trim_start_matches("/api/");
+            let resolved = match client.get_redirect_location(path).await {
+                Ok(resolved) => resolved,
+                Err(e) => {
+                    return ToolResult {
+                        tool: tool_name.to_string(),
+                        success: false,
+                        data: Value::Null,
+                        error: Some(format!("Kon download-link niet resolven: {}", e)),
+                    };
+                }
+            };
+
+            match client.get_bytes_with_content_type(&resolved).await {
+                Ok((bytes, content_type)) => {
+                    match crate::ai::attachment_reader::extract_text(&bytes, &filename, &content_type) {
+                        Ok(raw) => {
+                            let truncated = raw.chars().count()
+                                > crate::ai::attachment_reader::MAX_TEXT_CHARS;
+                            let text: String = raw
+                                .chars()
+                                .take(crate::ai::attachment_reader::MAX_TEXT_CHARS)
+                                .collect();
+                            ToolResult {
+                                tool: tool_name.to_string(),
+                                success: true,
+                                data: serde_json::json!({
+                                    "filename": filename,
+                                    "content_type": content_type,
+                                    "size_bytes": bytes.len(),
+                                    "text": text,
+                                    "char_count": text.chars().count(),
+                                    "truncated": truncated,
+                                    "message": if truncated {
+                                        "De tekst is afgekapt tot 8000 tekens om ruimte te besparen."
+                                    } else {
+                                        "De volledige tekst van de bijlage staat hierboven."
+                                    }
+                                }),
+                                error: None,
+                            }
+                        }
+                        Err(e) => ToolResult {
+                            tool: tool_name.to_string(),
+                            success: false,
+                            data: Value::Null,
+                            error: Some(e),
+                        },
+                    }
+                }
+                Err(e) => ToolResult {
+                    tool: tool_name.to_string(),
+                    success: false,
+                    data: Value::Null,
+                    error: Some(e.to_string()),
+                },
+            }
+        }
+
+        "calculate_grade_scenario" => {
+            use crate::ai::grade_calc::{
+                average_for_grade, min_grade_for_pass, new_overall_average, predicted_average,
+                predicted_end, required_grade, GradePoint, MinGradeForPass,
+            };
+
+            let decimal_points = args
+                .get("decimal_points")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(2)
+                .max(0) as usize;
+
+            let peildatum = args.get("peildatum").and_then(|v| v.as_str()).unwrap_or("");
+            let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+            let peil = if peildatum.len() >= 10 { &peildatum[0..10] } else { &today };
+
+            // 1. Resolve the subject's current grades: explicit `grades` array,
+            //    or fetched internally from the grade overview via schoolyear_id+subject.
+            let (total_points, total_weight, grade_count, subject_name, all_subjects) =
+                match resolve_scenario_grades(client, args, person_id, peil).await {
+                    Ok(v) => v,
+                    Err(e) => {
+                        return ToolResult {
+                            tool: tool_name.to_string(),
+                            success: false,
+                            data: Value::Null,
+                            error: Some(e),
+                        };
+                    }
+                };
+
+            // 2. Compute the requested scenario(s) with the same rules as the
+            //    in-app calculator (grade_calc.rs is a port of predictor.ts).
+            let target_average = args.get("target_average").and_then(|v| v.as_f64());
+            let next_grade = args.get("next_grade").and_then(|v| v.as_f64());
+            let next_grade_weight = args
+                .get("next_grade_weight")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(1.0);
+            let remaining_tests = args.get("remaining_tests").and_then(|v| v.as_i64());
+            let threshold = args.get("threshold").and_then(|v| v.as_f64());
+            let simulation: Vec<GradePoint> = args
+                .get("simulation_grades")
+                .and_then(|v| v.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|g| {
+                            let value = g
+                                .get("value")
+                                .and_then(|v| v.as_f64())
+                                .or_else(|| g.get("cijfer").and_then(|v| v.as_f64()))
+                                .or_else(|| {
+                                    g.get("cijfer")
+                                        .and_then(|v| v.as_str())
+                                        .and_then(crate::ai::grade_calc::parse_dutch_grade)
+                                })?;
+                            let weight = g
+                                .get("weight")
+                                .and_then(|v| v.as_f64())
+                                .or_else(|| g.get("weging").and_then(|v| v.as_f64()))
+                                .unwrap_or(1.0);
+                            Some(GradePoint { value, weight })
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            let include_simulation = args
+                .get("include_simulation")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(true);
+
+            let current_avg = if total_weight > 0.0 {
+                total_points / total_weight
+            } else {
+                0.0
+            };
+            let num = |v: f64| -> Value {
+                serde_json::Number::from_f64(v)
+                    .map(Value::Number)
+                    .unwrap_or(Value::Null)
+            };
+
+            let mut result = serde_json::Map::new();
+            result.insert("subject".to_string(), Value::String(subject_name.clone()));
+            result.insert(
+                "current_average".to_string(),
+                Value::String(format!("{:.*}", decimal_points, current_avg)),
+            );
+            result.insert("current_average_numeric".to_string(), num(current_avg));
+            result.insert("total_points".to_string(), num(total_points));
+            result.insert("total_weight".to_string(), num(total_weight));
+            result.insert("grade_count".to_string(), Value::Number(grade_count.into()));
+            result.insert("peildatum".to_string(), Value::String(peil.to_string()));
+
+            if let Some(target) = target_average {
+                let req = required_grade(
+                    total_points,
+                    total_weight,
+                    target,
+                    next_grade_weight,
+                    &simulation,
+                    decimal_points,
+                );
+                result.insert("required_grade".to_string(), Value::String(req.clone()));
+                if let Some(n) = req.parse::<f64>().ok() {
+                    result.insert("required_grade_numeric".to_string(), num(n));
+                }
+                result.insert("target_average".to_string(), num(target));
+                result.insert("required_grade_grade_weight".to_string(), num(next_grade_weight));
+            }
+
+            if let Some(ng) = next_grade {
+                let mut sim_with_next = simulation.clone();
+                sim_with_next.push(GradePoint { value: ng, weight: next_grade_weight });
+                let pa = predicted_average(
+                    total_points,
+                    total_weight,
+                    &sim_with_next,
+                    include_simulation,
+                    decimal_points,
+                );
+                result.insert("predicted_average".to_string(), Value::String(pa.clone()));
+                if let Some(n) = pa.parse::<f64>().ok() {
+                    result.insert("predicted_average_numeric".to_string(), num(n));
+                }
+                result.insert(
+                    "average_for_grade".to_string(),
+                    Value::String(average_for_grade(
+                        total_points,
+                        total_weight,
+                        ng,
+                        next_grade_weight,
+                        decimal_points,
+                    )),
+                );
+                result.insert("next_grade".to_string(), num(ng));
+                result.insert("next_grade_weight".to_string(), num(next_grade_weight));
+
+                if let Some(rt) = remaining_tests {
+                    let rt_u = rt.max(0) as usize;
+                    let pe = predicted_end(total_points, total_weight, rt_u, ng);
+                    result.insert(
+                        "predicted_end".to_string(),
+                        Value::String(format!("{:.*}", decimal_points, pe)),
+                    );
+                    result.insert(
+                        "predicted_end_remaining_tests".to_string(),
+                        Value::Number(rt.into()),
+                    );
+                }
+
+                if !all_subjects.is_empty() {
+                    let replacement = pa.parse::<f64>().unwrap_or(current_avg);
+                    let na = new_overall_average(
+                        &all_subjects,
+                        &subject_name,
+                        replacement,
+                        decimal_points,
+                    );
+                    result.insert("new_overall_average".to_string(), Value::String(na));
+                }
+            }
+
+            if let Some(thr) = threshold {
+                result.insert("threshold".to_string(), num(thr));
+                let pass = min_grade_for_pass(total_points, total_weight, thr);
+                let label = match pass {
+                    MinGradeForPass::Needed(v) => v,
+                    MinGradeForPass::AlreadyPassing => "already_passing".to_string(),
+                    MinGradeForPass::Impossible => "impossible".to_string(),
+                };
+                result.insert("min_grade_for_pass".to_string(), Value::String(label));
+            }
+
+            ToolResult {
+                tool: tool_name.to_string(),
+                success: true,
+                data: Value::Object(result),
+                error: None,
+            }
+        }
+
+        // Write tool: never create directly. Stage the action for explicit user
+        // confirmation; the real POST only happens via confirm_pending_action.
+        "create_calendar_event" => {
+            let start = args.get("start").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let einde = args.get("einde").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let omschrijving = args
+                .get("omschrijving")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+
+            if start.is_empty() || einde.is_empty() || omschrijving.is_empty() {
+                return ToolResult {
+                    tool: tool_name.to_string(),
+                    success: false,
+                    data: Value::Null,
+                    error: Some("Start, einde en omschrijving zijn verplicht.".to_string()),
+                };
+            }
+
+            let action_id = generate_action_id();
+            let action = PendingAction {
+                action_type: "create_calendar_event".to_string(),
+                args: args.clone(),
+                created_at: now_secs(),
+            };
+            if let Ok(mut store) = pending_actions.lock() {
+                store.insert(action_id.clone(), action);
+            }
+
+            ToolResult {
+                tool: tool_name.to_string(),
+                success: true,
+                data: serde_json::json!({
+                    "status": "pending_user_confirmation",
+                    "action_id": action_id,
+                    "action_type": "create_calendar_event",
+                    "start": start,
+                    "einde": einde,
+                    "omschrijving": omschrijving,
+                    "message": "De agenda-afspraak is klaargezet en wacht op bevestiging door de gebruiker. Er is nog NIETS aangemaakt. Vertel de gebruiker dat er bevestiging nodig is."
+                }),
+                error: None,
+            }
+        }
+
         "download_file" => {
             let url = args.get("url").and_then(|v| v.as_str()).unwrap_or("");
 
@@ -1090,6 +1626,37 @@ pub async fn execute_pending_action(
             let body = serde_json::json!({"BerichtIds": message_ids});
             client.put("berichten/gelezen", &body).await.map_err(|e| e.to_string())?;
             Ok(serde_json::json!({ "status": "gemarkeerd", "aantal": message_ids.len() }))
+        }
+        "create_calendar_event" => {
+            let person_id = client
+                .token_set
+                .as_ref()
+                .and_then(|t| t.person_id)
+                .ok_or_else(|| "Niet geauthenticeerd.".to_string())?;
+
+            let start = action.args.get("start").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let einde = action.args.get("einde").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let duurt_hele_dag = action.args.get("duurt_hele_dag").and_then(|v| v.as_bool()).unwrap_or(false);
+            let omschrijving = action.args.get("omschrijving").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let lokatie = action.args.get("lokatie").and_then(|v| v.as_str()).map(|s| s.to_string());
+            let inhoud = action.args.get("inhoud").and_then(|v| v.as_str()).map(|s| s.to_string());
+
+            let body = serde_json::json!({
+                "Start": start,
+                "Einde": einde,
+                "DuurtHeleDag": duurt_hele_dag,
+                "Omschrijving": omschrijving,
+                "Lokatie": lokatie,
+                "Inhoud": inhoud,
+                "Type": 1,
+                "Status": 2,
+                "InfoType": 0
+            });
+
+            client.post(&format!("personen/{}/afspraken", person_id), &body)
+                .await
+                .map_err(|e| e.to_string())?;
+            Ok(serde_json::json!({ "status": "aangemaakt", "omschrijving": omschrijving }))
         }
         _ => Err(format!("Onbekende actie: {}", action.action_type)),
     }
@@ -1203,6 +1770,142 @@ mod tests {
         };
         let outcome = execute_pending_action(&mut client, &action).await;
         assert!(outcome.is_err());
+    }
+
+    #[tokio::test]
+    async fn read_attachment_text_returns_plain_text() {
+        let mock_server = MockServer::start().await;
+        let content_url = format!("{}/contents/opdracht", mock_server.uri());
+
+        // Step 1: the attachment's indirection link resolves to the content URL.
+        Mock::given(method("GET"))
+            .and(path("/opdrachten/1/bijlagen/2"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "location": content_url,
+            })))
+            .mount(&mock_server)
+            .await;
+
+        // Step 2: the resolved URL returns the file bytes.
+        Mock::given(method("GET"))
+            .and(path("/contents/opdracht"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_string(
+                        "De opdracht is om een verslag te schrijven over de Tweede Wereldoorlog.",
+                    )
+                    .insert_header("Content-Type", "text/plain"),
+            )
+            .mount(&mock_server)
+            .await;
+
+        let store: PendingActionStore = Mutex::new(HashMap::new());
+        let mut client = client_with_token(&mock_server.uri());
+
+        let args = serde_json::json!({
+            "url": format!("{}/opdrachten/1/bijlagen/2", mock_server.uri()),
+            "filename": "opdracht.txt"
+        });
+        let result = execute_tool(&mut client, "read_attachment_text", &args, 123, &store).await;
+
+        assert!(result.success, "got error: {:?}", result.error);
+        assert!(result.data["text"]
+            .as_str()
+            .unwrap()
+            .contains("Tweede Wereldoorlog"));
+    }
+
+    #[tokio::test]
+    async fn calculate_grade_scenario_with_explicit_grades() {
+        let store: PendingActionStore = Mutex::new(HashMap::new());
+        let mut client = MagisterClient::new();
+
+        let args = serde_json::json!({
+            "grades": [
+                { "value": 6.0, "weight": 1.0 },
+                { "value": 7.0, "weight": 2.0 },
+                { "value": 5.0, "weight": 1.0 }
+            ],
+            "target_average": 6.0,
+            "next_grade": 8.0,
+            "next_grade_weight": 1.0,
+            "threshold": 5.5,
+            "decimal_points": 2
+        });
+        let result = execute_tool(&mut client, "calculate_grade_scenario", &args, 123, &store).await;
+
+        assert!(result.success, "got error: {:?}", result.error);
+        // 6*1 + 7*2 + 5*1 = 25 points over weight 4 → avg 6.25
+        assert_eq!(result.data["total_points"], 25.0);
+        assert_eq!(result.data["total_weight"], 4.0);
+        assert_eq!(result.data["current_average"], "6.25");
+        // required for target 6.0 (next weight 1): (6.0*5 - 25)/1 = 5.00
+        assert_eq!(result.data["required_grade"], "5.00");
+        // predicted avg with next 8.0: (25 + 8)/5 = 6.60
+        assert_eq!(result.data["predicted_average"], "6.60");
+        // min grade to pass (threshold 5.5): (5.5*5 - 25)/1 = 2.5
+        assert_eq!(result.data["min_grade_for_pass"], "2.5");
+    }
+
+    #[tokio::test]
+    async fn calculate_grade_scenario_requires_grades_or_schoolyear() {
+        let store: PendingActionStore = Mutex::new(HashMap::new());
+        let mut client = MagisterClient::new();
+        let args = serde_json::json!({ "target_average": 6.0 });
+        let result = execute_tool(&mut client, "calculate_grade_scenario", &args, 123, &store).await;
+        assert!(!result.success);
+        assert!(result.error.as_deref().unwrap().contains("grades"));
+    }
+
+    #[tokio::test]
+    async fn create_calendar_event_stages_pending_action() {
+        let store: PendingActionStore = Mutex::new(HashMap::new());
+        let mut client = MagisterClient::new();
+
+        let args = serde_json::json!({
+            "start": "2026-09-01T15:00:00",
+            "einde": "2026-09-01T16:00:00",
+            "omschrijving": "Werken aan verslag",
+            "inhoud": "Hoofdstuk 3 afmaken"
+        });
+        let result = execute_tool(&mut client, "create_calendar_event", &args, 123, &store).await;
+
+        assert!(result.success, "expected pending result, got error: {:?}", result.error);
+        assert_eq!(result.data["status"], "pending_user_confirmation");
+        assert_eq!(result.data["action_type"], "create_calendar_event");
+        assert_eq!(result.data["omschrijving"], "Werken aan verslag");
+
+        let action_id = result.data["action_id"].as_str().expect("action_id present");
+        let stored = store.lock().unwrap();
+        assert!(stored.contains_key(action_id));
+    }
+
+    #[tokio::test]
+    async fn confirm_create_calendar_event_posts_to_magister() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/personen/123/afspraken"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({})))
+            .mount(&mock_server)
+            .await;
+
+        let store: PendingActionStore = Mutex::new(HashMap::new());
+        let mut client = client_with_token(&mock_server.uri());
+
+        let args = serde_json::json!({
+            "start": "2026-09-01T15:00:00",
+            "einde": "2026-09-01T16:00:00",
+            "omschrijving": "Werken aan verslag"
+        });
+        let result = execute_tool(&mut client, "create_calendar_event", &args, 123, &store).await;
+        assert!(result.success);
+
+        let action_id = result.data["action_id"].as_str().unwrap().to_string();
+        let action = store.lock().unwrap().remove(&action_id).unwrap();
+        let outcome = execute_pending_action(&mut client, &action).await.expect("create succeeds");
+        assert_eq!(outcome["status"], "aangemaakt");
+        assert_eq!(outcome["omschrijving"], "Werken aan verslag");
     }
 }
 

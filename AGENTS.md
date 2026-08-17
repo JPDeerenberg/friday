@@ -54,6 +54,8 @@ When everything is valid, update the version and Commit.
 | ------------------------ | ------------------------------------------------------------------------ |
 | Commands (Rust)          | `src-tauri/src/commands/*.rs`                                            |
 | Models (Rust)            | `src-tauri/src/models/*.rs`                                              |
+| AI attachment reading    | `src-tauri/src/ai/attachment_reader.rs`                                 |
+| AI grade calculations    | `src-tauri/src/ai/grade_calc.rs` (Rust port of `src/lib/grades/predictor.ts` — keep in sync) |
 | Shared client            | `src-tauri/src/client.rs`                                               |
 | Auth (Rust)              | `src-tauri/src/auth.rs`                                                 |
 | JNI bridge (Rust ↔ Kotlin) | `src-tauri/src/jni.rs`                                                |

@@ -58,6 +58,11 @@ tauri-plugin-mcp-bridge = "0.12"
 jni = "0.21.1"
 dirs = "5"
 async-trait = "0.1"
+# Attachment text extraction for the AI `read_attachment_text` tool.
+# pdf-extract is pure-Rust (MIT), pulls in lopdf/cff-parser/postscript.
+# zip is only used to unwrap .docx containers (pure-Rust deflate via zlib-rs).
+pdf-extract = "0.12"
+zip = { version = "8.6", default-features = false, features = ["deflate"] }
 
 # Desktop (Linux/Windows/macOS): OS keychain via keyring's `v1` feature.
 [target.'cfg(not(target_os = "android"))'.dependencies]

@@ -72,10 +72,13 @@ pub fn build_school_context_system_prompt(page_context: Option<&str>, tools_enab
              - get_schoolyears: Beschikbare schooljaren\n\
              - get_assignments: Huiswerk en opdrachten voor een datumbereik\n\
              - get_assignment_detail: Gedetailleerde opdrachtinfo inclusief bijlagen\n\
+             - read_attachment_text: Lees de tekstinhoud van een bijlage (PDF/Word/tekstbestand)\n\
+             - calculate_grade_scenario: Bereken wat de gebruiker nodig heeft (benodigd cijfer, voorspeld gemiddelde, minimaal cijfer om te slagen)\n\
              - get_messages: Berichtenoverzicht uit een map\n\
              - get_message_content: Volledige inhoud van een specifiek bericht\n\
-             - send_message: Stuur een bericht naar een andere gebruiker\n\
-             - mark_messages_read: Markeer berichten als gelezen\n\
+             - send_message: Stuur een bericht naar een andere gebruiker (na bevestiging)\n\
+             - mark_messages_read: Markeer berichten als gelezen (na bevestiging)\n\
+             - create_calendar_event: Maak een persoonlijke agenda-afspraak/herinnering (na bevestiging)\n\
              - get_absences: Absentie en verzuim\n\
              - get_studiewijzers: Studiewijzers per vak\n\
              - get_activities: Activiteiten\n\
@@ -86,7 +89,10 @@ pub fn build_school_context_system_prompt(page_context: Option<&str>, tools_enab
              - download_file: Download een bestand (bijlage) en toon grootte en type\n\n\
              Gebruik deze tools wanneer de gebruiker vraagt naar specifieke schoolinformatie of acties wil uitvoeren (zoals berichten sturen, opdrachten bekijken, bestanden downloaden).\n\
              Bij vragen over gemiddelden per vak: gebruik eerst get_schoolyears, dan get_full_grade_overview.\n\
+             Bij 'wat heb ik nodig'-vragen over cijfers (bv. 'welk cijfer moet ik halen om te slagen'): gebruik get_schoolyears, get_full_grade_overview, en daarna calculate_grade_scenario om het daadwerkelijk te berekenen — geef niet alleen ruwe cijfers terug.\n\
+             Bij een opdracht met een bijlage (uit get_assignment_detail) waarvan de gebruiker hulp wil met de inhoud: gebruik read_attachment_text om de bijlage te lezen voordat je antwoord geeft.\n\
              Bij vragen over berichtinhoud: gebruik eerst get_messages, dan get_message_content, of stuur een bericht met send_message.\n\
+             Bij acties met een echte bijwerking (send_message, mark_messages_read, create_calendar_event): de tool zet de actie klaar en de gebruiker bevestigt deze in de app voordat er iets gebeurt. Vertel de gebruiker wat er klaarstaat.\n\
              Geef antwoord op basis van de opgehaalde data. Gebruik bullet points en houd het beknopt.";
 
     let no_tools_prompt = "\n\nJe hebt geen directe toegang tot de schoolgegevens van de gebruiker. \
