@@ -130,3 +130,88 @@ export function calcNewOverallForGrade(input: NewOverallForGradeInput): string {
   }
   return (totalAverages / validSubjects.length).toFixed(input.decimalPoints);
 }
+
+export interface MultiSubjectTargetRow {
+  name: string;
+  currentAvg: number;
+  remainingTests: number;
+  predictedFinalAvg: number;
+}
+
+export interface MultiSubjectTargetInput {
+  subjects: { name: string; totalPoints: number; totalWeight: number }[];
+  targetOverall: number;
+  /** Remaining tests per subject name (weight 1 each). */
+  remainingTests: Record<string, number>;
+}
+
+export interface MultiSubjectTargetResult {
+  /** Uniform grade needed on every remaining test to reach the target. */
+  requiredGrade: number;
+  achievable: boolean;
+  rows: MultiSubjectTargetRow[];
+  overallAfter: number;
+  note: string;
+}
+
+/**
+ * Multi-subject target solver: finds the grade x that a student must average on
+ * all remaining tests (across all subjects) to reach an overall-average target.
+ *
+ * For subject i with points P_i, weight W_i and r_i remaining tests, the final
+ * average if every remaining test yields x is A_i(x) = (P_i + r_i·x) / (W_i + r_i).
+ * Solving (1/n)·Σ A_i(x) = target is linear in x:
+ *   x = (target·n − Σ P_i/(W_i+r_i)) / Σ r_i/(W_i+r_i)
+ */
+export function calcMultiSubjectTarget(input: MultiSubjectTargetInput): MultiSubjectTargetResult {
+  const rows = input.subjects
+    .filter((s) => s.totalWeight > 0)
+    .map((s) => {
+      const remainingTests = Math.max(0, Math.floor(input.remainingTests[s.name] ?? 0));
+      return {
+        name: s.name,
+        totalPoints: s.totalPoints,
+        totalWeight: s.totalWeight,
+        remainingTests,
+        currentAvg: s.totalPoints / s.totalWeight,
+      };
+    });
+
+  if (rows.length === 0) {
+    return { requiredGrade: 0, achievable: false, rows: [], overallAfter: 0, note: 'Geen vakken met cijfers.' };
+  }
+
+  let sumConst = 0; // Σ P_i / (W_i + r_i)
+  let sumCoef = 0;  // Σ r_i / (W_i + r_i)
+  for (const r of rows) {
+    const denom = r.totalWeight + r.remainingTests;
+    sumConst += r.totalPoints / denom;
+    sumCoef += r.remainingTests / denom;
+  }
+
+  if (sumCoef <= 0) {
+    return {
+      requiredGrade: 0,
+      achievable: false,
+      rows: rows.map((r) => ({ name: r.name, currentAvg: r.currentAvg, remainingTests: r.remainingTests, predictedFinalAvg: r.currentAvg })),
+      overallAfter: rows.reduce((a, r) => a + r.currentAvg, 0) / rows.length,
+      note: 'Vul bij minstens één vak resterende toetsen in.',
+    };
+  }
+
+  const requiredGrade = (input.targetOverall * rows.length - sumConst) / sumCoef;
+  const achievable = requiredGrade >= 1 && requiredGrade <= 10;
+  const predictedRows: MultiSubjectTargetRow[] = rows.map((r) => {
+    const denom = r.totalWeight + r.remainingTests;
+    const predictedFinalAvg = (r.totalPoints + r.remainingTests * requiredGrade) / denom;
+    return { name: r.name, currentAvg: r.currentAvg, remainingTests: r.remainingTests, predictedFinalAvg };
+  });
+  const overallAfter = predictedRows.reduce((a, r) => a + r.predictedFinalAvg, 0) / predictedRows.length;
+  const note = achievable
+    ? ''
+    : requiredGrade > 10
+      ? 'Niet haalbaar: er zou een cijfer boven de 10 nodig zijn.'
+      : 'Niet haalbaar: er zou een cijfer onder de 1 nodig zijn.';
+
+  return { requiredGrade, achievable, rows: predictedRows, overallAfter, note };
+}

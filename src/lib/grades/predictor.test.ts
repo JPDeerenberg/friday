@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert';
-import { calcPredicted, calcRequiredGrade, calcPredictedAverage, calcMinGradeForPass, calcAverageForGrade, calcNewOverallAverage, calcNewOverallForGrade } from './predictor.ts';
+import { calcPredicted, calcRequiredGrade, calcPredictedAverage, calcMinGradeForPass, calcAverageForGrade, calcNewOverallAverage, calcNewOverallForGrade, calcMultiSubjectTarget } from './predictor.ts';
 
 test('calcPredicted projects the end average given remaining tests', () => {
   const subject = { totalPoints: 40, totalWeight: 6 };
@@ -103,4 +103,76 @@ test('calcNewOverallForGrade swaps a subject avg with its new average', () => {
     decimalPoints: 2,
   });
   assert.strictEqual(r, '7.25');
+});
+
+test('calcMultiSubjectTarget solves the uniform required grade for a target', () => {
+  // Two subjects at 6.0 (60 pts / 10 weight), 2 remaining tests each, target 6.0
+  const r = calcMultiSubjectTarget({
+    subjects: [
+      { name: 'Wiskunde', totalPoints: 60, totalWeight: 10 },
+      { name: 'Nederlands', totalPoints: 60, totalWeight: 10 },
+    ],
+    targetOverall: 6.0,
+    remainingTests: { Wiskunde: 2, Nederlands: 2 },
+  });
+  assert.ok(r.achievable);
+  assert.ok(Math.abs(r.requiredGrade - 6) < 1e-9);
+  assert.ok(Math.abs(r.overallAfter - 6.0) < 1e-9);
+  assert.strictEqual(r.rows.length, 2);
+});
+
+test('calcMultiSubjectTarget produces results that manually reach the stated target', () => {
+  // A at 7.0 (70/10, no remaining), B at 5.0 (50/10, 2 remaining). Target 6.0.
+  // sumConst = 70/10 + 50/12 = 7 + 4.1666.. ; sumCoef = 2/12
+  // required = (6*2 - 11.1666..)/(0.1666..) = 5.0
+  const r = calcMultiSubjectTarget({
+    subjects: [
+      { name: 'A', totalPoints: 70, totalWeight: 10 },
+      { name: 'B', totalPoints: 50, totalWeight: 10 },
+    ],
+    targetOverall: 6.0,
+    remainingTests: { A: 0, B: 2 },
+  });
+  assert.ok(r.achievable);
+  assert.ok(Math.abs(r.requiredGrade - 5.0) < 1e-9);
+  // A final = 7.0, B final = (50 + 2*5)/12 = 5.0 → overall = 6.0
+  assert.ok(Math.abs(r.overallAfter - 6.0) < 1e-9);
+  const rowB = r.rows.find((x) => x.name === 'B')!;
+  assert.ok(Math.abs(rowB.predictedFinalAvg - 5.0) < 1e-9);
+});
+
+test('calcMultiSubjectTarget reports unachievable targets above 10', () => {
+  const r = calcMultiSubjectTarget({
+    subjects: [
+      { name: 'Wiskunde', totalPoints: 60, totalWeight: 10 },
+      { name: 'Nederlands', totalPoints: 60, totalWeight: 10 },
+    ],
+    targetOverall: 8.0,
+    remainingTests: { Wiskunde: 2, Nederlands: 2 },
+  });
+  assert.strictEqual(r.achievable, false);
+  assert.ok(r.requiredGrade > 10);
+});
+
+test('calcMultiSubjectTarget reports when no remaining tests are set', () => {
+  const r = calcMultiSubjectTarget({
+    subjects: [{ name: 'Wiskunde', totalPoints: 60, totalWeight: 10 }],
+    targetOverall: 6.0,
+    remainingTests: { Wiskunde: 0 },
+  });
+  assert.strictEqual(r.achievable, false);
+  assert.strictEqual(r.rows.length, 1);
+});
+
+test('calcMultiSubjectTarget ignores subjects without weight', () => {
+  const r = calcMultiSubjectTarget({
+    subjects: [
+      { name: 'Wiskunde', totalPoints: 60, totalWeight: 10 },
+      { name: 'Leeg', totalPoints: 0, totalWeight: 0 },
+    ],
+    targetOverall: 6.0,
+    remainingTests: { Wiskunde: 2 },
+  });
+  assert.strictEqual(r.rows.length, 1);
+  assert.strictEqual(r.rows[0].name, 'Wiskunde');
 });

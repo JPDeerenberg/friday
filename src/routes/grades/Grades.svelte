@@ -5,13 +5,16 @@
   import { tryAiInsight, getAiConfig } from '$lib/ai';
   import { cacheGet, cacheRefresh } from '$lib/cache';
   import { computeStats, getDistribution, getTrendDirection, getTrendLabel, getNumericValue, isPassing, pct } from '$lib/grades/stats';
-  import { calcPredicted, calcRequiredGrade, calcPredictedAverage, calcMinGradeForPass, calcAverageForGrade, calcNewOverallAverage, calcNewOverallForGrade } from '$lib/grades/predictor';
+  import { calcPredicted, calcRequiredGrade, calcPredictedAverage, calcMinGradeForPass, calcAverageForGrade, calcNewOverallAverage, calcNewOverallForGrade, calcMultiSubjectTarget } from '$lib/grades/predictor';
+  import { getPeriods, filterGradesByPeriod, isPtaGrade } from '$lib/grades/periods';
+  import { loadCombinations, saveCombinations, calcCombinationAverage, type GradeCombination } from '$lib/grades/combinations';
+  import { checkPassFail, roundEindcijfer } from '$lib/grades/passfail';
   import { buildSmoothPath, computeChartData, buildTrendPath, type ChartData } from '$lib/charts';
   import { onMount } from 'svelte';
   import { fly } from 'svelte/transition';
   import Button from '$lib/components/Button.svelte';
   import Chip from '$lib/components/Chip.svelte';
-  import type { Grade, Schoolyear } from '$lib/types';
+  import type { Grade, GradePeriod, Schoolyear } from '$lib/types';
 
   type SubjectSummary = {
     name: string;
@@ -21,6 +24,10 @@
     totalPoints: number;
     totalWeight: number;
     validGrades: { value: number; weight: number }[];
+    seAvg: number;
+    seCount: number;
+    seTotalPoints: number;
+    seTotalWeight: number;
     trend?: number;
     trendDirection?: number;
   };
@@ -49,7 +56,7 @@
   let subjectSortMode = $state<'alfabetisch' | 'nieuwste' | 'hoogste' | 'laagste' | 'meeste' | 'trend'>('alfabetisch');
 
   function getSortedSubjects() {
-    let sorted = [...subjects];
+    let sorted = [...displaySubjects];
     switch (subjectSortMode) {
       case 'alfabetisch':
         sorted.sort((a, b) => a.name.localeCompare(b.name));
@@ -254,6 +261,7 @@
         : await cacheGet(`grades_${pid}_${yearId}`, fetcher, 5 * 60 * 1000);
 
       subjects = getSubjects();
+      ensureRemainingTests();
       // Auto-load year progress in the background if not yet loaded
       if (historicalAverages.length === 0) loadHistoricalAverages();
     } catch (e: any) {
@@ -276,6 +284,36 @@
     localStorage.setItem('grade_snapshots', JSON.stringify(snapshots));
   }
 
+  function computeSubjectSummary(name: string, subGrades: Grade[]): SubjectSummary {
+    let totalPoints = 0, totalWeight = 0;
+    const validGrades: { value: number; weight: number }[] = [];
+    let seTotalPoints = 0, seTotalWeight = 0;
+    let seCount = 0;
+    subGrades.filter(g => g.CijferStr && g.TeltMee).forEach(g => {
+      const cs = g.CijferStr;
+      if (!cs) return;
+      const val = parseFloat(cs.replace(',', '.'));
+      const w = typeof g.Weging === 'number' ? g.Weging : 1;
+      if (isNaN(val)) return;
+      totalPoints += val * w;
+      totalWeight += w;
+      validGrades.push({ value: val, weight: w });
+      if (isPtaGrade(g)) {
+        seTotalPoints += val * w;
+        seTotalWeight += w;
+        seCount++;
+      }
+    });
+    const avg = totalWeight > 0 ? totalPoints / totalWeight : 0;
+    const seAvg = seTotalWeight > 0 ? seTotalPoints / seTotalWeight : 0;
+    return {
+      name, abbr: subGrades[0]?.Vak?.Afkorting ?? '',
+      grades: subGrades.sort((a, b) => (b.DatumIngevoerd ?? '').localeCompare(a.DatumIngevoerd ?? '')),
+      validGrades, totalPoints, totalWeight, avg,
+      seAvg, seCount, seTotalPoints, seTotalWeight,
+    };
+  }
+
   function getSubjects(): SubjectSummary[] {
     const subjectMap = new Map<string, Grade[]>();
     for (const grade of grades) {
@@ -284,24 +322,21 @@
       if (!subjectMap.has(key)) subjectMap.set(key, []);
       subjectMap.get(key)!.push(grade);
     }
-    return Array.from(subjectMap.entries()).map(([name, subGrades]) => {
-      let totalPoints = 0, totalWeight = 0;
-      const validGrades: { value: number; weight: number }[] = [];
-      subGrades.filter(g => g.CijferStr && g.TeltMee).forEach(g => {
-        const cs = g.CijferStr;
-        if (!cs) return;
-        const val = parseFloat(cs.replace(',', '.'));
-        const w = typeof g.Weging === 'number' ? g.Weging : 1;
-        if (!isNaN(val)) { totalPoints += val * w; totalWeight += w; validGrades.push({ value: val, weight: w }); }
-      });
-      const avg = totalWeight > 0 ? totalPoints / totalWeight : 0;
-      return {
-        name, abbr: subGrades[0]?.Vak?.Afkorting ?? '',
-        grades: subGrades.sort((a, b) => (b.DatumIngevoerd ?? '').localeCompare(a.DatumIngevoerd ?? '')),
-        validGrades, totalPoints, totalWeight, avg,
-      };
-    }).sort((a, b) => a.name.localeCompare(b.name));
+    return Array.from(subjectMap.entries())
+      .map(([name, subGrades]) => computeSubjectSummary(name, subGrades))
+      .sort((a, b) => a.name.localeCompare(b.name));
   }
+
+  // === Per-period breakdown (cijfer_periode) ===
+  const periods = $derived(getPeriods(grades));
+  let selectedPeriod = $state<GradePeriod | null>(null);
+  const displaySubjects = $derived.by(() => {
+    if (!selectedPeriod) return subjects;
+    const periodId = selectedPeriod.Id;
+    return subjects
+      .map(s => computeSubjectSummary(s.name, filterGradesByPeriod(s.grades, periodId)))
+      .filter(s => s.grades.length > 0);
+  });
 
   async function selectYear(year: Schoolyear) {
     selectedYear = year;
@@ -348,6 +383,7 @@
 
   function viewSnapshot(snapshot: Snapshot) {
     subjects = snapshot.subjects;
+    ensureRemainingTests();
     activeSnapshot = snapshot;
     currentTab = 'vakken';
   }
@@ -477,6 +513,73 @@
 
   let historicalAverages = $state<{ year: string; avg: number; id: number }[]>([]);
   let loadingHistory = $state(false);
+
+  // === Combinatiecijfer (user-configurable subject groups) ===
+  let combinations = $state<GradeCombination[]>(loadCombinations());
+  let combinationName = $state('');
+  let combinationSubjects = $state<string[]>([]);
+  $effect(() => saveCombinations(combinations));
+
+  function toggleCombinationSubject(name: string) {
+    if (combinationSubjects.includes(name)) combinationSubjects = combinationSubjects.filter(n => n !== name);
+    else combinationSubjects = [...combinationSubjects, name];
+  }
+
+  function addCombination() {
+    const name = combinationName.trim();
+    if (!name || combinationSubjects.length < 2) return;
+    combinations = [...combinations, { id: crypto.randomUUID(), name, subjectNames: [...combinationSubjects] }];
+    combinationName = '';
+    combinationSubjects = [];
+  }
+
+  function removeCombination(id: string) {
+    combinations = combinations.filter(c => c.id !== id);
+  }
+
+  function removeCombinationSubject(comboId: string, name: string) {
+    combinations = combinations.map(c => c.id === comboId ? { ...c, subjectNames: c.subjectNames.filter(n => n !== name) } : c).filter(c => c.subjectNames.length > 0);
+  }
+
+  function addCombinationSubject(comboId: string, name: string) {
+    combinations = combinations.map(c => c.id === comboId && !c.subjectNames.includes(name)
+      ? { ...c, subjectNames: [...c.subjectNames, name] }
+      : c);
+  }
+
+  // === Slaag/zak check ===
+  let passfailCE = $state<Record<string, string>>({});
+  let passfailLO = $state<boolean | null>(null);
+
+  const passfailResult = $derived.by(() => {
+    const subjectsForCheck = subjects.filter(s => s.avg > 0).map(s => ({
+      name: s.name,
+      avg: s.avg,
+      ceGrade: passfailCE[s.name] ? parseFloat(passfailCE[s.name].replace(',', '.')) : null,
+    }));
+    return checkPassFail({ subjects: subjectsForCheck, loVoldoende: passfailLO });
+  });
+
+  // === Totaaldoel (multi-subject target solver) ===
+  let overallTarget = $state(6.0);
+  let remainingTestsBySubject = $state<Record<string, number>>({});
+
+  function ensureRemainingTests() {
+    let changed = false;
+    const map = { ...remainingTestsBySubject };
+    for (const s of subjects) {
+      if (s.avg > 0 && !(s.name in map)) { map[s.name] = 0; changed = true; }
+    }
+    if (changed) remainingTestsBySubject = map;
+  }
+
+  const multiTargetResult = $derived.by(() => {
+    return calcMultiSubjectTarget({
+      subjects: subjects.map(s => ({ name: s.name, totalPoints: s.totalPoints, totalWeight: s.totalWeight })),
+      targetOverall: overallTarget,
+      remainingTests: remainingTestsBySubject,
+    });
+  });
 
   async function loadHistoricalAverages(force = false) {
     if (historicalAverages.length > 0 && !force) return; // Already loaded
@@ -707,9 +810,50 @@
           </div>
         {/if}
 
+        <!-- Period breakdown (cijfer_periode) -->
+        {#if periods.length > 0}
+          <div class="flex items-center gap-2 overflow-x-auto no-scrollbar mt-6">
+            <Chip variant="filter" selected={!selectedPeriod} onclick={() => selectedPeriod = null}>Alles</Chip>
+            {#each periods as p}
+              <Chip variant="filter" selected={selectedPeriod?.Id === p.Id} onclick={() => selectedPeriod = p}>{p.Naam}</Chip>
+            {/each}
+          </div>
+        {/if}
+
+        <!-- SE/CE overview for exam-year subjects -->
+        {#if subjects.some(s => s.seCount > 0)}
+          <div class="glass p-5 rounded-3xl border border-primary-500/20 mt-5">
+            <div class="flex items-center gap-2 mb-4">
+              <div class="w-7 h-7 rounded-lg bg-primary-500/15 flex items-center justify-center text-primary-400">
+                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 3h6M10 3v4a2 2 0 0 1-2 2H5l7 12 7-12h-3a2 2 0 0 1-2-2V3"/></svg>
+              </div>
+              <h3 class="text-[11px] font-black text-white uppercase tracking-widest">SE / CE Overzicht</h3>
+              <span class="text-[9px] text-gray-600 font-bold uppercase tracking-wider ml-1">Schoolexamen vs. totaal</span>
+            </div>
+            <div class="space-y-2">
+              {#each subjects.filter(s => s.seCount > 0) as s}
+                <div class="flex items-center justify-between p-3 rounded-xl bg-surface-800/50 border border-white/5">
+                  <span class="text-xs font-bold text-gray-200">{s.name}</span>
+                  <div class="flex items-center gap-4">
+                    <div class="text-right">
+                      <p class="text-sm font-black {isVoldoende(s.seAvg) ? 'text-primary-400' : 'text-red-400'}">{s.seAvg.toFixed($userSettings.decimalPoints)}</p>
+                      <p class="text-[8px] text-gray-600 font-black uppercase tracking-widest">SE</p>
+                    </div>
+                    <div class="text-right">
+                      <p class="text-sm font-black {isVoldoende(s.avg) ? 'text-accent-400' : 'text-red-400'}">{s.avg.toFixed($userSettings.decimalPoints)}</p>
+                      <p class="text-[8px] text-gray-600 font-black uppercase tracking-widest">Totaal</p>
+                    </div>
+                  </div>
+                </div>
+              {/each}
+            </div>
+            <p class="text-[9px] text-gray-600 font-bold mt-3">SE-cijfers zijn onderdeel van het officiële PTA (schoolexamen) en wegen apart mee richting het examencijfer.</p>
+          </div>
+        {/if}
+
         <!-- Subject Filters -->
         <div class="flex items-center justify-between mb-4 mt-6">
-          <h3 class="text-xs font-black text-white uppercase tracking-widest">Alle Vakken</h3>
+          <h3 class="text-xs font-black text-white uppercase tracking-widest">Alle Vakken {selectedPeriod ? `(${selectedPeriod.Naam})` : ''}</h3>
           <select bind:value={subjectSortMode} class="bg-surface-800 border border-white/10 rounded-xl px-3 py-1.5 text-xs text-gray-300 focus:outline-none focus:border-primary-500 font-bold block appearance-none text-right">
             <option value="alfabetisch">Op Alfabet (A-Z)</option>
             <option value="nieuwste">Nieuwste Cijfers</option>
@@ -739,6 +883,9 @@
                     <p class="text-sm font-bold text-gray-200">{subject.name}</p>
                     <div class="flex items-center gap-2 mt-0.5">
                       <p class="text-xs text-gray-600">{subject.grades.length} cijfer{subject.grades.length !== 1 ? 's' : ''}</p>
+                      {#if subject.seCount > 0}
+                        <span class="text-[9px] text-primary-400 bg-primary-500/10 border border-primary-500/20 px-1.5 py-0.5 rounded-md font-black" title="Schoolexamen (PTA)">SE {subject.seAvg.toFixed(1)}</span>
+                      {/if}
                       {#if trendDir !== 0}
                         <span class="text-[9px] {trendDir > 0 ? 'text-emerald-400' : 'text-red-400'} font-black">{trendDir > 0 ? '📈' : '📉'}</span>
                       {/if}
@@ -803,6 +950,20 @@
                       <p class="text-sm font-black text-gray-300">{subStats.stdDev.toFixed(2)}</p>
                     </div>
                   </div>
+
+                  <!-- SE / PTA info -->
+                  {#if subject.seCount > 0}
+                    <div class="bg-surface-900/50 rounded-xl p-3 border border-primary-500/20 flex items-center justify-between">
+                      <div>
+                        <p class="text-[9px] font-black text-primary-400 uppercase tracking-widest">Schoolexamen (PTA)</p>
+                        <p class="text-[9px] text-gray-600 font-bold mt-0.5">{subject.seCount} SE-cijfer{subject.seCount !== 1 ? 's' : ''} telt{subject.seCount === 1 ? '' : 'en'} mee richting het examencijfer</p>
+                      </div>
+                      <div class="text-right">
+                        <p class="text-xl font-black {isVoldoende(subject.seAvg) ? 'text-primary-400' : 'text-red-400'}">{subject.seAvg.toFixed($userSettings.decimalPoints)}</p>
+                        <p class="text-[8px] text-gray-600 font-black uppercase tracking-widest">SE gem.</p>
+                      </div>
+                    </div>
+                  {/if}
 
                   <!-- Grade distribution bars -->
                   {#if chronoVals.length > 0}
@@ -1504,6 +1665,204 @@
                   {/if}
                 {/if}
               {/if}
+            </div>
+          </div>
+
+          <div class="h-px w-3/4 mx-auto bg-gradient-to-r from-transparent via-surface-600 to-transparent"></div>
+
+          <!-- Totaaldoel -->
+          <div>
+            <div class="flex items-center gap-3 mb-4">
+              <div class="w-8 h-8 rounded-xl bg-emerald-500/15 flex items-center justify-center text-emerald-400">
+                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>
+              </div>
+              <h2 class="text-xl font-black text-white italic tracking-tighter flex-1">Totaaldoel</h2>
+            </div>
+
+            <div class="glass p-5 rounded-3xl space-y-4">
+              <p class="text-[10px] text-gray-500 font-bold">Bereken welk cijfer je gemiddeld nodig hebt op alle resterende toetsen om een bepaald totaal-gemiddelde te halen.</p>
+
+              <div>
+                <label for="overallTarget" class="block text-[10px] text-gray-500 font-black uppercase tracking-widest mb-1.5">Doel totaal-gemiddelde</label>
+                <input id="overallTarget" type="number" step="0.1" min="1" max="10" bind:value={overallTarget}
+                  class="w-full bg-surface-800 border border-surface-600/50 rounded-xl px-4 py-2.5 text-sm text-gray-200 focus:outline-none focus:border-primary-500" />
+              </div>
+
+              <div class="space-y-2">
+                {#each subjects.filter(s => s.avg > 0) as s}
+                  <div class="flex items-center justify-between gap-3 p-2.5 rounded-xl bg-surface-800/40 border border-white/5">
+                    <div class="flex items-center gap-2 min-w-0">
+                      <span class="text-xs font-bold text-gray-300 truncate">{s.name}</span>
+                      <span class="text-[9px] text-gray-600 font-bold shrink-0">nu {s.avg.toFixed(1)}</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                      <label class="text-[9px] text-gray-500 font-black uppercase tracking-wider shrink-0" for="rest_{s.name}">Rest.</label>
+                      <input id="rest_{s.name}" type="number" min="0" max="20" step="1" bind:value={remainingTestsBySubject[s.name]}
+                        class="w-14 bg-surface-900 border border-surface-700 rounded-lg px-2 py-1 text-sm text-white font-bold text-center focus:outline-none focus:border-primary-500" />
+                    </div>
+                  </div>
+                {/each}
+              </div>
+
+              <div class="bg-surface-900 border border-white/10 rounded-2xl p-5 text-center">
+                <p class="text-[10px] text-gray-500 font-black uppercase tracking-widest mb-1">Cijfer nodig op resterende toetsen</p>
+                <span class="text-5xl font-black italic tracking-tighter drop-shadow-sm {multiTargetResult.achievable && multiTargetResult.requiredGrade >= $userSettings.insufficientThreshold ? 'text-transparent bg-clip-text bg-gradient-to-br from-white via-emerald-400 to-accent-400' : 'text-red-400'}">
+                  {multiTargetResult.achievable ? multiTargetResult.requiredGrade.toFixed(1) : '—'}
+                </span>
+                {#if !multiTargetResult.achievable}
+                  <p class="text-[10px] text-red-400 font-bold mt-2">{multiTargetResult.note}</p>
+                {/if}
+              </div>
+
+              {#if multiTargetResult.rows.length > 0}
+                <div class="bg-surface-800/40 rounded-2xl p-4 border border-white/5">
+                  <p class="text-[9px] text-gray-500 font-black uppercase tracking-widest mb-2">Verwacht eindgemiddelde per vak</p>
+                  <div class="space-y-1.5">
+                    {#each multiTargetResult.rows as row}
+                      <div class="flex items-center justify-between text-[11px]">
+                        <span class="text-gray-400">{row.name}</span>
+                        <span class="font-black text-gray-200">{row.predictedFinalAvg.toFixed(1)} <span class="text-[9px] text-gray-600 font-bold">({row.currentAvg.toFixed(1)})</span></span>
+                      </div>
+                    {/each}
+                  </div>
+                  <div class="flex items-center justify-between text-[11px] mt-2 pt-2 border-t border-white/10">
+                    <span class="text-gray-400 font-black uppercase tracking-widest text-[9px]">Totaal</span>
+                    <span class="font-black {multiTargetResult.overallAfter >= overallTarget ? 'text-emerald-400' : 'text-red-400'}">{multiTargetResult.overallAfter.toFixed(2)}</span>
+                  </div>
+                </div>
+              {/if}
+            </div>
+          </div>
+
+          <div class="h-px w-3/4 mx-auto bg-gradient-to-r from-transparent via-surface-600 to-transparent"></div>
+
+          <!-- Combinatiecijfer -->
+          <div>
+            <div class="flex items-center gap-3 mb-4">
+              <div class="w-8 h-8 rounded-xl bg-purple-500/15 flex items-center justify-center text-purple-400">
+                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 11V7a4 4 0 0 0-8 0v4"/><rect width="16" height="10" x="4" y="11" rx="2"/></svg>
+              </div>
+              <h2 class="text-xl font-black text-white italic tracking-tighter flex-1">Combinatiecijfer</h2>
+            </div>
+
+            <div class="glass p-5 rounded-3xl space-y-4">
+              <p class="text-[10px] text-gray-500 font-bold">Groeper vakken (bijv. maatschappijleer, CKV en profielwerkstuk) tot één gecombineerd cijfer — het gemiddelde van de gekozen vakken telt als één vak mee.</p>
+
+              {#if combinations.length === 0}
+                <div class="text-center py-8 border border-dashed border-white/10 rounded-2xl">
+                  <p class="text-sm text-gray-500 font-bold">Nog geen combinaties</p>
+                  <p class="text-[10px] text-gray-600 font-bold mt-1">Maak hieronder je eerste combinatie.</p>
+                </div>
+              {/if}
+
+              {#each combinations as combo}
+                {@const result = calcCombinationAverage(subjects, combo)}
+                <div class="bg-surface-800/50 border border-white/5 rounded-2xl p-4">
+                  <div class="flex items-center justify-between mb-3">
+                    <div>
+                      <p class="text-sm font-black text-white">{combo.name}</p>
+                      <p class="text-[9px] text-gray-600 font-bold">{combo.subjectNames.length} vak{combo.subjectNames.length !== 1 ? 'ken' : ''}</p>
+                    </div>
+                    <div class="flex items-center gap-2">
+                      <span class="text-2xl font-black italic {result ? (result.avg >= $userSettings.insufficientThreshold ? 'text-purple-400' : 'text-red-400') : 'text-gray-600'}">{result ? result.avg.toFixed(1) : '—'}</span>
+                      <button onclick={() => removeCombination(combo.id)} aria-label="Combinatie verwijderen" class="p-2 text-red-500 hover:bg-red-500/10 rounded-lg transition-colors">
+                        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M3 6h18m-2 0v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6m3 0V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+                      </button>
+                    </div>
+                  </div>
+                  <div class="flex flex-wrap gap-1.5 mb-3">
+                    {#each combo.subjectNames as name}
+                      <span class="inline-flex items-center gap-1 text-[10px] font-bold text-gray-300 bg-surface-700 px-2 py-1 rounded-lg">
+                        {name}
+                        <button onclick={() => removeCombinationSubject(combo.id, name)} aria-label="Vak verwijderen uit combinatie" class="text-gray-500 hover:text-red-400">×</button>
+                      </span>
+                    {/each}
+                  </div>
+                  <select
+                    onchange={(e) => {
+                      const v = (e.currentTarget as HTMLSelectElement).value;
+                      if (v) { addCombinationSubject(combo.id, v); (e.currentTarget as HTMLSelectElement).value = ''; }
+                    }}
+                    class="w-full bg-surface-900 border border-surface-700 rounded-lg px-2 py-1.5 text-xs text-gray-300 focus:outline-none focus:border-primary-500"
+                    aria-label="Vak toevoegen aan combinatie"
+                  >
+                    <option value="">Voeg vak toe...</option>
+                    {#each subjects.filter(s => s.avg > 0 && !combo.subjectNames.includes(s.name)) as s}
+                      <option value={s.name}>{s.name} ({s.avg.toFixed(1)})</option>
+                    {/each}
+                  </select>
+                  {#if result?.missing.length}
+                    <p class="text-[9px] text-amber-400 font-bold mt-2">Nog geen gemiddelde: {result.missing.join(', ')}</p>
+                  {/if}
+                </div>
+              {/each}
+
+              <div class="h-px bg-surface-700/40"></div>
+
+              <p class="text-[9px] text-gray-500 font-black uppercase tracking-widest mb-2">Nieuwe combinatie</p>
+              <input type="text" placeholder="Naam (bijv. Maatschappijvakken)" bind:value={combinationName}
+                class="w-full bg-surface-800 border border-surface-600/50 rounded-xl px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-primary-500" />
+              <div class="flex flex-wrap gap-1.5">
+                {#each subjects.filter(s => s.avg > 0) as s}
+                  <Chip variant="filter" selected={combinationSubjects.includes(s.name)} onclick={() => toggleCombinationSubject(s.name)}>{s.name}</Chip>
+                {/each}
+              </div>
+              <Button variant="filled" onclick={addCombination} disabled={!combinationName.trim() || combinationSubjects.length < 2} class="w-full">
+                Combinatie toevoegen ({combinationSubjects.length})
+              </Button>
+            </div>
+          </div>
+
+          <div class="h-px w-3/4 mx-auto bg-gradient-to-r from-transparent via-surface-600 to-transparent"></div>
+
+          <!-- Slaag/zak check -->
+          <div>
+            <div class="flex items-center gap-3 mb-4">
+              <div class="w-8 h-8 rounded-xl bg-red-500/15 flex items-center justify-center text-red-400">
+                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="10"/></svg>
+              </div>
+              <h2 class="text-xl font-black text-white italic tracking-tighter flex-1">Slagen/Zak Check</h2>
+            </div>
+
+            <div class="glass p-5 rounded-3xl space-y-4">
+              <div class="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-3">
+                <p class="text-[10px] text-amber-400 font-bold">Dit is een schatting op basis van je ingevoerde cijfers en de actuele landelijke slaag-zakregeling — geen officiële uitslag. De school bepaalt definitief of je geslaagd bent.</p>
+              </div>
+
+              <div class="space-y-2">
+                {#each passfailResult.checks as check}
+                  <div class="flex items-start gap-3 p-3 rounded-xl bg-surface-800/50 border border-white/5">
+                    <span class="mt-0.5 shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black {check.status === 'ok' ? 'bg-emerald-500/20 text-emerald-400' : check.status === 'fail' ? 'bg-red-500/20 text-red-400' : 'bg-gray-600/30 text-gray-500'}">
+                      {check.status === 'ok' ? '✓' : check.status === 'fail' ? '✗' : '?'}
+                    </span>
+                    <div class="min-w-0">
+                      <p class="text-xs font-black text-gray-200 uppercase tracking-wider">{check.label}</p>
+                      <p class="text-[11px] text-gray-500 font-medium mt-0.5">{check.detail}</p>
+                    </div>
+                  </div>
+                {/each}
+              </div>
+
+              <div class="h-px bg-surface-700/40"></div>
+
+              <p class="text-[9px] text-gray-500 font-black uppercase tracking-widest">Centraal-examencijfers (optioneel)</p>
+              <div class="space-y-2">
+                {#each subjects.filter(s => s.avg > 0) as s}
+                  <div class="flex items-center justify-between gap-3">
+                    <div class="flex items-center gap-2 min-w-0">
+                      <span class="text-xs font-bold text-gray-300 truncate">{s.name}</span>
+                      <span class="text-[9px] text-gray-600 font-bold shrink-0">eindcijfer ≈ {roundEindcijfer(s.avg)}</span>
+                    </div>
+                    <input type="number" step="0.1" min="1" max="10" placeholder="CE" bind:value={passfailCE[s.name]}
+                      class="w-16 bg-surface-900 border border-surface-700 rounded-lg px-2 py-1 text-sm text-white font-bold text-center focus:outline-none focus:border-primary-500" aria-label="Centraal-examencijfer {s.name}" />
+                  </div>
+                {/each}
+              </div>
+
+              <label class="flex items-center gap-2 text-xs text-gray-300 font-bold cursor-pointer">
+                <input type="checkbox" checked={passfailLO === true} onchange={(e) => passfailLO = (e.currentTarget as HTMLInputElement).checked} class="accent-primary-500 rounded" />
+                LO (lichamelijke opvoeding) afgesloten met voldoende/goed
+              </label>
             </div>
           </div>
 
