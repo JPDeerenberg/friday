@@ -1,8 +1,22 @@
+import groovy.json.JsonSlurper
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("rust")
 }
+
+fun getVersionInfo(): Pair<Int, String> {
+    val packageJson = file("../../../../package.json")
+    val json = JsonSlurper().parse(packageJson) as Map<*, *>
+    val versionName = json["version"] as String
+    val parts = versionName.split(".").map { it.toInt() }
+    require(parts.size == 3) { "package.json version must be in major.minor.patch format, got: $versionName" }
+    val versionCode = parts[0] * 10000 + parts[1] * 100 + parts[2]
+    return versionCode to versionName
+}
+
+val (appVersionCode, appVersionName) = getVersionInfo()
 
 android {
     compileSdk = 36
@@ -12,8 +26,8 @@ android {
         applicationId = "com.joris.friday"
         minSdk = 24
         targetSdk = 36
-        versionCode = 20000
-        versionName = "2.1.0"
+        versionCode = appVersionCode
+        versionName = appVersionName
     }
     buildTypes {
         getByName("debug") {

@@ -1,10 +1,5 @@
 name: Release
 on:
-  push:
-    branches:
-      - main
-    tags:
-      - 'v*'
   workflow_dispatch:
 
 concurrency:
@@ -19,12 +14,17 @@ jobs:
     outputs:
       release_id: ${{ steps.create_release.outputs.id }}
       app_version: ${{ steps.get_version.outputs.VERSION }}
+      app_version_code: ${{ steps.get_version.outputs.VERSION_CODE }}
     steps:
       - uses: actions/checkout@v4
 
       - name: Get App Version
         id: get_version
-        run: echo "VERSION=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          VERSION_CODE=$(node -p "const [major, minor, patch] = require('./package.json').version.split('.').map(Number); major * 10000 + minor * 100 + patch")
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "VERSION_CODE=$VERSION_CODE" >> $GITHUB_OUTPUT
 
       - name: Create Release
         id: create_release
@@ -139,6 +139,16 @@ jobs:
           keyStorePassword: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           keyPassword: ${{ secrets.ANDROID_KEY_PASSWORD }}
 
+      - name: Rename Signed APK with Version Code
+        if: ${{ matrix.settings.is-android }}
+        id: rename_apk
+        run: |
+          version_code=${{ needs.create-release.outputs.app_version_code }}
+          old_file="${{ steps.sign_app.outputs.signedReleaseFile }}"
+          new_file="$(dirname "$old_file")/friday_${version_code}.apk"
+          cp "$old_file" "$new_file"
+          echo "apk_file=$new_file" >> "$GITHUB_OUTPUT"
+
       - name: Upload Android Release (Android Only)
         if: ${{ matrix.settings.is-android }}
         uses: softprops/action-gh-release@v2
@@ -146,7 +156,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tag_name: v${{ needs.create-release.outputs.app_version }}
-          files: ${{ steps.sign_app.outputs.signedReleaseFile }}
+          files: ${{ steps.rename_apk.outputs.apk_file }}
 
       - name: Checkout GitHub Pages (For F-Droid History)
         if: ${{ matrix.settings.is-android }}
@@ -176,13 +186,13 @@ jobs:
           mkdir -p gh-pages/fdroid/repo
           
           # Copy signed APK(s) into the F-Droid repo safely
-          if [ -z "${{ steps.sign_app.outputs.signedReleaseFile }}" ]; then
-            echo "ERROR: sign_app output 'signedReleaseFile' is empty. Build failed or path changed."
+          if [ -z "${{ steps.rename_apk.outputs.apk_file }}" ]; then
+            echo "ERROR: rename_apk output 'apk_file' is empty. Build failed or path changed."
             ls -la src-tauri/gen/android/app/build/outputs/apk/arm64/release || true
             exit 1
           fi
 
-          for f in ${{ steps.sign_app.outputs.signedReleaseFile }}; do
+          for f in ${{ steps.rename_apk.outputs.apk_file }}; do
             if [ ! -f "$f" ]; then
               echo "ERROR: signed file not found: $f"
               ls -la "$(dirname "$f")" || true
@@ -226,9 +236,37 @@ jobs:
             fi
           done
           
-          # Build the F-Droid repository metadata explicitly
-          fdroid update --create-metadata
-          
+          # Fix corrupted CurrentVersionCode in metadata (e.g. Integer.MAX_VALUE)
+          # so fdroid update recalculates it from the actual APKs.
+          python3 - <<'PY'
+          import re
+          metadata_file = "metadata/com.joris.friday.yml"
+          try:
+              with open(metadata_file, "r") as f:
+                  content = f.read()
+
+              def clean_current_version_code(match):
+                  value = int(match.group(1))
+                  if value >= 2_000_000_000:
+                      return ""
+                  return match.group(0)
+
+              content = re.sub(
+                  r"CurrentVersionCode:\s*(\d+)\s*\n?",
+                  clean_current_version_code,
+                  content,
+              )
+              with open(metadata_file, "w") as f:
+                  f.write(content)
+              print("Cleaned up corrupted CurrentVersionCode in metadata")
+          except FileNotFoundError:
+              print("Metadata file not found, fdroid update --create-metadata will create it")
+          PY
+
+          # Build the F-Droid repository metadata explicitly.
+          # --use-date-from-apk keeps lastUpdated tied to the APK build date instead of the runner's current time.
+          fdroid update --create-metadata --use-date-from-apk
+
           # Clean up the git directory
           rm -rf ../.git || true
 
