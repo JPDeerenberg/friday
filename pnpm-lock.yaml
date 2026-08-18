@@ -9,7 +9,7 @@ importers:
   .:
     dependencies:
       '@tauri-apps/api':
-        specifier: ^2
+        specifier: ^2.11.1
         version: 2.11.1
       '@tauri-apps/plugin-deep-link':
         specifier: ^2.4.7
@@ -46,14 +46,14 @@ importers:
         version: 8.0.3
       svelte-tiptap:
         specifier: ^3.0.1
-        version: 3.0.1(@floating-ui/dom@1.7.6)(@tiptap/core@3.26.1(@tiptap/pm@3.26.1))(@tiptap/extension-bubble-menu@3.26.1(@tiptap/core@3.26.1(@tiptap/pm@3.26.1))(@tiptap/pm@3.26.1))(@tiptap/exte[...]
+        version: 3.0.1(@floating-ui/dom@1.7.6)(@tiptap/core@3.26.1(@tiptap/pm@3.26.1))(@tiptap/extension-bubble-menu@3.26.1(@tiptap/core@3.26.1(@tiptap/pm@3.26.1))(@tiptap/pm@3.26.1))(@tiptap/extension-heading@3.26.1(@tiptap/core@3.26.1(@tiptap/pm@3.26.1))(@tiptap/pm@3.26.1))(@tiptap/extension-text-align@3.26.1(@tiptap/core@3.26.1(@tiptap/pm@3.26.1))(@tiptap/pm@3.26.1))(@tiptap/pm@3.26.1)
     devDependencies:
       '@sveltejs/adapter-static':
         specifier: ^3.0.0
-        version: 3.0.10(@sveltejs/kit@2.55.0(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.55.0)(vite@6.4.3(@types/node@25.5.2)(jiti@2.6.1)(lightningcss@1.32.0)))(svelte@5.55.0)(typescript@5.6.3)(vi[...]
+        version: 3.0.10(@sveltejs/kit@2.55.0(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.55.0)(vite@6.4.3(@types/node@25.5.2)(jiti@2.6.1)(lightningcss@1.32.0)))(svelte@5.55.0)(typescript@5.6.3)(vite@6.4.3(@types/node@25.5.2)(jiti@2.6.1)(lightningcss@1.32.0)))
       '@sveltejs/kit':
         specifier: ^2.0.0
-        version: 2.55.0(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.55.0)(vite@6.4.3(@types/node@25.5.2)(jiti@2.6.1)(lightningcss@1.32.0)))(svelte@5.55.0)(typescript@5.6.3)(vite@6.4.3(@types/node@[...]
+        version: 2.55.0(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.55.0)(vite@6.4.3(@types/node@25.5.2)(jiti@2.6.1)(lightningcss@1.32.0)))(svelte@5.55.0)(typescript@5.6.3)(vite@6.4.3(@types/node@25.5.2)(jiti@2.6.1)(lightningcss@1.32.0)))
       '@sveltejs/vite-plugin-svelte':
         specifier: ^5.0.0
         version: 5.1.1(svelte@5.55.0)(vite@6.4.3(@types/node@25.5.2)(jiti@2.6.1)(lightningcss@1.32.0))
@@ -64,7 +64,7 @@ importers:
         specifier: ^4.2.2
         version: 4.2.2(vite@6.4.3(@types/node@25.5.2)(jiti@2.6.1)(lightningcss@1.32.0))
       '@tauri-apps/cli':
-        specifier: ^2
+        specifier: ^2.11.1
         version: 2.11.1
       '@types/node':
         specifier: ^25.5.2
@@ -89,6 +89,14 @@ importers:
         version: 6.4.3(@types/node@25.5.2)(jiti@2.6.1)(lightningcss@1.32.0)
 
 packages:
+
+  '@aashutoshrathi/word-wrap@1.2.6':
+    resolution: {integrity: sha512-1Yjs2SvM8TflER/OD3cOjIzASOvCNqtpSPLEo7icUpGkjNecvvyK3caNx6ItdyxWBvPMw9RPLfJQXwcivilization=}
+    engines: {node: '>=0.10.0'}
+
+  '@alloc/quick-lru@5.2.0':
+    resolution: {integrity: sha512-UQkfiuuhKI2AlkquDskij2Id2KHJC4uvkyQYR8vYSZ15EqRp3YTVRCvkOwBz1g8rkcsKkPUJGcvHd1HS8K6Fg==}
+    engines: {node: '>=6.0.0'}
 
   '@esbuild/aix-ppc64@0.25.12':
     resolution: {integrity: sha512-oTXEIha4SsuXdTA4Iyskj0kpdx2yVXdhd75c2v3xGrHFfVMsbhTPZU/nMPL4sWKo4pBHm3aucLaqGlF696dTyQ==}
@@ -182,5 +190,188 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  # ... rest of packages continue below (only showing relevant sections above for brevity)
-  # This is a large lockfile. Would you like me to generate the complete file differently?
+  '@tauri-apps/plugin-deep-link@2.4.7':
+    resolution: {integrity: sha512-pVR8RhiUddAhKTNhU7rV1jIKXdN1lsKFplqVGwQyILG1u+9HL6fhKyRAVHCHYSfTCEKVSVg1Cl6GKY2xCGfDaw==}
+
+  '@tauri-apps/plugin-dialog@2.6.0':
+    resolution: {integrity: sha512-gKkOOgqVJkSVMTnJqKbp5O8J8D7jqhKIjZvhvZQj5x8gvyJLSCjPgEBmK+H/KWYNr7kExVb9oJVY7VqSdMRRuQ==}
+
+  '@tauri-apps/plugin-opener@2.5.3':
+    resolution: {integrity: sha512-mH6PjZJHPfL7EWzBEBj0oVFAXQXGu0gILJMnvbFG9KqmLMxd7vHSGPVDnbL4/z0uIoLQWmMHQpzKUHn8gKNQ==}
+
+  '@tiptap/core@3.26.1':
+    resolution: {integrity: sha512-UQ5QYQzrR5fDcLuQ8YdlUwKnLTkMrTKZQh8nN9d1nO+m1rPBcBiCLVfvMKqCYz8jOo7VXh4pzFfYcHADh4oNhQ==}
+    peerDependencies:
+      '@tiptap/pm': '*'
+
+  '@tiptap/extension-bubble-menu@3.26.1':
+    resolution: {integrity: sha512-Oi6fnG6v5P2+8h8iVnQBYG+ZXqK/2Cc6lqQxWknq/HkYJJ3T5qArFI+2p5C6rBEyOTj/xEHPh0Z3ZOVW8h7yg==}
+    peerDependencies:
+      '@tiptap/core': '*'
+      '@tiptap/pm': '*'
+
+  '@tiptap/extension-heading@3.26.1':
+    resolution: {integrity: sha512-wYKLMJKvCPOagUKUBLCLYhSqHcJ1IBjzDzjj8w1aWvU3xfQrXVfZFb8pqcqkLHJBMvT6OHLCjjZLKdNdFrPq2Q==}
+    peerDependencies:
+      '@tiptap/core': '*'
+      '@tiptap/pm': '*'
+
+  '@tiptap/extension-link@3.26.1':
+    resolution: {integrity: sha512-+5oxfJKvfMIvL1Grs9PHJLdR1XAJvRLqF6S3k1H1ZMaHfhCjfRXKFfR5f4MeCqvJjQQeS0xrTtBbEVNTJrEgg==}
+    peerDependencies:
+      '@tiptap/core': '*'
+      '@tiptap/pm': '*'
+
+  '@tiptap/extension-placeholder@3.26.1':
+    resolution: {integrity: sha512-cT9U9+ztNUHVqr2wHHJWvwlhOUwCPKFaRm7kRBvLp6OyGZWDpBfNYJMPL9N1nBfKQ7HWI5UaA1VJakF8y+MZEg==}
+    peerDependencies:
+      '@tiptap/core': '*'
+      '@tiptap/extensions': '*'
+      '@tiptap/pm': '*'
+
+  '@tiptap/extension-text-align@3.26.1':
+    resolution: {integrity: sha512-1W+wLFZPQhgXOCfJPfVddLMfVCPO8s9LjMl/aR4sQIVoKxCy8S6LfHHB2FRjJGS2oVVqO6+MIK5B2tTFWVpzow==}
+    peerDependencies:
+      '@tiptap/core': '*'
+      '@tiptap/pm': '*'
+
+  '@tiptap/extension-underline@3.26.1':
+    resolution: {integrity: sha512-VhiavpSEEjKSl+1phz7KL1MQJR0Qw7HLJNlUQVAqYHLmDVVBbPBJQWkLLlLnBWzG1fmCnOxDHlkFv7gKBfVFg==}
+    peerDependencies:
+      '@tiptap/core': '*'
+      '@tiptap/pm': '*'
+
+  '@tiptap/extension-text-style@1.0.0':
+    resolution: {integrity: sha512-Q24MYLrTKxaEwWKyKPqz3m0ypDjpL/zI08m9y/QoF7n/5kVE7Z4cZbBMvY4+mW3eFvvJ0l9B3ky+nnEIhfp3pA==}
+    peerDependencies:
+      '@tiptap/core': '*'
+
+  '@tiptap/pm@3.26.1':
+    resolution: {integrity: sha512-l7tLHmPvLlNRFo4iBaKwGVwxQrJ7hN2Z7V6OQK4F0+8CWEGlW+S/TmZ1t1FqAL6g16tGI4W7IqRu0wkMlTCVSg==}
+
+  '@tiptap/starter-kit@3.26.1':
+    resolution: {integrity: sha512-eFVJFRhPBslrYKy5z4K+9nAKDfK1c0x0+jt+wvJlxfzNzNW7XKdRQdGLKvZ8oYFMhPMRKNjM/2fMHI3aqPPBQ==}
+    peerDependencies:
+      '@tiptap/core': '*'
+      '@tiptap/pm': '*'
+
+  '@tiptap/extension-blockquote@3.26.1':
+    resolution: {integrity: sha512-jh3cJY1zFUMZKpzCCjz4/VBkPkCbOVsJ2VyFW7b5N9qA3hhTxpBPgFI2kVDU3mfkPqXa3d8eCvS6w7LR9JXJQ==}
+    peerDependencies:
+      '@tiptap/core': '*'
+      '@tiptap/pm': '*'
+
+  '@tiptap/extension-bold@3.26.1':
+    resolution: {integrity: sha512-zcfKvPSFfUo1XNwJN3OIFjDwI7Hqp6rvq0+Jxyu5bPcDemL3T0vHWz7z5KKtCnlR5JH9hvGxGTkVCJ8Ss0YGA==}
+    peerDependencies:
+      '@tiptap/core': '*'
+
+  '@tiptap/extension-ordered-list@3.26.1':
+    resolution: {integrity: sha512-VxT1d5B1YR2njVg0vLBODIzpvJGJ/VXGQZ9T4cHBQVxFAEAVQj2r1FvG6hK5VfMXHR8jJKDMDZWwBtN4rKBKQ==}
+    peerDependencies:
+      '@tiptap/core': '*'
+
+  '@tiptap/extension-bullet-list@3.26.1':
+    resolution: {integrity: sha512-KkxWS8H7vR4P0eSRFHMQn7MvwbkC8N3TYvNVk0nUhE9q0s6BrJKxLNYKBjJZfHE3B4T9xN0FW0+dLfLTJdnw==}
+    peerDependencies:
+      '@tiptap/core': '*'
+
+  '@tiptap/extension-code-block@3.26.1':
+    resolution: {integrity: sha512-UJZ+/1aMNmJSmN3Z9asDJ4fIl0TwVnPGPXBpQO/oc0qBQqQ42TtjqrH2LCxNGtYDFHZfgbkJJ3M8bPU4b6Yj9A==}
+    peerDependencies:
+      '@tiptap/core': '*'
+
+  '@tiptap/extension-code@3.26.1':
+    resolution: {integrity: sha512-YIAP9mh5MKFSVazI5NSTG9n9n7LAhAKM3yEzpZ4FJvTbMfJr9F9xL2+dPFKL5YPHMpqMD4mLnFVfC8rKFJW0g==}
+    peerDependencies:
+      '@tiptap/core': '*'
+
+  '@tiptap/extension-hard-break@3.26.1':
+    resolution: {integrity: sha512-YqKYvRJ7MIxyFRVF++PEumxXD7KmhECkOt4cH7Qs4eMrELs2AGULbEPmKdGXLvCDpC1L3LBK9Eikfz5f/JMrA==}
+    peerDependencies:
+      '@tiptap/core': '*'
+
+  '@tiptap/extension-horizontal-rule@3.26.1':
+    resolution: {integrity: sha512-qb8Z9gVcGgXKlGrKdaqQBGpPqJ8bJ7LN1u7gu2R+LbX8xnHCEg1x7C5fWgXiVVLEvHvKvVQKzqG7iJnMkbHPQ==}
+    peerDependencies:
+      '@tiptap/core': '*'
+
+  '@tiptap/extension-italic@3.26.1':
+    resolution: {integrity: sha512-V6xWRXOA5rXLpfQFpKHZRl0VVkKXl7NWMR5wvQnF7Dz6VTq1H5JVkp0VmSzL+B7Zs0YHHfRJAhCvAzFgI3VQ==}
+    peerDependencies:
+      '@tiptap/core': '*'
+
+  '@tiptap/extension-list-item@3.26.1':
+    resolution: {integrity: sha512-oKRU9jLdYAJOmcMB2C1LzaXrNTJPRQV9mVyHpLoE0tTIZhEWNPqL5x7SIgQmXqJnXoKhFv8sKvWgPAhK8zV3VQ==}
+    peerDependencies:
+      '@tiptap/core': '*'
+
+  '@tiptap/extension-strike@3.26.1':
+    resolution: {integrity: sha512-QqvjNLsIa+1Tn1MnfDhNm1fCXQpHyEKZLLz3RTb9gRYXQvVU7h6/1XKqSz6LN/l3V5o5q7L1ePaG/JkVnfk7Q==}
+    peerDependencies:
+      '@tiptap/core': '*'
+
+  '@tiptap/extension-history@3.26.1':
+    resolution: {integrity: sha512-kFI8tNi7f1cE3z6aJnvF4VQpW6e6Dw8dQUSPj1DfPvPLSjfvC8K9hVwXqKWMnxVmOiPmQGsJlDO/wPMl2TnzQ==}
+    peerDependencies:
+      '@tiptap/core': '*'
+
+  '@tiptap/pm@3.26.1':
+    resolution: {integrity: sha512-l7tLHmPvLlNRFo4iBaKwGVwxQrJ7hN2Z7V6OQK4F0+8CWEGlW+S/TmZ1t1FqAL6g16tGI4W7IqRu0wkMlTCVSg==}
+
+  '@tiptap/extension-extensions@3.26.1':
+    resolution: {integrity: sha512-YFuJJN6PwOVrXy4T0T4fvT/oGEU0rK9l5QYPWVFpYEWslX6UxB7aqRQa3p1zQdoEbVu8Z7GQ0NhUmM4k6a0Ag==}
+    peerDependencies:
+      '@tiptap/core': '*'
+      '@tiptap/pm': '*'
+
+  dompurify@3.4.13:
+    resolution: {integrity: sha512-vHF6bxPuVFrPyJKNZV1h3YDh6BxqaA4CjKmI+XOY3Z3qIQnFVevVvXSqVlsM3VpvIuQS14fJPqvUmFdPyBTGA==}
+
+  idb@8.0.3:
+    resolution: {integrity: sha512-IIxJ9ckQkXfRkbVe4vr9AOhvbL/cCCpNe/ib4kRYyX4BPVEMm7k4SU/MQEYb7lxnqE4Yq/O7lSHYe0fRBdL7Qg==}
+
+  svelte-tiptap@3.0.1:
+    resolution: {integrity: sha512-5xVTMPEP0YrYzRc8d6T+K4NzXjb+7C9DLN/r5eTI6+V3j4LnKRKq8NyM3Y2R8n8lJ9nHfEh5gkNE6HfgVZfew==}
+    peerDependencies:
+      '@tiptap/core': '*'
+      '@tiptap/extension-bubble-menu': '*'
+      '@tiptap/extension-heading': '*'
+      '@tiptap/extension-text-align': '*'
+      '@tiptap/pm': '*'
+
+  '@sveltejs/adapter-static@3.0.10':
+    resolution: {integrity: sha512-xJITKmpMbdCOvLNhKZCgZo1MZCJkGPuEMSY7k8LlYtXd9m2UvP6LQVZ7xSKdNTz7lDKARnJ7UYbvJTYDBjzxA==}
+
+  '@sveltejs/kit@2.55.0':
+    resolution: {integrity: sha512-A7H8u7PxHG+QBCu7JmxsC9j3S3nkKWbHBpP/5tEk6T8LCVV8qEtqQ3j7AV9J/YV5DnMVr2lBNQWaAaZfXA0g==}
+
+  '@sveltejs/vite-plugin-svelte@5.1.1':
+    resolution: {integrity: sha512-0qrNgImfFYjYP3H0mVjJe2N6YBLF0WQjYqXfj2HK/vKWvf5OAqDHWr5QfPHmv7Av8Q6aM6gH0Y5hJlQN3YYmg==}
+
+  '@tailwindcss/cli@4.2.2':
+    resolution: {integrity: sha512-kH7+VoNa5bQqOJJWlHGvXpuQ8/2S9TGXaPDSp+K1VjKY6Aq8g1Hu3YwSv0bZGd+pUKj9L2UHbEhfUzGdvVLWA==}
+
+  '@tailwindcss/vite@4.2.2':
+    resolution: {integrity: sha512-2s0L+0n0Y0qFB6zJlFZmNf9w6zEqIRJgKZpnPbBi6xNkE1K8y7R3PNSW8I3k5fXR8PeyjZKmDg2q7EWs3oJcQ==}
+
+  '@types/node@25.5.2':
+    resolution: {integrity: sha512-bnYXWAzEfjB/zDy2Qo5CX7XQKJJjjpN7K7Fpy/9aBHT8eQiWvj3gHrVUOgBcaP8EchZdELBg3eGGXYHmCXLA==}
+
+  autoprefixer@10.4.27':
+    resolution: {integrity: sha512-2UO4d8r3vfL1qZfT1LqK/yWfLQ2C/hXL9p+pL0bEi8XVPD9ZdOLKd7p5lVnI0V0IXPykN8yBE8b9Yw/QFMvhQ==}
+
+  svelte@5.55.0:
+    resolution: {integrity: sha512-iJ/Ry0u2C7KzPLKPcwf8u7NYG5Lhb0r1VsL/MgJEDqvC7UD5K0bOjvyuWA8dQWJVvx5M5e9V5h0h1FDfaYqxQ==}
+
+  svelte-check@4.4.5:
+    resolution: {integrity: sha512-p0/xDtI1L3nLLxqQAME8DshKjdKKG5ypPbFCMoGPDvkPqHR2S4XzWsX3F8E7zOPEPtNLMVZlKNRQPn7aVd8Nw==}
+
+  tailwindcss@4.2.2:
+    resolution: {integrity: sha512-xbX2iG1bgA8r7VJx2Y8VV8hhVsKxCKW0GGQVnWPPwkfU+pq0dEJGNDpGCiYvH1YZqBJPNkVr2kXQj2E2v1+w==}
+
+  typescript@5.6.3:
+    resolution: {integrity: sha512-hjxF1Fg9Sp+eTmvIzZJPGy1DQvkE7VYNBc9g7E8OxH+3QM3bVfKf5VBcNgvMQi/BqIh9QU7NZCbUDJpqn7oCQ==}
+
+  vite@6.4.3:
+    resolution: {integrity: sha512-iFxlXDZWZVajEjhJyOJRMqgxn/L9w4qPqz1XYB1iKTNhHr5q+A9+vN4uyFFkgvkfXEpSEgKaHDNjXBh6sRPoQ==}
