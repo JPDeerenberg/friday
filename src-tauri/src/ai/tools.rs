@@ -1,4 +1,4 @@
-use rand::Rng;
+use rand::RngExt;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -397,7 +397,7 @@ pub fn generate_action_id() -> String {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_nanos() as u64)
         .unwrap_or(0);
-    let random: u64 = rand::thread_rng().gen();
+    let random: u64 = rand::rng().random();
     format!("act-{:016x}-{:016x}", nanos, random)
 }
 

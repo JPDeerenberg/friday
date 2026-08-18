@@ -1,22 +1,22 @@
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
-use rand::Rng;
+use rand::RngExt;
 use sha2::{Digest, Sha256};
 
 /// Generate a random alphanumeric string of the given length.
 fn generate_random_string(length: usize) -> String {
     let chars: &[u8] = b"0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     (0..length)
-        .map(|_| chars[rng.gen_range(0..chars.len())] as char)
+        .map(|_| chars[rng.random_range(0..chars.len())] as char)
         .collect()
 }
 
 /// Generate a random hex string of the given length.
 fn generate_random_hex(length: usize) -> String {
     let chars: &[u8] = b"abcdef0123456789";
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     (0..length)
-        .map(|_| chars[rng.gen_range(0..chars.len())] as char)
+        .map(|_| chars[rng.random_range(0..chars.len())] as char)
         .collect()
 }
 
