@@ -32,3 +32,4 @@ yarn-error.log*
 pnpm-store/
 .pnpm-store/
 .aider*
+src-tauri/gen/android/buildSrc/src/main/java/com/joris/friday/kotlin/BuildTask.kt
