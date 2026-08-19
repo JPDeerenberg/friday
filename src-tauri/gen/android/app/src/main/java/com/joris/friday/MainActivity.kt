@@ -24,9 +24,8 @@ class MainActivity : TauriActivity() {
     private var hasPromptedPermissions = false
     private var hasPromptedBatteryOpt = false
 
-    // Initialize ndk-context so the Rust keyring store can access the app context.
-    // tao's glue usually does this on Activity creation, but behavior varies across
-    // Tauri versions — ensure it explicitly (guarded inside Rust, safe to repeat).
+    // tao/Tauri initializes ndk-context asynchronously, so this intentionally races
+    // that setup. Rust must make this call idempotent and non-panicking.
     private external fun initNdkContext(context: Context)
 
     companion object {

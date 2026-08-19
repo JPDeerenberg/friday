@@ -18,6 +18,9 @@ use std::sync::{Mutex, OnceLock};
 static SYNC_RUNTIME: OnceLock<Mutex<Runtime>> = OnceLock::new();
 
 #[cfg(target_os = "android")]
+static NDK_CONTEXT_INITIALIZED: OnceLock<()> = OnceLock::new();
+
+#[cfg(target_os = "android")]
 fn sync_runtime() -> &'static Mutex<Runtime> {
     SYNC_RUNTIME.get_or_init(|| {
         Mutex::new(
@@ -33,27 +36,34 @@ fn sync_runtime() -> &'static Mutex<Runtime> {
 fn ensure_ndk_context<'local>(
     env: &mut JNIEnv<'local>,
     context: jni::objects::JObject<'local>,
+    initialize_if_missing: bool,
 ) {
     use std::ffi::c_void;
 
-    let already_initialized = std::panic::catch_unwind(|| {
-        let _ = ndk_context::android_context();
-    })
-    .is_ok();
-    if already_initialized {
+    // Tao owns initialization in the Activity process. Calling the ndk-context
+    // initializer there would panic if Tao won the race because ndk-context 0.1.1
+    // only permits one initialization. The Worker process has no Tao runtime, so
+    // it is the sole owner of initialization there.
+    if !initialize_if_missing {
         return;
     }
 
-    let vm = env.get_java_vm().ok();
-    let Some(vm) = vm else { return };
-    if let Ok(ref_) = env.new_global_ref(&context) {
+    NDK_CONTEXT_INITIALIZED.get_or_init(|| {
+        let Ok(vm) = env.get_java_vm() else { return };
+        let Ok(ref_) = env.new_global_ref(&context) else { return };
+        let context_ptr = ref_.as_obj().as_raw() as *mut c_void;
+
         unsafe {
             ndk_context::initialize_android_context(
                 vm.get_java_vm_pointer() as *mut c_void,
-                ref_.as_obj().as_raw() as *mut c_void,
+                context_ptr,
             );
         }
-    }
+
+        // ndk-context stores the raw JNI reference for the lifetime of the process.
+        // Do not let GlobalRef delete it when this function returns.
+        std::mem::forget(ref_);
+    });
 }
 
 #[cfg(target_os = "android")]
@@ -64,10 +74,9 @@ pub extern "system" fn Java_com_joris_friday_SyncWorker_initNdkContext<'local>(
     context: jni::objects::JObject<'local>,
 ) {
     // Initialize the Android ndk-context so the keyring store can find the app
-    // context. tao normally does this when the Activity is created, but the
-    // WorkManager sync can run in a fresh process with no Activity ever created
-    // (e.g. after reboot), so initialize it here if it isn't already set.
-    ensure_ndk_context(&mut env, context);
+    // context. The WorkManager sync can run in a fresh process with no Activity
+    // ever created (e.g. after reboot), so initialize it here when needed.
+    ensure_ndk_context(&mut env, context, true);
 }
 
 #[cfg(target_os = "android")]
@@ -77,10 +86,9 @@ pub extern "system" fn Java_com_joris_friday_MainActivity_initNdkContext<'local>
     _class: JClass<'local>,
     context: jni::objects::JObject<'local>,
 ) {
-    // Belt-and-suspenders for the UI process: tao's glue usually initializes
-    // ndk-context on Activity creation, but behavior differs across versions, so
-    // ensure it explicitly (guarded — safe to call repeatedly).
-    ensure_ndk_context(&mut env, context);
+    // Tao owns ndk-context initialization in the UI process. The shared helper
+    // intentionally makes this race-safe no-op instead of probing via a panic.
+    ensure_ndk_context(&mut env, context, false);
 }
 
 #[cfg(target_os = "android")]
@@ -307,8 +315,7 @@ pub extern "system" fn Java_com_joris_friday_SyncStateManager_syncPreferencesFro
 // is shown a chooser instead of the file sitting in an app-private cache path.
 // Called from the `download_file` Tauri command; reuses the same JNI pattern as the
 // rest of this module (attach the current thread, then call into a Kotlin helper).
-// The JavaVM comes from ndk-context, which the Tauri/tao Android runtime initializes
-// before main.
+// The JavaVM comes from ndk-context, which is initialized before Tauri commands can run.
 pub fn share_downloaded_file(file_path: &std::path::Path) -> Result<(), String> {
     use jni::objects::JValue;
     use jni::JavaVM;
