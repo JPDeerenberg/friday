@@ -4,6 +4,7 @@
   import { listen } from '@tauri-apps/api/event';
   import { isLoggedIn, personId, accountInfo, profilePicture, currentPage, userSettings } from '$lib/stores';
   import { restoreSession, getAccount, getPersonId, getProfilePicture, handleAuthCallback, logout } from '$lib/api';
+  import { getAiConfig } from '$lib/ai';
   import { navIcon } from '$lib/icons';
   import { get } from 'svelte/store';
   import { fade } from 'svelte/transition';
@@ -15,6 +16,16 @@
   let loading = $state(true);
   let sidebarCollapsed = $state(false);
   let mobileSidebarOpen = $state(false);
+  let aiConfigured = $state(false);
+
+  async function checkAiConfig() {
+    try {
+      const config = await getAiConfig();
+      aiConfigured = config.enabled && config.has_api_key;
+    } catch {
+      aiConfigured = false;
+    }
+  }
 
   async function handleLogin(account: Account) {
     accountInfo.set(account);
@@ -25,6 +36,7 @@
       const pic = await getProfilePicture(pid);
       profilePicture.set(pic);
     } catch (_) {}
+    await checkAiConfig();
   }
 
   onMount(() => {
@@ -64,6 +76,7 @@
           } catch (_) {}
         }
       } catch (_) {}
+      await checkAiConfig();
       loading = false;
 
       unlistenBack = await listen('tauri://back-button', () => {
@@ -158,6 +171,7 @@
     personId.set(null);
     accountInfo.set(null);
     profilePicture.set(null);
+    aiConfigured = false;
     mobileSidebarOpen = false;
   }
 
@@ -372,8 +386,8 @@
       {@render children()}
     </main>
 
-    <!-- AI Assistant floating button (available on all pages when logged in) -->
-    {#if $isLoggedIn}
+    <!-- AI Assistant floating button (available on all pages when configured) -->
+    {#if $isLoggedIn && aiConfigured}
       <AIAssistant />
     {/if}
 

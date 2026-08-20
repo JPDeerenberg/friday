@@ -63,7 +63,9 @@
     }
   }
 
-  onMount(checkConfig);
+  onMount(() => {
+    checkConfig();
+  });
 
   // Auto-scroll to the newest message when one is added, unless the user has
   // scrolled up to read earlier chat history.
@@ -233,35 +235,33 @@
   }
 </script>
 
-<!-- Floating button -->
-<button
-  onclick={handleOpen}
-  class="fixed z-50 bottom-20 md:bottom-8 right-4 md:right-8 w-14 h-14 rounded-2xl bg-gradient-to-br from-primary-500 to-accent-500 text-white shadow-2xl shadow-primary-500/40 hover:scale-105 active:scale-95 transition-all duration-300 flex items-center justify-center group"
-  aria-label="AI Assistent"
->
-  {#if isOpen}
-    <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
-  {:else}
-    <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M12 2a4 4 0 0 1 4 4c0 2-2 3-4 5-2-2-4-3-4-5a4 4 0 0 1 4-4z"/>
-      <path d="M12 14l-2 6h4l-2-6z"/>
-      <path d="M2 12h4"/>
-      <path d="M18 12h4"/>
-      <path d="M12 2v2"/>
-      <path d="M12 14v2"/>
-    </svg>
-    {#if !isConfigured}
-      <span class="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full border-2 border-surface-950 animate-pulse"></span>
-    {/if}
-  {/if}
-</button>
-
-<!-- Chat panel -->
-{#if isOpen}
-  <div
-    class="fixed z-50 bottom-36 md:bottom-24 right-4 md:right-8 w-[calc(100vw-2rem)] md:w-[400px] max-h-[600px] h-[60vh] md:h-[500px] rounded-3xl bg-surface-900/95 backdrop-blur-2xl border border-white/10 shadow-3xl flex flex-col overflow-hidden"
-    transition:scale={{ start: 0.9, duration: 200 }}
+{#if isConfigured}
+  <!-- Floating button -->
+  <button
+    onclick={handleOpen}
+    class="fixed z-50 bottom-20 md:bottom-8 right-4 md:right-8 w-14 h-14 rounded-2xl bg-gradient-to-br from-primary-500 to-accent-500 text-white shadow-2xl shadow-primary-500/40 hover:scale-105 active:scale-95 transition-all duration-300 flex items-center justify-center group"
+    aria-label="AI Assistent"
   >
+    {#if isOpen}
+      <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+    {:else}
+      <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 2a4 4 0 0 1 4 4c0 2-2 3-4 5-2-2-4-3-4-5a4 4 0 0 1 4-4z"/>
+        <path d="M12 14l-2 6h4l-2-6z"/>
+        <path d="M2 12h4"/>
+        <path d="M18 12h4"/>
+        <path d="M12 2v2"/>
+        <path d="M12 14v2"/>
+      </svg>
+    {/if}
+  </button>
+
+  <!-- Chat panel -->
+  {#if isOpen}
+    <div
+      class="fixed z-50 bottom-36 md:bottom-24 right-4 md:right-8 w-[calc(100vw-2rem)] md:w-[400px] max-h-[600px] h-[60vh] md:h-[500px] rounded-3xl bg-surface-900/95 backdrop-blur-2xl border border-white/10 shadow-3xl flex flex-col overflow-hidden"
+      transition:scale={{ start: 0.9, duration: 200 }}
+    >
     <!-- Header -->
     <div class="shrink-0 px-5 py-4 border-b border-white/10 flex items-center justify-between bg-surface-900/80">
       <div class="flex items-center gap-3">
@@ -270,9 +270,9 @@
         </div>
         <div>
           <h3 class="text-sm font-black text-white uppercase tracking-tight">Friday AI</h3>
-          <p class="text-[9px] font-bold text-emerald-400 uppercase tracking-widest flex items-center gap-1">
-            <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-            {isConfigured ? 'Online' : 'Niet geconfigureerd'}
+            <p class="text-[9px] font-bold text-emerald-400 uppercase tracking-widest flex items-center gap-1">
+             <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+             Online
           </p>
         </div>
       </div>
@@ -402,7 +402,7 @@
         {#each quickActions as action (action.label)}
           <button
             onclick={() => quickAction(action.query)}
-            disabled={isLoading || !isConfigured}
+            disabled={isLoading}
             class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-surface-800/60 border border-white/5 text-[10px] font-bold text-gray-400 hover:text-white hover:bg-surface-700/60 hover:border-primary-500/30 transition-all active:scale-95 disabled:opacity-50"
           >
             <span>{action.icon}</span>
@@ -419,13 +419,13 @@
           type="text"
           bind:value={inputText}
           onkeydown={handleKeydown}
-          placeholder={isConfigured ? "Stel een vraag..." : "Configureer AI in Instellingen..."}
-          disabled={isLoading || !isConfigured}
+          placeholder="Stel een vraag..."
+          disabled={isLoading}
           class="flex-1 bg-surface-800/80 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-primary-500/50 transition-all disabled:opacity-50"
         />
         <button
           onclick={sendMessage}
-          disabled={!inputText.trim() || isLoading || !isConfigured}
+          disabled={!inputText.trim() || isLoading}
           aria-label="Verstuur bericht"
           class="shrink-0 w-11 h-11 rounded-2xl bg-primary-500 text-white hover:bg-primary-400 transition-all flex items-center justify-center disabled:opacity-30 disabled:cursor-not-allowed active:scale-90"
         >
@@ -433,7 +433,8 @@
         </button>
       </div>
     </div>
-  </div>
+    </div>
+  {/if}
 {/if}
 
 <style>
