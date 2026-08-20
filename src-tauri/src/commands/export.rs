@@ -310,6 +310,45 @@ pub async fn export_all_data(
         had_errors.extend(errors);
     }
 
+    // On mobile the JSON files landed in an app-private temp dir the user can't
+    // reach, so bundle them into a single archive and (on Android) hand that
+    // archive to the OS via the FileProvider so the user gets a native share/
+    // save sheet instead of silently-written invisible files.
+    #[cfg(mobile)]
+    {
+        use std::io::Write;
+
+        let zip_name = format!("friday-export-{}.zip", today.format("%Y-%m-%d"));
+        let zip_path = dir_path.join(&zip_name);
+        let file = std::fs::File::create(&zip_path)
+            .map_err(|e| format!("Kan zip-bestand niet aanmaken: {}", e))?;
+        let mut zip = zip::ZipWriter::new(std::io::BufWriter::new(file));
+        for filename in &exported_files {
+            let options = zip::write::SimpleFileOptions::default()
+                .compression_method(zip::CompressionMethod::Deflated);
+            match std::fs::read(dir_path.join(filename)) {
+                Ok(contents) => {
+                    if let Err(e) = zip.start_file(filename.clone(), options) {
+                        had_errors.push(format!("zip: {}: {}", filename, e));
+                        continue;
+                    }
+                    if let Err(e) = zip.write_all(&contents) {
+                        had_errors.push(format!("zip: {}: {}", filename, e));
+                    }
+                }
+                Err(e) => had_errors.push(format!("zip: {}: {}", filename, e)),
+            }
+        }
+        zip.finish().map_err(|e| format!("Kan zip niet finaliseren: {}", e))?;
+
+        #[cfg(target_os = "android")]
+        crate::jni::share_downloaded_file(&zip_path)
+            .map_err(|e| format!("Kan zip-bestand niet delen: {}", e))?;
+
+        // The user only sees the single shared archive, not the individual JSONs.
+        exported_files = vec![zip_name];
+    }
+
     Ok(ExportResult {
         success: true,
         files: exported_files,

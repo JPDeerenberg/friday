@@ -320,9 +320,15 @@
     try {
       const result = await exportAllData();
       if (result.success) {
-        const fileList = result.files.join(', ');
-        exportResult = `✅ ${result.files.length} bestanden geëxporteerd: ${fileList}`;
-        addLog('info', `Export voltooid: ${result.files.length} bestanden`);
+        if (isMobile) {
+          const zipFile = result.files[0] ?? 'friday-export.zip';
+          exportResult = `✅ 1 zip-bestand gedeeld: ${zipFile}`;
+          addLog('info', `Export voltooid: ${zipFile} gedeeld`);
+        } else {
+          const fileList = result.files.join(', ');
+          exportResult = `✅ ${result.files.length} bestanden geëxporteerd: ${fileList}`;
+          addLog('info', `Export voltooid: ${result.files.length} bestanden`);
+        }
       } else {
         exportResult = `❌ Fout: ${result.error ?? 'Onbekende fout'}`;
         addLog('error', `Export mislukt: ${result.error}`);
