@@ -32,6 +32,12 @@ class MainActivity : TauriActivity() {
         const val PREF_SYNC_INTERVAL = "sync_interval_minutes"
         const val PERIODIC_SYNC_WORK = "FridayPeriodicSync"
         const val MIN_SYNC_INTERVAL_MINUTES = 15L
+
+        // WorkManager's periodic interval is only a minimum the OS may defer for hours,
+        // so the primary cadence is driven by the exact-alarm chain (SyncAlarmReceiver).
+        // This slow job is kept only as a battery-friendly backstop in case that chain
+        // is ever cancelled; SyncWorker guards against concurrent runs.
+        const val BACKSTOP_INTERVAL_MINUTES = 60L
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -39,22 +45,25 @@ class MainActivity : TauriActivity() {
         super.onCreate(savedInstanceState)
         initNdkContext(this.applicationContext)
 
-        // Schedule the periodic sync via WorkManager. WorkManager is the sole sync
-        // driver — it is OS-managed and survives process kills, Doze mode, and reboots.
-        // 15 minutes is the minimum interval WorkManager allows.
-        val prefs = getSharedPreferences("friday_prefs", Context.MODE_PRIVATE)
-        val intervalMinutes = prefs.getLong(PREF_SYNC_INTERVAL, MIN_SYNC_INTERVAL_MINUTES)
-            .coerceAtLeast(MIN_SYNC_INTERVAL_MINUTES)
+        // Primary sync driver: a self-rescheduling AlarmManager exact-alarm chain.
+        // Each alarm firing enqueues a one-shot SyncWorker via WorkManager (keeping
+        // its retry/constraint guarantees) and re-arms the next alarm at now + interval.
+        // This fires reliably at the configured interval even under Doze/App Standby,
+        // unlike WorkManager's periodic job which the OS may defer by hours.
+        SyncAlarmReceiver.scheduleNext(this)
+
+        // Battery-friendly backstop: a slow periodic job in case the exact-alarm chain
+        // is ever cancelled. SyncWorker serializes execution, so overlap is safe.
         val constraints = Constraints.Builder()
             .setRequiredNetworkType(NetworkType.CONNECTED)
             .build()
-        val periodicSync = PeriodicWorkRequestBuilder<SyncWorker>(intervalMinutes, TimeUnit.MINUTES)
+        val backstop = PeriodicWorkRequestBuilder<SyncWorker>(BACKSTOP_INTERVAL_MINUTES, TimeUnit.MINUTES)
             .setConstraints(constraints)
             .build()
         WorkManager.getInstance(this).enqueueUniquePeriodicWork(
             PERIODIC_SYNC_WORK,
             ExistingPeriodicWorkPolicy.UPDATE,
-            periodicSync
+            backstop
         )
     }
   
@@ -103,25 +112,19 @@ class MainActivity : TauriActivity() {
   }
 
   /**
-   * Update the periodic sync interval via WorkManager.
-   * intervalSeconds: minimum 900 (15 min WorkManager floor), maximum 86400.
+   * Update the background sync interval.
+   * intervalSeconds: minimum 900 (15 min), maximum 86400.
+   * Persists the value and re-arms the exact-alarm sync chain with the new cadence.
    */
   fun setSyncInterval(intervalSeconds: Long) {
     val clamped = intervalSeconds.coerceIn(900L, 86400L)
     val minutes = clamped / 60L
     getSharedPreferences("friday_prefs", Context.MODE_PRIVATE)
         .edit().putLong(PREF_SYNC_INTERVAL, minutes).apply()
-    val constraints = Constraints.Builder()
-        .setRequiredNetworkType(NetworkType.CONNECTED)
-        .build()
-    val periodicSync = PeriodicWorkRequestBuilder<SyncWorker>(minutes, TimeUnit.MINUTES)
-        .setConstraints(constraints)
-        .build()
-    WorkManager.getInstance(this).enqueueUniquePeriodicWork(
-        PERIODIC_SYNC_WORK,
-        ExistingPeriodicWorkPolicy.UPDATE,
-        periodicSync
-    )
+
+    // Re-arm the precise sync alarm chain with the new interval (scheduleNext with
+    // FLAG_UPDATE_CURRENT replaces any previously-armed alarm).
+    SyncAlarmReceiver.scheduleNext(this)
   }
 
   /**

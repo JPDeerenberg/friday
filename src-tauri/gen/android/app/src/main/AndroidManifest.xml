@@ -90,6 +90,15 @@
         </receiver>
 
         <receiver
+            android:name=".SyncAlarmReceiver"
+            android:enabled="true"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.joris.friday.SYNC_ALARM" />
+            </intent-filter>
+        </receiver>
+
+        <receiver
             android:name=".DndReceiver"
             android:enabled="true"
             android:exported="false">

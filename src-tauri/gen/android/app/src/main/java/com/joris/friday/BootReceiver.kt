@@ -20,6 +20,15 @@ class BootReceiver : BroadcastReceiver() {
             } catch (e: Exception) {
                 Log.e("FridayBootReceiver", "Failed to reschedule DND alarms", e)
             }
+
+            // Re-arm the precise sync alarm chain (AlarmManager alarms are lost on
+            // reboot; WorkManager resumes its own periodic backstop automatically).
+            try {
+                SyncAlarmReceiver.scheduleNext(context)
+                Log.d("FridayBootReceiver", "Sync alarm chain re-armed after reboot")
+            } catch (e: Exception) {
+                Log.e("FridayBootReceiver", "Failed to re-arm sync alarm chain", e)
+            }
         }
     }
 }
