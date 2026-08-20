@@ -5,6 +5,7 @@
   import { cacheGet } from '$lib/cache';
   import { onMount } from 'svelte';
   import { fade, fly, slide } from 'svelte/transition';
+  import IconButton from '$lib/components/IconButton.svelte';
 
   /** Find the href from a Links array using multiple possible Rel values. */
   function findLink(links: any[], ...rels: string[]): string | undefined {
@@ -136,14 +137,14 @@
           <p class="text-body-medium text-gray-600 mt-0.5">Lesmateriaal & Documenten</p>
         </div>
         
-        <button 
-          onclick={goBack} 
+        <IconButton
+          onclick={goBack}
           disabled={pathHistory.length <= 1}
-          class="p-2.5 rounded-full bg-surface-900 border border-white/5 text-gray-400 hover:text-primary-400 disabled:opacity-20 transition-all active:scale-95 shadow-lg shadow-black/20"
+          class="bg-surface-900! border! border-white/5! disabled:opacity-20! shadow-lg shadow-black/20"
           aria-label="Terug"
         >
           <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
-        </button>
+        </IconButton>
       </div>
 
       <!-- Path breadcrumbs -->

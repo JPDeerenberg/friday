@@ -14,6 +14,7 @@
   import { fly } from 'svelte/transition';
   import Button from '$lib/components/Button.svelte';
   import Chip from '$lib/components/Chip.svelte';
+  import IconButton from '$lib/components/IconButton.svelte';
   import type { Grade, GradePeriod, Schoolyear } from '$lib/types';
 
   type SubjectSummary = {
@@ -636,25 +637,23 @@
     <div class="flex items-center justify-between mb-3">
       <div class="flex items-center gap-3">
         <h1 class="text-xl font-black text-white italic tracking-tighter">Cijfers</h1>
-        <button
+        <IconButton
           onclick={() => loadGrades(true)}
           aria-label="Vernieuwen"
-          class="p-1.5 text-gray-500 hover:text-primary-400 transition-all hover:scale-110 active:scale-95"
+          class="hover:rotate-180 duration-700"
         >
           <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
-        </button>
+        </IconButton>
       </div>
       <div class="flex items-center gap-1.5 overflow-x-auto no-scrollbar max-w-[200px] justify-end">
         {#each schoolyears as year}
-          <button
+          <Chip
+            variant="filter"
+            selected={selectedYear?.id === year.id}
             onclick={() => selectYear(year)}
-            class="px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider shrink-0
-                   {selectedYear?.id === year.id
-                     ? 'bg-primary-500 text-white shadow-lg shadow-primary-500/25'
-                     : 'bg-surface-800 text-gray-500 hover:bg-surface-700 hover:text-gray-300'}"
           >
             {year.groep?.code ?? year.studie?.code ?? '?'}
-          </button>
+          </Chip>
         {/each}
       </div>
     </div>
@@ -667,16 +666,19 @@
         { id: 'analytisch', label: 'Analytisch', icon: '<path d="M18 20V10M12 20V4M6 20v-6"/><path d="M2 20h20"/>' },
         { id: 'tools', label: 'Tools', icon: '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>' },
       ] as tab}
-        <button
-          onclick={() => currentTab = tab.id as any}
-          class="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all
-                 {currentTab === tab.id ? 'bg-primary-500 text-white shadow-lg shadow-primary-500/25' : 'text-gray-500 hover:text-gray-300'}"
-        >
-          <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-            {@html tab.icon}
-          </svg>
-          {tab.label}
-        </button>
+        <div class="flex-1 flex justify-center">
+          <Chip
+            variant="filter"
+            selected={currentTab === tab.id}
+            onclick={() => currentTab = tab.id as any}
+            class="w-full justify-center"
+          >
+            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              {@html tab.icon}
+            </svg>
+            {tab.label}
+          </Chip>
+        </div>
       {/each}
     </div>
   </div>
@@ -694,9 +696,9 @@
             <p class="text-[10px] text-gray-500 font-bold uppercase">{new Date(activeSnapshot.date).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}</p>
           </div>
         </div>
-        <button onclick={returnToLiveData} class="px-5 py-2 rounded-2xl bg-amber-500 text-black text-xs font-black uppercase tracking-widest shadow-lg shadow-amber-500/25 active:scale-95 transition-all">
+        <Button onclick={returnToLiveData} class="bg-amber-500! text-black! hover:bg-amber-400! px-5">
           Terug naar Live
-        </button>
+        </Button>
       </div>
     {/if}
 
@@ -1331,18 +1333,21 @@
               <h2 class="text-xl font-black text-white italic tracking-tighter flex-1">Calculator</h2>
               <!-- Mode selector -->
               <div class="flex items-center bg-surface-800 rounded-xl p-1 gap-1 border border-white/5">
-                <button
+                <Chip
+                  variant="filter"
+                  selected={calcModeAdvanced === 'basic'}
                   onclick={() => { calcModeAdvanced = 'basic'; calcMode = 'forward'; }}
-                  class="px-2.5 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all {calcModeAdvanced === 'basic' ? 'bg-primary-500 text-white shadow' : 'text-gray-500 hover:text-gray-300'}"
-                >Basis</button>
-                <button
+                >Basis</Chip>
+                <Chip
+                  variant="filter"
+                  selected={calcModeAdvanced === 'prediction'}
                   onclick={() => calcModeAdvanced = 'prediction'}
-                  class="px-2.5 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all {calcModeAdvanced === 'prediction' ? 'bg-primary-500 text-white shadow' : 'text-gray-500 hover:text-gray-300'}"
-                >Voorspelling</button>
-                <button
+                >Voorspelling</Chip>
+                <Chip
+                  variant="filter"
+                  selected={calcModeAdvanced === 'targets'}
                   onclick={() => calcModeAdvanced = 'targets'}
-                  class="px-2.5 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all {calcModeAdvanced === 'targets' ? 'bg-primary-500 text-white shadow' : 'text-gray-500 hover:text-gray-300'}"
-                >Doelen</button>
+                >Doelen</Chip>
               </div>
             </div>
 
@@ -1434,10 +1439,10 @@
                             <input type="checkbox" bind:checked={includeSimInAvg} class="accent-primary-500 rounded" />
                             Meenemen in gem.
                           </label>
-                          <button onclick={addSimulationGrade} class="flex items-center gap-1 text-[10px] font-black text-primary-400 hover:text-primary-300 uppercase tracking-widest">
-                            <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M12 5v14M5 12h14"/></svg>
-                            Voeg toe
-                          </button>
+                          <Button variant="text" onclick={addSimulationGrade} class="px-3">
+                          <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M12 5v14M5 12h14"/></svg>
+                          Voeg toe
+                        </Button>
                         </div>
                       </div>
                       <div class="space-y-2">
@@ -1455,9 +1460,9 @@
                                   class="w-full bg-surface-800 border border-surface-700 rounded-lg px-2 py-1.5 text-sm text-white font-bold focus:outline-none focus:border-primary-500" />
                               </div>
                             </div>
-                            <button onclick={() => removeSimulationGrade(idx)} aria-label="Verwijder" class="p-2 text-red-500 hover:bg-red-500/10 rounded-lg transition-colors mt-4">
+                            <IconButton onclick={() => removeSimulationGrade(idx)} aria-label="Verwijder" class="text-red-500! hover:bg-red-500/10! mt-4">
                               <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M3 6h18m-2 0v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6m3 0V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
-                            </button>
+                            </IconButton>
                           </div>
                         {/each}
                       </div>
@@ -1765,16 +1770,16 @@
                     </div>
                     <div class="flex items-center gap-2">
                       <span class="text-2xl font-black italic {result ? (result.avg >= $userSettings.insufficientThreshold ? 'text-purple-400' : 'text-red-400') : 'text-gray-600'}">{result ? result.avg.toFixed(1) : '—'}</span>
-                      <button onclick={() => removeCombination(combo.id)} aria-label="Combinatie verwijderen" class="p-2 text-red-500 hover:bg-red-500/10 rounded-lg transition-colors">
+                      <IconButton onclick={() => removeCombination(combo.id)} aria-label="Combinatie verwijderen" class="text-red-500! hover:bg-red-500/10!">
                         <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M3 6h18m-2 0v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6m3 0V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
-                      </button>
+                      </IconButton>
                     </div>
                   </div>
                   <div class="flex flex-wrap gap-1.5 mb-3">
                     {#each combo.subjectNames as name}
                       <span class="inline-flex items-center gap-1 text-[10px] font-bold text-gray-300 bg-surface-700 px-2 py-1 rounded-lg">
                         {name}
-                        <button onclick={() => removeCombinationSubject(combo.id, name)} aria-label="Vak verwijderen uit combinatie" class="text-gray-500 hover:text-red-400">×</button>
+                        <IconButton size="sm" onclick={() => removeCombinationSubject(combo.id, name)} aria-label="Vak verwijderen uit combinatie" class="w-6! h-6! text-gray-500 hover:text-red-400!">×</IconButton>
                       </span>
                     {/each}
                   </div>
@@ -2008,13 +2013,13 @@
                           {new Date(snapshot.date).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
                         </p>
                       </div>
-                      <button
+                      <IconButton
                         onclick={(e) => { e.stopPropagation(); deleteSnapshot(snapshot.id); }}
                         aria-label="Verwijderen"
-                        class="p-2 rounded-2xl bg-red-500/10 text-red-400 hover:bg-red-500 hover:text-white transition-all"
+                        class="bg-red-500/10! text-red-400! hover:bg-red-500! hover:text-white!"
                       >
                         <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M3 6h18m-2 0v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6m3 0V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
-                      </button>
+                      </IconButton>
                     </div>
                     <div class="grid grid-cols-3 gap-2 relative z-10">
                       {#each snapshot.subjects.slice(0, 3) as sub}

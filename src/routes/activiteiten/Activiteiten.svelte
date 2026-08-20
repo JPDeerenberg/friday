@@ -5,6 +5,7 @@
   import { onMount } from 'svelte';
   import { fade, fly, slide } from 'svelte/transition';
   import Button from '$lib/components/Button.svelte';
+  import IconButton from '$lib/components/IconButton.svelte';
 
   let activities = $state<any[]>([]);
   let selectedActivity = $state<any>(null);
@@ -46,13 +47,13 @@
     <div class="max-w-5xl mx-auto w-full flex items-center justify-between">
       <div class="flex items-center gap-3 min-w-0">
         {#if selectedActivity}
-          <button 
-            onclick={goBack} 
-            class="p-2.5 rounded-full bg-surface-900 border border-white/5 text-gray-400 hover:text-primary-400 transition-all active:scale-95 shadow-lg"
+          <IconButton
+            onclick={goBack}
+            class="bg-surface-900! border! border-white/5! shadow-lg"
             aria-label="Terug naar overzicht"
           >
             <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m15 18-6-6 6-6"/></svg>
-          </button>
+          </IconButton>
         {/if}
         <div class="flex flex-col min-w-0">
           <h1 class="text-title-large text-gray-100 truncate">

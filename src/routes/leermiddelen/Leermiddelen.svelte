@@ -7,6 +7,7 @@
   import { onMount } from 'svelte';
   import { fade, fly } from 'svelte/transition';
   import Button from '$lib/components/Button.svelte';
+  import IconButton from '$lib/components/IconButton.svelte';
 
   let leermiddelen = $state<any[]>([]);
   let loading = $state(true);
@@ -64,13 +65,13 @@
       <div class="flex items-center justify-between">
         <div class="flex items-center gap-3">
           <h1 class="text-title-large text-gray-100 shrink-0">Leermiddelen</h1>
-          <button 
-            onclick={() => loadData(true)} 
-            class="p-2 text-gray-500 hover:text-emerald-400 hover:rotate-180 transition-all duration-700 active:scale-95"
+          <IconButton
+            onclick={() => loadData(true)}
+            class="hover:rotate-180 duration-700"
             aria-label="Vernieuwen"
           >
             <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
-          </button>
+          </IconButton>
         </div>
       </div>
       
@@ -148,13 +149,14 @@
                  <div class="absolute inset-x-5 bottom-5 translate-y-10 opacity-0 group-hover:translate-y-0 group-hover:opacity-100 transition-all duration-700 cubic-bezier(0.16, 1, 0.3, 1)">
                     {#each material.Links as link}
                       {#if link.Rel === 'content'}
-                        <button
+                        <Button
+                          variant="filled"
                           onclick={() => handleOpen(link.Href)}
-                          class="w-full bg-emerald-500 hover:bg-emerald-400 text-white text-label-large py-4 rounded-m3-full text-center transition-all flex items-center justify-center gap-2.5 shadow-xl shadow-emerald-500/20 active:scale-95 border border-emerald-400/30 ring-1 ring-white/10"
+                          class="w-full bg-emerald-500! text-white! hover:bg-emerald-400! shadow-xl shadow-emerald-500/20 border border-emerald-400/30! ring-1 ring-white/10"
                         >
                           Lezen
                           <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-                        </button>
+                        </Button>
                       {/if}
                     {/each}
                  </div>

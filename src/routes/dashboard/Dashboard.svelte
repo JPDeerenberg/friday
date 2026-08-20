@@ -7,6 +7,7 @@
   import { cacheGet, cacheRefresh } from '$lib/cache';
   import { fade, fly, scale } from 'svelte/transition';
   import Button from '$lib/components/Button.svelte';
+  import IconButton from '$lib/components/IconButton.svelte';
   import type { Assignment, CalendarEvent, Grade } from '$lib/types';
 
   // Svelte 5 State
@@ -444,31 +445,30 @@
       </div>
 
       <div class="flex items-center gap-3 md:gap-5">
-        <button
+        <Button
+           variant="tonal"
            onclick={() => currentPage.set('messages')}
            aria-label={`${unreadCount} ongelezen berichten`}
-           class="glass px-5 py-3 rounded-m3-full flex items-center gap-3 border-primary-500/10 group transition-all hover:bg-primary-500/20 hover:border-primary-500/40 active:scale-95 shadow-xl shadow-black/40 relative overflow-hidden"
+           class="px-5 relative overflow-hidden"
         >
-          <div class="absolute inset-0 bg-gradient-to-r from-primary-500/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
-          <div class="relative">
-            <svg class="w-5 h-5 text-primary-400 group-hover:scale-110 transition-transform" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/><rect width="20" height="14" x="2" y="5" rx="2"/></svg>
+          <span class="relative">
+            <svg class="w-5 h-5 text-primary-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/><rect width="20" height="14" x="2" y="5" rx="2"/></svg>
             {#if unreadCount > 0}
               <span class="absolute -top-1.5 -right-1.5 flex h-3 w-3">
                 <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
                 <span class="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
               </span>
             {/if}
-          </div>
+          </span>
           <span class="text-label-large text-primary-400 relative z-10">{unreadCount} berichten</span>
-        </button>
-        <button
+        </Button>
+        <IconButton
           onclick={handleRefresh}
-          class="p-4 rounded-m3-full bg-surface-800/40 text-gray-400 hover:text-white border border-white/5 transition-all hover:bg-surface-700/60 active:scale-90 shadow-2xl group overflow-hidden relative"
+          class="bg-surface-800/40! border border-white/5! hover:bg-surface-700/60! shadow-2xl"
           aria-label="Vernieuwen"
         >
-          <div class="absolute inset-0 bg-white/5 opacity-0 group-hover:opacity-100 transition-opacity"></div>
-          <svg class="w-5 h-5 group-hover:rotate-180 transition-transform duration-1000 ease-in-out relative z-10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
-        </button>
+          <svg class="w-5 h-5 group-hover:rotate-180 transition-transform duration-1000 ease-in-out" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
+        </IconButton>
       </div>
     </div>
   </header>
@@ -500,13 +500,13 @@
               </p>
               <p class="text-body-medium text-gray-200 leading-relaxed">{aiInsight}</p>
             </div>
-            <button
+            <IconButton
               onclick={loadAiInsight}
-              class="shrink-0 p-2 rounded-m3-full text-gray-500 hover:text-primary-400 hover:bg-surface-800/50 transition-all"
+              class="hover:bg-surface-800/50!"
               title="Vernieuw inzicht"
             >
               <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
-            </button>
+            </IconButton>
           </div>
         </div>
       {/if}
@@ -544,12 +544,13 @@
               </span>
             {/if}
           </h2>
-          <button
+          <Button
+            variant="tonal"
             onclick={() => currentPage.set('calendar')}
-            class="text-label-large text-emerald-400 hover:text-emerald-300 flex items-center gap-2 group/link transition-all bg-emerald-500/5 hover:bg-emerald-500/10 border border-emerald-500/10 hover:border-emerald-500/25 px-4 py-2 rounded-m3-full"
+            class="bg-emerald-500/5! text-emerald-400! hover:bg-emerald-500/10! border border-emerald-500/10! hover:border-emerald-500/25! px-4"
           >
             Rooster <svg class="w-3.5 h-3.5 group-hover/link:translate-x-1 transition-transform" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="m9 18 6-6-6-6"/></svg>
-          </button>
+          </Button>
         </div>
 
         {#if loadingTomorrow}
@@ -588,11 +589,7 @@
                 <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
                 <div
                   in:fly={{ y: 10, delay: i * 60, duration: 400 }}
-                  class="rounded-m3-md border transition-all overflow-hidden
- {hasHw
- ? 'bg-amber-500/8 border-amber-500/20 hover:border-amber-500/40 cursor-pointer'
- : 'bg-surface-800/40 border-white/5'}
- {isOpen ? 'border-amber-500/50' : ''}"
+                  class="rounded-m3-md border transition-all overflow-hidden {hasHw ? 'bg-amber-500/8 border-amber-500/20 hover:border-amber-500/40 cursor-pointer' : 'bg-surface-800/40 border-white/5'} {isOpen ? 'border-amber-500/50' : ''}"
                   role={hasHw ? 'button' : undefined}
                   tabindex={hasHw ? 0 : undefined}
                   onclick={() => hasHw && toggleLesson(i)}
@@ -680,13 +677,14 @@
                           <span class="text-label-medium">Huiswerk afgerond</span>
                         </div>
                       {:else}
-                        <button
+                        <Button
+                          variant="filled"
                           onclick={() => markLessonDone(event, i)}
-                          class="w-full flex items-center justify-center gap-2 py-2.5 rounded-m3-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/25 hover:text-emerald-300 transition-all text-label-large active:scale-[0.98]"
+                          class="w-full bg-emerald-500/15! text-emerald-400! border border-emerald-500/30! hover:bg-emerald-500/25! hover:text-emerald-300!"
                         >
                           <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg>
                           Huiswerk afgerond
-                        </button>
+                        </Button>
                       {/if}
                     </div>
                   {/if}
@@ -759,13 +757,14 @@
                               <span class="text-label-medium">Huiswerk afgerond</span>
                             </div>
                           {:else}
-                            <button
+                            <Button
+                              variant="filled"
                               onclick={() => markLessonDone(item.event, item.index)}
-                              class="w-full flex items-center justify-center gap-1.5 py-2 rounded-m3-full text-label-large transition-all {item.type === 'packed' ? 'bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/25' : 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20'} active:scale-[0.98]"
+                              class="w-full bg-emerald-500/15! text-emerald-400! border border-emerald-500/30! hover:bg-emerald-500/25! {item.type === 'packed' ? 'bg-emerald-500/15!' : 'bg-emerald-500/10! border border-emerald-500/20! hover:bg-emerald-500/20!'}"
                             >
                               <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg>
                               Afvinken als ingepakt
-                            </button>
+                            </Button>
                           {/if}
                         </div>
                       </div>
@@ -907,7 +906,7 @@
                   </div>
                   <!-- Grade number -->
                   <div class="shrink-0 relative z-10">
-                    <span class="text-headline-large leading-none transition-transform group-hover/grade:scale-110 block {$userSettings.highlightFailing && !isVoldoende(grade) ? 'text-red-400' : 'text-accent-300'}">
+                    <span class="text-headline-large leading-none transition-transform group-hover/grade:scale-110 block {$userSettings.highlightFailing && isVoldoende(grade)! ? 'text-red-400' : 'text-accent-300'}">
                       {grade.CijferStr}
                     </span>
                   </div>

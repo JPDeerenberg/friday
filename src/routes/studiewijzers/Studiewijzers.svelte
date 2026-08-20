@@ -7,6 +7,7 @@
   import { get } from 'svelte/store';
   import { fade, fly, slide } from 'svelte/transition';
   import Button from '$lib/components/Button.svelte';
+  import IconButton from '$lib/components/IconButton.svelte';
 
   let studiewijzers = $state<any[]>([]);
   let selectedSW = $state<any>(null);
@@ -90,13 +91,13 @@
     <div class="max-w-5xl mx-auto w-full flex items-center justify-between">
       <div class="flex items-center gap-3 min-w-0">
         {#if selectedSW}
-          <button 
-            onclick={goBack} 
-            class="p-2.5 rounded-full bg-surface-900 border border-white/5 text-gray-400 hover:text-primary-400 transition-all active:scale-95 shadow-lg"
+          <IconButton
+            onclick={goBack}
+            class="bg-surface-900! border! border-white/5! shadow-lg"
             aria-label="Terug"
           >
             <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m15 18-6-6 6-6"/></svg>
-          </button>
+          </IconButton>
         {/if}
         <div class="flex flex-col min-w-0">
           <h1 class="text-title-large text-gray-100 truncate">
@@ -109,13 +110,13 @@
       </div>
 
       {#if !selectedSW}
-        <button 
+        <IconButton
           onclick={() => loadInitialData(true)}
-          class="p-2.5 rounded-full bg-surface-900 border border-white/5 text-gray-500 hover:text-primary-400 hover:rotate-180 transition-all duration-700 active:scale-95 shadow-lg"
+          class="bg-surface-900! border! border-white/5! hover:rotate-180 duration-700 shadow-lg"
           aria-label="Vernieuwen"
         >
           <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
-        </button>
+        </IconButton>
       {/if}
     </div>
   </header>

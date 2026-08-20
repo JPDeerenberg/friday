@@ -5,6 +5,7 @@
   import { onMount } from 'svelte';
   import { fade, fly, slide } from 'svelte/transition';
   import Button from '$lib/components/Button.svelte';
+  import IconButton from '$lib/components/IconButton.svelte';
   import Card from '$lib/components/Card.svelte';
   import Chip from '$lib/components/Chip.svelte';
   import type { Account, ProfileAddress, ProfileCareer, ProfileInfo } from '$lib/types';
@@ -132,13 +133,13 @@
   <header class="sticky top-0 z-20 border-b border-surface-800/50 bg-surface-950/95 backdrop-blur px-4 py-4 mb-6">
       <div class="flex items-center justify-between max-w-4xl mx-auto w-full">
         <h1 class="text-title-large text-gray-100">Mijn profiel</h1>
-        <button
+        <IconButton
           onclick={() => loadProfile(true)}
-          class="w-10 h-10 rounded-full flex items-center justify-center text-gray-400 hover:bg-white/10 hover:text-primary-400 transition-all hover:rotate-180 duration-700 active:scale-95"
+          class="hover:rotate-180 duration-700"
           aria-label="Vernieuwen"
         >
           <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
-        </button>
+        </IconButton>
       </div>
   </header>
 

@@ -8,6 +8,7 @@
   import { get } from 'svelte/store';
   import { fade } from 'svelte/transition';
   import AIAssistant from '$lib/components/AIAssistant.svelte';
+  import IconButton from '$lib/components/IconButton.svelte';
   import type { Account } from '$lib/types';
 
   let { children } = $props();
@@ -210,9 +211,9 @@
                 <p class="text-label-small text-primary-400" in:fade>Menu</p>
               </div>
             </div>
-            <button onclick={() => mobileSidebarOpen = false} class="text-gray-400 p-1" aria-label="Sluit menu">
+            <IconButton onclick={() => mobileSidebarOpen = false} class="text-gray-400" aria-label="Sluit menu">
               <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
-            </button>
+            </IconButton>
           </div>
           <nav class="p-4 space-y-5 pb-6">
             {#each navGroups as group}
@@ -221,10 +222,7 @@
                 {#each group.items as item}
                   <button
                     onclick={() => navigate(item.id)}
-                    class="w-full flex items-center gap-3 px-4 py-3 rounded-m3-full text-label-large transition-all
-                           {$currentPage === item.id
-                             ? 'bg-primary-container text-on-primary-container'
-                             : 'text-gray-400 hover:bg-surface-800 hover:text-gray-200'}"
+                    class="w-full flex items-center gap-3 px-4 py-3 rounded-m3-full text-label-large transition-all {$currentPage === item.id ? 'bg-primary-container text-on-primary-container' : 'text-gray-400 hover:bg-surface-800 hover:text-gray-200'}"
                   >
                     <span class="text-xl shrink-0">{@html navIcon(item.icon, $currentPage === item.id)}</span>
                     <span class="truncate">{item.label}</span>
@@ -294,10 +292,7 @@
                 <button
                   onclick={() => navigate(item.id)}
                   title={sidebarCollapsed ? item.label : ''}
-                  class="w-full flex items-center gap-3 px-3 py-2 rounded-m3-full text-label-large transition-all group
-                         {$currentPage === item.id
-                           ? 'bg-primary-container text-on-primary-container'
-                           : 'text-gray-400 hover:bg-surface-800 hover:text-gray-200'}"
+                  class="w-full flex items-center gap-3 px-3 py-2 rounded-m3-full text-label-large transition-all group {$currentPage === item.id ? 'bg-primary-container text-on-primary-container' : 'text-gray-400 hover:bg-surface-800 hover:text-gray-200'}"
                 >
                   <span class="text-lg shrink-0 group-hover:scale-110 transition-transform">
                     {@html navIcon(item.icon, $currentPage === item.id)}
@@ -366,9 +361,9 @@
           {/if}
         </button>
 
-        <button onclick={() => sidebarCollapsed = !sidebarCollapsed} class="p-3 text-gray-500 hover:text-gray-300 border-t border-surface-800/50 text-label-large shrink-0 bg-surface-950/30">
+        <IconButton onclick={() => sidebarCollapsed = !sidebarCollapsed} class="w-full rounded-none border-t border-surface-800/50 text-label-large bg-surface-950/30">
           {sidebarCollapsed ? '→' : '←'}
-        </button>
+        </IconButton>
       </aside>
     {/if}
 

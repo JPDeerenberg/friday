@@ -4,6 +4,7 @@
   import { cacheGet } from '$lib/cache';
   import { onMount } from 'svelte';
   import { fade, fly, slide } from 'svelte/transition';
+  import IconButton from '$lib/components/IconButton.svelte';
   import type { Absence, Schoolyear } from '$lib/types';
 
   let absences = $state<Absence[]>([]);
@@ -123,13 +124,13 @@
       <div class="flex items-center justify-between">
         <h1 class="text-xl font-black text-gray-100 italic tracking-tighter uppercase shrink-0">Absenties</h1>
         <div class="flex items-center gap-3">
-          <button
+          <IconButton
             onclick={loadAbsences}
-            class="p-2 text-gray-500 hover:text-primary-400 hover:rotate-180 transition-all duration-700 active:scale-95"
+            class="hover:rotate-180 duration-700"
             aria-label="Vernieuwen"
           >
             <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
-          </button>
+          </IconButton>
 
           {#if schoolyears.length > 0}
             <div class="relative group">

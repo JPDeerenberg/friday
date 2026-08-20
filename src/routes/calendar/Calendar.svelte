@@ -6,6 +6,8 @@
 
   import HtmlRenderer from '$lib/components/HtmlRenderer.svelte';
   import Button from '$lib/components/Button.svelte';
+  import IconButton from '$lib/components/IconButton.svelte';
+  import { on } from 'svelte/events';
   import { onMount } from 'svelte';
   import { fade, fly, slide, scale } from 'svelte/transition';
   import type { CalendarAttachment, CalendarEvent, Link } from '$lib/types';
@@ -606,12 +608,14 @@
   let touchStartY = 0;
   let isDragging = $state(false);
   let isHorizontalSwipe = false;
+  let swipeOrigin: 'day-bar' | 'content' = 'content';
 
   function handleTouchStart(e: TouchEvent) {
     touchStartX = e.touches[0].clientX;
     touchStartY = e.touches[0].clientY;
     isDragging = false;
     isHorizontalSwipe = false;
+    swipeOrigin = (e.target as Element).closest?.('[data-daybar]') ? 'day-bar' : 'content';
   }
 
   function handleTouchMove(e: TouchEvent) {
@@ -638,7 +642,10 @@
       isAnimating = true;
       // Navigate while off-screen, then snap back from opposite side
       setTimeout(() => {
-        if (showWeekView) {
+        if (swipeOrigin === 'day-bar' || showWeekView) {
+          // Week navigation does not accept a force flag, so release the
+          // animation guard before entering navigateToDay().
+          isAnimating = false;
           if (dx > 0) prevWeek(); else nextWeek();
         } else {
           if (dx > 0) prevDay(true); else nextDay(true);
@@ -664,26 +671,40 @@
     isDragging = false;
   }
 
+  function swipeGesture(node: HTMLDivElement) {
+    const removeTouchStart = on(node, 'touchstart', handleTouchStart, { passive: false });
+    const removeTouchMove = on(node, 'touchmove', handleTouchMove, { passive: false });
+    const removeTouchEnd = on(node, 'touchend', handleTouchEnd, { passive: false });
+
+    return {
+      destroy() {
+        removeTouchStart();
+        removeTouchMove();
+        removeTouchEnd();
+      }
+    };
+  }
+
 </script>
 
-<div class="flex flex-col h-full bg-surface-950" role="application" ontouchstart={handleTouchStart} ontouchmove={handleTouchMove} ontouchend={handleTouchEnd}>
+<div use:swipeGesture class="flex flex-col h-full bg-surface-950" role="application">
   <!-- Header Section — compact on mobile -->
   <header class="sticky top-0 z-20 bg-surface-950/90 backdrop-blur-xl border-b border-surface-800/30 px-3 py-2 md:px-4 md:py-3">
     <!-- Top row: title + actions -->
     <div class="flex items-center justify-between gap-2">
       <div class="flex items-center gap-1.5">
         <h1 class="text-title-large text-white">Agenda</h1>
-        <button
+        <IconButton
           onclick={() => { appointments = []; loadedStart = null; loadedEnd = null; loadAppointments(true); }}
-          class="p-1 text-gray-500 hover:text-primary-400 transition-all hover:rotate-180 duration-500"
+          class="hover:rotate-180 duration-500"
           title="Verversen"
           aria-label="Verversen"
         >
           <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
-        </button>
-        <button
+        </IconButton>
+        <IconButton
           onclick={() => $userSettings.hideCancelled = !$userSettings.hideCancelled}
-          class="p-1 {$userSettings.hideCancelled ? 'text-gray-600' : 'text-primary-400'} hover:text-primary-300 transition-all"
+          class="{$userSettings.hideCancelled ? 'text-gray-600' : 'text-primary-400'} hover:text-primary-300"
           title={$userSettings.hideCancelled ? 'Uitgevallen lessen tonen' : 'Uitgevallen lessen verbergen'}
         >
           {#if $userSettings.hideCancelled}
@@ -691,23 +712,24 @@
           {:else}
             <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
           {/if}
-        </button>
+        </IconButton>
       </div>
 
       <div class="flex items-center gap-1.5">
-        <button
+        <IconButton
           onclick={() => isCreating = true}
           aria-label="Nieuwe afspraak toevoegen"
-          class="p-1.5 rounded-full bg-primary-500/15 border border-primary-500/25 text-primary-400 hover:bg-primary-500/25 transition-all"
+          class="bg-primary-500/15! border! border-primary-500/25! text-primary-400 hover:bg-primary-500/25!"
         >
           <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
-        </button>
-        <button
+        </IconButton>
+        <Button
+          variant="tonal"
           onclick={goToToday}
-          class="px-2 py-1 rounded-m3-full bg-surface-800 text-gray-300 text-label-medium hover:bg-surface-700 transition-all"
+          class="px-4 h-8!"
         >
           Vandaag
-        </button>
+        </Button>
       </div>
     </div>
 
@@ -745,25 +767,22 @@
 
       <!-- Compact Navigation -->
       <div class="hidden md:flex items-center bg-surface-900 rounded-m3-sm p-0.5 border border-white/5">
-        <button onclick={prevWeek} class="p-1.5 text-gray-500 hover:text-white transition-colors" title="Vorige week">
+        <IconButton size="sm" onclick={prevWeek} class="w-8! h-8!" title="Vorige week">
           <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
-        </button>
+        </IconButton>
         <div class="h-3 w-px bg-surface-700 mx-0.5"></div>
-        <button onclick={nextWeek} class="p-1.5 text-gray-500 hover:text-white transition-colors" title="Volgende week">
+        <IconButton size="sm" onclick={nextWeek} class="w-8! h-8!" title="Volgende week">
           <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
-        </button>
+        </IconButton>
       </div>
     </div>
 
     <!-- Quick Week Picker — smaller pills (day view only; week grid shows its own day columns) -->
-    <div class="{showWeekView ? 'hidden' : ''} mt-2.5 flex justify-between gap-1 overflow-x-auto no-scrollbar">
+    <div data-daybar class="{showWeekView ? 'hidden' : ''} mt-2.5 flex justify-between gap-1 overflow-x-auto no-scrollbar" style="touch-action: pan-y;">
       {#each weekData as { date, isToday, isSelected, hasTest, hasHomework }}
         <button
           onclick={() => { selectedDate = new Date(date); loadAppointments(); }}
-          class="flex-1 flex flex-col items-center py-1.5 px-0.5 rounded-m3-sm transition-all border min-w-[38px] relative
- {isSelected 
- ? 'bg-primary-500 border-primary-400 text-white shadow-md shadow-primary-500/25' 
- : 'bg-surface-800/60 border-white/5 text-gray-400 hover:bg-surface-700 hover:text-gray-200'}"
+          class="flex-1 flex flex-col items-center py-1.5 px-0.5 rounded-m3-sm transition-all border min-w-[38px] relative {isSelected ? 'bg-primary-500 border-primary-400 text-white shadow-md shadow-primary-500/25' : 'bg-surface-800/60 border-white/5 text-gray-400 hover:bg-surface-700 hover:text-gray-200'}"
         >
           <span class="text-label-small opacity-60">
             {date.toLocaleDateString('nl-NL', { weekday: 'short' }).slice(0, 2)}
@@ -800,12 +819,13 @@
             <p class="text-label-small text-gray-500">Zijn momenteel verborgen</p>
           </div>
         </div>
-        <button 
+        <Button
+          variant="tonal"
           onclick={() => $userSettings.hideCancelled = false}
-          class="px-2.5 py-1 rounded-m3-full bg-surface-800 text-label-medium text-gray-300 hover:text-white hover:bg-surface-700 transition-all"
+          class="px-4 h-8! bg-surface-800! text-gray-300! hover:text-white! hover:bg-surface-700!"
         >
           Tonen
-        </button>
+        </Button>
       </div>
     {/if}
 
@@ -816,7 +836,7 @@
       </div>
     {:else if showWeekView}
       {#if weekAppCount === 0}
-        <div class="flex flex-col items-center justify-center py-16 text-center space-y-4">
+        <div class="flex-1 flex flex-col items-center justify-center py-16 text-center space-y-4">
           <div class="w-20 h-20 rounded-full bg-surface-800/80 border border-surface-700/50 flex items-center justify-center">
             <svg class="w-8 h-8 text-gray-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/><path d="M18 22 13 17l-3 3-5-5"/></svg>
           </div>
@@ -851,8 +871,7 @@
                   <!-- Day header -->
                   <button
                     onclick={() => { selectedDate = new Date(day.date); loadAppointments(); }}
-                    class="w-full flex flex-col items-center justify-center gap-0.5 h-[52px] border-b border-surface-800/40 transition-colors
-  {day.isSelected ? 'bg-primary-container text-on-primary-container' : day.isToday ? 'bg-primary-500/10' : 'bg-surface-900/40 hover:bg-surface-800/40'}"
+                    class="w-full flex flex-col items-center justify-center gap-0.5 h-[52px] border-b border-surface-800/40 transition-colors {day.isSelected ? 'bg-primary-container text-on-primary-container' : day.isToday ? 'bg-primary-500/10' : 'bg-surface-900/40 hover:bg-surface-800/40'}"
                   >
                     <span class="text-label-medium {day.isSelected ? 'text-on-primary-container' : 'text-gray-500'}">
                       {day.date.toLocaleDateString('nl-NL', { weekday: 'short' })}
@@ -894,14 +913,7 @@
                     {#each day.apps as app}
                       <button
                         onclick={() => openDetail(app)}
-                        class="absolute rounded-m3-sm border px-2 py-1.5 text-left overflow-hidden transition-all active:scale-[0.98] hover:brightness-125 cursor-pointer
-  {app.InfoType === 1 && !app.Afgerond
-  ? 'bg-primary-500/15 border-primary-500/30'
-  : app.Status === 4 || app.Status === 5
-  ? 'bg-red-500/10 border-red-500/30'
-  : app.Afgerond
-  ? 'bg-surface-800/50 border-surface-700/40 opacity-70'
-  : 'bg-surface-800/80 border-surface-700/50 hover:bg-surface-700/70'}"
+                        class="absolute rounded-m3-sm border px-2 py-1.5 text-left overflow-hidden transition-all active:scale-[0.98] hover:brightness-125 cursor-pointer {app.InfoType === 1 && app.Afgerond! ? 'bg-primary-500/15 border-primary-500/30' : app.Status === 4 || app.Status === 5 ? 'bg-red-500/10 border-red-500/30' : app.Afgerond ? 'bg-surface-800/50 border-surface-700/40 opacity-70' : 'bg-surface-800/80 border-surface-700/50 hover:bg-surface-700/70'}"
                         style="top: {appTopPx(app)}px; height: {appHeightPx(app)}px; left: calc({app._column} / {app._columnCount} * 100% + 4px); width: calc(100% / {app._columnCount} - 8px);"
                         title="{(app.Vakken?.[0]?.Naam || app.Omschrijving || 'Vrij')} · {formatTime(app.Start)} – {formatTime(app.Einde)}"
                       >
@@ -931,7 +943,7 @@
         </div>
       {/if}
     {:else if dayAppointments.length === 0}
-      <div class="flex flex-col items-center justify-center py-16 text-center space-y-4">
+      <div class="flex-1 flex flex-col items-center justify-center py-16 text-center space-y-4">
         <div class="w-20 h-20 rounded-full bg-surface-800/80 border border-surface-700/50 flex items-center justify-center">
           <svg class="w-8 h-8 text-gray-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/><path d="M18 22 13 17l-3 3-5-5"/></svg>
         </div>
@@ -964,14 +976,7 @@
             onclick={() => openDetail(app)}
             onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDetail(app); } }}
             in:fly={{ y: 12, duration: 200, delay: i * 20, easing: (t) => 1 - Math.pow(1-t, 3) }}
-            class="w-full text-left rounded-m3-md p-3 md:p-4 flex gap-3 md:gap-4 transition-all active:scale-[0.98] hover:scale-[1.005] relative overflow-hidden cursor-pointer border
- {app.InfoType === 1 && !app.Afgerond 
- ? 'bg-primary-500/10 border-primary-500/30 shadow-sm shadow-primary-500/10' 
- : app.Status === 4 || app.Status === 5
- ? 'bg-red-500/8 border-red-500/30'
- : app.Afgerond
- ? 'bg-surface-800/50 border-surface-700/40 opacity-70'
- : 'bg-surface-800/60 border-surface-700/40 hover:bg-surface-700/60 hover:border-surface-600/50'}"
+            class="w-full text-left rounded-m3-md p-3 md:p-4 flex gap-3 md:gap-4 transition-all active:scale-[0.98] hover:scale-[1.005] relative overflow-hidden cursor-pointer border {app.InfoType === 1 && app.Afgerond! ? 'bg-primary-500/10 border-primary-500/30 shadow-sm shadow-primary-500/10' : app.Status === 4 || app.Status === 5 ? 'bg-red-500/8 border-red-500/30' : app.Afgerond ? 'bg-surface-800/50 border-surface-700/40 opacity-70' : 'bg-surface-800/60 border-surface-700/40 hover:bg-surface-700/60 hover:border-surface-600/50'}"
           >
             <!-- Soft background glow -->
             {#if app.InfoType === 1 && !app.Afgerond}
@@ -1042,10 +1047,7 @@
                 <button 
                   onclick={(e) => { e.stopPropagation(); toggleDone(app); }}
                   aria-label={app.Afgerond ? 'Markeer als niet afgerond' : 'Markeer als afgerond'}
-                  class="w-7 h-7 md:w-8 md:h-8 rounded-full border-2 transition-all flex items-center justify-center
- {app.Afgerond 
- ? 'bg-emerald-500 border-emerald-400 text-white shadow-sm shadow-emerald-500/30' 
- : 'bg-surface-900 border-surface-600 text-transparent hover:border-primary-500 hover:bg-surface-800 active:scale-110'}"
+                  class="w-7 h-7 md:w-8 md:h-8 rounded-full border-2 transition-all flex items-center justify-center {app.Afgerond ? 'bg-emerald-500 border-emerald-400 text-white shadow-sm shadow-emerald-500/30' : 'bg-surface-900 border-surface-600 text-transparent hover:border-primary-500 hover:bg-surface-800 active:scale-110'}"
                 >
                   <svg class="w-3.5 h-3.5 md:w-4 md:h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="4"><path d="M20 6L9 17L4 12"/></svg>
                 </button>
@@ -1096,18 +1098,18 @@
               {getInfoLabel(selectedAppointment.InfoType)}
             </span>
             <div class="flex items-center gap-1.5">
-              <button 
+              <IconButton
                 onclick={() => editMode = !editMode}
-                class="p-1.5 rounded-full bg-surface-800 text-gray-400 hover:text-white transition-colors"
+                class="bg-surface-800! text-gray-400 hover:text-white!"
                 title="Bewerken"
               >
                 <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>
-              </button>
+              </IconButton>
               {#if selectedAppointment.Type === 1}
-                <button 
+                <IconButton
                   onclick={deleteAppointment}
                   disabled={deletingAppointment}
-                  class="p-1.5 rounded-full bg-red-500/10 text-red-400 hover:bg-red-500/20 hover:text-red-300 transition-colors disabled:opacity-50"
+                  class="bg-red-500/10! text-red-400! hover:bg-red-500/20! hover:text-red-300! disabled:opacity-50!"
                   title="Afspraak verwijderen"
                 >
                   {#if deletingAppointment}
@@ -1115,11 +1117,11 @@
                   {:else}
                     <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M3 6h18M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6M10 11v6M14 11v6M9 6V4h6v2"/></svg>
                   {/if}
-                </button>
+                </IconButton>
               {/if}
-              <button onclick={() => { selectedAppointment = null; editMode = false; }} class="p-1.5 text-gray-500 hover:text-white transition-colors" aria-label="Sluiten">
+              <IconButton onclick={() => { selectedAppointment = null; editMode = false; }} aria-label="Sluiten">
                 <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M18 6 6 18M6 6l12 12"/></svg>
-              </button>
+              </IconButton>
             </div>
           </div>
           <h2 class="text-headline-medium text-white leading-tight">
@@ -1171,22 +1173,20 @@
             </div>
           {:else if selectedAppointment.Inhoud}
              {#if selectedAppointment.InfoType === 1}
-               <button 
+               <Button
+                variant="filled"
                 onclick={() => toggleDone(selectedAppointment!)}
-                class="w-full flex items-center justify-center gap-2 py-3 rounded-m3-full border-2 transition-all mb-3
- {selectedAppointment.Afgerond 
- ? 'bg-emerald-500/10 border-emerald-500/50 text-emerald-400' 
- : 'bg-primary-500 border-primary-400 text-white shadow-md shadow-primary-500/20'}"
-               >
-                 <div class="w-5 h-5 rounded-full border-2 border-current flex items-center justify-center">
-                   {#if selectedAppointment.Afgerond}
-                     <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="4"><path d="M20 6L9 17L4 12"/></svg>
-                   {/if}
-                 </div>
-                 <span class="text-label-large">
-                   {selectedAppointment.Afgerond ? 'Huiswerk voltooid' : 'Markeren als klaar'}
-                 </span>
-               </button>
+                class="w-full mb-3 {selectedAppointment.Afgerond ? 'bg-emerald-500/10! text-emerald-400! border-2 border-emerald-500/50!' : 'bg-primary-500! text-white! shadow-md shadow-primary-500/20'}"
+              >
+                <div class="w-5 h-5 rounded-full border-2 border-current flex items-center justify-center">
+                  {#if selectedAppointment.Afgerond}
+                    <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="4"><path d="M20 6L9 17L4 12"/></svg>
+                  {/if}
+                </div>
+                <span class="text-label-large">
+                  {selectedAppointment.Afgerond ? 'Huiswerk voltooid' : 'Markeren als klaar'}
+                </span>
+              </Button>
              {/if}
             <div class="p-4 md:p-5 rounded-m3-md bg-surface-950 border border-white/5 prose prose-sm prose-invert max-w-none shadow-inner">
                <HtmlRenderer html={selectedAppointment.Inhoud} />
@@ -1225,10 +1225,10 @@
                       <span class="text-label-small text-gray-600">{bijlage.Grootte ? Math.round(bijlage.Grootte / 1024) + ' KB' : '—'}</span>
                     </div>
                   </div>
-                  <button 
+                  <IconButton
                     onclick={() => handleDownload(bijlage)}
                     disabled={downloadingFile === bijlage.Naam}
-                    class="p-2 rounded-full bg-surface-800 text-gray-400 hover:text-white hover:bg-surface-700 disabled:opacity-50 transition-all active:scale-90"
+                    class="bg-surface-800! text-gray-400 hover:text-white! hover:bg-surface-700! disabled:opacity-50!"
                     aria-label="Download"
                   >
                     {#if downloadingFile === bijlage.Naam}
@@ -1236,7 +1236,7 @@
                     {:else}
                       <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
                     {/if}
-                  </button>
+                  </IconButton>
                 </div>
               {/each}
             </div>
@@ -1272,9 +1272,9 @@
       <div class="p-4 md:p-6 space-y-4 md:space-y-6">
         <div class="flex items-center justify-between">
           <h2 class="text-title-large text-white">Nieuwe Afspraak</h2>
-          <button onclick={() => isCreating = false} class="text-gray-500 hover:text-white transition-colors" aria-label="Sluiten">
+          <IconButton onclick={() => isCreating = false} aria-label="Sluiten">
             <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M18 6 6 18M6 6l12 12"/></svg>
-          </button>
+          </IconButton>
         </div>
 
         <div class="space-y-3 md:space-y-4">

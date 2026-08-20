@@ -9,6 +9,8 @@
   import ColorSwatchPicker from '$lib/components/ColorSwatchPicker.svelte';
   import Switch from '$lib/components/Switch.svelte';
   import Button from '$lib/components/Button.svelte';
+  import Chip from '$lib/components/Chip.svelte';
+  import IconButton from '$lib/components/IconButton.svelte';
   import { fade, fly, slide } from 'svelte/transition';
   import { onMount } from 'svelte';
   import { open } from '@tauri-apps/plugin-dialog';
@@ -520,13 +522,13 @@
   <!-- Header -->
   <header class="shrink-0 z-20 border-b border-surface-800/50 bg-surface-950/95 backdrop-blur px-4 py-3">
     <div class="flex items-center gap-3">
-      <button
+      <IconButton
         onclick={() => (!isDesktopLayout && mobilePanel === 'detail') ? goToSectionList() : goBack()}
-        class="p-2 -ml-2 rounded-full text-gray-500 hover:text-primary-400 transition-all"
+        class="-ml-2"
         aria-label="Terug"
       >
         <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
-      </button>
+      </IconButton>
       <h1 class="text-title-large text-gray-100 truncate">
         {!isDesktopLayout && mobilePanel === 'detail' ? activeSectionTitle : 'Instellingen'}
       </h1>
@@ -557,10 +559,7 @@
         {#each navItems as item}
           <button
             onclick={() => selectSection(item.id)}
-            class="w-full flex items-center gap-3 px-3 py-2.5 rounded-m3-sm text-label-large transition-all text-left
-              {activeSection === item.id
-                ? 'bg-primary-container text-on-primary-container'
-                : 'text-gray-400 hover:bg-surface-800 hover:text-gray-200'}"
+            class="w-full flex items-center gap-3 px-3 py-2.5 rounded-m3-sm text-label-large transition-all text-left {activeSection === item.id ? 'bg-primary-container text-on-primary-container' : 'text-gray-400 hover:bg-surface-800 hover:text-gray-200'}"
           >
             {@html sectionIcon(item.id)}
             <span class="truncate">{item.title}</span>
@@ -615,13 +614,14 @@
                     placeholder={aiHasKey ? '•••••••• (opgeslagen)' : 'sk-...'}
                     class="flex-1 bg-surface-800/80 border border-white/10 rounded-m3-xs px-4 py-3 text-body-medium text-white placeholder-gray-600 focus:outline-none focus:border-primary-500/50 transition-all font-mono"
                   />
-                  <button
+                  <Button
+                    variant="text"
                     onclick={() => aiShowKey = !aiShowKey}
                     disabled={!aiApiKey}
-                    class="px-3 py-2 rounded-m3-full bg-surface-800/60 border border-white/10 text-gray-400 hover:text-white transition-all text-label-medium disabled:opacity-40"
+                    class="px-4 shrink-0"
                   >
                     {aiShowKey ? 'Verberg' : 'Toon'}
-                  </button>
+                  </Button>
                 </div>
                 {#if aiHasKey && !aiApiKey}
                   <p class="text-label-small text-gray-500">
@@ -641,12 +641,13 @@
                 />
                 <div class="flex flex-wrap gap-2 mt-2">
                   {#each aiBaseUrlPresets as preset}
-                    <button
+                    <Chip
+                      variant="filter"
+                      selected={aiBaseUrl === preset.value}
                       onclick={() => aiBaseUrl = preset.value}
-                      class="px-3 py-1.5 rounded-m3-sm bg-surface-800/60 border border-white/5 text-label-medium text-gray-400 hover:text-white hover:bg-surface-700/60 transition-all {aiBaseUrl === preset.value ? 'border-primary-500/30 text-primary-400' : ''}"
                     >
                       {preset.label}
-                    </button>
+                    </Chip>
                   {/each}
                 </div>
               </div>
@@ -656,20 +657,19 @@
                 <span class="text-label-medium text-gray-500">AI Provider</span>
                 <div class="grid grid-cols-2 gap-2">
                   {#each Object.entries(AI_PROVIDERS) as [key, info]}
-                    <button
+                    <Chip
+                      variant="filter"
+                      selected={aiProvider === key}
                       onclick={() => {
                         aiProvider = key as AiProviderType;
                         aiBaseUrl = info.defaultBaseUrl;
                         aiModel = info.defaultModel;
                       }}
-                      class="px-3 py-2.5 rounded-m3-sm border text-label-medium transition-all text-left
- {aiProvider === key
- ? 'bg-primary-500/20 border-primary-500/40 text-primary-300 shadow-lg shadow-primary-500/10'
- : 'bg-surface-800/60 border-white/5 text-gray-400 hover:bg-surface-700/60 hover:text-gray-200'}"
+                      class="h-auto! flex-col items-start gap-0 py-3 px-4 w-full"
                     >
                       <span class="block text-label-medium">{info.label}</span>
                       <span class="block text-label-small opacity-70 mt-0.5">{info.description}</span>
-                    </button>
+                    </Chip>
                   {/each}
                 </div>
               </div>
@@ -732,13 +732,14 @@
                 >
                   {aiSaving ? '⏳ Opslaan...' : 'Opslaan'}
                 </Button>
-                <button
+                <Button
+                  variant="tonal"
                   onclick={testAiConnection}
                   disabled={aiTesting || (!aiApiKey && !aiHasKey)}
-                  class="flex-1 py-3 rounded-m3-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20 transition-all text-label-large disabled:opacity-50"
+                  class="flex-1 bg-emerald-500/10! text-emerald-400! border border-emerald-500/20! hover:bg-emerald-500/20!"
                 >
                   {aiTesting ? '⏳ Testen...' : 'Test verbinding'}
-                </button>
+                </Button>
               </div>
 
               {#if aiTestResult}
@@ -818,12 +819,13 @@
               {:else if setting.type === 'download-dir'}
                 <div class="flex items-center gap-2">
                   {#if $userSettings.downloadDir}
-                    <button
+                    <Button
+                      variant="text"
                       onclick={clearDownloadDir}
-                      class="text-label-medium text-red-400 hover:text-red-300 transition-colors px-2 py-1"
+                      class="text-red-400! hover:text-red-300! px-3"
                     >
                       Herstel
-                    </button>
+                    </Button>
                   {/if}
                   <Button
                     variant="tonal"
@@ -848,12 +850,13 @@
                 <p class="text-label-medium text-amber-400 leading-relaxed">
                   Niet Storen-toegang is nog niet verleend. Automatisch Niet Storen werkt hierdoor niet.
                 </p>
-                <button
+                <Button
+                  variant="tonal"
                   onclick={openDndSettings}
-                  class="shrink-0 bg-amber-500/15 text-amber-400 text-label-medium rounded-m3-full px-4 py-2 hover:bg-amber-500/25 transition-all active:scale-95 border border-amber-500/20"
+                  class="shrink-0 bg-amber-500/15! text-amber-400! hover:bg-amber-500/25! border border-amber-500/20! px-4"
                 >
                   Toegang verlenen
-                </button>
+                </Button>
               </div>
             {/if}
           {/each}
@@ -921,17 +924,16 @@
                   </div>
                 </div>
               </div>
-              <button onclick={loadDebugInfo} disabled={debugLoading}
-                class="debug-btn-secondary w-full flex items-center justify-center gap-2">
+              <Button variant="outlined" onclick={loadDebugInfo} disabled={debugLoading} class="w-full">
                 <svg class="w-3.5 h-3.5 {debugLoading ? 'animate-spin' : ''}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
                 {debugLoading ? 'Laden...' : 'Gegevens verversen'}
-              </button>
+              </Button>
             </div>
           {:else}
             <div class="debug-card rounded-m3-md p-8 flex flex-col items-center justify-center gap-4 text-center">
                <svg class="w-10 h-10 text-gray-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
                <p class="text-label-medium text-gray-600 max-w-[150px]">Geen debug info geladen</p>
-               <button onclick={loadDebugInfo} class="debug-btn-primary px-8">Info ophalen</button>
+               <Button variant="tonal" onclick={loadDebugInfo} class="px-8 bg-amber-500/15! text-amber-400! border border-amber-500/20!">Info ophalen</Button>
             </div>
           {/if}
 
@@ -952,20 +954,19 @@
             <p class="text-label-small text-gray-600 text-center -mt-1">Android staat een minimum van 15 minuten toe voor achtergrondsynchronisatie.</p>
             <div class="flex gap-2">
               {#each [900, 1800, 3600] as preset}
-                <button
+                <Chip
+                  variant="filter"
+                  selected={intervalSeconds === preset}
                   onclick={() => { intervalSeconds = preset; }}
-                  class="flex-1 text-label-medium rounded-m3-full py-2
- {intervalSeconds === preset
- ? 'bg-amber-500 text-white shadow-lg shadow-amber-500/20'
- : 'bg-surface-800 text-gray-500 hover:text-gray-300 transition-all active:scale-95'}"
+                  class="flex-1 justify-center w-full"
                 >
                   {intervalLabel(preset)}
-                </button>
+                </Chip>
               {/each}
             </div>
-            <button onclick={applyInterval} class="debug-btn-primary w-full py-3.5 shadow-lg shadow-amber-500/20">
+            <Button variant="tonal" onclick={applyInterval} class="w-full bg-amber-500/15! text-amber-400! border border-amber-500/20! shadow-lg shadow-amber-500/20 py-3.5">
               Interval Toepassen
-            </button>
+            </Button>
             {#if intervalResult}
               <p class="text-label-small text-amber-400 font-mono text-center bg-amber-500/5 py-2 rounded-m3-sm">{intervalResult}</p>
             {/if}
@@ -1013,10 +1014,11 @@
 
           <!-- Actions row -->
           <div class="grid grid-cols-2 gap-3">
-            <button
+            <Button
+              variant="tonal"
               onclick={doForceSync}
               disabled={forceSyncBusy}
-              class="debug-card rounded-m3-md p-6 flex flex-col items-center gap-3 hover:bg-surface-700/40 transition-all active:scale-[0.98] disabled:opacity-50 ring-1 ring-white/5"
+              class="h-auto! flex-col p-6 gap-3 rounded-m3-md! hover:bg-surface-700/40 ring-1 ring-white/5"
             >
               <div class="w-12 h-12 rounded-m3-md bg-amber-500/10 text-amber-500 flex items-center justify-center shadow-inner">
                 <svg class="w-6 h-6 {forceSyncBusy ? 'animate-spin' : ''}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
@@ -1025,10 +1027,11 @@
                 <p class="text-label-medium text-gray-200">Force Sync</p>
                 <p class="text-label-small text-gray-600 mt-1">Nu ophalen</p>
               </div>
-            </button>
-            <button
+            </Button>
+            <Button
+              variant="tonal"
               onclick={doClearState}
-              class="debug-card rounded-m3-md p-6 flex flex-col items-center gap-3 hover:bg-red-500/10 transition-all active:scale-[0.98] ring-1 ring-white/5"
+              class="h-auto! flex-col p-6 gap-3 rounded-m3-md! hover:bg-red-500/10 ring-1 ring-white/5"
             >
               <div class="w-12 h-12 rounded-m3-md bg-red-500/10 text-red-400 flex items-center justify-center shadow-inner">
                 <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
@@ -1037,16 +1040,16 @@
                 <p class="text-label-medium text-red-400">Baseline</p>
                 <p class="text-label-small text-gray-600 mt-1">State wissen</p>
               </div>
-            </button>
+            </Button>
           </div>
 
           <!-- Logs -->
           <div class="debug-card rounded-m3-md p-5 space-y-4 overflow-hidden relative">
             <div class="flex items-center justify-between relative z-10">
               <p class="debug-label">Systeemboodschappen</p>
-              <button onclick={() => logs = []} class="text-label-medium text-gray-600 hover:text-red-400 transition-colors">
+              <Button variant="text" onclick={() => logs = []} class="text-gray-600! hover:text-red-400! px-3">
                 Opschonen
-              </button>
+              </Button>
             </div>
             <div class="space-y-2 max-h-60 overflow-y-auto no-scrollbar relative z-10 pr-1">
               {#each logs as log}
@@ -1200,34 +1203,6 @@
     color: rgb(229, 231, 235);
     margin-top: 4px;
   }
-
-  .debug-btn-primary {
-    background: oklch(0.7 0.15 80 / 0.15);
-    color: oklch(0.8 0.15 80);
-    font-size: var(--text-label-large);
-    line-height: var(--text-label-large--line-height);
-    letter-spacing: var(--text-label-large--letter-spacing);
-    font-weight: var(--text-label-large--font-weight);
-    border-radius: var(--radius-m3-full);
-    padding: 12px;
-    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-    border: 1px solid oklch(0.8 0.15 80 / 0.2);
-  }
-  .debug-btn-primary:active { transform: scale(0.96); }
-
-  .debug-btn-secondary {
-    background: oklch(1 0 0 / 0.05);
-    color: oklch(1 0 0 / 0.6);
-    font-size: var(--text-label-large);
-    line-height: var(--text-label-large--line-height);
-    letter-spacing: var(--text-label-large--letter-spacing);
-    font-weight: var(--text-label-large--font-weight);
-    border-radius: var(--radius-m3-full);
-    padding: 10px;
-    transition: all 0.2s ease;
-    border: 1px solid oklch(1 0 0 / 0.08);
-  }
-  .debug-btn-secondary:hover { background: oklch(1 0 0 / 0.1); color: white; }
 
   .no-scrollbar::-webkit-scrollbar { display: none; }
   .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }

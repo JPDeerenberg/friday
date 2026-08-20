@@ -3,6 +3,7 @@
   import { listen, type UnlistenFn } from '@tauri-apps/api/event';
   import { isLoggedIn, personId, accountInfo, profilePicture } from '$lib/stores';
   import { startLoginFlow, getPersonId, getProfilePicture, handleAuthCallback } from '$lib/api';
+  import Button from '$lib/components/Button.svelte';
 
   let loading = $state(false);
   let error = $state('');
@@ -116,12 +117,12 @@
     <!-- Login card -->
     <div class="glass rounded-2xl p-6 space-y-5">
       {#if !loading}
-        <button
+        <Button
           onclick={startLogin}
-          class="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-primary-500 to-primary-600 text-white font-semibold text-sm hover:from-primary-400 hover:to-primary-500 shadow-lg shadow-primary-500/20 active:scale-[0.98]"
+          class="w-full"
         >
           Inloggen bij Friday
-        </button>
+        </Button>
       {:else}
         <div class="text-center space-y-4 py-4">
           <div class="w-12 h-12 border-4 border-primary-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
@@ -139,13 +140,13 @@
               class="flex-1 px-3 py-2 rounded-lg bg-surface-900 border border-surface-600 text-gray-200 placeholder-gray-600 focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500/50 text-xs"
               onkeydown={(e) => e.key === 'Enter' && submitManualUrl()}
             />
-            <button
+            <Button
               onclick={submitManualUrl}
               disabled={!manualUrl.trim()}
-              class="px-4 py-2 rounded-lg bg-primary-600/20 text-primary-400 border border-primary-500/30 text-xs font-semibold hover:bg-primary-600/30 disabled:opacity-50"
+              class="px-4"
             >
               Ga
-            </button>
+            </Button>
           </div>
         </div>
       {/if}

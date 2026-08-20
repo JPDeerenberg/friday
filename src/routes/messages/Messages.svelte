@@ -6,6 +6,7 @@
   import { slide, fade } from 'svelte/transition';
   import Button from '$lib/components/Button.svelte';
   import Chip from '$lib/components/Chip.svelte';
+  import IconButton from '$lib/components/IconButton.svelte';
   import type { Contact, Message, MessagesFolder } from '$lib/types';
 
   type Recipient = {
@@ -234,10 +235,7 @@
           {#each folders as folder}
             <button
               onclick={() => selectFolder(folder)}
-              class="w-full flex items-center justify-between px-3 py-2.5 rounded-m3-md text-label-medium transition-all
- {selectedFolder?.id === folder.id
- ? 'bg-primary-500/15 text-primary-300'
- : 'text-gray-400 hover:bg-surface-800 hover:text-gray-200'}"
+              class="w-full flex items-center justify-between px-3 py-2.5 rounded-m3-md text-label-medium transition-all {selectedFolder?.id === folder.id ? 'bg-primary-500/15 text-primary-300' : 'text-gray-400 hover:bg-surface-800 hover:text-gray-200'}"
             >
               <span class="truncate">{folder.naam}</span>
               {#if folder.aantalOngelezen > 0}
@@ -267,19 +265,19 @@
               autofocus
               class="flex-1 bg-transparent text-gray-100 text-body-large outline-none placeholder:text-gray-600"
             />
-            <button onclick={toggleSearch} class="p-1 text-gray-500 hover:text-gray-300" aria-label="Zoeken sluiten">
+            <IconButton onclick={toggleSearch} aria-label="Zoeken sluiten">
               <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6 6 18M6 6l12 12"/></svg>
-            </button>
+            </IconButton>
           </div>
         {:else}
           <h1 class="text-title-large text-gray-100">Berichten</h1>
           <div class="flex items-center gap-1">
-            <button onclick={toggleSearch} class="p-2 text-gray-500 hover:text-primary-400 transition-colors" aria-label="Zoeken">
+            <IconButton onclick={toggleSearch} aria-label="Zoeken">
               <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-            </button>
-            <button onclick={() => showCompose = true} class="p-2 text-gray-500 hover:text-primary-400 transition-colors" aria-label="Nieuw bericht">
+            </IconButton>
+            <IconButton onclick={() => showCompose = true} aria-label="Nieuw bericht">
               <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>
-            </button>
+            </IconButton>
           </div>
         {/if}
       </div>
@@ -290,10 +288,7 @@
           {#each folders as folder}
             <button
               onclick={() => selectFolder(folder)}
-              class="flex items-center gap-1.5 px-3 py-1.5 rounded-m3-sm text-label-medium whitespace-nowrap shrink-0 transition-all
- {selectedFolder?.id === folder.id
- ? 'bg-primary-500 text-white shadow-lg shadow-primary-500/25'
- : 'bg-surface-800 text-gray-400 hover:text-gray-200'}"
+              class="flex items-center gap-1.5 px-3 py-1.5 rounded-m3-sm text-label-medium whitespace-nowrap shrink-0 transition-all {selectedFolder?.id === folder.id ? 'bg-primary-500 text-white shadow-lg shadow-primary-500/25' : 'bg-surface-800 text-gray-400 hover:text-gray-200'}"
             >
               {folder.naam}
               {#if folder.aantalOngelezen > 0}
@@ -316,9 +311,9 @@
           class="flex-1 bg-transparent text-gray-300 text-body-medium outline-none placeholder:text-gray-600"
         />
         {#if searchQuery}
-            <button onclick={() => searchQuery = ''} class="text-gray-600 hover:text-gray-400" aria-label="Zoekopdracht wissen">
+            <IconButton onclick={() => searchQuery = ''} class="w-8! h-8! text-gray-600 hover:text-gray-400" aria-label="Zoekopdracht wissen">
             <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6 6 18M6 6l12 12"/></svg>
-          </button>
+          </IconButton>
         {/if}
       </div>
 
@@ -364,9 +359,7 @@
           {#each filteredMessages() as msg}
             <button
               onclick={() => openMessage(msg)}
-              class="w-full text-left px-4 py-3.5 border-b border-surface-800/40 transition-all active:bg-surface-800/50 group
- {selectedMessage?.id === msg.id ? 'bg-primary-500/8 border-l-2 border-l-primary-500' : ''}
- {!msg.isGelezen ? 'border-l-2 border-l-primary-400' : ''}"
+              class="w-full text-left px-4 py-3.5 border-b border-surface-800/40 transition-all active:bg-surface-800/50 group {selectedMessage?.id === msg.id ? 'bg-primary-500/8 border-l-2 border-l-primary-500' : ''} {!msg.isGelezen ? 'border-l-2 border-l-primary-400' : ''}"
             >
               <div class="flex items-start justify-between gap-2">
                 <div class="flex items-center gap-2.5 min-w-0">
@@ -481,10 +474,10 @@
   {#if panel === 'detail'}
     <div class="flex flex-col h-full md:hidden">
       <div class="flex items-center gap-3 px-4 py-3 border-b border-surface-700/20 bg-surface-900/80 sticky top-0 z-10 shrink-0">
-        <button onclick={goBack} class="flex items-center gap-1 text-primary-400 text-label-large">
+        <Button variant="text" onclick={goBack} class="px-3">
           <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
           Terug
-        </button>
+        </Button>
       </div>
       <div class="flex-1 overflow-y-auto">
         {#if loadingDetail}
@@ -563,9 +556,9 @@
           <svg class="w-4 h-4 text-primary-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
           Nieuw bericht
         </h3>
-        <button onclick={() => showCompose = false} class="w-8 h-8 rounded-full bg-surface-800 hover:bg-surface-700 flex items-center justify-center text-gray-400 hover:text-white transition-all" aria-label="Sluiten">
+        <IconButton onclick={() => showCompose = false} class="bg-surface-800! hover:bg-surface-700! text-gray-400 hover:text-white!" aria-label="Sluiten">
           <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6 6 18M6 6l12 12"/></svg>
-        </button>
+        </IconButton>
       </div>
 
       <!-- Scrollable body -->
@@ -577,9 +570,9 @@
             {#each composeRecipients as r}
               <span class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-m3-sm bg-primary-500/20 border border-primary-500/30 text-primary-300 text-label-medium">
                 {r.naam ?? (r.roepnaam ? `${r.roepnaam} ${r.achternaam}` : `${r.voorletters} ${r.achternaam}`)}
-                <button onclick={() => composeRecipients = composeRecipients.filter(x => x.id !== r.id)} class="hover:text-white transition-colors" aria-label="Verwijder ontvanger">
+                <IconButton size="sm" onclick={() => composeRecipients = composeRecipients.filter(x => x.id !== r.id)} class="w-6! h-6! hover:text-white!" aria-label="Verwijder ontvanger">
                   <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                </button>
+                </IconButton>
               </span>
             {/each}
           </div>

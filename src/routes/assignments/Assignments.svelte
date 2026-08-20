@@ -19,6 +19,7 @@
   import RichTextEditor from '$lib/components/RichTextEditor.svelte';
   import Button from '$lib/components/Button.svelte';
   import Chip from '$lib/components/Chip.svelte';
+  import IconButton from '$lib/components/IconButton.svelte';
   import type { Assignment, AssignmentAttachment, AssignmentLink, AssignmentVersion, Docent } from '$lib/types';
 
   let assignments = $state<Assignment[]>([]);
@@ -234,24 +235,23 @@
     <div class="flex items-center justify-between px-4 py-3 gap-3">
       <div class="flex items-center gap-3 min-w-0">
         {#if selectedAssignment && isMobile}
-          <button
+          <IconButton
             onclick={() => selectedAssignment = null}
             aria-label="Terug naar opdrachtenlijst"
-            class="flex items-center gap-1 text-primary-400 text-label-large shrink-0"
           >
             <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
-          </button>
+          </IconButton>
         {/if}
         <h1 class="text-title-large text-gray-100 truncate">Opdrachten</h1>
       </div>
-      <button
+      <IconButton
         onclick={() => loadAssignments(true)}
         aria-label="Vernieuwen"
         title="Vernieuwen"
-        class="p-2 text-gray-500 hover:text-primary-400 transition-all hover:scale-110 active:scale-90 shrink-0"
+        class="hover:rotate-180 duration-700"
       >
         <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
-      </button>
+      </IconButton>
     </div>
 
     <!-- Filter sub-row -->
@@ -330,10 +330,7 @@
             <button
               onclick={() => selectAssignment(assignment)}
               style="--i: {i}"
-              class="stagger-item w-full text-left p-4 rounded-m3-md transition-all border
- {selectedAssignment?.Id === assignment.Id
- ? 'bg-primary-500/10 border-primary-500/30 shadow-xl shadow-primary-500/5'
- : 'bg-surface-800/40 border-white/5 hover:bg-surface-800/60 hover:border-white/10'}"
+              class="stagger-item w-full text-left p-4 rounded-m3-md transition-all border {selectedAssignment?.Id === assignment.Id ? 'bg-primary-500/10 border-primary-500/30 shadow-xl shadow-primary-500/5' : 'bg-surface-800/40 border-white/5 hover:bg-surface-800/60 hover:border-white/10'}"
             >
               <div class="flex justify-between items-start mb-2 gap-3">
                 <p class="text-title-small text-gray-100 truncate flex-1 leading-tight">{assignment.Titel}</p>
@@ -531,13 +528,13 @@
                         <div transition:slide={{ axis: 'x' }} class="pl-3 pr-2 py-1.5 rounded-m3-sm bg-surface-800 border border-surface-700 flex items-center gap-2">
                           <svg class="w-3 h-3 text-gray-500 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
                           <span class="text-label-medium text-gray-300">{att.name}</span>
-                          <button
+                          <IconButton
                             onclick={() => removeAttachment(i)}
-                            class="w-5 h-5 rounded-full bg-red-500/10 text-red-500 flex items-center justify-center hover:bg-red-500 hover:text-white transition-all"
+                            class="w-6! h-6! bg-red-500/10! text-red-500! hover:bg-red-500! hover:text-white!"
                             aria-label="Verwijder bijlage"
                           >
                             <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                          </button>
+                          </IconButton>
                         </div>
                       {/each}
                     </div>
@@ -593,7 +590,7 @@
                         <p class="text-label-small text-gray-500">Ingeleverd</p>
                       </div>
                     </div>
-                    <button class="text-label-large text-primary-400 hover:text-primary-300 transition-colors">Bekijken</button>
+                    <Button variant="text" class="px-4">Bekijken</Button>
                   </div>
                 {/each}
               </div>

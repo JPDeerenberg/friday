@@ -19,13 +19,13 @@
 
 {#if !$isLoggedIn}
   {#key $currentPage}
-    <div in:fly={{ y: 20, duration: 300 }}>
+    <div class="h-full" in:fly={{ y: 20, duration: 300 }}>
       <Login />
     </div>
   {/key}
 {:else}
   {#key $currentPage}
-    <div in:fly={{ y: 12, duration: 250 }}>
+    <div class="h-full" in:fly={{ y: 12, duration: 250 }}>
       {#if $currentPage === 'calendar'}
         <Calendar />
       {:else if $currentPage === 'grades'}
