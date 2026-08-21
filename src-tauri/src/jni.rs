@@ -33,36 +33,61 @@ fn sync_runtime() -> &'static Mutex<Runtime> {
 }
 
 #[cfg(target_os = "android")]
-fn ensure_ndk_context<'local>(
-    env: &mut JNIEnv<'local>,
-    context: jni::objects::JObject<'local>,
-    initialize_if_missing: bool,
-) {
+fn ndk_context_is_ready() -> bool {
+    std::panic::catch_unwind(|| {
+        let _ = ndk_context::android_context();
+    })
+    .is_ok()
+}
+
+/// Ensure `ndk-context` is set for keyring/JNI callers.
+///
+/// In the UI process Tao may also initialize it asynchronously. `ndk-context`
+/// 0.1.1 only allows a single init (second call asserts), so we probe first and
+/// only initialize when missing. Safe to call from MainActivity and SyncWorker.
+#[cfg(target_os = "android")]
+fn ensure_ndk_context<'local>(env: &mut JNIEnv<'local>, context: jni::objects::JObject<'local>) {
     use std::ffi::c_void;
 
-    // Tao owns initialization in the Activity process. Calling the ndk-context
-    // initializer there would panic if Tao won the race because ndk-context 0.1.1
-    // only permits one initialization. The Worker process has no Tao runtime, so
-    // it is the sole owner of initialization there.
-    if !initialize_if_missing {
+    if ndk_context_is_ready() {
+        let _ = NDK_CONTEXT_INITIALIZED.set(());
         return;
     }
 
     NDK_CONTEXT_INITIALIZED.get_or_init(|| {
+        // Tao may have won the race between the probe above and this block.
+        if ndk_context_is_ready() {
+            return;
+        }
+
         let Ok(vm) = env.get_java_vm() else { return };
-        let Ok(ref_) = env.new_global_ref(&context) else { return };
+        let Ok(ref_) = env.new_global_ref(&context) else {
+            return;
+        };
         let context_ptr = ref_.as_obj().as_raw() as *mut c_void;
 
-        unsafe {
+        // Double-check immediately before the assert-on-duplicate init.
+        if ndk_context_is_ready() {
+            return;
+        }
+
+        let init_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| unsafe {
             ndk_context::initialize_android_context(
                 vm.get_java_vm_pointer() as *mut c_void,
                 context_ptr,
             );
-        }
+        }));
 
-        // ndk-context stores the raw JNI reference for the lifetime of the process.
-        // Do not let GlobalRef delete it when this function returns.
-        std::mem::forget(ref_);
+        match init_result {
+            Ok(()) => {
+                // ndk-context stores the raw JNI reference for the process lifetime.
+                std::mem::forget(ref_);
+            }
+            Err(_) => {
+                // Tao initialized between our last probe and initialize — drop GlobalRef.
+                log::debug!("ndk-context already initialized by runtime; skipping our init");
+            }
+        }
     });
 }
 
@@ -73,10 +98,8 @@ pub extern "system" fn Java_com_joris_friday_SyncWorker_initNdkContext<'local>(
     _class: JClass<'local>,
     context: jni::objects::JObject<'local>,
 ) {
-    // Initialize the Android ndk-context so the keyring store can find the app
-    // context. The WorkManager sync can run in a fresh process with no Activity
-    // ever created (e.g. after reboot), so initialize it here when needed.
-    ensure_ndk_context(&mut env, context, true);
+    // WorkManager can run in a fresh process with no Activity; initialize here.
+    ensure_ndk_context(&mut env, context);
 }
 
 #[cfg(target_os = "android")]
@@ -86,9 +109,9 @@ pub extern "system" fn Java_com_joris_friday_MainActivity_initNdkContext<'local>
     _class: JClass<'local>,
     context: jni::objects::JObject<'local>,
 ) {
-    // Tao owns ndk-context initialization in the UI process. The shared helper
-    // intentionally makes this race-safe no-op instead of probing via a panic.
-    ensure_ndk_context(&mut env, context, false);
+    // UI process: init early so restore_session/keyring never race Tao's async setup.
+    // Race-safe with Tao (probe + catch_unwind around initialize).
+    ensure_ndk_context(&mut env, context);
 }
 
 #[cfg(target_os = "android")]

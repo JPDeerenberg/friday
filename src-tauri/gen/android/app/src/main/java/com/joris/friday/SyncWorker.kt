@@ -3,15 +3,18 @@ package com.joris.friday
 import android.app.NotificationManager
 import android.content.Context
 import androidx.core.app.NotificationCompat
-import androidx.work.CoroutineWorker
+import androidx.work.Data
 import androidx.work.WorkerParameters
+import androidx.work.multiprocess.RemoteCoroutineWorker
+import androidx.work.multiprocess.RemoteListenableWorker
+import androidx.work.multiprocess.RemoteWorkerService
 import android.util.Log
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 
 class SyncWorker(appContext: Context, workerParams: WorkerParameters) :
-    CoroutineWorker(appContext, workerParams) {
+    RemoteCoroutineWorker(appContext, workerParams) {
 
     private val TAG = "FridaySyncWorker"
 
@@ -31,7 +34,7 @@ class SyncWorker(appContext: Context, workerParams: WorkerParameters) :
             Log.e(TAG, "Failed to load friday_lib", e)
         }
     }
-    override suspend fun doWork(): Result {
+    override suspend fun doRemoteWork(): Result {
         // Tauri saves tokens.json to the PARENT of filesDir (app_data_dir)
         val dataDir = applicationContext.filesDir.parentFile?.absolutePath 
             ?: applicationContext.filesDir.absolutePath
@@ -237,5 +240,13 @@ class SyncWorker(appContext: Context, workerParams: WorkerParameters) :
         fun showNotificationWithType(context: Context, type: Int, title: String, message: String, extra: String?) {
             NotificationHelper.showNotification(context, type, title, message, extra)
         }
+
+        // Route both foreground-enqueued and system-scheduled work through the
+        // RemoteWorkerService so native keyring access never runs in Tao's process.
+        @JvmStatic
+        fun remoteInput(context: Context): Data = Data.Builder()
+            .putString(RemoteListenableWorker.ARGUMENT_PACKAGE_NAME, context.packageName)
+            .putString(RemoteListenableWorker.ARGUMENT_CLASS_NAME, RemoteWorkerService::class.java.name)
+            .build()
     }
 }

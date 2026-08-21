@@ -47,7 +47,15 @@ pub fn run() {
             // Initialize AI state with app data directory
             let app_data_dir = app.path().app_data_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
             let ai_state = AiState::new(app_data_dir);
+            let ai_config = ai_state.config.clone();
             app.manage(ai_state);
+
+            // Defer keyring access until after setup. Android's keyring store
+            // reads ndk-context, which Tao initializes asynchronously.
+            tauri::async_runtime::spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                AiState::load_api_key_async(ai_config).await;
+            });
 
             // Give the client a handle so ensure_valid_token() can persist mid-session
             // token refreshes to disk (see client.rs / bug #11). Using spawn (not

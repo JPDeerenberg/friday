@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
@@ -17,6 +18,21 @@
         android:label="@string/app_name"
         android:theme="@style/Theme.friday"
         android:usesCleartextTraffic="${usesCleartextTraffic}">
+        <!-- Keep WorkManager's native sync calls away from Tao's UI process.
+             Both processes can use ndk-context, but it may only be initialized
+             once per process. -->
+        <service
+            android:name="androidx.work.impl.background.systemjob.SystemJobService"
+            android:process=":sync"
+            tools:replace="android:process" />
+        <service
+            android:name="androidx.work.impl.background.systemalarm.SystemAlarmService"
+            android:process=":sync"
+            tools:replace="android:process" />
+        <service
+            android:name="androidx.work.multiprocess.RemoteWorkerService"
+            android:exported="false"
+            android:process=":sync" />
         <activity
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode"
             android:screenOrientation="portrait"

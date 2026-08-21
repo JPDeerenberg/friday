@@ -291,20 +291,25 @@ pub async fn restore_session(
     client: State<'_, SharedClient>,
     app: tauri::AppHandle,
 ) -> Result<bool, String> {
-    let mut c = client.lock().await;
-
     use tauri::Manager;
     let path = app.path().app_data_dir().map_err(|e| e.to_string())?;
 
-    // Load tokens from secure storage; fall back to migrating any legacy
-    // plaintext tokens.json left over from before this feature.
-    let token_set = crate::client::TokenSetPersistence::load(&path)
-        .or_else(|| crate::client::migrate_legacy_tokens(&path));
+    // Android keyring does JNI; keep it off the async executor so we don't
+    // block/panic a tokio worker during startup.
+    let path_for_load = path.clone();
+    let token_set = tokio::task::spawn_blocking(move || {
+        crate::client::TokenSetPersistence::load(&path_for_load)
+            .or_else(|| crate::client::migrate_legacy_tokens(&path_for_load))
+    })
+    .await
+    .map_err(|e| format!("restore_session join error: {e}"))?;
 
     let token_set = match token_set {
         Some(ts) => ts,
         None => return Ok(false),
     };
+
+    let mut c = client.lock().await;
     c.token_set = Some(token_set);
 
     // Try refreshing if expired

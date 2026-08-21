@@ -6,7 +6,7 @@ use serde::Serialize;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::State;
 
@@ -16,7 +16,7 @@ use tauri::State;
 /// ([`crate::secure_store`]); everything else (base_url, model, provider,
 /// enabled flags) is persisted to `ai_config.json` in plaintext.
 pub struct AiState {
-    pub config: Mutex<AiConfig>,
+    pub config: Arc<Mutex<AiConfig>>,
     /// Side-effecting AI actions awaiting explicit user confirmation.
     pub pending_actions: PendingActionStore,
     config_path: PathBuf,
@@ -25,7 +25,7 @@ pub struct AiState {
 impl AiState {
     pub fn new(app_data_dir: PathBuf) -> Self {
         let config_path = app_data_dir.join("ai_config.json");
-        let mut config = if config_path.exists() {
+        let config = if config_path.exists() {
             std::fs::read_to_string(&config_path)
                 .ok()
                 .and_then(|s| serde_json::from_str(&s).ok())
@@ -34,16 +34,31 @@ impl AiState {
             AiConfig::default()
         };
 
-        // Load the API key from secure storage (never persisted to disk).
-        config.api_key = secure_store::get_secret(secure_store::USER_AI_API_KEY)
-            .ok()
-            .flatten()
-            .unwrap_or_default();
-
         Self {
-            config: Mutex::new(config),
+            config: Arc::new(Mutex::new(config)),
             pending_actions: Mutex::new(HashMap::new()),
             config_path,
+        }
+    }
+
+    /// Load the API key after Tauri's Android UI context has had time to initialize.
+    pub async fn load_api_key_async(config: Arc<Mutex<AiConfig>>) {
+        // The Android keyring performs JNI calls and must not run on the async
+        // executor thread. In particular, it reads ndk-context during startup.
+        let result = tokio::task::spawn_blocking(|| {
+            secure_store::get_secret(secure_store::USER_AI_API_KEY)
+        })
+        .await;
+
+        let Ok(Ok(Some(api_key))) = result else {
+            return;
+        };
+
+        if let Ok(mut current) = config.lock() {
+            // Do not overwrite a key supplied by a command while loading.
+            if current.api_key.is_empty() {
+                current.api_key = api_key;
+            }
         }
     }
 

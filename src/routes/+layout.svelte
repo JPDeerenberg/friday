@@ -75,9 +75,13 @@
             profilePicture.set(pic);
           } catch (_) {}
         }
-      } catch (_) {}
-      await checkAiConfig();
-      loading = false;
+      } catch (_) {
+      } finally {
+        try {
+          await checkAiConfig();
+        } catch (_) {}
+        loading = false;
+      }
 
       unlistenBack = await listen('tauri://back-button', () => {
         if (mobileSidebarOpen) {

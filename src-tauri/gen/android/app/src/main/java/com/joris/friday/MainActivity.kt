@@ -24,8 +24,8 @@ class MainActivity : TauriActivity() {
     private var hasPromptedPermissions = false
     private var hasPromptedBatteryOpt = false
 
-    // tao/Tauri initializes ndk-context asynchronously, so this intentionally races
-    // that setup. Rust must make this call idempotent and non-panicking.
+    // Initialize ndk-context early so keyring/session restore never races Tao's
+    // async setup. Rust side is idempotent and race-safe with Tao (probe + catch).
     private external fun initNdkContext(context: Context)
 
     companion object {
@@ -59,6 +59,7 @@ class MainActivity : TauriActivity() {
             .build()
         val backstop = PeriodicWorkRequestBuilder<SyncWorker>(BACKSTOP_INTERVAL_MINUTES, TimeUnit.MINUTES)
             .setConstraints(constraints)
+            .setInputData(SyncWorker.remoteInput(this))
             .build()
         WorkManager.getInstance(this).enqueueUniquePeriodicWork(
             PERIODIC_SYNC_WORK,
@@ -105,9 +106,10 @@ class MainActivity : TauriActivity() {
   /**
    * Manually trigger a sync via WorkManager (one-shot)
    */
-  fun triggerManualSync() {
-    val workRequest = androidx.work.OneTimeWorkRequestBuilder<SyncWorker>()
-        .build()
+    fun triggerManualSync() {
+        val workRequest = androidx.work.OneTimeWorkRequestBuilder<SyncWorker>()
+            .setInputData(SyncWorker.remoteInput(this))
+            .build()
     WorkManager.getInstance(this).enqueue(workRequest)
   }
 

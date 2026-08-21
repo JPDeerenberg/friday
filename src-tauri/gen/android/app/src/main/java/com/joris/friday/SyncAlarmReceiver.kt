@@ -52,6 +52,7 @@ class SyncAlarmReceiver : BroadcastReceiver() {
             .build()
         val workRequest = OneTimeWorkRequestBuilder<SyncWorker>()
             .setConstraints(constraints)
+            .setInputData(SyncWorker.remoteInput(context))
             .build()
         WorkManager.getInstance(context).enqueue(workRequest)
 
