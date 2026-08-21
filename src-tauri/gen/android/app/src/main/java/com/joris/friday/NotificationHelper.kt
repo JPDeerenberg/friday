@@ -6,6 +6,8 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import androidx.core.app.NotificationCompat
 
 object NotificationHelper {
@@ -258,6 +260,23 @@ object NotificationHelper {
                 android.util.Log.w("FridayDnd", "Cannot update DND: Permission not granted")
             }
         }
+    }
+
+    /**
+     * Temporarily enable DND so the user can verify that Friday can control it.
+     * This deliberately does not touch DndScheduler's ownership flag.
+     */
+    @JvmStatic
+    fun testDnd(context: Context, durationMs: Long) {
+        if (!hasDndAccess(context)) {
+            android.util.Log.w("FridayDnd", "Cannot test DND: Permission not granted")
+            return
+        }
+
+        updateDndStatus(context, true)
+        Handler(Looper.getMainLooper()).postDelayed({
+            updateDndStatus(context, false)
+        }, durationMs)
     }
     
     private data class ChannelInfo(

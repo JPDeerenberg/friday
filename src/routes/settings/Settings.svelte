@@ -2,7 +2,7 @@
   import { userSettings } from '$lib/stores';
   import { currentPage } from '$lib/stores';
   import { triggerTestNotification, notifyNewMessage, notifyNewGrade, notifyDeadline, notifyCalendarChange,
-           triggerSync, getDebugInfo, getSyncStateDebug, clearSyncState, setSyncInterval, getSyncInterval, getNightSleepConfig, setNightSleepConfig, getDisableAllNotifications, setDisableAllNotifications, getDndAccessStatus,
+            triggerSync, getDebugInfo, getSyncStateDebug, clearSyncState, setSyncInterval, getSyncInterval, getNightSleepConfig, setNightSleepConfig, getDisableAllNotifications, setDisableAllNotifications, getDndAccessStatus, triggerDndTest,
            exportAllData } from '$lib/api';
   import { getAiConfig, setAiConfig, validateAiKey, listAiModels, type AiConfig, type AiProviderType, AI_PROVIDERS } from '$lib/ai';
   import { sectionIcon } from '$lib/icons';
@@ -29,7 +29,6 @@
     const items = sections
       .filter(s => !s.hideIfDesktop || isMobile)
       .map(s => ({ id: s.id, title: s.title }));
-    items.push({ id: 'debug', title: 'Systeem Debug' });
     items.push({ id: 'about', title: 'Over de app' });
     return items;
   });
@@ -206,13 +205,36 @@
     }
   }
 
+  function isTestBusy(id: string) {
+    const type = id === 'testBasic' ? 'test' : id.startsWith('test') ? id.slice(4).toLowerCase() : null;
+    return type !== null && testingNotification === type;
+  }
+
+  function getCompactAction(section: any, settingId: string) {
+    return section.settings.find((setting: any) => setting.compactFor === settingId);
+  }
+
   async function openDndSettings() {
     try {
-      const { invoke } = await import('@tauri-apps/api/core');
-      await invoke('open_notification_policy_settings');
+      if (dndAccessGranted === true) {
+        await triggerDndTest();
+      } else {
+        const { invoke } = await import('@tauri-apps/api/core');
+        await invoke('open_notification_policy_settings');
+      }
     } catch (e) {
       alert('Kan instellingen niet openen: ' + e);
     }
+  }
+
+  function dndActionLabel() {
+    return dndAccessGranted === true ? 'Test DND' : 'DND Toegang';
+  }
+
+  function dndActionDescription() {
+    return dndAccessGranted === true
+      ? 'Zet Niet Storen vijf seconden aan en daarna weer uit.'
+      : 'Open Android instellingen voor Niet Storen toegang.';
   }
 
   // --- Debug actions ---
@@ -460,37 +482,24 @@
       title: 'Meldingen',
       settings: [
         { id: 'notifyMessages', label: 'Berichten', description: 'Melding bij nieuwe berichten.', type: 'toggle', notificationType: 'message' },
+        { id: 'testMessage', label: 'Bericht Notificatie', description: 'Test bericht notificatie.', type: 'action', compactFor: 'notifyMessages', action: () => testNotificationType('message', 'Nieuw Bericht', 'Je hebt een nieuw bericht van Test Sender') },
         { id: 'notifyGrades', label: 'Nieuwe Cijfers', description: 'Melding bij nieuwe cijfers.', type: 'toggle', notificationType: 'grade' },
+        { id: 'testGrade', label: 'Cijfer Notificatie', description: 'Test cijfer notificatie.', type: 'action', compactFor: 'notifyGrades', action: () => testNotificationType('grade', 'Nieuw Cijfer', 'Er is een nieuw cijfer toegevoegd') },
         { id: 'notifyDeadlines', label: 'Deadlines', description: 'Melding bij opdrachten en deadlines.', type: 'toggle', notificationType: 'deadline' },
+        { id: 'testDeadline', label: 'Deadline Notificatie', description: 'Test deadline notificatie.', type: 'action', compactFor: 'notifyDeadlines', action: () => testNotificationType('deadline', 'Deadline Aankomst', 'Een opdracht deadline nadert') },
         { id: 'notifyCalendar', label: 'Agenda Wijzigingen', description: 'Melding bij agenda wijzigingen.', type: 'toggle', notificationType: 'calendar' },
+        { id: 'testCalendar', label: 'Agenda Notificatie', description: 'Test agenda notificatie.', type: 'action', compactFor: 'notifyCalendar', action: () => testNotificationType('calendar', 'Agenda Gewijzigd', 'Er is een wijziging in je agenda') },
         { id: 'notifyAutoDnd', label: 'Autom. Niet Storen', description: 'Zet DND aan tijdens lessen (Android DND toegang nodig).', type: 'toggle' },
-      ],
-      hideIfDesktop: true
-    },
-    {
-      id: 'meldingen-testen',
-      title: 'Meldingen Testen',
-      settings: [
-        { id: 'testMessage', label: 'Bericht Notificatie', description: 'Test bericht notificatie.', type: 'action', action: () => testNotificationType('message', 'Nieuw Bericht', 'Je hebt een nieuw bericht van Test Sender') },
-        { id: 'testGrade', label: 'Cijfer Notificatie', description: 'Test cijfer notificatie.', type: 'action', action: () => testNotificationType('grade', 'Nieuw Cijfer', 'Er is een nieuw cijfer toegevoegd') },
-        { id: 'testDeadline', label: 'Deadline Notificatie', description: 'Test deadline notificatie.', type: 'action', action: () => testNotificationType('deadline', 'Deadline Aankomst', 'Een opdracht deadline nadert') },
-        { id: 'testCalendar', label: 'Agenda Notificatie', description: 'Test agenda notificatie.', type: 'action', action: () => testNotificationType('calendar', 'Agenda Gewijzigd', 'Er is een wijziging in je agenda') },
         { id: 'testBasic', label: 'Basis Test', description: 'Standaard test notificatie.', type: 'action', action: () => testNotificationType('test', 'Test Notificatie', 'Dit is een test van het Friday meldingen systeem!') },
         { id: 'openDndSettings', label: 'DND Toegang', description: 'Open Android instellingen voor Niet Storen toegang.', type: 'action', action: () => openDndSettings() },
       ],
       hideIfDesktop: true
     },
     {
-      id: 'exporteren',
-      title: 'Exporteren',
+      id: 'data',
+      title: 'Data & Downloads',
       settings: [
         { id: 'exportAll', label: 'Alles Exporteren', description: 'Exporteer al je data (lessen, cijfers, opdrachten, etc.) naar JSON-bestanden.', type: 'action', action: () => doExport() },
-      ]
-    },
-    {
-      id: 'downloads',
-      title: 'Downloads',
-      settings: [
         { id: 'downloadDir', label: 'Downloadmap', description: 'Kies waar gedownloade bestanden worden opgeslagen. Leeg = systeemstandaard.', type: 'download-dir' },
       ]
     },
@@ -755,20 +764,38 @@
           {/if}
         {:else}
         <div class="space-y-2">
-          {#each section.settings as setting}
+          {#each section.settings as setting (setting.id)}
+            {#if setting.type !== 'action' || !setting.compactFor}
             <div class="glass p-5 rounded-m3-md border-white/5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-6 transition-all hover:bg-surface-800/40">
               <div class="flex-1">
-                <p class="text-title-small text-gray-100">{setting.label}</p>
-                <p class="text-label-medium text-gray-500 mt-1 leading-relaxed">{setting.description}</p>
+                <p class="text-title-small text-gray-100">{setting.id === 'openDndSettings' ? dndActionLabel() : setting.label}</p>
+                <p class="text-label-medium text-gray-500 mt-1 leading-relaxed">{setting.id === 'openDndSettings' ? dndActionDescription() : setting.description}</p>
               </div>
 
               {#if setting.type === 'toggle'}
-                <Switch
-                  checked={$userSettings[setting.id]}
-                  onCheckedChange={(v) => updateToggle(setting.id, v)}
-                  ariaLabel={setting.label}
-                />
-              {:else if setting.type === 'number'}
+                 <div class="flex items-center gap-2 shrink-0">
+                   <Switch
+                     checked={$userSettings[setting.id]}
+                     onCheckedChange={(v) => updateToggle(setting.id, v)}
+                     ariaLabel={setting.label}
+                   />
+                   {#if section.id === 'meldingen'}
+                     {@const compactAction = getCompactAction(section, setting.id)}
+                     {#if compactAction}
+                       <Button
+                         variant="tonal"
+                         onclick={() => compactAction.action()}
+                         disabled={isTestBusy(compactAction.id)}
+                         aria-label={compactAction.label}
+                         title={compactAction.description}
+                         class="h-8! px-3! text-label-small!"
+                       >
+                         {isTestBusy(compactAction.id) ? '...' : 'Test'}
+                       </Button>
+                     {/if}
+                   {/if}
+                 </div>
+               {:else if setting.type === 'number'}
                 <input
                   type="number"
                   value={$userSettings[setting.id]}
@@ -798,7 +825,7 @@
                 <Button
                   variant="tonal"
                   onclick={() => setting.action()}
-                  disabled={setting.id === 'exportAll' ? exportBusy : (testingNotification === setting.id.split('test')[1])}
+                  disabled={setting.id === 'exportAll' ? exportBusy : isTestBusy(setting.id)}
                   class="px-5"
                 >
                   {#if setting.id === 'exportAll'}
@@ -807,8 +834,10 @@
                     {:else}
                       Exporteren
                     {/if}
-                  {:else if testingNotification === setting.id.split('test')[1]}
+                  {:else if isTestBusy(setting.id)}
                     <span class="animate-pulse">⏳ Wachten...</span>
+                  {:else if setting.id === 'openDndSettings'}
+                    {dndActionLabel()}
                   {:else}
                     Testen
                   {/if}
@@ -859,6 +888,7 @@
                 </Button>
               </div>
             {/if}
+            {/if}
           {/each}
         </div>
       {/if}
@@ -866,16 +896,18 @@
       {/if}
     {/each}
 
-    <!-- ===== DEBUG SECTION ===== -->
-    {#if activeSection === 'debug'}
+    <!-- ===== ADVANCED SECTION ===== -->
+    {#snippet debugPanel()}
     <section id="settings-debug" in:fly={{ y: 20, delay: 0 }}>
       <button
         onclick={toggleDebug}
+        aria-expanded={debugOpen}
+        aria-controls="settings-debug-content"
         class="w-full flex items-center justify-between px-2 mb-4 group"
       >
         <h2 class="text-label-medium text-gray-600 group-hover:text-amber-500 transition-colors flex items-center gap-2">
           <svg class="w-3 h-3 md:hidden text-amber-500/70" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
-          <span class="md:hidden">Systeem Debug</span>
+          <span>Geavanceerd</span>
         </h2>
         <div class="flex items-center gap-2">
           <span class="text-label-small text-gray-700">
@@ -889,7 +921,7 @@
       </button>
 
       {#if debugOpen}
-        <div transition:slide={{ duration: 250 }} class="space-y-4">
+        <div id="settings-debug-content" transition:slide={{ duration: 250 }} class="space-y-4">
 
           <!-- System info cards -->
           {#if debugInfo}
@@ -1077,7 +1109,7 @@
         </div>
       {/if}
     </section>
-    {/if}
+    {/snippet}
 
     <!-- ===== GITHUB REPO INFO ===== -->
     {#if activeSection === 'about'}
@@ -1134,9 +1166,10 @@
             <div class="w-4 h-4 border-2 border-primary-500 border-t-transparent rounded-full animate-spin"></div>
             <span class="text-label-small text-gray-600">Repo info laden...</span>
           </div>
-        {/if}
-      </div>
-    </section>
+         {/if}
+       </div>
+       {@render debugPanel()}
+     </section>
     {/if}
 
     <div class="pt-10 flex flex-col items-center gap-2">

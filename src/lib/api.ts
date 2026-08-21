@@ -553,6 +553,10 @@ export async function getDndAccessStatus(): Promise<boolean> {
   return invoke("get_dnd_access_status");
 }
 
+export async function triggerDndTest(): Promise<void> {
+  return invoke("trigger_dnd_test");
+}
+
 export async function setDisableAllNotifications(
   enabled: boolean,
 ): Promise<string> {

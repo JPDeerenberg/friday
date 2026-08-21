@@ -142,6 +142,7 @@ pub fn run() {
             commands::notifications::trigger_sync,
             commands::notifications::sync_notification_preferences,
             commands::notifications::open_notification_policy_settings,
+            commands::notifications::trigger_dnd_test,
             commands::notifications::clear_sync_state,
             commands::notifications::get_sync_state_debug,
             commands::notifications::get_debug_info,

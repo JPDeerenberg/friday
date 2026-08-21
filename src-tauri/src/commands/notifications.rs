@@ -468,6 +468,51 @@ pub fn open_notification_policy_settings(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// Temporarily toggles Android DND for a short user-facing test.
+#[tauri::command]
+pub fn trigger_dnd_test(app: AppHandle) -> Result<(), String> {
+    let _ = &app;
+    #[cfg(target_os = "android")]
+    {
+        let window = app.get_webview_window("main")
+            .or_else(|| app.webview_windows().values().next().cloned())
+            .ok_or_else(|| "No active window found for JNI access".to_string())?;
+
+        window.with_webview(move |webview| {
+            #[cfg(target_os = "android")]
+            {
+                let _ = webview.jni_handle().exec(move |env, activity, _webview| {
+                    use jni::objects::JValue;
+
+                    let class = match find_app_class(env, &activity, "com.joris.friday.NotificationHelper") {
+                        Ok(c) => c,
+                        Err(e) => {
+                            let _ = env.exception_clear();
+                            log::error!("JNI ERROR: Failed to find NotificationHelper: {:?}", e);
+                            return;
+                        }
+                    };
+
+                    let res = env.call_static_method(
+                        &class,
+                        "testDnd",
+                        "(Landroid/content/Context;J)V",
+                        &[JValue::from(&activity), JValue::Long(5_000)],
+                    );
+                    if let Err(e) = res {
+                        if let Ok(true) = env.exception_check() {
+                            let _ = env.exception_clear();
+                        }
+                        log::error!("JNI ERROR: Failed to trigger DND test: {:?}", e);
+                    }
+                });
+            }
+        }).map_err(|e| e.to_string())?;
+    }
+
+    Ok(())
+}
+
 /// Returns a JSON string with debug information about the sync service state.
 #[tauri::command]
 pub fn get_debug_info(app: AppHandle) -> Result<String, String> {
