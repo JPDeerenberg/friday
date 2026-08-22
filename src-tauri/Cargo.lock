@@ -1819,7 +1819,7 @@ dependencies = [
 
 [[package]]
 name = "friday"
-version = "2.3.2"
+version = "2.3.3"
 dependencies = [
  "async-trait",
  "base64 0.23.1",
