@@ -1,6 +1,6 @@
 [package]
 name = "friday"
-version = "2.3.2"
+version = "2.3.3"
 description = "A Tauri App"
 authors = ["you"]
 edition = "2021"
@@ -35,9 +35,9 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # OS-level secure storage for secrets (Magister tokens, AI API key).
 keyring-core = "1.0"
-reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
-sha2 = "0.10"
-base64 = "0.22"
+reqwest = { version = "0.13", features = ["json", "rustls"], default-features = false }
+sha2 = "0.11"
+base64 = "0.23"
 rand = "0.10"
 chrono = { version = "0.4", features = ["serde"] }
 # Trimmed from "full" — audited actual tokio:: usage in src/ (sync::Mutex, jni.rs's
@@ -48,7 +48,7 @@ chrono = { version = "0.4", features = ["serde"] }
 # line may be smaller than "full → minimal" suggests — still correct to be explicit
 # rather than blanket-enable everything, just don't expect a huge win alone.
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "macros", "time"] }
-thiserror = "1"
+thiserror = "2"
 url = "2"
 futures = "0.3"
 mime_guess = "2.0.5"
@@ -56,7 +56,7 @@ tauri-plugin-dialog = "2"
 tauri-plugin-deep-link = "2"
 tauri-plugin-mcp-bridge = "0.12"
 jni = "0.21.1"
-dirs = "5"
+dirs = "6"
 async-trait = "0.1"
 # Attachment text extraction for the AI `read_attachment_text` tool.
 # pdf-extract is pure-Rust (MIT), pulls in lopdf/cff-parser/postscript.
