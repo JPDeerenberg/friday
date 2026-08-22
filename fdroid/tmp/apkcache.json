@@ -148,7 +148,7 @@
     "added": 1787090502.911849
   },
   "friday_20302.apk": {
-    "hash": "1fcbae3512c8fd68179e32573e0153841829ddcc73b0201c9fb6f68debac16b7",
+    "hash": "369c5a06eb171df53e91bbbcb811fccaa23650b69537a1cb38799db34c4c35eb",
     "hashType": "sha256",
     "uses-permission": [
       [
@@ -216,8 +216,8 @@
     ],
     "sig": "4ce727eccd89c0bef16a0dfad1f8fe33",
     "signer": "a78c487208a97ffb2dadf9a69bdec2a6c0050b2f99ef528ed43a01dd5c5687a3",
-    "size": 15206909,
+    "size": 15497819,
     "apkName": "friday_20302.apk",
-    "added": 1787156815.113498
+    "added": 1787156815.0
   }
 }
