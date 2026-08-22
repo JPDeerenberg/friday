@@ -2,6 +2,7 @@
   import '../app.css';
   import { onMount } from 'svelte';
   import { listen } from '@tauri-apps/api/event';
+  import { getCurrentWindow } from '@tauri-apps/api/window';
   import { isLoggedIn, personId, accountInfo, profilePicture, currentPage, userSettings } from '$lib/stores';
   import { restoreSession, getAccount, getPersonId, getProfilePicture, handleAuthCallback, logout } from '$lib/api';
   import { getAiConfig } from '$lib/ai';
@@ -40,6 +41,16 @@
   }
 
   onMount(() => {
+    if (typeof window !== 'undefined' && (window as any).__TAURI__) {
+      // Double rAF guarantees the "Laden..." spinner below has actually
+      // painted before the native window is revealed — avoids a blank frame.
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          getCurrentWindow().show().catch(() => {});
+        });
+      });
+    }
+
     let unlistenCallback: any, unlistenSuccess: any, unlistenError: any, unlistenBack: any;
 
     (async () => {
