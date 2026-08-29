@@ -7,6 +7,10 @@ export const accountInfo = writable<Account | null>(null);
 export const profilePicture = writable<string | null>(null);
 export const currentPage = writable<string>("dashboard");
 export const navigationStack = writable<string[]>([]);
+// Surfaces auth-callback/auth-success/auth-error failures from +layout.svelte
+// (the sole owner of processing those events) to whatever screen wants to
+// show them — currently Login.svelte.
+export const loginError = writable<string>("");
 
 // Sync status
 export const lastSyncTime = writable<Date | null>(null);

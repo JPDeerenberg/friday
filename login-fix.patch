@@ -1,0 +1,395 @@
+diff --git a/FIX-login-stuck-spinner.md b/FIX-login-stuck-spinner.md
+new file mode 100644
+index 0000000..a35a7a0
+--- /dev/null
++++ b/FIX-login-stuck-spinner.md
+@@ -0,0 +1,138 @@
++# Fix: login stuck spinning after returning from the browser (Android)
++
++## Root cause
++
++`src-tauri/Cargo.toml` was updated from:
++
++```toml
++reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
++```
++to:
++```toml
++reqwest = { version = "0.13", features = ["json", "rustls"], default-features = false }
++```
++
++This isn't just a version bump — reqwest 0.13 renamed the `rustls` feature, and as
++part of that, changed what it verifies TLS certificates *with*:
++
++- reqwest 0.12's `rustls-tls` → bundled Mozilla root store (`webpki-roots`). No
++  OS/platform integration needed, works identically everywhere.
++- reqwest 0.13's `rustls` → `rustls-platform-verifier`, which verifies against
++  each OS's *native* trust store. On Android this requires an explicit one-time
++  JNI init call (`rustls_platform_verifier::android::init_with_env`) with a real
++  JVM `Env`/`Context`, made *before any HTTPS request*. Nothing in this codebase
++  makes that call, and it also needs a small Kotlin/Gradle component bundled
++  into `src-tauri/gen/android` that isn't there either.
++
++Result: the first HTTPS request made on Android panics:
++
++```
++thread 'tokio-rt-worker' panicked at rustls-platform-verifier-0.7.0/src/android.rs:90:10:
++Expect rustls-platform-verifier to be initialized
++```
++— confirmed directly in `log-new3.log`.
++
++That first HTTPS request is `AuthFlow::exchange_code()` in `src-tauri/src/auth.rs`,
++called the instant the `m6loapp://` deep link fires after the browser redirect —
++i.e. exactly the point where you see the spinner and nothing else happens.
++
++**Why a stuck spinner and not a crash:** `[profile.release] panic = "abort"` was
++present in 2.1.0 and is no longer in the current `Cargo.toml`. With the current
++default (`panic = "unwind"`), only the one panicking background task dies — the
++rest of the app, including the UI, keeps running. So the Tauri command's promise
++on the frontend side simply never resolves. (I did *not* restore `panic = "abort"`
++— see "Also noticed" below.)
++
++## The fix
++
++New file `src-tauri/src/tls.rs` rebuilds the exact bundled-root TLS behavior
++2.1.0 had (verified by downloading and reading the actual reqwest 0.13.4,
++rustls 0.23.43, and webpki-roots 1.0.9 sources from crates.io), and hands it to
++`reqwest` via `tls_backend_preconfigured()` instead of letting `reqwest` build
++its own platform-verifier-based config:
++
++```rust
++pub fn client_builder() -> reqwest::ClientBuilder {
++    reqwest::Client::builder().tls_backend_preconfigured(tls_config())
++}
++
++pub fn new_client() -> reqwest::Client {
++    client_builder().build().expect(...)
++}
++```
++
++Every `reqwest::Client::new()` / `reqwest::Client::builder()` call site in the
++codebase now goes through this instead:
++
++- `auth.rs` (×3, including the one in `exchange_code()`)
++- `client.rs` (×2 — `MagisterClient::new()`, and `get_redirect_location()`'s
++  no-redirect client)
++- `ai/providers/{anthropic,openai,gemini}.rs` (×7)
++
++`Cargo.toml` gained two new explicit dependencies that `tls.rs` needs
++(`rustls`, `webpki-roots`) — both were already in the dependency tree
++transitively via reqwest, so this doesn't pull in anything new for the
++`rustls` one, and doesn't change any existing feature flags (double-checked
++reqwest's own `rustls` dependency declaration already requests full default
++features, same as before).
++
++**`Cargo.lock` will auto-update the first time you build** (plain `cargo build`,
++`pnpm tauri android build`, etc. all do this transparently). If your workflow
++uses `--locked`/`--frozen`, run `cargo build` once without that flag first
++(or `cd src-tauri && cargo update -p webpki-roots`) to refresh the lockfile.
++
++### How I verified it, without an Android toolchain in this environment
++
++I don't have an Android SDK/NDK here, so I couldn't do a full `cargo tauri
++android build`. Instead:
++
++1. Downloaded the actual `.crate` sources for `rustls-platform-verifier 0.7.0`,
++   `reqwest 0.13.4`, `rustls 0.23.43`, and `webpki-roots 1.0.9` from
++   `static.crates.io` and read the real implementations (not relying on memory) —
++   this is how I confirmed the panic site, `tls_backend_preconfigured`'s exact
++   expected type (`Option<rustls::ClientConfig>`), and `RootCertStore`'s shape.
++2. Compiled the actual `tls.rs` logic (RootCertStore + ClientConfig construction)
++   in an isolated scratch project pinned to those exact crate versions — it
++   compiles cleanly. (The reqwest-side integration point relies on the source
++   reading in step 1, since pulling reqwest itself into that scratch check hit
++   an unrelated wall: this sandbox's apt-installed Rust is too old (1.75) for a
++   transitive dependency that now requires edition2024 — that's a sandbox
++   limitation, not a real problem; your real Cargo.lock already resolves to
++   that same dependency version, so your normal toolchain will build it fine.)
++3. Traced the full call path end-to-end in the source (browser redirect → deep
++   link → `on_open_url` → `auth-callback` event → frontend listener in
++   `+layout.svelte` → `handle_auth_callback` command → `exchange_code()` →
++   the panicking `reqwest::Client::new()`) to make sure this is really the
++   only break in the chain. The frontend side looked correct — there's even a
++   comment there describing a previous, already-fixed double-invoke bug, which
++   isn't this issue.
++
++I'd still recommend actually running the login flow on a device/emulator once
++after pulling this in, since I couldn't do that step myself here.
++
++## Also noticed (not changed, your call)
++
++`[profile.release] panic = "abort"` (present in 2.1.0, absent now) — with it
++back, *any* panic anywhere in the app would immediately kill the whole process
++instead of just the one background task. I left this as-is rather than
++restoring it, since:
++
++- it's an independent decision from the actual bug (which is now fixed at the
++  source — there's no more panic in the normal login path either way), and
++- reverting it would mean any *other*, unrelated panic (e.g. in the AI
++  features) takes down the whole app instead of just failing that one
++  feature — that's a real trade-off you may want to make deliberately rather
++  than as a side effect of this fix.
++
++## Longer-term option
++
++If you'd rather use the OS-native trust store (better security posture —
++OCSP/CRL revocation checking, respects custom/enterprise CAs) instead of
++bundled roots, that means properly wiring up `rustls-platform-verifier`: add
++its Kotlin/Gradle component to `src-tauri/gen/android`, and call
++`rustls_platform_verifier::android::init_with_env` once during Android
++startup (alongside where `ndk-context` readiness is already handled, per
++`hardening-fixes.patch`/`AGENTS.md`). That's a larger, Android-build-specific
++change I didn't attempt here since I have no way to verify it compiles/links
++in this environment — happy to take a pass at it if you want to go that
++route instead.
+diff --git a/src-tauri/Cargo.toml b/src-tauri/Cargo.toml
+index eebb1ab..06bbf2c 100644
+--- a/src-tauri/Cargo.toml
++++ b/src-tauri/Cargo.toml
+@@ -36,6 +36,13 @@ serde_json = "1"
+ # OS-level secure storage for secrets (Magister tokens, AI API key).
+ keyring-core = "1.0"
+ reqwest = { version = "0.13", features = ["json", "rustls"], default-features = false }
++# Used directly by src/tls.rs to build a bundled-root TLS config (see that
++# file for why): both are already pulled in transitively by reqwest's
++# "rustls" feature, this just makes the version explicit since we now
++# reference their types ourselves rather than only letting reqwest use them
++# internally.
++rustls = "0.23"
++webpki-roots = "1"
+ sha2 = "0.11"
+ base64 = "0.23"
+ rand = "0.10"
+diff --git a/src-tauri/src/ai/providers/anthropic.rs b/src-tauri/src/ai/providers/anthropic.rs
+index 1bbce92..8531e73 100644
+--- a/src-tauri/src/ai/providers/anthropic.rs
++++ b/src-tauri/src/ai/providers/anthropic.rs
+@@ -11,7 +11,7 @@ pub struct AnthropicProvider;
+ impl AiProvider for AnthropicProvider {
+     async fn validate_key(&self, config: &AiConfig) -> Result<bool, String> {
+         let url = "https://api.anthropic.com/v1/messages";
+-        let client = reqwest::Client::new();
++        let client = crate::tls::new_client();
+         let resp = client
+             .post(url)
+             .header("x-api-key", &config.api_key)
+@@ -36,7 +36,7 @@ impl AiProvider for AnthropicProvider {
+         tools: &[ToolDef],
+     ) -> Result<AiChatResult, String> {
+         let url = "https://api.anthropic.com/v1/messages";
+-        let client = reqwest::Client::new();
++        let client = crate::tls::new_client();
+ 
+         // Anthropic requires alternating user/assistant messages, starting with user
+         // We handle system messages separately
+diff --git a/src-tauri/src/ai/providers/gemini.rs b/src-tauri/src/ai/providers/gemini.rs
+index 31d8393..dab5dda 100644
+--- a/src-tauri/src/ai/providers/gemini.rs
++++ b/src-tauri/src/ai/providers/gemini.rs
+@@ -15,7 +15,7 @@ impl AiProvider for GeminiProvider {
+             "https://generativelanguage.googleapis.com/v1/models?key={}",
+             config.api_key
+         );
+-        let client = reqwest::Client::new();
++        let client = crate::tls::new_client();
+         let resp = client
+             .get(&url)
+             .send()
+@@ -34,7 +34,7 @@ impl AiProvider for GeminiProvider {
+             "https://generativelanguage.googleapis.com/v1/models/{}:generateContent?key={}",
+             config.model, config.api_key
+         );
+-        let client = reqwest::Client::new();
++        let client = crate::tls::new_client();
+ 
+         // Gemini uses a different structure: contents[] with parts[]
+         // System instructions are separate
+diff --git a/src-tauri/src/ai/providers/openai.rs b/src-tauri/src/ai/providers/openai.rs
+index df4aeb7..ae3f07f 100644
+--- a/src-tauri/src/ai/providers/openai.rs
++++ b/src-tauri/src/ai/providers/openai.rs
+@@ -11,7 +11,7 @@ pub struct OpenAiProvider;
+ impl AiProvider for OpenAiProvider {
+     async fn validate_key(&self, config: &AiConfig) -> Result<bool, String> {
+         let url = format!("{}/models", config.base_url.trim_end_matches('/'));
+-        let client = reqwest::Client::new();
++        let client = crate::tls::new_client();
+         let resp = client
+             .get(&url)
+             .header("Authorization", format!("Bearer {}", config.api_key))
+@@ -23,7 +23,7 @@ impl AiProvider for OpenAiProvider {
+ 
+     async fn list_models(&self, config: &AiConfig) -> Result<Vec<String>, String> {
+         let url = format!("{}/models", config.base_url.trim_end_matches('/'));
+-        let client = reqwest::Client::new();
++        let client = crate::tls::new_client();
+         let resp = client
+             .get(&url)
+             .header("Authorization", format!("Bearer {}", config.api_key))
+@@ -56,7 +56,7 @@ impl AiProvider for OpenAiProvider {
+         tools: &[ToolDef],
+     ) -> Result<AiChatResult, String> {
+         let url = format!("{}/chat/completions", config.base_url.trim_end_matches('/'));
+-        let client = reqwest::Client::new();
++        let client = crate::tls::new_client();
+ 
+         let chat_messages: Vec<Value> = messages
+             .iter()
+diff --git a/src-tauri/src/auth.rs b/src-tauri/src/auth.rs
+index 9a73377..2035dbb 100644
+--- a/src-tauri/src/auth.rs
++++ b/src-tauri/src/auth.rs
+@@ -81,7 +81,7 @@ impl AuthFlow {
+             .map(|(_, v)| v.to_string())
+             .ok_or(AuthError::MissingCode)?;
+ 
+-        let client = reqwest::Client::new();
++        let client = crate::tls::new_client();
+         let body = format!(
+             "code={code}\
+              &redirect_uri=m6loapp://oauth2redirect/\
+@@ -153,7 +153,7 @@ impl AuthFlow {
+ 
+     /// Discover the API endpoint for the authenticated user.
+     pub async fn discover_api_endpoint(access_token: &str) -> Result<String, AuthError> {
+-        let client = reqwest::Client::new();
++        let client = crate::tls::new_client();
+         let resp = client
+             .get("https://magister.net/.well-known/host-meta.json?rel=magister-api")
+             .header("Authorization", format!("Bearer {access_token}"))
+@@ -174,7 +174,7 @@ impl AuthFlow {
+ 
+     /// Refresh an expired token using the refresh_token grant.
+     pub async fn refresh_token(refresh_token: &str) -> Result<TokenResponse, AuthError> {
+-        let client = reqwest::Client::new();
++        let client = crate::tls::new_client();
+         let body = format!(
+             "refresh_token={refresh_token}\
+              &client_id=M6LOAPP\
+diff --git a/src-tauri/src/client.rs b/src-tauri/src/client.rs
+index 1b1ebd9..a3ae708 100644
+--- a/src-tauri/src/client.rs
++++ b/src-tauri/src/client.rs
+@@ -338,10 +338,10 @@ pub async fn get_bytes_with_context(ctx: &RequestContext, path: &str) -> Result<
+ impl MagisterClient {
+     pub fn new() -> Self {
+         Self {
+-            http: reqwest::Client::builder()
++            http: crate::tls::client_builder()
+                 .timeout(std::time::Duration::from_secs(30))
+                 .build()
+-                .unwrap_or_else(|_| reqwest::Client::new()),
++                .unwrap_or_else(|_| crate::tls::new_client()),
+             token_set: None,
+             auth_flow: None,
+             app_handle: None,
+@@ -931,7 +931,7 @@ impl MagisterClient {
+         let token = self.ensure_valid_token().await?;
+         let url = Self::build_url(&token.api_endpoint, path);
+ 
+-        let no_redirect_client = reqwest::Client::builder()
++        let no_redirect_client = crate::tls::client_builder()
+             .redirect(reqwest::redirect::Policy::none())
+             .build()
+             .map_err(|e| ClientError::RequestFailed(e.to_string()))?;
+diff --git a/src-tauri/src/lib.rs b/src-tauri/src/lib.rs
+index b83548b..d29bea6 100644
+--- a/src-tauri/src/lib.rs
++++ b/src-tauri/src/lib.rs
+@@ -5,6 +5,7 @@ mod client;
+ mod commands;
+ mod models;
+ mod secure_store;
++mod tls;
+ 
+ #[cfg(target_os = "android")]
+ pub mod jni;
+diff --git a/src-tauri/src/tls.rs b/src-tauri/src/tls.rs
+new file mode 100644
+index 0000000..c9de990
+--- /dev/null
++++ b/src-tauri/src/tls.rs
+@@ -0,0 +1,83 @@
++//! Bundled-root TLS configuration for every `reqwest::Client` in this app.
++//!
++//! ## Why this file exists
++//!
++//! `reqwest`'s `rustls` feature (as of reqwest 0.13, which this app upgraded
++//! to from 0.12) verifies server certificates via `rustls-platform-verifier`,
++//! which delegates to each OS's native trust store. On Android that requires
++//! an explicit, one-time JNI init call —
++//! `rustls_platform_verifier::android::init_with_env(&mut env, context)` —
++//! made with a real JVM `Env`/`Context`, before ANY TLS handshake. This app
++//! never makes that call (it would also need a small Kotlin/Gradle component
++//! bundled into `src-tauri/gen/android`, per the crate's README). So on
++//! Android, the very first HTTPS request panics:
++//!
++//!   thread 'tokio-rt-worker' panicked at rustls-platform-verifier-0.7.0/src/android.rs:90:10:
++//!   Expect rustls-platform-verifier to be initialized
++//!
++//! That panic happens on a background tokio task. With this project's
++//! current release profile (`panic = "unwind"`, the default — the explicit
++//! `panic = "abort"` that 2.1.0 had was dropped at some point), only that
++//! one task dies; the rest of the app keeps running. Whatever Tauri command
++//! triggered the request — e.g. `AuthFlow::exchange_code()`, called the
++//! moment the `m6loapp://` deep link fires after the browser redirect —
++//! never resolves on the frontend. That's the "stuck on the spinner after
++//! returning from the browser" bug: not a crash, just a promise that never
++//! settles.
++//!
++//! reqwest 0.12's `rustls-tls` feature (what this app used before the 0.13
++//! bump) never had this problem because it verified against a bundled,
++//! static snapshot of Mozilla's root store (`webpki-roots`) instead of the
++//! OS trust store — no platform/JNI integration needed. reqwest 0.13 removed
++//! that as a selectable feature entirely (there is no more
++//! "rustls-tls-webpki-roots"-equivalent flag; `rustls` and
++//! `rustls-no-provider` both unconditionally pull in
++//! `rustls-platform-verifier`). So we reconstruct the same bundled-root
++//! behavior by hand here, and hand it to `reqwest` via its
++//! `tls_backend_preconfigured()` escape hatch instead of letting `reqwest`
++//! build its own (platform-verifier-based) config.
++//!
++//! **Every `reqwest::Client` in this codebase should be built via
++//! [`client_builder`] / [`new_client`] below, never `reqwest::Client::new()`
++//! or `reqwest::Client::builder()` directly** — otherwise it'll go back to
++//! the default (platform-verifier) backend and reintroduce this bug on
++//! Android.
++//!
++//! ## Trade-off, and a note for later
++//!
++//! Bundled roots are static (they update only when this app is rebuilt with
++//! a newer `webpki-roots`), and skip OS-level revocation checks (OCSP/CRLs)
++//! and any custom/enterprise CAs the device trusts. That's an identical
++//! trade-off to what 2.1.0 already shipped with, just restored — not a new
++//! regression. Switching to the OS-native trust store (better security
++//! posture, per `rustls-platform-verifier`'s own README) is a reasonable
++//! follow-up, but needs the Kotlin/Gradle component wired into
++//! `src-tauri/gen/android` plus the JNI init call above threaded through
++//! `MainActivity.kt` — a bigger, Android-build-toolchain-dependent change
++//! that couldn't be verified in this environment, so it's deliberately not
++//! part of this fix.
++
++/// A `rustls::ClientConfig` that trusts the bundled Mozilla root store
++/// (`webpki-roots`) instead of the OS-native store.
++fn tls_config() -> rustls::ClientConfig {
++    let root_store = rustls::RootCertStore {
++        roots: webpki_roots::TLS_SERVER_ROOTS.to_vec(),
++    };
++    rustls::ClientConfig::builder()
++        .with_root_certificates(root_store)
++        .with_no_client_auth()
++}
++
++/// A `reqwest::ClientBuilder` pre-configured with the bundled root store.
++/// Chain any further options (timeouts, redirect policy, ...) onto this,
++/// exactly as you would starting from `reqwest::Client::builder()`.
++pub fn client_builder() -> reqwest::ClientBuilder {
++    reqwest::Client::builder().tls_backend_preconfigured(tls_config())
++}
++
++/// Drop-in replacement for `reqwest::Client::new()`.
++pub fn new_client() -> reqwest::Client {
++    client_builder()
++        .build()
++        .expect("failed to build reqwest client with bundled TLS roots")
++}

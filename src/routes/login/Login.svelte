@@ -1,81 +1,42 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
-  import { listen, type UnlistenFn } from '@tauri-apps/api/event';
-  import { isLoggedIn, personId, accountInfo, profilePicture } from '$lib/stores';
+  import { isLoggedIn, loginError, accountInfo, personId, profilePicture } from '$lib/stores';
   import { startLoginFlow, getPersonId, getProfilePicture, handleAuthCallback } from '$lib/api';
   import Button from '$lib/components/Button.svelte';
 
   let loading = $state(false);
   let error = $state('');
 
-  onMount(() => {
-    let unlistenSuccess: UnlistenFn;
-    let unlistenError: UnlistenFn;
-    let unlistenCallback: UnlistenFn;
+  // +layout.svelte is the sole owner of processing the deep-link callback
+  // and the auth-success/auth-error events now (it's mounted for the
+  // app's whole lifetime, unlike this screen) — this just reacts to the
+  // shared stores it updates instead of listening for those events itself.
+  // This component used to *also* listen for `auth-callback` and invoke
+  // the token exchange itself, which meant every redirect back from
+  // Magister fired the exchange twice with the same single-use OAuth code;
+  // whichever call lost always failed with "No auth flow in progress",
+  // which is what made login look stuck.
+  $effect(() => {
+    if ($isLoggedIn) {
+      loading = false;
+    }
+  });
 
-    (async () => {
-      // Listen for deep-link auth callback (Android fallback when using external browser)
-      unlistenCallback = await listen('auth-callback', async (event: any) => {
-        const redirectUrl = event.payload as string;
-        if (!redirectUrl) return;
-        error = '';
-        try {
-          const account = await handleAuthCallback(redirectUrl);
-          accountInfo.set(account);
-          const pid = await getPersonId();
-          personId.set(pid);
-          isLoggedIn.set(true);
-          try {
-            const pic = await getProfilePicture(pid);
-            profilePicture.set(pic);
-          } catch (_) {}
-        } catch (e: any) {
-          error = e?.toString() ?? 'Login via deep link mislukt';
-          loading = false;
-        }
-      });
-
-      // Listen for successful authentication from the Tauri backend
-      unlistenSuccess = await listen('auth-success', async (event: any) => {
-        const account = event.payload;
-        accountInfo.set(account);
-
-        try {
-          const pid = await getPersonId();
-          personId.set(pid);
-          isLoggedIn.set(true);
-
-          try {
-            const pic = await getProfilePicture(pid);
-            profilePicture.set(pic);
-          } catch (_) {}
-        } catch (e: any) {
-          error = e?.toString() ?? 'Failed to complete login setup';
-          loading = false;
-        }
-      });
-
-      // Listen for authentication errors from the Tauri backend
-      unlistenError = await listen('auth-error', (event: any) => {
-        error = event.payload?.toString() ?? 'Login failed';
-        loading = false;
-      });
-    })();
-
-    return () => {
-      if (unlistenSuccess) unlistenSuccess();
-      if (unlistenError) unlistenError();
-      if (unlistenCallback) unlistenCallback();
-    };
+  $effect(() => {
+    if ($loginError) {
+      error = $loginError;
+      loading = false;
+    }
   });
 
   async function startLogin() {
     loading = true;
     error = '';
+    loginError.set('');
 
     try {
       await startLoginFlow();
-      // We stay in the loading state until the auth-success or auth-error event fires
+      // Stay in the loading state until +layout.svelte flips `isLoggedIn`
+      // or `loginError` in response to the redirect.
     } catch (e: any) {
       error = e?.toString() ?? 'Inloggen mislukt';
       loading = false;

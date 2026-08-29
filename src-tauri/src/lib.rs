@@ -50,10 +50,11 @@ pub fn run() {
             let ai_config = ai_state.config.clone();
             app.manage(ai_state);
 
-            // Defer keyring access until after setup. Android's keyring store
-            // reads ndk-context, which Tao initializes asynchronously.
+            // Off the setup-hook critical path so it doesn't delay window creation.
+            // Android's keyring store reads ndk-context, which Tao initializes
+            // asynchronously — `secure_store::get_secret` (via `ensure_store`)
+            // already waits for that deterministically, so no fixed delay is needed.
             tauri::async_runtime::spawn(async move {
-                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
                 AiState::load_api_key_async(ai_config).await;
             });
 

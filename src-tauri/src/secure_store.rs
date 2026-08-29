@@ -20,16 +20,6 @@ pub const USER_ID_TOKEN: &str = "magister_id_token";
 pub const USER_REFRESH_TOKEN: &str = "magister_refresh_token";
 pub const USER_AI_API_KEY: &str = "ai_api_key";
 
-/// True when `ndk-context` has been initialized (Tao or our JNI helper).
-/// Never panics — `android_context()` itself panics if unset.
-#[cfg(target_os = "android")]
-fn ndk_context_ready() -> bool {
-    std::panic::catch_unwind(|| {
-        let _ = ndk_context::android_context();
-    })
-    .is_ok()
-}
-
 /// Ensure the platform credential store is ready before use.
 /// On Android this must be called after ndk-context is initialized.
 #[cfg(target_os = "android")]
@@ -45,7 +35,7 @@ pub fn ensure_store() -> Result<(), String> {
 
         let mut last_error = None;
         for attempt in 0..ATTEMPTS {
-            if !ndk_context_ready() {
+            if !crate::jni::ndk_context_is_ready() {
                 last_error = Some("android context was not initialized".to_string());
                 if attempt + 1 < ATTEMPTS {
                     thread::sleep(RETRY_DELAY);

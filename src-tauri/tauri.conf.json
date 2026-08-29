@@ -47,7 +47,7 @@
       "mobile": [
         {
           "host": "oauth2redirect",
-          "schemes": ["m6loapp"]
+          "scheme": ["m6loapp"]
         }
       ]
     }

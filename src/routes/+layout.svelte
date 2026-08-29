@@ -3,8 +3,9 @@
   import { onMount } from 'svelte';
   import { listen } from '@tauri-apps/api/event';
   import { getCurrentWindow } from '@tauri-apps/api/window';
-  import { isLoggedIn, personId, accountInfo, profilePicture, currentPage, userSettings } from '$lib/stores';
+  import { isLoggedIn, personId, accountInfo, profilePicture, currentPage, userSettings, loginError } from '$lib/stores';
   import { restoreSession, getAccount, getPersonId, getProfilePicture, handleAuthCallback, logout } from '$lib/api';
+  import { getCurrent as getCurrentDeepLink } from '@tauri-apps/plugin-deep-link';
   import { getAiConfig } from '$lib/ai';
   import { navIcon } from '$lib/icons';
   import { get } from 'svelte/store';
@@ -54,23 +55,71 @@
     let unlistenCallback: any, unlistenSuccess: any, unlistenError: any, unlistenBack: any;
 
     (async () => {
-      unlistenCallback = await listen('auth-callback', async (event) => {
-        const url = event.payload as string;
+      // This component is the sole owner of processing these events now —
+      // it's mounted for the app's whole lifetime, unlike the login screen,
+      // so there's no second listener that can race it and burn the
+      // single-use OAuth code on a call that's guaranteed to fail with
+      // "No auth flow in progress" (Login.svelte used to also listen and
+      // invoke independently; the Rust side's Mutex fully serializes the
+      // two, so one of them deterministically lost every time).
+      const handledCallbackUrls = new Set<string>();
+      async function processAuthCallback(url: string) {
+        if (handledCallbackUrls.has(url)) return;
+        handledCallbackUrls.add(url);
+        loginError.set('');
         try {
           const account = await handleAuthCallback(url);
           await handleLogin(account);
         } catch (e) {
           console.error('Auth callback error:', e);
+          loginError.set(String(e));
         }
+      }
+
+      unlistenCallback = await listen('auth-callback', async (event) => {
+        await processAuthCallback(event.payload as string);
       });
 
       unlistenSuccess = await listen('auth-success', async (event) => {
+        loginError.set('');
         await handleLogin(event.payload as Account);
       });
 
       unlistenError = await listen('auth-error', (event) => {
         console.error('Auth error:', event.payload);
+        loginError.set(String(event.payload));
       });
+
+      // A deep link that arrived before the listener above registered —
+      // e.g. a cold start via the OAuth redirect, because Android killed
+      // the app while the user was in the browser — is otherwise lost
+      // silently: Tauri doesn't replay events to listeners that register
+      // late. getCurrent() asks the deep-link plugin directly for the
+      // URL(s) the app was actually opened/re-triggered with, which covers
+      // that case too instead of only "app was already running". A slower
+      // dev-mode bundle load widens the window for this, which is why it
+      // reproduced reliably under `tauri android dev`.
+      // DIAGNOSTIC TEST — temporarily disabled. Checking whether calling
+      // getCurrent() here interferes with the live onOpenUrl/auth-callback
+      // event firing for the real redirect later (suspected Tauri deep-link
+      // plugin state interaction — see tauri-apps/plugins-workspace#2397,
+      // where onOpenUrl stops firing on non-first invocations in the same
+      // app lifecycle on Android). To revert: delete this comment block and
+      // the /* */ wrapper below so the code inside runs again.
+      /*
+      try {
+        const current = await getCurrentDeepLink();
+        if (current) {
+          for (const url of current) {
+            if (url.startsWith('m6loapp://')) {
+              await processAuthCallback(url);
+            }
+          }
+        }
+      } catch (e) {
+        console.error('getCurrent() deep link check failed:', e);
+      }
+      */
 
       try {
         const restored = await restoreSession();

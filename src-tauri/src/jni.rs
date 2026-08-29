@@ -32,19 +32,50 @@ fn sync_runtime() -> &'static Mutex<Runtime> {
     })
 }
 
+/// True if `ndk-context` currently has a context installed (by Tao or by us).
+///
+/// `ndk_context::android_context()` has no non-panicking accessor — it's a bare
+/// `.expect()` — so this is the one place in the codebase allowed to deliberately
+/// trigger and catch that panic. Every other caller (this module, `secure_store.rs`)
+/// must go through this function or `wait_for_ndk_context` below instead of
+/// re-implementing the same probe.
 #[cfg(target_os = "android")]
-fn ndk_context_is_ready() -> bool {
+pub(crate) fn ndk_context_is_ready() -> bool {
     std::panic::catch_unwind(|| {
         let _ = ndk_context::android_context();
     })
     .is_ok()
 }
 
-/// Ensure `ndk-context` is set for keyring/JNI callers.
+/// Block the calling thread until `ndk-context` is ready, or give up.
 ///
-/// In the UI process Tao may also initialize it asynchronously. `ndk-context`
-/// 0.1.1 only allows a single init (second call asserts), so we probe first and
-/// only initialize when missing. Safe to call from MainActivity and SyncWorker.
+/// Tao initializes `ndk-context` asynchronously during app startup, so anything
+/// that needs it — keyring access, file sharing — has to tolerate a short window
+/// where it isn't ready yet. This polls instead of guessing a fixed delay: it
+/// returns as soon as the context is ready, and gives up only after `attempts`
+/// tries, so callers get a real yes/no instead of a lucky/unlucky guess.
+#[cfg(target_os = "android")]
+pub(crate) fn wait_for_ndk_context(attempts: usize, delay: std::time::Duration) -> bool {
+    for attempt in 0..attempts {
+        if ndk_context_is_ready() {
+            return true;
+        }
+        if attempt + 1 < attempts {
+            std::thread::sleep(delay);
+        }
+    }
+    false
+}
+
+/// Best-effort eager init of `ndk-context`, called from MainActivity/SyncWorker's
+/// onCreate. This is an optimization, not the correctness guarantee — callers that
+/// actually need the context (keyring, file sharing) are responsible for waiting
+/// via `wait_for_ndk_context` themselves, since Tao may still win the race and
+/// initialize it asynchronously after this returns. This function exists so the
+/// common case (this call wins) avoids that wait entirely.
+///
+/// `ndk-context` 0.1.1 only allows a single init (a second call asserts), so we
+/// probe first and only initialize when missing.
 #[cfg(target_os = "android")]
 fn ensure_ndk_context<'local>(env: &mut JNIEnv<'local>, context: jni::objects::JObject<'local>) {
     use std::ffi::c_void;
@@ -338,10 +369,16 @@ pub extern "system" fn Java_com_joris_friday_SyncStateManager_syncPreferencesFro
 // is shown a chooser instead of the file sitting in an app-private cache path.
 // Called from the `download_file` Tauri command; reuses the same JNI pattern as the
 // rest of this module (attach the current thread, then call into a Kotlin helper).
-// The JavaVM comes from ndk-context, which is initialized before Tauri commands can run.
+// In practice this runs well after startup (the user has to be logged in and browsing
+// to trigger a download), so the race is unlikely — but "unlikely" isn't a guarantee,
+// so it waits the same way every other ndk-context consumer does.
 pub fn share_downloaded_file(file_path: &std::path::Path) -> Result<(), String> {
     use jni::objects::JValue;
     use jni::JavaVM;
+
+    if !wait_for_ndk_context(20, std::time::Duration::from_millis(50)) {
+        return Err("Android context not ready yet — try again in a moment".to_string());
+    }
 
     let ctx = ndk_context::android_context();
     let vm = unsafe { JavaVM::from_raw(ctx.vm() as *mut jni::sys::JavaVM) }
@@ -408,6 +445,7 @@ async fn do_sync(data_dir: &str) -> String {
 
     let mut client = MagisterClient::new();
     client.token_set = Some(token_set.clone());
+    client.set_data_dir(dir.clone());
 
     log::debug!("FridaySync (Rust): Ensuring valid token...");
     if let Err(e) = client.ensure_valid_token().await {

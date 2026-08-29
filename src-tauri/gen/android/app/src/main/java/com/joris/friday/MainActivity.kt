@@ -67,6 +67,20 @@ class MainActivity : TauriActivity() {
             backstop
         )
     }
+
+    // With launchMode="singleTop", Android reuses this Activity via onNewIntent
+    // instead of a fresh onCreate whenever it's still alive when a new intent
+    // arrives — e.g. the Magister OAuth redirect, if the process survived being
+    // backgrounded for the login browser (no memory pressure forcing a kill).
+    // setIntent() keeps getIntent() — and anything that reads it, including the
+    // deep-link plugin's own state — in sync with the intent that actually
+    // re-triggered the activity. Without this, that redirect is silently
+    // dropped whenever the process wasn't killed: no crash, no new process, no
+    // new log output, just the same screen sitting there forever.
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+    }
   
     override fun onResume() {
         super.onResume()

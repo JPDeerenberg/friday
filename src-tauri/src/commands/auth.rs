@@ -130,8 +130,21 @@ async fn handle_auth_callback_internal(
         ts.account_uuid = Some(account.uuid.clone());
     }
 
-    // Save tokens to disk
-    save_tokens_to_disk(&c, &app);
+    // Persist tokens without blocking the tokio worker on Android keyring JNI.
+    // Mirrors the spawn_blocking pattern in restore_session / AiState::load_api_key_async.
+    let token_set_for_save = c.token_set.clone();
+    let app_for_save = app.clone();
+    drop(c);
+    if let Some(ts) = token_set_for_save {
+        tokio::task::spawn_blocking(move || {
+            use tauri::Manager;
+            if let Ok(path) = app_for_save.path().app_data_dir() {
+                crate::client::TokenSetPersistence::save(&path, &ts);
+            }
+        })
+        .await
+        .map_err(|e| format!("token save join error: {e}"))?;
+    }
 
     Ok(account)
 }
