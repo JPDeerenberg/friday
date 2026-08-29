@@ -11,7 +11,7 @@ pub struct OpenAiProvider;
 impl AiProvider for OpenAiProvider {
     async fn validate_key(&self, config: &AiConfig) -> Result<bool, String> {
         let url = format!("{}/models", config.base_url.trim_end_matches('/'));
-        let client = reqwest::Client::new();
+        let client = crate::tls::new_client();
         let resp = client
             .get(&url)
             .header("Authorization", format!("Bearer {}", config.api_key))
@@ -23,7 +23,7 @@ impl AiProvider for OpenAiProvider {
 
     async fn list_models(&self, config: &AiConfig) -> Result<Vec<String>, String> {
         let url = format!("{}/models", config.base_url.trim_end_matches('/'));
-        let client = reqwest::Client::new();
+        let client = crate::tls::new_client();
         let resp = client
             .get(&url)
             .header("Authorization", format!("Bearer {}", config.api_key))
@@ -56,7 +56,7 @@ impl AiProvider for OpenAiProvider {
         tools: &[ToolDef],
     ) -> Result<AiChatResult, String> {
         let url = format!("{}/chat/completions", config.base_url.trim_end_matches('/'));
-        let client = reqwest::Client::new();
+        let client = crate::tls::new_client();
 
         let chat_messages: Vec<Value> = messages
             .iter()

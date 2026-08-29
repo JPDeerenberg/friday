@@ -11,7 +11,7 @@ pub struct AnthropicProvider;
 impl AiProvider for AnthropicProvider {
     async fn validate_key(&self, config: &AiConfig) -> Result<bool, String> {
         let url = "https://api.anthropic.com/v1/messages";
-        let client = reqwest::Client::new();
+        let client = crate::tls::new_client();
         let resp = client
             .post(url)
             .header("x-api-key", &config.api_key)
@@ -36,7 +36,7 @@ impl AiProvider for AnthropicProvider {
         tools: &[ToolDef],
     ) -> Result<AiChatResult, String> {
         let url = "https://api.anthropic.com/v1/messages";
-        let client = reqwest::Client::new();
+        let client = crate::tls::new_client();
 
         // Anthropic requires alternating user/assistant messages, starting with user
         // We handle system messages separately

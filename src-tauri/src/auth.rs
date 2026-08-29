@@ -81,7 +81,7 @@ impl AuthFlow {
             .map(|(_, v)| v.to_string())
             .ok_or(AuthError::MissingCode)?;
 
-        let client = reqwest::Client::new();
+        let client = crate::tls::new_client();
         let body = format!(
             "code={code}\
              &redirect_uri=m6loapp://oauth2redirect/\
@@ -153,7 +153,7 @@ impl AuthFlow {
 
     /// Discover the API endpoint for the authenticated user.
     pub async fn discover_api_endpoint(access_token: &str) -> Result<String, AuthError> {
-        let client = reqwest::Client::new();
+        let client = crate::tls::new_client();
         let resp = client
             .get("https://magister.net/.well-known/host-meta.json?rel=magister-api")
             .header("Authorization", format!("Bearer {access_token}"))
@@ -174,7 +174,7 @@ impl AuthFlow {
 
     /// Refresh an expired token using the refresh_token grant.
     pub async fn refresh_token(refresh_token: &str) -> Result<TokenResponse, AuthError> {
-        let client = reqwest::Client::new();
+        let client = crate::tls::new_client();
         let body = format!(
             "refresh_token={refresh_token}\
              &client_id=M6LOAPP\

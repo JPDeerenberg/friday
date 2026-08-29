@@ -36,6 +36,13 @@ serde_json = "1"
 # OS-level secure storage for secrets (Magister tokens, AI API key).
 keyring-core = "1.0"
 reqwest = { version = "0.13", features = ["json", "rustls"], default-features = false }
+# Used directly by src/tls.rs to build a bundled-root TLS config (see that
+# file for why): both are already pulled in transitively by reqwest's
+# "rustls" feature, this just makes the version explicit since we now
+# reference their types ourselves rather than only letting reqwest use them
+# internally.
+rustls = "0.23"
+webpki-roots = "1"
 sha2 = "0.11"
 base64 = "0.23"
 rand = "0.10"

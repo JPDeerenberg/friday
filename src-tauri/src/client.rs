@@ -338,10 +338,10 @@ pub async fn get_bytes_with_context(ctx: &RequestContext, path: &str) -> Result<
 impl MagisterClient {
     pub fn new() -> Self {
         Self {
-            http: reqwest::Client::builder()
+            http: crate::tls::client_builder()
                 .timeout(std::time::Duration::from_secs(30))
                 .build()
-                .unwrap_or_else(|_| reqwest::Client::new()),
+                .unwrap_or_else(|_| crate::tls::new_client()),
             token_set: None,
             auth_flow: None,
             app_handle: None,
@@ -931,7 +931,7 @@ impl MagisterClient {
         let token = self.ensure_valid_token().await?;
         let url = Self::build_url(&token.api_endpoint, path);
 
-        let no_redirect_client = reqwest::Client::builder()
+        let no_redirect_client = crate::tls::client_builder()
             .redirect(reqwest::redirect::Policy::none())
             .build()
             .map_err(|e| ClientError::RequestFailed(e.to_string()))?;

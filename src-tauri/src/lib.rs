@@ -5,6 +5,7 @@ mod client;
 mod commands;
 mod models;
 mod secure_store;
+mod tls;
 
 #[cfg(target_os = "android")]
 pub mod jni;

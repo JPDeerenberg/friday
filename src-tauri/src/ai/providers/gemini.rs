@@ -15,7 +15,7 @@ impl AiProvider for GeminiProvider {
             "https://generativelanguage.googleapis.com/v1/models?key={}",
             config.api_key
         );
-        let client = reqwest::Client::new();
+        let client = crate::tls::new_client();
         let resp = client
             .get(&url)
             .send()
@@ -34,7 +34,7 @@ impl AiProvider for GeminiProvider {
             "https://generativelanguage.googleapis.com/v1/models/{}:generateContent?key={}",
             config.model, config.api_key
         );
-        let client = reqwest::Client::new();
+        let client = crate::tls::new_client();
 
         // Gemini uses a different structure: contents[] with parts[]
         // System instructions are separate
