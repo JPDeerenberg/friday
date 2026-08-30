@@ -123,40 +123,13 @@
     <div class="flex flex-col gap-4 max-w-5xl mx-auto w-full">
       <div class="flex items-center justify-between">
         <h1 class="text-xl font-black text-gray-100 italic tracking-tighter uppercase shrink-0">Absenties</h1>
-        <div class="flex items-center gap-3">
-          <IconButton
-            onclick={loadAbsences}
-            class="hover:rotate-180 duration-700"
-            aria-label="Vernieuwen"
-          >
-            <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
-          </IconButton>
-
-          {#if schoolyears.length > 0}
-            <div class="relative group">
-              <select
-                bind:value={selectedYearId}
-                onchange={handleYearChange}
-                class="appearance-none bg-surface-900 border border-white/5 rounded-2xl px-4 py-2 pr-9 text-[10px] font-black uppercase tracking-widest text-gray-300 focus:outline-none focus:border-primary-500 transition-all cursor-pointer shadow-lg"
-              >
-                {#each schoolyears as year}
-                  <option value={year.id}>{year.groep?.code ?? 'Onbekend'}{year.groep?.omschrijving ? ' — ' + year.groep.omschrijving : ''}</option>
-                {/each}
-              </select>
-              <div class="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-600 text-[10px]">▼</div>
-            </div>
-          {/if}
-        </div>
-      </div>
-
-      <!-- Filter by type chips -->
-      <div class="flex flex-wrap items-center gap-2 overflow-x-auto no-scrollbar pb-1">
-        <div class="flex items-center gap-2 bg-surface-900/40 rounded-2xl p-1 border border-white/5 shadow-inner">
-          <span class="px-3 py-1.5 text-[9px] font-black text-gray-600 uppercase tracking-widest whitespace-nowrap">
-            {schoolyears.find(y => y.id === selectedYearId)?.groep?.code ?? 'Onbekend'}
-            {schoolyears.find(y => y.id === selectedYearId)?.groep?.omschrijving ? '— ' + schoolyears.find(y => y.id === selectedYearId)?.groep?.omschrijving : ''}
-          </span>
-        </div>
+        <IconButton
+          onclick={loadAbsences}
+          class="hover:rotate-180 duration-700"
+          aria-label="Vernieuwen"
+        >
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
+        </IconButton>
       </div>
     </div>
   </header>

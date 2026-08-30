@@ -594,7 +594,7 @@
     const first = weekViewDays[0].date;
     const last = weekViewDays[weekViewDays.length - 1].date;
     const f = first.toLocaleDateString('nl-NL', { day: 'numeric', month: 'long' });
-    const l = last.toLocaleDateString('nl-NL', { day: 'numeric', month: 'long', year: 'numeric' });
+    const l = last.toLocaleDateString('nl-NL', { day: 'numeric', month: 'long' });
     return `${f} – ${l}`;
   });
 
@@ -688,15 +688,43 @@
 </script>
 
 <div use:swipeGesture class="flex flex-col h-full bg-surface-950" role="application">
-  <!-- Header Section — compact on mobile -->
-  <header class="sticky top-0 z-20 bg-surface-950/90 backdrop-blur-xl border-b border-surface-800/30 px-3 py-2 md:px-4 md:py-3">
-    <!-- Top row: title + actions -->
+  <!-- Header Section — compact on mobile (Agenda title removed, date moved up) -->
+  <header class="sticky top-0 z-20 bg-surface-950/90 backdrop-blur-xl border-b border-surface-800/30 px-3 py-2 md:px-4 md:py-2.5">
+    <!-- Single top row: date (replaces Agenda) + actions -->
     <div class="flex items-center justify-between gap-2">
-      <div class="flex items-center gap-1.5">
-        <h1 class="text-title-large text-white">Agenda</h1>
+      <div class="flex items-center gap-1.5 min-w-0 flex-1">
+        <label class="flex flex-col relative cursor-pointer group min-w-0 shrink">
+          <input 
+            type="date" 
+            class="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+            style="color-scheme: dark;"
+            value={selectedDate.toISOString().split('T')[0]}
+            onchange={(e) => { 
+              if (e.currentTarget.value) {
+                selectedDate = new Date(e.currentTarget.value); 
+                loadAppointments(); 
+              }
+            }}
+          />
+          {#if showWeekView}
+            <p class="text-label-small text-primary-400 group-hover:text-primary-300 transition-colors leading-none truncate">
+              Weekoverzicht
+            </p>
+            <h2 class="text-title-medium md:text-headline-small text-white leading-tight group-hover:text-gray-200 transition-colors truncate">
+              {weekLabel}
+            </h2>
+          {:else}
+            <p class="text-label-small text-primary-400 group-hover:text-primary-300 transition-colors leading-none truncate">
+              {selectedDate.toLocaleDateString('nl-NL', { month: 'long' })}
+            </p>
+            <h2 class="text-title-medium md:text-headline-small text-white leading-tight group-hover:text-gray-200 transition-colors truncate">
+              {selectedDate.toLocaleDateString('nl-NL', { weekday: 'long', day: 'numeric' })}
+            </h2>
+          {/if}
+        </label>
         <IconButton
           onclick={() => { appointments = []; loadedStart = null; loadedEnd = null; loadAppointments(true); }}
-          class="hover:rotate-180 duration-500"
+          class="hover:rotate-180 duration-500 shrink-0"
           title="Verversen"
           aria-label="Verversen"
         >
@@ -704,7 +732,7 @@
         </IconButton>
         <IconButton
           onclick={() => $userSettings.hideCancelled = !$userSettings.hideCancelled}
-          class="{$userSettings.hideCancelled ? 'text-gray-600' : 'text-primary-400'} hover:text-primary-300"
+          class="{$userSettings.hideCancelled ? 'text-gray-600' : 'text-primary-400'} hover:text-primary-300 shrink-0"
           title={$userSettings.hideCancelled ? 'Uitgevallen lessen tonen' : 'Uitgevallen lessen verbergen'}
         >
           {#if $userSettings.hideCancelled}
@@ -713,9 +741,19 @@
             <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
           {/if}
         </IconButton>
+        <!-- Desktop week nav moved here to avoid extra row -->
+        <div class="hidden md:flex items-center bg-surface-900 rounded-m3-sm p-0.5 border border-white/5 shrink-0 ml-1">
+          <IconButton size="sm" onclick={prevWeek} class="w-8! h-8!" title="Vorige week">
+            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+          </IconButton>
+          <div class="h-3 w-px bg-surface-700 mx-0.5"></div>
+          <IconButton size="sm" onclick={nextWeek} class="w-8! h-8!" title="Volgende week">
+            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+          </IconButton>
+        </div>
       </div>
 
-      <div class="flex items-center gap-1.5">
+      <div class="flex items-center gap-1.5 shrink-0">
         <IconButton
           onclick={() => isCreating = true}
           aria-label="Nieuwe afspraak toevoegen"
@@ -733,52 +771,8 @@
       </div>
     </div>
 
-    <!-- Date Display — compact -->
-    <div class="mt-2 flex items-center justify-between">
-      <label class="flex flex-col relative cursor-pointer group">
-        <input 
-          type="date" 
-          class="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-          style="color-scheme: dark;"
-          value={selectedDate.toISOString().split('T')[0]}
-          onchange={(e) => { 
-            if (e.currentTarget.value) {
-              selectedDate = new Date(e.currentTarget.value); 
-              loadAppointments(); 
-            }
-          }}
-        />
-        {#if showWeekView}
-          <p class="text-label-small text-primary-400 group-hover:text-primary-300 transition-colors">
-            Weekoverzicht
-          </p>
-          <h2 class="text-headline-small text-white leading-tight group-hover:text-gray-200 transition-colors">
-            {weekLabel}
-          </h2>
-        {:else}
-          <p class="text-label-small text-primary-400 group-hover:text-primary-300 transition-colors">
-            {selectedDate.toLocaleDateString('nl-NL', { month: 'long', year: 'numeric' })}
-          </p>
-          <h2 class="text-headline-small text-white leading-tight group-hover:text-gray-200 transition-colors">
-            {selectedDate.toLocaleDateString('nl-NL', { weekday: 'long', day: 'numeric' })}
-          </h2>
-        {/if}
-      </label>
-
-      <!-- Compact Navigation -->
-      <div class="hidden md:flex items-center bg-surface-900 rounded-m3-sm p-0.5 border border-white/5">
-        <IconButton size="sm" onclick={prevWeek} class="w-8! h-8!" title="Vorige week">
-          <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
-        </IconButton>
-        <div class="h-3 w-px bg-surface-700 mx-0.5"></div>
-        <IconButton size="sm" onclick={nextWeek} class="w-8! h-8!" title="Volgende week">
-          <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
-        </IconButton>
-      </div>
-    </div>
-
     <!-- Quick Week Picker — smaller pills (day view only; week grid shows its own day columns) -->
-    <div data-daybar class="{showWeekView ? 'hidden' : ''} mt-2.5 flex justify-between gap-1 overflow-x-auto no-scrollbar" style="touch-action: pan-y;">
+    <div data-daybar class="{showWeekView ? 'hidden' : ''} mt-2 flex justify-between gap-1 overflow-x-auto no-scrollbar" style="touch-action: pan-y;">
       {#each weekData as { date, isToday, isSelected, hasTest, hasHomework }}
         <button
           onclick={() => { selectedDate = new Date(date); loadAppointments(); }}

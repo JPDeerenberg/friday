@@ -163,12 +163,38 @@
     };
     window.addEventListener('popstate', handlePopstate);
 
+    // Disable pinch / double-tap / Ctrl+wheel zoom – app is native, not a webpage.
+    const preventZoomWheel = (e: WheelEvent) => {
+      if (e.ctrlKey || e.metaKey) e.preventDefault();
+    };
+    const preventZoomKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && ['+', '-', '=', '0', '_'].includes(e.key)) {
+        e.preventDefault();
+      }
+      // Ctrl + +/- via Numpad
+      if ((e.ctrlKey || e.metaKey) && ['NumpadAdd', 'NumpadSubtract', 'Numpad0'].includes(e.code)) {
+        e.preventDefault();
+      }
+    };
+    const preventGesture = (e: Event) => e.preventDefault();
+    window.addEventListener('wheel', preventZoomWheel, { passive: false });
+    window.addEventListener('keydown', preventZoomKey);
+    // iOS Safari legacy gesture events
+    (window as any).addEventListener?.('gesturestart', preventGesture);
+    (window as any).addEventListener?.('gesturechange', preventGesture);
+    (window as any).addEventListener?.('gestureend', preventGesture);
+
     return () => {
       if (unlistenCallback) unlistenCallback();
       if (unlistenSuccess) unlistenSuccess();
       if (unlistenError) unlistenError();
       if (unlistenBack) unlistenBack();
       window.removeEventListener('popstate', handlePopstate);
+      window.removeEventListener('wheel', preventZoomWheel);
+      window.removeEventListener('keydown', preventZoomKey);
+      (window as any).removeEventListener?.('gesturestart', preventGesture);
+      (window as any).removeEventListener?.('gesturechange', preventGesture);
+      (window as any).removeEventListener?.('gestureend', preventGesture);
     };
   });
 

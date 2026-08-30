@@ -7,6 +7,17 @@
 @import "tailwindcss";
 @source "./src/**/*.{svelte,ts,js,html}";
 
+/* Disable pinch / double-tap zoom – app should behave like native, not a webpage */
+html {
+  touch-action: manipulation;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+body {
+  overscroll-behavior-y: contain;
+  overscroll-behavior-x: none;
+}
+
 @theme {
   --font-sans: "Outfit", "Inter", ui-sans-serif, system-ui, sans-serif;
 

@@ -1,6 +1,5 @@
 <script lang="ts">
   import { getMessageFolders, getMessages, getMessageDetail, markMessagesAsRead, searchContacts, sendMessage } from '$lib/api';
-  import { aiChat, getAiConfig } from '$lib/ai';
   import { cacheGet, cacheRefresh } from '$lib/cache';
   import { onMount } from 'svelte';
   import { slide, fade } from 'svelte/transition';
@@ -27,51 +26,6 @@
   let showCompose = $state(false);
 
   let panel = $state<'list' | 'detail'>('list');
-
-  // AI Message Summary
-  let aiSummary = $state<string | null>(null);
-  let aiSummaryLoading = $state(false);
-  let aiMessageId = $state<number | null>(null);
-  let aiConfigured = $state(false);
-
-  async function checkAiConfig() {
-    try {
-      const config = await getAiConfig();
-      aiConfigured = config.enabled && config.has_api_key;
-    } catch {
-      aiConfigured = false;
-    }
-  }
-
-  async function summarizeMessage(message: any) {
-    if (aiSummaryLoading) return;
-    aiSummaryLoading = true;
-    aiSummary = null;
-    aiMessageId = message?.Id ?? null;
-
-    try {
-      const config = await getAiConfig();
-      if (!config.enabled || !config.has_api_key) {
-        aiConfigured = false;
-        aiSummary = null;
-        return;
-      }
-
-      const content = message.Inhoud || '';
-      const cleaned = content.replace(/<[^>]*>/g, '').substring(0, 3000);
-      const subject = message.Onderwerp || 'Onbekend onderwerp';
-
-      const response = await aiChat([
-        { role: "system", content: "Je bent een behulpzame assistent. Vat het volgende bericht samen in 2-3 zinnen in het Nederlands." },
-        { role: "user", content: `Onderwerp: ${subject}\n\nBericht:\n${cleaned}` },
-      ]);
-      aiSummary = response;
-    } catch (e) {
-      aiSummary = '⚠️ Kon het bericht niet samenvatten.';
-    } finally {
-      aiSummaryLoading = false;
-    }
-  }
 
   // Filters & Search
   let msgFilter = $state<'all' | 'unread' | 'priority'>('all');
@@ -101,7 +55,6 @@
   let composeSending = $state(false);
 
   onMount(async () => {
-    await checkAiConfig();
     try {
       folders = await cacheGet('messages_folders', () => getMessageFolders(), 5 * 60 * 1000);
       const current = selectedFolder;
@@ -437,31 +390,6 @@
             </div>
           {/if}
 
-          <!-- AI Summary -->
-          {#if aiConfigured}
-            <div class="space-y-2">
-              <Button
-                variant="tonal"
-                onclick={() => summarizeMessage(selectedMessage)}
-                disabled={aiSummaryLoading}
-                class="px-4"
-              >
-                {#if aiSummaryLoading && aiMessageId === selectedMessage?.id}
-                  <div class="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
-                  Samenvatten...
-                {:else}
-                  <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2a4 4 0 0 1 4 4c0 2-2 3-4 5-2-2-4-3-4-5a4 4 0 0 1 4-4z"/><path d="M12 14l-2 6h4l-2-6z"/></svg>
-                  Samenvatting (AI)
-                {/if}
-              </Button>
-              {#if aiSummary && aiMessageId === selectedMessage?.id}
-                <div class="p-4 rounded-m3-md bg-primary-500/5 border border-primary-500/10 text-body-medium text-gray-200 leading-relaxed">
-                  {aiSummary}
-                </div>
-              {/if}
-            </div>
-          {/if}
-
           <div class="pt-4 border-t border-surface-800/50 flex flex-wrap gap-2">
             <Button
               variant="filled"
@@ -518,30 +446,6 @@
               </div>
             {:else}
               <p class="text-body-medium text-gray-600">Geen berichtinhoud</p>
-            {/if}
-            <!-- AI Summary (mobile) -->
-            {#if aiConfigured}
-              <div class="space-y-2">
-                <Button
-                  variant="tonal"
-                  onclick={() => summarizeMessage(selectedMessage)}
-                  disabled={aiSummaryLoading}
-                  class="w-full"
-                >
-                  {#if aiSummaryLoading && aiMessageId === selectedMessage?.id}
-                    <div class="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
-                    Samenvatten...
-                  {:else}
-                    <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2a4 4 0 0 1 4 4c0 2-2 3-4 5-2-2-4-3-4-5a4 4 0 0 1 4-4z"/><path d="M12 14l-2 6h4l-2-6z"/></svg>
-                    Samenvatting (AI)
-                  {/if}
-                </Button>
-                {#if aiSummary && aiMessageId === selectedMessage?.id}
-                  <div class="p-3 rounded-m3-md bg-primary-500/5 border border-primary-500/10 text-body-medium text-gray-200 leading-relaxed">
-                    {aiSummary}
-                  </div>
-                {/if}
-              </div>
             {/if}
 
             <Button

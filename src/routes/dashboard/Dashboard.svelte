@@ -3,7 +3,6 @@
   import { getCalendarEvents, getGrades, getSchoolyears, getRecentGrades, getMessageFolders, getAssignments, formatDate, formatTeacherName, toggleCalendarEventDone } from '$lib/api';
   import { getSubjectIcon } from '$lib/icons';
   import { formatTime } from '$lib/format';
-  import { tryAiInsight, getAiConfig } from '$lib/ai';
   import { cacheGet, cacheRefresh } from '$lib/cache';
   import { fade, fly, scale } from 'svelte/transition';
   import Button from '$lib/components/Button.svelte';
@@ -29,79 +28,6 @@
   let expandedLesson = $state<number | null>(null);
 
   let refreshTrigger = $state(0);
-
-  // AI Dashboard Insight
-  let aiInsight = $state<string | null>(null);
-  let aiInsightLoading = $state(false);
-  let aiConfigured = $state(false);
-  let aiInsightError = $state(false);
-
-  $effect(() => {
-    checkAiAndLoadInsight();
-  });
-
-  async function checkAiAndLoadInsight() {
-    try {
-      const config = await getAiConfig();
-      aiConfigured = config.enabled && config.has_api_key;
-      if (aiConfigured && refreshTrigger >= 0) {
-        loadAiInsight();
-      }
-    } catch {
-      aiConfigured = false;
-    }
-  }
-
-  async function loadAiInsight() {
-    if (aiInsightLoading) return;
-    aiInsightLoading = true;
-    aiInsightError = false;
-
-    const pid = $personId;
-    if (pid === null) {
-      aiInsightLoading = false;
-      return;
-    }
-
-    // Gather available data for context
-    const data = {
-      todayEvents: todayEvents.map(e => ({
-        subject: e.Vakken?.[0]?.Naam,
-        time: e.LesuurVan,
-        location: e.Lokalen?.[0]?.Naam,
-        hasHomework: !!e.Inhoud,
-      })),
-      grades: latestGrades.map(g => ({
-        subject: g.Vak?.Omschrijving,
-        grade: g.CijferStr,
-        date: g.DatumIngevoerd,
-      })),
-      assignments: upcomingAssignments.map(a => ({
-        title: a.Titel,
-        subject: a.Vak,
-        deadline: a.InleverenVoor,
-      })),
-      unreadMessages: unreadCount,
-    };
-
-    try {
-      const result = await tryAiInsight(
-        "dashboard",
-        data,
-        "Geef een korte, behulpzame samenvatting van mijn dag in 2-3 zinnen. Noem geen cijfers of vakken tenzij relevant."
-      );
-      if (result) {
-        aiInsight = result;
-      } else {
-        aiInsight = null;
-      }
-    } catch {
-      aiInsightError = true;
-      aiInsight = null;
-    } finally {
-      aiInsightLoading = false;
-    }
-  }
 
   // Derived greeting
   const greeting = $derived(() => {
@@ -475,66 +401,13 @@
 
   <main class="max-w-7xl mx-auto px-4 md:px-8 w-full py-8 pb-28">
 
-    <!-- AI Insight Card -->
-    {#if aiConfigured}
-      {#if aiInsightLoading}
-        <div class="mb-6 glass rounded-m3-md p-5 border-primary-500/10 flex items-center gap-4" in:fade>
-          <div class="w-8 h-8 rounded-m3-sm bg-gradient-to-br from-primary-500 to-accent-500 flex items-center justify-center animate-pulse">
-            <svg class="w-4 h-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2a4 4 0 0 1 4 4c0 2-2 3-4 5-2-2-4-3-4-5a4 4 0 0 1 4-4z"/><path d="M12 14l-2 6h4l-2-6z"/></svg>
-          </div>
-          <div class="flex-1">
-            <div class="h-4 bg-surface-700/50 rounded-full w-3/4 animate-pulse mb-2"></div>
-            <div class="h-3 bg-surface-700/30 rounded-full w-1/2 animate-pulse"></div>
-          </div>
-        </div>
-      {:else if aiInsight}
-        <div class="mb-6 glass rounded-m3-md p-5 border-primary-500/20 bg-gradient-to-r from-primary-500/5 to-transparent" in:fly={{ y: -10, duration: 500 }}>
-          <div class="flex items-start gap-4">
-            <div class="w-8 h-8 rounded-m3-sm bg-gradient-to-br from-primary-500 to-accent-500 flex items-center justify-center shrink-0 shadow-lg shadow-primary-500/20">
-              <svg class="w-4 h-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2a4 4 0 0 1 4 4c0 2-2 3-4 5-2-2-4-3-4-5a4 4 0 0 1 4-4z"/><path d="M12 14l-2 6h4l-2-6z"/></svg>
-            </div>
-            <div class="flex-1 min-w-0">
-              <p class="text-label-medium text-primary-400 mb-2 flex items-center gap-2">
-                <span class="w-1.5 h-1.5 rounded-full bg-primary-400 animate-pulse"></span>
-                AI Inzicht
-              </p>
-              <p class="text-body-medium text-gray-200 leading-relaxed">{aiInsight}</p>
-            </div>
-            <IconButton
-              onclick={loadAiInsight}
-              class="hover:bg-surface-800/50!"
-              title="Vernieuw inzicht"
-            >
-              <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
-            </IconButton>
-          </div>
-        </div>
-      {/if}
-    {:else if !aiConfigured && refreshTrigger >= 0}
-      <!-- Show a subtle "configure AI" prompt -->
-      <div class="mb-6 glass rounded-m3-md p-4 border-dashed border-primary-500/10" in:fade>
-        <button
-          onclick={() => currentPage.set('settings')}
-          class="flex items-center gap-3 w-full text-left group"
-        >
-          <div class="w-7 h-7 rounded-m3-sm bg-primary-500/10 flex items-center justify-center shrink-0">
-            <svg class="w-3.5 h-3.5 text-primary-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2a4 4 0 0 1 4 4c0 2-2 3-4 5-2-2-4-3-4-5a4 4 0 0 1 4-4z"/><path d="M12 14l-2 6h4l-2-6z"/></svg>
-          </div>
-          <p class="text-body-medium text-gray-500 group-hover:text-gray-300 transition-colors">
-            <span class="text-label-medium text-primary-400">Configureer AI</span> voor persoonlijke daginzichten en studiedvies
-          </p>
-          <svg class="w-3.5 h-3.5 text-gray-600 ml-auto group-hover:translate-x-1 transition-transform" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m9 18 6-6-6-6"/></svg>
-        </button>
-      </div>
-    {/if}
-
     <!-- Pack for Tomorrow -->
     <section in:fly={{ y: -20, duration: 700 }} class="mb-14">
       <div class="glass rounded-m3-md p-6 md:p-10 relative overflow-hidden border-white/5 shadow-2xl group">
         <!-- Ambient glow -->
         <div class="absolute inset-0 bg-gradient-to-r from-emerald-500/8 via-transparent to-primary-500/8 opacity-60 group-hover:opacity-100 transition-opacity duration-700 pointer-events-none"></div>
 
-        <div class="flex items-center justify-between mb-6 md:mb-8 relative z-10">
+        <div class="flex items-center justify-start mb-6 md:mb-8 relative z-10">
           <h2 class="text-headline-small text-white flex items-center gap-3">
             <div class="w-2 h-7 bg-emerald-500 rounded-full shadow-[0_0_20px_rgba(16,185,129,0.7)] animate-pulse shrink-0"></div>
             Morgenklaar
@@ -544,13 +417,6 @@
               </span>
             {/if}
           </h2>
-          <Button
-            variant="tonal"
-            onclick={() => currentPage.set('calendar')}
-            class="bg-emerald-500/5! text-emerald-400! hover:bg-emerald-500/10! border border-emerald-500/10! hover:border-emerald-500/25! px-4"
-          >
-            Rooster <svg class="w-3.5 h-3.5 group-hover/link:translate-x-1 transition-transform" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="m9 18 6-6-6-6"/></svg>
-          </Button>
         </div>
 
         {#if loadingTomorrow}

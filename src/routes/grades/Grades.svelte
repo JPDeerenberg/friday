@@ -2,7 +2,6 @@
   import { personId, userSettings } from '$lib/stores';
   import { getSchoolyears, getGrades, formatDate, getBulkGradeExtraInfo, formatTeacherName } from '$lib/api';
   import { formatDateShort } from '$lib/format';
-  import { tryAiInsight, getAiConfig } from '$lib/ai';
   import { cacheGet, cacheRefresh } from '$lib/cache';
   import { computeStats, getDistribution, getTrendDirection, getTrendLabel, getNumericValue, isPassing, pct } from '$lib/grades/stats';
   import { calcPredicted, calcRequiredGrade, calcPredictedAverage, calcMinGradeForPass, calcAverageForGrade, calcNewOverallAverage, calcNewOverallForGrade, calcMultiSubjectTarget } from '$lib/grades/predictor';
@@ -394,43 +393,6 @@
     loadGrades();
   }
 
-  // AI Grade Analysis
-  let aiGradeInsight = $state<string | null>(null);
-  let aiGradeLoading = $state(false);
-
-  $effect(() => {
-    if (subjects.length > 0 && currentTab === 'analytisch') {
-      loadAiGradeAnalysis();
-    }
-  });
-
-  async function loadAiGradeAnalysis() {
-    if (aiGradeLoading || subjects.length === 0) return;
-    try {
-      const config = await getAiConfig();
-      if (!config.enabled || !config.has_api_key) return;
-
-      aiGradeLoading = true;
-      const data = subjects.map(s => ({
-        subject: s.name,
-        average: s.avg,
-        gradeCount: s.grades?.length || 0,
-        trend: s.trend,
-      }));
-
-      const result = await tryAiInsight(
-        "grades",
-        data,
-        "Geef een korte analyse van mijn cijfers in 2-3 zinnen. Welke vakken gaan goed en welke hebben aandacht nodig?"
-      );
-      if (result) aiGradeInsight = result;
-    } catch {
-      aiGradeInsight = null;
-    } finally {
-      aiGradeLoading = false;
-    }
-  }
-
   // Calculator
   let calcSubjectName = $state('');
   let calcTargetAvg = $state(5.5);
@@ -634,8 +596,8 @@
 <div class="flex flex-col bg-surface-950 overflow-x-hidden">
   <!-- Sticky Header -->
   <div class="sticky top-0 z-10 bg-surface-950/95 backdrop-blur border-b border-surface-800/50 px-4 py-3 pb-0">
-    <div class="flex items-center justify-between mb-3">
-      <div class="flex items-center gap-3">
+    <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+      <div class="flex items-center gap-3 shrink-0">
         <h1 class="text-xl font-black text-white italic tracking-tighter">Cijfers</h1>
         <IconButton
           onclick={() => loadGrades(true)}
@@ -645,12 +607,13 @@
           <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
         </IconButton>
       </div>
-      <div class="flex items-center gap-1.5 overflow-x-auto no-scrollbar max-w-[200px] justify-end">
+      <div class="flex flex-wrap items-center gap-2 justify-end flex-1 min-w-0">
         {#each schoolyears as year}
           <Chip
             variant="filter"
             selected={selectedYear?.id === year.id}
             onclick={() => selectYear(year)}
+            class="shrink-0"
           >
             {year.groep?.code ?? year.studie?.code ?? '?'}
           </Chip>
@@ -658,20 +621,20 @@
       </div>
     </div>
 
-    <!-- Tabs -->
-    <div class="flex items-center gap-1 bg-surface-900 p-1 rounded-2xl border border-white/5 mb-3">
+    <!-- Tabs – M3 wrap: 2×2 on phones, single row on larger -->
+    <div class="grid grid-cols-2 sm:flex sm:flex-nowrap items-center gap-1 bg-surface-900 p-1 rounded-2xl border border-white/5 mb-3">
       {#each [
         { id: 'vakken', label: 'Vakken', icon: '<path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>' },
         { id: 'recent', label: 'Recent', icon: '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>' },
         { id: 'analytisch', label: 'Analytisch', icon: '<path d="M18 20V10M12 20V4M6 20v-6"/><path d="M2 20h20"/>' },
         { id: 'tools', label: 'Tools', icon: '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>' },
       ] as tab}
-        <div class="flex-1 flex justify-center">
+        <div class="flex justify-center">
           <Chip
             variant="filter"
             selected={currentTab === tab.id}
             onclick={() => currentTab = tab.id as any}
-            class="w-full justify-center"
+            class="w-full justify-center whitespace-nowrap"
           >
             <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
               {@html tab.icon}
@@ -819,37 +782,6 @@
             {#each periods as p}
               <Chip variant="filter" selected={selectedPeriod?.Id === p.Id} onclick={() => selectedPeriod = p}>{p.Naam}</Chip>
             {/each}
-          </div>
-        {/if}
-
-        <!-- SE/CE overview for exam-year subjects -->
-        {#if subjects.some(s => s.seCount > 0)}
-          <div class="glass p-5 rounded-3xl border border-primary-500/20 mt-5">
-            <div class="flex items-center gap-2 mb-4">
-              <div class="w-7 h-7 rounded-lg bg-primary-500/15 flex items-center justify-center text-primary-400">
-                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 3h6M10 3v4a2 2 0 0 1-2 2H5l7 12 7-12h-3a2 2 0 0 1-2-2V3"/></svg>
-              </div>
-              <h3 class="text-[11px] font-black text-white uppercase tracking-widest">SE / CE Overzicht</h3>
-              <span class="text-[9px] text-gray-600 font-bold uppercase tracking-wider ml-1">Schoolexamen vs. totaal</span>
-            </div>
-            <div class="space-y-2">
-              {#each subjects.filter(s => s.seCount > 0) as s}
-                <div class="flex items-center justify-between p-3 rounded-xl bg-surface-800/50 border border-white/5">
-                  <span class="text-xs font-bold text-gray-200">{s.name}</span>
-                  <div class="flex items-center gap-4">
-                    <div class="text-right">
-                      <p class="text-sm font-black {isVoldoende(s.seAvg) ? 'text-primary-400' : 'text-red-400'}">{s.seAvg.toFixed($userSettings.decimalPoints)}</p>
-                      <p class="text-[8px] text-gray-600 font-black uppercase tracking-widest">SE</p>
-                    </div>
-                    <div class="text-right">
-                      <p class="text-sm font-black {isVoldoende(s.avg) ? 'text-accent-400' : 'text-red-400'}">{s.avg.toFixed($userSettings.decimalPoints)}</p>
-                      <p class="text-[8px] text-gray-600 font-black uppercase tracking-widest">Totaal</p>
-                    </div>
-                  </div>
-                </div>
-              {/each}
-            </div>
-            <p class="text-[9px] text-gray-600 font-bold mt-3">SE-cijfers zijn onderdeel van het officiële PTA (schoolexamen) en wegen apart mee richting het examencijfer.</p>
           </div>
         {/if}
 
@@ -1065,6 +997,37 @@
           {/each}
         </div>
 
+        <!-- SE/CE overview for exam-year subjects -->
+        {#if subjects.some(s => s.seCount > 0)}
+          <div class="glass p-5 rounded-3xl border border-primary-500/20 mt-6">
+            <div class="flex items-center gap-2 mb-4">
+              <div class="w-7 h-7 rounded-lg bg-primary-500/15 flex items-center justify-center text-primary-400">
+                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 3h6M10 3v4a2 2 0 0 1-2 2H5l7 12 7-12h-3a2 2 0 0 1-2-2V3"/></svg>
+              </div>
+              <h3 class="text-[11px] font-black text-white uppercase tracking-widest">SE / CE Overzicht</h3>
+              <span class="text-[9px] text-gray-600 font-bold uppercase tracking-wider ml-1">Schoolexamen vs. totaal</span>
+            </div>
+            <div class="space-y-2">
+              {#each subjects.filter(s => s.seCount > 0) as s}
+                <div class="flex items-center justify-between p-3 rounded-xl bg-surface-800/50 border border-white/5">
+                  <span class="text-xs font-bold text-gray-200">{s.name}</span>
+                  <div class="flex items-center gap-4">
+                    <div class="text-right">
+                      <p class="text-sm font-black {isVoldoende(s.seAvg) ? 'text-primary-400' : 'text-red-400'}">{s.seAvg.toFixed($userSettings.decimalPoints)}</p>
+                      <p class="text-[8px] text-gray-600 font-black uppercase tracking-widest">SE</p>
+                    </div>
+                    <div class="text-right">
+                      <p class="text-sm font-black {isVoldoende(s.avg) ? 'text-accent-400' : 'text-red-400'}">{s.avg.toFixed($userSettings.decimalPoints)}</p>
+                      <p class="text-[8px] text-gray-600 font-black uppercase tracking-widest">Totaal</p>
+                    </div>
+                  </div>
+                </div>
+              {/each}
+            </div>
+            <p class="text-[9px] text-gray-600 font-bold mt-3">SE-cijfers zijn onderdeel van het officiële PTA (schoolexamen) en wegen apart mee richting het examencijfer.</p>
+          </div>
+        {/if}
+
       <!-- ======= RECENT TAB ======= -->
       {:else if currentTab === 'recent'}
         <!-- Date filter chips -->
@@ -1124,34 +1087,6 @@
       <!-- ======= ANALYTISCH TAB ======= -->
       {:else if currentTab === 'analytisch'}
         <div class="space-y-6 pb-10">
-
-          <!-- AI Grade Insight Card -->
-          {#if aiGradeInsight}
-            <div class="glass rounded-2xl p-5 border-primary-500/20 bg-gradient-to-r from-primary-500/5 to-transparent" in:fly={{ y: -10, duration: 500 }}>
-              <div class="flex items-start gap-4">
-                <div class="w-8 h-8 rounded-xl bg-gradient-to-br from-primary-500 to-accent-500 flex items-center justify-center shrink-0 shadow-lg shadow-primary-500/20">
-                  <svg class="w-4 h-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2a4 4 0 0 1 4 4c0 2-2 3-4 5-2-2-4-3-4-5a4 4 0 0 1 4-4z"/><path d="M12 14l-2 6h4l-2-6z"/></svg>
-                </div>
-                <div class="flex-1 min-w-0">
-                  <p class="text-[10px] font-black text-primary-400 uppercase tracking-widest mb-2 flex items-center gap-2">
-                    <span class="w-1.5 h-1.5 rounded-full bg-primary-400 animate-pulse"></span>
-                    AI Analyse
-                  </p>
-                  <p class="text-sm text-gray-200 leading-relaxed">{aiGradeInsight}</p>
-                </div>
-              </div>
-            </div>
-          {:else if aiGradeLoading}
-            <div class="glass rounded-2xl p-5 border-primary-500/10 flex items-center gap-4">
-              <div class="w-8 h-8 rounded-xl bg-gradient-to-br from-primary-500 to-accent-500 flex items-center justify-center animate-pulse">
-                <svg class="w-4 h-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2a4 4 0 0 1 4 4c0 2-2 3-4 5-2-2-4-3-4-5a4 4 0 0 1 4-4z"/><path d="M12 14l-2 6h4l-2-6z"/></svg>
-              </div>
-              <div class="flex-1">
-                <div class="h-4 bg-surface-700/50 rounded-full w-3/4 animate-pulse mb-2"></div>
-                <div class="h-3 bg-surface-700/30 rounded-full w-1/2 animate-pulse"></div>
-              </div>
-            </div>
-          {/if}
 
           <!-- Overall stats cards -->
           {#if subjects.length > 0}
@@ -1326,27 +1261,30 @@
 
           <!-- Calculator -->
           <div>
-            <div class="flex items-center gap-3 mb-4">
-              <div class="w-8 h-8 rounded-xl bg-primary-500/15 flex items-center justify-center text-primary-400">
+            <div class="flex flex-wrap items-center gap-3 mb-4">
+              <div class="w-8 h-8 rounded-xl bg-primary-500/15 flex items-center justify-center text-primary-400 shrink-0">
                 <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="16" height="20" x="4" y="2" rx="2"/><path d="M8 10h8M8 14h8M8 18h8M8 6h8"/></svg>
               </div>
-              <h2 class="text-xl font-black text-white italic tracking-tighter flex-1">Calculator</h2>
-              <!-- Mode selector -->
-              <div class="flex items-center bg-surface-800 rounded-xl p-1 gap-1 border border-white/5">
+              <h2 class="text-xl font-black text-white italic tracking-tighter flex-1 min-w-[100px]">Calculator</h2>
+              <!-- Mode selector – M3 wrap: wraps to next line on phones -->
+              <div class="flex flex-wrap items-center bg-surface-800 rounded-xl p-1 gap-1 border border-white/5 w-full sm:w-auto">
                 <Chip
                   variant="filter"
                   selected={calcModeAdvanced === 'basic'}
                   onclick={() => { calcModeAdvanced = 'basic'; calcMode = 'forward'; }}
+                  class="shrink-0 whitespace-nowrap"
                 >Basis</Chip>
                 <Chip
                   variant="filter"
                   selected={calcModeAdvanced === 'prediction'}
                   onclick={() => calcModeAdvanced = 'prediction'}
+                  class="shrink-0 whitespace-nowrap"
                 >Voorspelling</Chip>
                 <Chip
                   variant="filter"
                   selected={calcModeAdvanced === 'targets'}
                   onclick={() => calcModeAdvanced = 'targets'}
+                  class="shrink-0 whitespace-nowrap"
                 >Doelen</Chip>
               </div>
             </div>
@@ -1387,12 +1325,12 @@
                       </div>
                     </div>
 
-                    <!-- Required grade result -->
+                    <!-- Required grade result – M3 responsive: prevent clipping on small screens -->
                     <div class="relative group">
                       <div class="absolute -inset-0.5 bg-gradient-to-r from-primary-500 to-accent-500 rounded-3xl blur opacity-20 group-hover:opacity-40 transition duration-1000"></div>
-                      <div class="relative bg-surface-900 border border-white/10 rounded-3xl p-6 flex flex-col items-center justify-center shadow-2xl">
-                        <p class="text-[10px] text-gray-500 font-black uppercase tracking-[0.2em] mb-1">Cijfer nodig voor een {calcTargetAvg.toFixed(1)}</p>
-                        <span class="text-6xl font-black text-transparent bg-clip-text bg-gradient-to-br from-white via-primary-400 to-accent-400 italic italic tracking-tighter drop-shadow-sm">
+                      <div class="relative bg-surface-900 border border-white/10 rounded-3xl p-4 sm:p-6 flex flex-col items-center justify-center shadow-2xl overflow-visible min-w-0">
+                        <p class="text-[10px] text-gray-500 font-black uppercase tracking-[0.2em] mb-1 text-center">Cijfer nodig voor een {calcTargetAvg.toFixed(1)}</p>
+                        <span class="text-5xl sm:text-6xl font-black text-transparent bg-clip-text bg-gradient-to-br from-white via-primary-400 to-accent-400 italic tracking-tighter drop-shadow-sm leading-none text-center max-w-full break-words">
                           {getRequiredGrade(s)}
                         </span>
                       </div>
