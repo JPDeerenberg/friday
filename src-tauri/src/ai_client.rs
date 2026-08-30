@@ -62,7 +62,8 @@ pub fn build_school_context_system_prompt(page_context: Option<&str>, tools_enab
                 Je spreekt altijd Nederlands en reageert bondig en helder. \
                 Gebruik waar mogelijk opsommingen en concrete voorbeelden. \
                 Wees aanmoedigend maar realistisch. \
-                Als je iets niet weet, zeg dat dan eerlijk."
+                Als je iets niet weet, zeg dat dan eerlijk. \
+                Formateer je antwoorden met Markdown waar dat helpt: gebruik ## kopjes, **vet**, *cursief*, opsommingen (- of 1.), tabellen voor cijfers/rooster, `inline code` en ```codeblokken``` voor voorbeelden, en [links](url) waar relevant. Houd het beknopt."
     );
 
     let tools_prompt = "\n\nJe hebt toegang tot de volgende tools om schoolgegevens op te vragen en acties uit te voeren:\n\
@@ -93,7 +94,7 @@ pub fn build_school_context_system_prompt(page_context: Option<&str>, tools_enab
              Bij een opdracht met een bijlage (uit get_assignment_detail) waarvan de gebruiker hulp wil met de inhoud: gebruik read_attachment_text om de bijlage te lezen voordat je antwoord geeft.\n\
              Bij vragen over berichtinhoud: gebruik eerst get_messages, dan get_message_content, of stuur een bericht met send_message.\n\
              Bij acties met een echte bijwerking (send_message, mark_messages_read, create_calendar_event): de tool zet de actie klaar en de gebruiker bevestigt deze in de app voordat er iets gebeurt. Vertel de gebruiker wat er klaarstaat.\n\
-             Geef antwoord op basis van de opgehaalde data. Gebruik bullet points en houd het beknopt.";
+              Geef antwoord op basis van de opgehaalde data. Gebruik Markdown (kopjes, lijsten, tabellen) en houd het beknopt.";
 
     let no_tools_prompt = "\n\nJe hebt geen directe toegang tot de schoolgegevens van de gebruiker. \
              Geef algemeen studieadvies, beantwoord vragen over schoolvakken, \

@@ -7,7 +7,10 @@ const ALLOWED_TAGS = [
   '#text',
   'a',
   'b',
+  'blockquote',
   'br',
+  'code',
+  'del',
   'div',
   'em',
   'h1',
@@ -16,11 +19,14 @@ const ALLOWED_TAGS = [
   'h4',
   'h5',
   'h6',
+  'hr',
   'i',
   'img',
   'li',
   'ol',
   'p',
+  'pre',
+  's',
   'span',
   'strong',
   'table',
@@ -33,7 +39,7 @@ const ALLOWED_TAGS = [
   'ul',
 ];
 
-const ALLOWED_ATTR = ['href', 'src', 'alt', 'target', 'rel'];
+const ALLOWED_ATTR = ['href', 'src', 'alt', 'target', 'rel', 'class'];
 
 // Only these URI schemes may be used in href/src; anything else (javascript:,
 // data:, vbscript:, file:, etc.) is stripped by DOMPurify and then double

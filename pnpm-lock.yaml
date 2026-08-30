@@ -47,6 +47,9 @@ importers:
       idb:
         specifier: ^8.0.3
         version: 8.0.3
+      marked:
+        specifier: ^18.0.11
+        version: 18.0.11
       svelte-tiptap:
         specifier: ^3.0.1
         version: 3.0.1(@floating-ui/dom@1.7.6)(@tiptap/core@3.30.2(@tiptap/pm@3.30.2))(@tiptap/extension-bubble-menu@3.26.1(@tiptap/core@3.30.2(@tiptap/pm@3.30.2))(@tiptap/pm@3.30.2))(@tiptap/extension-floating-menu@3.26.1(@floating-ui/dom@1.7.6)(@tiptap/core@3.30.2(@tiptap/pm@3.30.2))(@tiptap/pm@3.30.2))(@tiptap/pm@3.30.2)(svelte@5.56.10(@typescript-eslint/types@8.57.2))
@@ -1001,6 +1004,11 @@ packages:
   magic-string@1.2.2:
     resolution: {integrity: sha512-veT/+7iXrXzT39XnEN4lOxtNl72dMgJ8Lp+5Bd6YcMSWpb0n0MjBM8Uuooi6jgJr8dhUW2swQgBmoZVMni5SVg==}
 
+  marked@18.0.11:
+    resolution: {integrity: sha512-HnslJfsZkRPBDJRHvVtAaWlZHEpSu7u8LgQuJCELjRKuWR+hpq4A7sLq3p8HaI9ypVoXDXxV34CsQJEe1+J5Aw==}
+    engines: {node: '>= 20'}
+    hasBin: true
+
   micromatch@4.0.8:
     resolution: {integrity: sha512-PXwfBhYu0hBCPw8Dn0E+WDYb7af3dSLVWKi3HGv84IdF4TyFoC0ysxFd0Goxw7nSv4T/PzEJQxsYsEiFCKo2BA==}
     engines: {node: '>=8.6'}
@@ -1934,6 +1942,8 @@ snapshots:
   magic-string@1.2.2:
     dependencies:
       '@jridgewell/sourcemap-codec': 1.5.5
+
+  marked@18.0.11: {}
 
   micromatch@4.0.8:
     dependencies:

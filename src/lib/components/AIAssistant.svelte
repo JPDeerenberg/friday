@@ -9,11 +9,19 @@
     type PendingActionInfo,
   } from "$lib/ai";
   import { currentPage, accountInfo, personId } from "$lib/stores";
-  import { onMount } from "svelte";
+  import { onMount, untrack } from "svelte";
   import { fly, scale } from "svelte/transition";
+  import MarkdownRenderer from "$lib/components/MarkdownRenderer.svelte";
+  import {
+    preloadMarkdown,
+    renderMarkdownAsync,
+    tryRenderMarkdownSync,
+    getCachedHtml,
+  } from "$lib/markdown";
 
   let isOpen = $state(false);
   let messages = $state<AiMessage[]>([]);
+  let renderedHtml = $state<(string | null)[]>([]);
   let inputText = $state("");
   let isLoading = $state(false);
   let messagesContainer: HTMLDivElement | undefined = $state();
@@ -57,9 +65,56 @@
       const config = await getAiConfig();
       isConfigured = config.enabled && config.has_api_key;
       useDataAccess = config.use_data_access;
+      if (isConfigured) preloadMarkdown();
     } catch {
       isConfigured = false;
       useDataAccess = false;
+    }
+  }
+
+  // Render markdown for assistant messages only — cached per content, never re-parses.
+  async function ensureMarkdownRendered(idx: number, content: string) {
+    if (messages[idx]?.role !== "assistant") {
+      renderedHtml[idx] = null;
+      return;
+    }
+    const cached = getCachedHtml(content);
+    if (cached !== undefined) {
+      renderedHtml[idx] = cached;
+      return;
+    }
+    const sync = tryRenderMarkdownSync(content);
+    if (sync !== null) {
+      renderedHtml[idx] = sync;
+      return;
+    }
+    // Fallback: show plain text until chunk loads, then upgrade
+    renderedHtml[idx] = null;
+    try {
+      const html = await renderMarkdownAsync(content);
+      // Guard against race: index may have new content by now
+      if (messages[idx]?.content === content) renderedHtml[idx] = html;
+    } catch {}
+  }
+
+  function scheduleRenderForMessages(msgs: AiMessage[]) {
+    // Keep renderedHtml length in sync; render only new/changed assistant msgs
+    if (renderedHtml.length !== msgs.length) {
+      renderedHtml = msgs.map((m, i) => renderedHtml[i] ?? null);
+    }
+    for (let i = 0; i < msgs.length; i++) {
+      if (msgs[i].role === "assistant" && renderedHtml[i] == null) {
+        const cached = getCachedHtml(msgs[i].content);
+        if (cached !== undefined) {
+          renderedHtml[i] = cached;
+        } else {
+          const sync = tryRenderMarkdownSync(msgs[i].content);
+          if (sync !== null) renderedHtml[i] = sync;
+          else void ensureMarkdownRendered(i, msgs[i].content);
+        }
+      } else if (msgs[i].role !== "assistant") {
+        renderedHtml[i] = null;
+      }
     }
   }
 
@@ -80,6 +135,15 @@
     }
   });
 
+  // Schedule markdown rendering when messages change — only assistant msgs, cached.
+  $effect(() => {
+    const len = messages.length;
+    const msgs = messages;
+    if (len === 0) return;
+    // Don't track renderedHtml reads inside schedule — avoids infinite loop
+    untrack(() => scheduleRenderForMessages(msgs));
+  });
+
   // Add greeting message when first opened. Re-check config every time the panel opens,
   // so users who just saved their API key in settings see it immediately.
   function handleOpen() {
@@ -87,15 +151,26 @@
     if (isOpen) {
       // Re-check config whenever the panel opens (catches recently saved settings)
       checkConfig();
+      preloadMarkdown();
     }
     if (isOpen && firstOpen && messages.length === 0) {
       firstOpen = false;
+      const greeting = "👋 Hoi! Ik ben Friday AI, jouw persoonlijke schoolassistent. Stel me vragen over je cijfers, opdrachten, planning of vraag om uitleg!";
       messages = [
         {
           role: "assistant",
-          content: "👋 Hoi! Ik ben Friday AI, jouw persoonlijke schoolassistent. Stel me vragen over je cijfers, opdrachten, planning of vraag om uitleg!",
+          content: greeting,
         },
       ];
+      // Render greeting immediately (sync if marked loaded, else async upgrade)
+      const idx = 0;
+      const cached = getCachedHtml(greeting);
+      if (cached !== undefined) renderedHtml[idx] = cached;
+      else {
+        const sync = tryRenderMarkdownSync(greeting);
+        renderedHtml[idx] = sync;
+        if (sync === null) void ensureMarkdownRendered(idx, greeting);
+      }
     }
   }
 
@@ -148,6 +223,7 @@
 
   function clearChat() {
     messages = [];
+    renderedHtml = [];
     inputText = "";
     pendingActions = [];
   }
@@ -299,7 +375,11 @@
                 ? 'bg-primary-500/20 border border-primary-500/20 text-white rounded-tr-md'
                 : 'bg-surface-800/60 border border-white/5 text-gray-200 rounded-tl-md'}"
           >
-            <p class="whitespace-pre-wrap text-[13px]">{msg.content}</p>
+            {#if msg.role === "user"}
+              <p class="whitespace-pre-wrap text-[13px]">{msg.content}</p>
+            {:else}
+              <MarkdownRenderer content={msg.content} html={renderedHtml[i] ?? null} />
+            {/if}
           </div>
         </div>
       {/each}
