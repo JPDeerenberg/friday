@@ -753,6 +753,18 @@
             <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><line x1="4" y1="9" x2="20" y2="9"/><circle cx="12" cy="15" r="1.6" fill="currentColor" stroke="none"/></svg>
           {/if}
         </IconButton>
+        <IconButton
+          onclick={() => $userSettings.compactView = !$userSettings.compactView}
+          class="{$userSettings.compactView ? 'text-primary-400' : 'text-gray-500'} hover:text-primary-300 shrink-0"
+          title={$userSettings.compactView ? 'Normale weergave' : 'Compacte weergave'}
+          aria-label={$userSettings.compactView ? 'Normale weergave' : 'Compacte weergave'}
+        >
+          {#if $userSettings.compactView}
+            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="4" y1="5" x2="20" y2="5"/><line x1="4" y1="10" x2="20" y2="10"/><line x1="4" y1="15" x2="20" y2="15"/><line x1="4" y1="20" x2="20" y2="20"/></svg>
+          {:else}
+            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="17" x2="20" y2="17"/></svg>
+          {/if}
+        </IconButton>
         <!-- Desktop week nav moved here to avoid extra row -->
         <div class="hidden md:flex items-center bg-surface-900 rounded-m3-sm p-0.5 border border-white/5 shrink-0 ml-1">
           <IconButton size="sm" onclick={prevWeek} class="w-8! h-8!" title="Vorige week">
@@ -1019,7 +1031,7 @@
             onclick={() => openDetail(app)}
             onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDetail(app); } }}
             in:fly={{ y: 12, duration: 200, delay: i * 20, easing: (t) => 1 - Math.pow(1-t, 3) }}
-            class="w-full text-left rounded-m3-md p-3 md:p-4 flex gap-3 md:gap-4 transition-all active:scale-[0.98] hover:scale-[1.005] relative overflow-hidden cursor-pointer border {app.InfoType === 1 && app.Afgerond! ? 'bg-primary-500/10 border-primary-500/30 shadow-sm shadow-primary-500/10' : app.Status === 4 || app.Status === 5 ? 'bg-red-500/8 border-red-500/30' : app.Afgerond ? 'bg-surface-800/50 border-surface-700/40 opacity-70' : 'bg-surface-800/60 border-surface-700/40 hover:bg-surface-700/60 hover:border-surface-600/50'}"
+            class="w-full text-left rounded-m3-md {$userSettings.compactView ? 'p-2 flex gap-2' : 'p-3 md:p-4 flex gap-3 md:gap-4'} transition-all active:scale-[0.98] hover:scale-[1.005] relative overflow-hidden cursor-pointer border {app.InfoType === 1 && app.Afgerond! ? 'bg-primary-500/10 border-primary-500/30 shadow-sm shadow-primary-500/10' : app.Status === 4 || app.Status === 5 ? 'bg-red-500/8 border-red-500/30' : app.Afgerond ? 'bg-surface-800/50 border-surface-700/40 opacity-70' : 'bg-surface-800/60 border-surface-700/40 hover:bg-surface-700/60 hover:border-surface-600/50'}"
           >
             <!-- Soft background glow -->
             {#if app.InfoType === 1 && !app.Afgerond}
@@ -1031,7 +1043,7 @@
               <span class="text-label-small {app.Status === 4 || app.Status === 5 ? 'text-red-400' : 'text-primary-400'}">
                 {app.IsCombined ? 'Uren' : 'Les'}
               </span>
-              <span class="text-title-large {app.Status === 4 || app.Status === 5 ? 'text-red-400' : 'text-white'} leading-none">{app.Lesuur}</span>
+              <span class="{$userSettings.compactView ? 'text-title-medium' : 'text-title-large'} {app.Status === 4 || app.Status === 5 ? 'text-red-400' : 'text-white'} leading-none">{app.Lesuur}</span>
               <div class="h-px w-4 {app.Status === 4 || app.Status === 5 ? 'bg-red-500/30' : 'bg-surface-600'} my-0.5"></div>
               <span class="text-label-small {app.Status === 4 || app.Status === 5 ? 'text-red-400/70' : 'text-primary-300/80'}">{formatTime(app.Start)}</span>
             </div>
@@ -1045,7 +1057,7 @@
                 <span class="text-title-medium {app.Status === 4 || app.Status === 5 ? 'text-red-400 line-through' : 'text-white'} truncate">
                   {app.Vakken?.[0]?.Naam || app.Omschrijving || 'Vrij'}
                 </span>
-                {#if app.Docenten?.[0]}
+                {#if app.Docenten?.[0] && !$userSettings.compactView}
                   <span class="text-label-small text-gray-500 shrink-0 bg-surface-900/60 px-1.5 py-0.5 rounded-m3-sm border border-white/5">
                     {app.Docenten[0].Naam}
                   </span>
@@ -1077,7 +1089,7 @@
                 </div>
               {/if}
 
-              {#if app.Aantekening}
+              {#if app.Aantekening && !$userSettings.compactView}
                 <div class="mt-1.5 text-body-small text-gray-500 bg-surface-900/50 p-1.5 rounded-m3-sm border border-white/5 line-clamp-1">
                   {app.Aantekening}
                 </div>
