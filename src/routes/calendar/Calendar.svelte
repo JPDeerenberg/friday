@@ -27,7 +27,12 @@
     Einde: string;
   };
 
-  type DayItem = DayAppointment | BreakSeparator;
+  type NowMarker = {
+    id: string;
+    displayType: 'now';
+  };
+
+  type DayItem = DayAppointment | BreakSeparator | NowMarker;
 
   type WeekAppointment = CalendarEvent & {
     _column: number;
@@ -199,7 +204,7 @@
       processed = withBreaks;
     }
 
-    return processed.map(a => {
+    const mapped = processed.map(a => {
       if (a.displayType === 'break') return a;
       return {
         ...a,
@@ -217,6 +222,19 @@
         })()
       };
     });
+
+    const isToday = selectedDate.toDateString() === now.toDateString();
+    if (isToday) {
+      const nowMarker: DayItem = { id: 'now-marker', displayType: 'now' };
+      let insertIdx = mapped.findIndex(item => {
+        const start = item.Start ? new Date(item.Start) : null;
+        return start !== null && !isNaN(start.getTime()) && start.getTime() > now.getTime();
+      });
+      if (insertIdx === -1) insertIdx = mapped.length;
+      mapped.splice(insertIdx, 0, nowMarker);
+    }
+
+    return mapped;
   });
 
 
@@ -287,7 +305,7 @@
   }
 
   async function openDetail(app: DayItem) {
-    if (app.displayType === 'break') return;
+    if (app.displayType === 'break' || app.displayType === 'now') return;
     loadingDetail = true;
     showDetail = true;
     try {
@@ -299,14 +317,14 @@
         selectedAppointment = app;
       }
       // Apply local override even in detailed view
-      if (localOverrides[selectedAppointment.Id]) {
+      if (selectedAppointment && localOverrides[selectedAppointment.Id]) {
           selectedAppointment.Inhoud = localOverrides[selectedAppointment.Id];
       }
-      editContent = selectedAppointment.Inhoud || '';
+      editContent = selectedAppointment?.Inhoud || '';
       editMode = false;
     } catch (e) {
-      selectedAppointment = app;
-      editContent = selectedAppointment.Inhoud || '';
+      selectedAppointment = app as CalendarEvent;
+      editContent = selectedAppointment?.Inhoud || '';
     } finally {
       loadingDetail = false;
     }
@@ -1024,6 +1042,12 @@
               <div class="h-[1px] flex-1 bg-gradient-to-l from-surface-700 to-transparent"></div>
             </div>
           </div>
+        {:else if app.displayType === 'now'}
+            <div class="flex items-center gap-2 px-1" aria-hidden="true">
+              <span class="w-2 h-2 rounded-full bg-red-500 shrink-0 shadow-[0_0_8px_rgba(239,68,68,0.8)]"></span>
+              <div class="h-0.5 flex-1 bg-red-500 rounded-full"></div>
+              <span class="text-label-small text-red-400 tabular-nums shrink-0">Nu · {formatTime(now.toISOString())}</span>
+            </div>
         {:else}
           <div
             role="button"
