@@ -445,7 +445,7 @@
       title: 'Agenda',
       settings: [
         { id: 'showWeekend', label: 'Toon Weekend', description: 'Laat zaterdag en zondag zien in de agenda.', type: 'toggle' },
-        { id: 'weekView', label: 'Weekweergave', description: 'Toon een weekoverzicht met tijdlijn op grotere schermen.', type: 'select', options: [
+        { id: 'weekView', label: 'Weekweergave', description: 'Toon een weekoverzicht. Op kleine schermen als lijst per dag, op grotere schermen met tijdlijn.', type: 'select', options: [
           { value: 'auto', label: 'Automatisch (desktop)' },
           { value: 'on', label: 'Altijd aan' },
           { value: 'off', label: 'Altijd uit' }

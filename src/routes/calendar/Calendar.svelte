@@ -741,6 +741,18 @@
             <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
           {/if}
         </IconButton>
+        <IconButton
+          onclick={() => $userSettings.weekView = showWeekView ? 'off' : 'on'}
+          class="{showWeekView ? 'text-primary-400' : 'text-gray-500'} hover:text-primary-300 shrink-0"
+          title={showWeekView ? 'Naar dagweergave' : 'Naar weekweergave'}
+          aria-label={showWeekView ? 'Naar dagweergave' : 'Naar weekweergave'}
+        >
+          {#if showWeekView}
+            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="1"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="9" y1="10" x2="9" y2="20"/><line x1="15" y1="10" x2="15" y2="20"/></svg>
+          {:else}
+            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><line x1="4" y1="9" x2="20" y2="9"/><circle cx="12" cy="15" r="1.6" fill="currentColor" stroke="none"/></svg>
+          {/if}
+        </IconButton>
         <!-- Desktop week nav moved here to avoid extra row -->
         <div class="hidden md:flex items-center bg-surface-900 rounded-m3-sm p-0.5 border border-white/5 shrink-0 ml-1">
           <IconButton size="sm" onclick={prevWeek} class="w-8! h-8!" title="Vorige week">
@@ -841,7 +853,7 @@
             </p>
           </div>
         </div>
-      {:else}
+      {:else if isDesktop}
         <div class="md:rounded-m3-lg md:border border-surface-800/40 overflow-hidden">
           <div class="overflow-x-auto custom-scrollbar">
             <div class="min-w-full flex">
@@ -934,6 +946,43 @@
               {/each}
             </div>
           </div>
+        </div>
+      {:else}
+        <div class="space-y-3">
+          {#each weekViewDays as day}
+            <div class="rounded-m3-md overflow-hidden border {day.isToday ? 'border-primary-500/40 bg-primary-500/5' : 'border-surface-800/40 bg-surface-900/30'}">
+              <button
+                onclick={() => { selectedDate = new Date(day.date); loadAppointments(); }}
+                class="w-full flex items-center justify-between px-3 py-2 {day.isToday ? 'bg-primary-500/10' : 'bg-surface-900/50'}"
+              >
+                <span class="flex items-center gap-2">
+                  <span class="text-label-medium {day.isToday ? 'text-primary-300' : 'text-gray-500'}">
+                    {day.date.toLocaleDateString('nl-NL', { weekday: 'long' })}
+                  </span>
+                  <span class="text-title-small {day.isToday ? 'text-white' : 'text-gray-300'}">{day.date.getDate()}</span>
+                </span>
+                {#if day.isToday}
+                  <span class="text-label-small text-primary-400 px-2 py-0.5 rounded-m3-full bg-primary-500/15">Vandaag</span>
+                {/if}
+              </button>
+              <div class="divide-y divide-surface-800/40">
+                {#each day.apps as app}
+                  <button
+                    onclick={() => openDetail(app)}
+                    class="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-surface-800/40 transition-colors"
+                  >
+                    <span class="text-label-small tabular-nums {app.Status === 4 || app.Status === 5 ? 'text-red-400' : 'text-primary-300'} w-10 shrink-0">{formatTime(app.Start)}</span>
+                    <span class="flex-1 min-w-0 text-title-small truncate {app.Status === 4 || app.Status === 5 ? 'text-red-400 line-through' : 'text-white'}">{app.Vakken?.[0]?.Naam || app.Omschrijving || 'Vrij'}</span>
+                    {#if app.Lokatie}
+                      <span class="text-label-small text-gray-500 shrink-0">{app.Lokatie}</span>
+                    {/if}
+                  </button>
+                {:else}
+                  <p class="px-3 py-2.5 text-label-small text-gray-600">Geen lessen</p>
+                {/each}
+              </div>
+            </div>
+          {/each}
         </div>
       {/if}
     {:else if dayAppointments.length === 0}
