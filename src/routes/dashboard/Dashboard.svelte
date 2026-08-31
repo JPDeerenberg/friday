@@ -8,6 +8,7 @@
   import Button from '$lib/components/Button.svelte';
   import IconButton from '$lib/components/IconButton.svelte';
   import type { Assignment, CalendarEvent, Grade } from '$lib/types';
+  import { computeWeekStats, getMonday, EMPTY_WEEK_STATS, type WeekStats } from '$lib/weekStats';
 
   // Svelte 5 State
   let todayEvents = $state<CalendarEvent[]>([]);
@@ -25,6 +26,8 @@
   let tomorrowAssignments = $state<Assignment[]>([]);
   let nextSchoolDayDate = $state<string>('');
   let loadingTomorrow = $state(true);
+  let weekStats = $state<WeekStats>(EMPTY_WEEK_STATS);
+  let loadingWeekStats = $state(true);
   let expandedLesson = $state<number | null>(null);
 
   let refreshTrigger = $state(0);
@@ -57,10 +60,12 @@
       tomorrowEvents: CalendarEvent[];
       tomorrowAssignments: Assignment[];
       nextSchoolDayDate: string;
+      weekStats: WeekStats;
     } = {
       todayEvents: [], latestGrades: [], unreadCount: 0, upcomingAssignments: [],
       tomorrowEvents: [], tomorrowAssignments: [],
       nextSchoolDayDate: formatDate(new Date(now.getTime() + 86400000)),
+      weekStats: EMPTY_WEEK_STATS,
     };
 
     await Promise.allSettled([
@@ -171,6 +176,21 @@
         } catch (e) {
           console.error('Dashboard: Assignments fetch failed', e);
         }
+      })(),
+
+      // 6. Week stats (tussenuren + lessons for last/this/next week)
+      (async () => {
+        try {
+          const thisMonday = getMonday(now);
+          const lastMonday = new Date(thisMonday);
+          lastMonday.setDate(lastMonday.getDate() - 7);
+          const nextSunday = new Date(thisMonday);
+          nextSunday.setDate(nextSunday.getDate() + 13);
+          const events = await getCalendarEvents(pid, formatDate(lastMonday), formatDate(nextSunday));
+          result.weekStats = computeWeekStats(events, now);
+        } catch (e) {
+          console.error('Dashboard: Week stats fetch failed', e);
+        }
       })()
     ]);
 
@@ -189,6 +209,7 @@
         loadingMessages = true;
         loadingAssignments = true;
         loadingTomorrow = true;
+        loadingWeekStats = true;
     }
 
     try {
@@ -203,12 +224,14 @@
       tomorrowEvents = data.tomorrowEvents;
       tomorrowAssignments = data.tomorrowAssignments;
       nextSchoolDayDate = data.nextSchoolDayDate;
+      weekStats = data.weekStats;
     } finally {
       loadingEvents = false;
       loadingGrades = false;
       loadingMessages = false;
       loadingAssignments = false;
       loadingTomorrow = false;
+      loadingWeekStats = false;
     }
   }
 
@@ -644,6 +667,44 @@
                 <span class="text-label-medium">Geen openstaand huiswerk voor {nextSchoolDayShortLabel()}</span>
               </div>
             {/if}
+          </div>
+        {/if}
+      </div>
+    </section>
+
+    <section in:fly={{ y: -20, duration: 700, delay: 100 }} class="mb-14">
+      <div class="flex items-center justify-between px-1 mb-4">
+        <h2 class="text-headline-small text-white flex items-center gap-3">
+          <div class="w-2 h-7 bg-primary-500 rounded-full shadow-[0_0_20px_rgba(200,100,255,0.6)]"></div>
+          Weekoverzicht
+        </h2>
+      </div>
+      <div class="grid grid-cols-3 gap-2 md:gap-4">
+        {#if loadingWeekStats}
+          {#each Array(3) as _}
+            <div class="glass rounded-m3-md p-3 md:p-5 h-24 md:h-28 animate-pulse"></div>
+          {/each}
+        {:else}
+          <div class="glass rounded-m3-md p-3 md:p-5 text-center border-white/5">
+            <p class="text-label-small text-gray-500 mb-1">Vorige week</p>
+            <p class="text-headline-medium text-white number-count">{weekStats.lastWeek.tussenuren}</p>
+            <p class="text-label-small text-primary-400 mb-2">tussenuren</p>
+            <p class="text-title-medium text-gray-300 number-count">{weekStats.lastWeek.lessons}</p>
+            <p class="text-label-small text-gray-500">lessen</p>
+          </div>
+          <div class="glass rounded-m3-md p-3 md:p-5 text-center border border-primary-500/30">
+            <p class="text-label-small text-gray-500 mb-1">Deze week</p>
+            <p class="text-headline-medium text-white number-count">{weekStats.thisWeek.tussenuren}</p>
+            <p class="text-label-small text-primary-400 mb-2">tussenuren</p>
+            <p class="text-title-medium text-gray-300 number-count">{weekStats.thisWeek.lessons}</p>
+            <p class="text-label-small text-gray-500">lessen</p>
+          </div>
+          <div class="glass rounded-m3-md p-3 md:p-5 text-center border-white/5">
+            <p class="text-label-small text-gray-500 mb-1">Volgende week</p>
+            <p class="text-headline-medium text-white number-count">{weekStats.nextWeek.tussenuren}</p>
+            <p class="text-label-small text-primary-400 mb-2">tussenuren</p>
+            <p class="text-title-medium text-gray-300 number-count">{weekStats.nextWeek.lessons}</p>
+            <p class="text-label-small text-gray-500">lessen</p>
           </div>
         {/if}
       </div>
