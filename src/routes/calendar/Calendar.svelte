@@ -84,6 +84,39 @@
     duurtHeleDag: false
   });
 
+  // Time calculator for "Nieuwe afspraak": appointment time + travel + visit
+  // duration -> departure/return time, filled into newApp.start/einde.
+  let showTimeCalculator = $state(false);
+  let calcMode = $state<'lopen' | 'fiets' | 'auto'>('fiets');
+  let calcTravelMinutes = $state(15);
+  let calcVisitMinutes = $state(30);
+  let calcAppointmentTime = $state('');
+
+  const calcResult = $derived.by(() => {
+    if (!/^\d{2}:\d{2}$/.test(calcAppointmentTime)) return null;
+    const [h, m] = calcAppointmentTime.split(':').map(Number);
+    const base = new Date(selectedDate);
+    base.setHours(h, m, 0, 0);
+    const depart = new Date(base.getTime() - calcTravelMinutes * 60000);
+    const back = new Date(base.getTime() + (calcVisitMinutes + calcTravelMinutes) * 60000);
+    return { depart, back };
+  });
+
+  function applyCalculatedTime() {
+    if (!calcResult) return;
+    const pad = (n: number) => String(n).padStart(2, '0');
+    newApp.start = `${pad(calcResult.depart.getHours())}:${pad(calcResult.depart.getMinutes())}`;
+    newApp.einde = `${pad(calcResult.back.getHours())}:${pad(calcResult.back.getMinutes())}`;
+    const modeLabel = calcMode === 'lopen' ? 'Lopen' : calcMode === 'fiets' ? 'Fiets' : 'Auto';
+    const note = `Vervoer: ${modeLabel} (${calcTravelMinutes} min heen, ${calcTravelMinutes} min terug), ${calcVisitMinutes} min ter plaatse.`;
+    newApp.inhoud = newApp.inhoud ? `${newApp.inhoud}\n${note}` : note;
+    showTimeCalculator = false;
+  }
+
+  $effect(() => {
+    if (!isCreating) showTimeCalculator = false;
+  });
+
   // Local overrides for homework/content
   let localOverrides = $state<Record<string, string>>({});
 
@@ -392,6 +425,7 @@
 
       // Reset form
       newApp = { omschrijving: '', lokatie: '', inhoud: '', start: '', einde: '', duurtHeleDag: false };
+      showTimeCalculator = false;
       isCreating = false;
 
       // Force a full reload so the new event appears
@@ -1367,6 +1401,60 @@
               placeholder="Bijv. Projectoverleg"
             />
           </div>
+
+            <div>
+              <button
+                type="button"
+                onclick={() => showTimeCalculator = !showTimeCalculator}
+                class="text-label-medium text-primary-400 hover:text-primary-300 ml-1 flex items-center gap-1"
+              >
+                <svg class="w-3 h-3 transition-transform {showTimeCalculator ? 'rotate-90' : ''}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+                Tijd berekenen
+              </button>
+
+              {#if showTimeCalculator}
+                <div class="mt-2 p-3 rounded-m3-sm bg-surface-950 border border-white/5 space-y-3" transition:slide={{ duration: 200 }}>
+                  <div class="flex gap-1.5">
+                    <button type="button" onclick={() => calcMode = 'lopen'} class="flex-1 py-1.5 rounded-m3-xs text-label-medium border transition-colors {calcMode === 'lopen' ? 'bg-primary-500/15 border-primary-500/40 text-primary-400' : 'bg-surface-900 border-white/5 text-gray-500'}">Lopen</button>
+                    <button type="button" onclick={() => calcMode = 'fiets'} class="flex-1 py-1.5 rounded-m3-xs text-label-medium border transition-colors {calcMode === 'fiets' ? 'bg-primary-500/15 border-primary-500/40 text-primary-400' : 'bg-surface-900 border-white/5 text-gray-500'}">Fiets</button>
+                    <button type="button" onclick={() => calcMode = 'auto'} class="flex-1 py-1.5 rounded-m3-xs text-label-medium border transition-colors {calcMode === 'auto' ? 'bg-primary-500/15 border-primary-500/40 text-primary-400' : 'bg-surface-900 border-white/5 text-gray-500'}">Auto</button>
+                  </div>
+
+                  <div class="grid grid-cols-2 gap-3">
+                    <div class="space-y-1">
+                      <label for="calcTravel" class="text-label-small text-gray-500 ml-1">Reistijd (enkele reis, min)</label>
+                      <input id="calcTravel" type="number" min="0" bind:value={calcTravelMinutes} class="w-full bg-surface-900 border border-white/5 rounded-m3-xs px-3 py-2 text-body-medium text-white focus:outline-none" />
+                    </div>
+                    <div class="space-y-1">
+                      <label for="calcVisit" class="text-label-small text-gray-500 ml-1">Duur ter plaatse (min)</label>
+                      <input id="calcVisit" type="number" min="0" bind:value={calcVisitMinutes} class="w-full bg-surface-900 border border-white/5 rounded-m3-xs px-3 py-2 text-body-medium text-white focus:outline-none" />
+                    </div>
+                  </div>
+
+                  <div class="space-y-1">
+                    <label for="calcAppTime" class="text-label-small text-gray-500 ml-1">Tijd van de afspraak</label>
+                    <input id="calcAppTime" type="time" bind:value={calcAppointmentTime} class="w-full bg-surface-900 border border-white/5 rounded-m3-xs px-3 py-2 text-body-medium text-white focus:outline-none" style="color-scheme: dark" />
+                  </div>
+
+                  {#if calcResult}
+                    <p class="text-label-small text-gray-400">
+                      Weg om <span class="text-primary-400 tabular-nums">{formatTime(calcResult.depart.toISOString())}</span>,
+                      terug om <span class="text-primary-400 tabular-nums">{formatTime(calcResult.back.toISOString())}</span>
+                    </p>
+                  {/if}
+
+                  <Button
+                    variant="tonal"
+                    type="button"
+                    disabled={!calcResult}
+                    onclick={applyCalculatedTime}
+                    class="w-full h-9!"
+                  >
+                    Toepassen
+                  </Button>
+                </div>
+              {/if}
+            </div>
 
           <div class="grid grid-cols-2 gap-3 md:gap-4">
             <div class="space-y-1">
