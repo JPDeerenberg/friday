@@ -51,7 +51,7 @@
   // Foreground resume: hidden→visible triggers a force-refresh via the
   // existing refreshTrigger branch, so stale-while-revalidate cache is
   // bypassed and the visible page reloads without manual navigation.
-  let resumedSeen = $state(false);
+  let resumedSeen = false;
   $effect(() => {
     const r = $resumedAt;
     if (!resumedSeen) { resumedSeen = true; return; }

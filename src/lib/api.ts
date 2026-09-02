@@ -113,12 +113,33 @@ export async function logout(): Promise<void> {
 export type RestoreSessionStatus = "restored" | "logged_out" | "unavailable";
 
 export async function restoreSession(): Promise<RestoreSessionStatus> {
-  const result = await invoke<RestoreSessionStatus | boolean>("restore_session");
+  const result: any = await invoke("restore_session");
   // Backwardscompat: older backend returned boolean; normalize to 3-way string.
   if (typeof result === "boolean") {
     return result ? "restored" : "logged_out";
   }
-  return result as RestoreSessionStatus;
+  if (typeof result === "string") {
+    const s = result.toLowerCase().trim();
+    if (s === "restored" || s === "logged_out" || s === "unavailable") return s as RestoreSessionStatus;
+    // Handle quoted JSON string edge case
+    try {
+      const parsed = JSON.parse(result);
+      if (typeof parsed === "string") return parsed.toLowerCase() as RestoreSessionStatus;
+    } catch {}
+    return s as RestoreSessionStatus;
+  }
+  // Tauri enum could serialize as { Restored: null } / { LoggedOut: ... } depending on serde mode
+  if (result && typeof result === "object") {
+    const key = Object.keys(result)[0];
+    if (key) {
+      const s = key.toLowerCase();
+      if (s === "restored" || s === "logged_out" || s === "unavailable") return s as RestoreSessionStatus;
+    }
+    // Already lowercased object with status field?
+    if (result.status) return String(result.status).toLowerCase() as RestoreSessionStatus;
+  }
+  console.warn("Unexpected restore_session result shape", result);
+  return "unavailable";
 }
 
 export async function getProfileInfo(personId: number): Promise<ProfileInfo> {

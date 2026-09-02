@@ -21,7 +21,7 @@
   });
 
   // Foreground resume: force-refresh
-  let resumedSeen = $state(false);
+  let resumedSeen = false;
   $effect(() => {
     const r = $resumedAt;
     if (!resumedSeen) { resumedSeen = true; return; }

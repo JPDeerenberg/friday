@@ -453,7 +453,7 @@ impl MagisterClient {
     /// protection for that one call.
     async fn acquire_refresh_lock(dir: &Path) -> Option<std::fs::File> {
         let dir = dir.to_path_buf();
-        tokio::task::spawn_blocking(move || {
+        let fut = tokio::task::spawn_blocking(move || {
             let _ = std::fs::create_dir_all(&dir);
             let file = std::fs::OpenOptions::new()
                 .create(true)
@@ -462,10 +462,16 @@ impl MagisterClient {
                 .ok()?;
             file.lock().ok()?;
             Some(file)
-        })
-        .await
-        .ok()
-        .flatten()
+        });
+        match tokio::time::timeout(std::time::Duration::from_secs(5), fut).await {
+            Ok(Ok(Some(file))) => Some(file),
+            Ok(Ok(None)) => None,
+            Ok(Err(_)) => None,
+            Err(_) => {
+                log::warn!("acquire_refresh_lock timeout after 5s, proceeding without lock (fail-open)");
+                None
+            }
+        }
     }
 
     /// Ensure the access token is valid, refreshing if needed, and return the

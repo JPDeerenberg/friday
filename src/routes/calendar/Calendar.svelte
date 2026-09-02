@@ -133,7 +133,7 @@
   let loadedEnd = $state<Date | null>(null);
 
     // Foreground resume: force-refresh when app returns from background
-  let resumedSeen = $state(false);
+  let resumedSeen = false;
   $effect(() => {
     const r = $resumedAt;
     if (!resumedSeen) { resumedSeen = true; return; }

@@ -19,7 +19,7 @@
   });
 
   // Foreground resume: force-refresh leermiddelen on resume
-  let resumedSeen = $state(false);
+  let resumedSeen = false;
   $effect(() => {
     const r = $resumedAt;
     if (!resumedSeen) { resumedSeen = true; return; }

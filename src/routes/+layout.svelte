@@ -48,15 +48,30 @@
       restoreState = status;
       restoreStatus.set(status as any);
       if (status === 'restored') {
-        const account = await getAccount();
-        const pid = await getPersonId();
-        accountInfo.set(account);
-        personId.set(pid);
+        // Mark logged in immediately so cached data can render even if
+        // subsequent account/person fetches hit a transient network blip.
+        // Only restoreSession itself determines 'unavailable' vs 'logged_out'.
         isLoggedIn.set(true);
+        // Fetch account info best-effort – failures must NOT flip back to
+        // 'unavailable' and hide the UI. Pages will show stale cache via
+        // cacheGet fallback when fetchers throw.
         try {
-          const pic = await getProfilePicture(pid);
-          profilePicture.set(pic);
-        } catch (_) {}
+          const account = await getAccount();
+          accountInfo.set(account);
+        } catch (e) {
+          console.warn('getAccount after restore failed (keeping stale cache)', e);
+        }
+        try {
+          const pid = await getPersonId();
+          personId.set(pid);
+          try {
+            const pic = await getProfilePicture(pid);
+            profilePicture.set(pic);
+          } catch (_) {}
+        } catch (e) {
+          console.warn('getPersonId after restore failed (keeping stale cache)', e);
+          // personId may still be null on very first cold boot offline; pages guard on it.
+        }
       } else if (status === 'logged_out') {
         isLoggedIn.set(false);
         personId.set(null);
@@ -64,6 +79,10 @@
         profilePicture.set(null);
       } else if (status === 'unavailable') {
         console.warn('Session restore unavailable (offline) — will retry on next resume');
+        // Do not clear isLoggedIn/personId – if we were previously logged in,
+        // keep showing stale cached data. If this is a cold boot, the offline
+        // overlay (restoreState==='unavailable' && !$isLoggedIn) will show a
+        // retry button instead of the login screen.
       }
       return status;
     } catch (e) {
@@ -177,15 +196,14 @@
       // trigger). Mirrors the pattern already proven in Settings.svelte:140.
       const handleVisibilityChange = async () => {
         if (document.visibilityState !== 'visible') return;
-        // Publish resume so pages refresh (stale-while-revalidate)
-        resumedAt.set(Date.now());
         const currentRestore = get(restoreStatus) ?? restoreState;
         const logged = get(isLoggedIn);
         if (currentRestore === 'unavailable' || logged) {
           await attemptRestore(true);
-          // Ensure pages see a fresh signal even if the restore above was slow
-          resumedAt.set(Date.now());
         }
+        // Publish resume so pages refresh (stale-while-revalidate) – single
+        // signal after revalidation to avoid double-load on every resume.
+        resumedAt.set(Date.now());
       };
       document.addEventListener('visibilitychange', handleVisibilityChange);
       // Store for cleanup
