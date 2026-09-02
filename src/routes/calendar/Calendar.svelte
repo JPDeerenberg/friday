@@ -7,6 +7,7 @@
   import HtmlRenderer from '$lib/components/HtmlRenderer.svelte';
   import Button from '$lib/components/Button.svelte';
   import IconButton from '$lib/components/IconButton.svelte';
+  import DropdownMenu from '$lib/components/DropdownMenu.svelte';
   import { on } from 'svelte/events';
   import { onMount } from 'svelte';
   import { fade, fly, slide, scale } from 'svelte/transition';
@@ -48,6 +49,7 @@
   let editMode = $state(false);
   let editContent = $state('');
   let isCreating = $state(false);
+  let viewMenuOpen = $state(false);
 
   // Week view state
   let isDesktop = $state(false);
@@ -488,8 +490,13 @@
     }
   }
 
-  function getInfoColor(info: number) {
-    if (info === 1) return 'border-primary-400/60 text-primary-200 bg-primary-500/25';
+  function getInfoColor(info: number, afgerond = false) {
+    if (info === 1) {
+      // Pending homework uses theme primary (always works with chosen color),
+      // done homework is muted to look cleaned up.
+      if (afgerond) return 'border-surface-600 text-gray-400 bg-surface-700/40 opacity-60';
+      return 'border-primary-400/60 text-primary-200 bg-primary-500/25';
+    }
     if ([2, 3, 4, 5].includes(info)) return 'border-red-400/60 text-red-200 bg-red-500/25';
     return 'border-surface-600 text-gray-300 bg-surface-700/50';
   }
@@ -782,49 +789,124 @@
             </h2>
           {/if}
         </label>
-        <IconButton
-          onclick={() => { appointments = []; loadedStart = null; loadedEnd = null; loadAppointments(true); }}
-          class="hover:rotate-180 duration-500 shrink-0"
-          title="Verversen"
-          aria-label="Verversen"
-        >
-          <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
-        </IconButton>
-        <IconButton
-          onclick={() => $userSettings.hideCancelled = !$userSettings.hideCancelled}
-          class="{$userSettings.hideCancelled ? 'text-gray-600' : 'text-primary-400'} hover:text-primary-300 shrink-0"
-          title={$userSettings.hideCancelled ? 'Uitgevallen lessen tonen' : 'Uitgevallen lessen verbergen'}
-        >
-          {#if $userSettings.hideCancelled}
-            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68M6.61 6.61A13.52 13.52 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61M2 2l20 20"/></svg>
-          {:else}
-            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
-          {/if}
-        </IconButton>
-        <IconButton
-          onclick={() => $userSettings.weekView = showWeekView ? 'off' : 'on'}
-          class="{showWeekView ? 'text-primary-400' : 'text-gray-500'} hover:text-primary-300 shrink-0"
-          title={showWeekView ? 'Naar dagweergave' : 'Naar weekweergave'}
-          aria-label={showWeekView ? 'Naar dagweergave' : 'Naar weekweergave'}
-        >
-          {#if showWeekView}
-            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="1"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="9" y1="10" x2="9" y2="20"/><line x1="15" y1="10" x2="15" y2="20"/></svg>
-          {:else}
-            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><line x1="4" y1="9" x2="20" y2="9"/><circle cx="12" cy="15" r="1.6" fill="currentColor" stroke="none"/></svg>
-          {/if}
-        </IconButton>
-        <IconButton
-          onclick={() => $userSettings.compactView = !$userSettings.compactView}
-          class="{$userSettings.compactView ? 'text-primary-400' : 'text-gray-500'} hover:text-primary-300 shrink-0"
-          title={$userSettings.compactView ? 'Normale weergave' : 'Compacte weergave'}
-          aria-label={$userSettings.compactView ? 'Normale weergave' : 'Compacte weergave'}
-        >
-          {#if $userSettings.compactView}
-            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="4" y1="5" x2="20" y2="5"/><line x1="4" y1="10" x2="20" y2="10"/><line x1="4" y1="15" x2="20" y2="15"/><line x1="4" y1="20" x2="20" y2="20"/></svg>
-          {:else}
-            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="17" x2="20" y2="17"/></svg>
-          {/if}
-        </IconButton>
+        <!-- Mobile: single overflow menu -->
+        <div class="md:hidden shrink-0">
+          <DropdownMenu bind:open={viewMenuOpen} align="right">
+            {#snippet trigger(toggle, open)}
+              <IconButton
+                onclick={toggle}
+                aria-label="Weergaveopties"
+                title="Weergaveopties"
+                aria-haspopup="menu"
+                aria-expanded={open}
+                class="{open ? 'text-primary-400 bg-white/10' : 'text-gray-400'} hover:text-primary-300 shrink-0"
+              >
+                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/><circle cx="7" cy="6" r="1.2" fill="currentColor" stroke="none"/><circle cx="15" cy="12" r="1.2" fill="currentColor" stroke="none"/><circle cx="9" cy="18" r="1.2" fill="currentColor" stroke="none"/></svg>
+              </IconButton>
+            {/snippet}
+            <button
+              class="w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-white/5 transition-colors"
+              onclick={() => { viewMenuOpen = false; appointments = []; loadedStart = null; loadedEnd = null; loadAppointments(true); }}
+              role="menuitem"
+            >
+              <svg class="w-4 h-4 text-gray-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
+              <span class="text-label-medium text-gray-200">Verversen</span>
+            </button>
+            <div class="h-px bg-white/5 my-1"></div>
+            <button
+              class="w-full flex items-center justify-between gap-3 px-3 py-2.5 text-left hover:bg-white/5 transition-colors"
+              onclick={() => $userSettings.hideCancelled = !$userSettings.hideCancelled}
+              role="menuitemcheckbox"
+              aria-checked={!$userSettings.hideCancelled ? 'false' : 'true'}
+            >
+              <span class="flex items-center gap-3">
+                {#if $userSettings.hideCancelled}
+                  <svg class="w-4 h-4 text-gray-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68M6.61 6.61A13.52 13.52 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61M2 2l20 20"/></svg>
+                {:else}
+                  <svg class="w-4 h-4 text-primary-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+                {/if}
+                <span class="text-label-medium {$userSettings.hideCancelled ? 'text-gray-400' : 'text-gray-200'}">Uitgevallen verbergen</span>
+              </span>
+              <span class="w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 {$userSettings.hideCancelled ? 'bg-primary-500 border-primary-500 text-white' : 'border-surface-600'}">
+                {#if $userSettings.hideCancelled}<svg class="w-2.5 h-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12l5 5l10 -10"/></svg>{/if}
+              </span>
+            </button>
+            <button
+              class="w-full flex items-center justify-between gap-3 px-3 py-2.5 text-left hover:bg-white/5 transition-colors"
+              onclick={() => $userSettings.weekView = showWeekView ? 'off' : 'on'}
+              role="menuitemcheckbox"
+              aria-checked={showWeekView ? 'true' : 'false'}
+            >
+              <span class="flex items-center gap-3">
+                <svg class="w-4 h-4 {showWeekView ? 'text-primary-400' : 'text-gray-400'} shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="1"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="9" y1="10" x2="9" y2="20"/><line x1="15" y1="10" x2="15" y2="20"/></svg>
+                <span class="text-label-medium {showWeekView ? 'text-gray-200' : 'text-gray-400'}">Weekweergave</span>
+              </span>
+              <span class="w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 {showWeekView ? 'bg-primary-500 border-primary-500 text-white' : 'border-surface-600'}">
+                {#if showWeekView}<svg class="w-2.5 h-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12l5 5l10 -10"/></svg>{/if}
+              </span>
+            </button>
+            <button
+              class="w-full flex items-center justify-between gap-3 px-3 py-2.5 text-left hover:bg-white/5 transition-colors"
+              onclick={() => $userSettings.compactView = !$userSettings.compactView}
+              role="menuitemcheckbox"
+              aria-checked={$userSettings.compactView ? 'true' : 'false'}
+            >
+              <span class="flex items-center gap-3">
+                <svg class="w-4 h-4 {$userSettings.compactView ? 'text-primary-400' : 'text-gray-400'} shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="17" x2="20" y2="17"/></svg>
+                <span class="text-label-medium {$userSettings.compactView ? 'text-gray-200' : 'text-gray-400'}">Compacte weergave</span>
+              </span>
+              <span class="w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 {$userSettings.compactView ? 'bg-primary-500 border-primary-500 text-white' : 'border-surface-600'}">
+                {#if $userSettings.compactView}<svg class="w-2.5 h-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12l5 5l10 -10"/></svg>{/if}
+              </span>
+            </button>
+          </DropdownMenu>
+        </div>
+        <!-- Desktop: 4 buttons -->
+        <div class="hidden md:flex items-center gap-1.5">
+          <IconButton
+            onclick={() => { appointments = []; loadedStart = null; loadedEnd = null; loadAppointments(true); }}
+            class="hover:rotate-180 duration-500 shrink-0"
+            title="Verversen"
+            aria-label="Verversen"
+          >
+            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
+          </IconButton>
+          <IconButton
+            onclick={() => $userSettings.hideCancelled = !$userSettings.hideCancelled}
+            class="{$userSettings.hideCancelled ? 'text-gray-600' : 'text-primary-400'} hover:text-primary-300 shrink-0"
+            title={$userSettings.hideCancelled ? 'Uitgevallen lessen tonen' : 'Uitgevallen lessen verbergen'}
+          >
+            {#if $userSettings.hideCancelled}
+              <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68M6.61 6.61A13.52 13.52 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61M2 2l20 20"/></svg>
+            {:else}
+              <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+            {/if}
+          </IconButton>
+          <IconButton
+            onclick={() => $userSettings.weekView = showWeekView ? 'off' : 'on'}
+            class="{showWeekView ? 'text-primary-400' : 'text-gray-500'} hover:text-primary-300 shrink-0"
+            title={showWeekView ? 'Naar dagweergave' : 'Naar weekweergave'}
+            aria-label={showWeekView ? 'Naar dagweergave' : 'Naar weekweergave'}
+          >
+            {#if showWeekView}
+              <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="1"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="9" y1="10" x2="9" y2="20"/><line x1="15" y1="10" x2="15" y2="20"/></svg>
+            {:else}
+              <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><line x1="4" y1="9" x2="20" y2="9"/><circle cx="12" cy="15" r="1.6" fill="currentColor" stroke="none"/></svg>
+            {/if}
+          </IconButton>
+          <IconButton
+            onclick={() => $userSettings.compactView = !$userSettings.compactView}
+            class="{$userSettings.compactView ? 'text-primary-400' : 'text-gray-500'} hover:text-primary-300 shrink-0"
+            title={$userSettings.compactView ? 'Normale weergave' : 'Compacte weergave'}
+            aria-label={$userSettings.compactView ? 'Normale weergave' : 'Compacte weergave'}
+          >
+            {#if $userSettings.compactView}
+              <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="4" y1="5" x2="20" y2="5"/><line x1="4" y1="10" x2="20" y2="10"/><line x1="4" y1="15" x2="20" y2="15"/><line x1="4" y1="20" x2="20" y2="20"/></svg>
+            {:else}
+              <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="17" x2="20" y2="17"/></svg>
+            {/if}
+          </IconButton>
+        </div>
         <!-- Desktop week nav moved here to avoid extra row -->
         <div class="hidden md:flex items-center bg-surface-900 rounded-m3-sm p-0.5 border border-white/5 shrink-0 ml-1">
           <IconButton size="sm" onclick={prevWeek} class="w-8! h-8!" title="Vorige week">
@@ -991,12 +1073,12 @@
                     {#each day.apps as app}
                       <button
                         onclick={() => openDetail(app)}
-                        class="absolute rounded-m3-sm border px-2 py-1.5 text-left overflow-hidden transition-all active:scale-[0.98] hover:brightness-125 cursor-pointer {app.InfoType === 1 && app.Afgerond! ? 'bg-primary-500/15 border-primary-500/30' : app.Status === 4 || app.Status === 5 ? 'bg-red-500/10 border-red-500/30' : app.Afgerond ? 'bg-surface-800/50 border-surface-700/40 opacity-70' : 'bg-surface-800/80 border-surface-700/50 hover:bg-surface-700/70'}"
+                        class="absolute rounded-m3-sm border px-2 py-1.5 text-left overflow-hidden transition-all active:scale-[0.98] hover:brightness-125 cursor-pointer {app.InfoType === 1 && !app.Afgerond ? 'bg-primary-500/16 border-primary-500/40 shadow-sm' : app.InfoType === 1 && app.Afgerond ? 'bg-surface-800/50 border-surface-700/40 opacity-60' : app.Status === 4 || app.Status === 5 ? 'bg-red-500/10 border-red-500/30' : app.Afgerond ? 'bg-surface-800/50 border-surface-700/40 opacity-60' : 'bg-surface-800/80 border-surface-700/50 hover:bg-surface-700/70'}"
                         style="top: {appTopPx(app)}px; height: {appHeightPx(app)}px; left: calc({app._column} / {app._columnCount} * 100% + 4px); width: calc(100% / {app._columnCount} - 8px);"
                         title="{(app.Vakken?.[0]?.Naam || app.Omschrijving || 'Vrij')} · {formatTime(app.Start)} – {formatTime(app.Einde)}"
                       >
                         <div class="flex flex-col min-w-0 h-full">
-                          <p class="text-title-small leading-tight truncate {app.Status === 4 || app.Status === 5 ? 'text-red-400 line-through' : app.Afgerond ? 'text-gray-400 line-through' : 'text-white'}">
+                          <p class="text-title-small leading-tight truncate {app.Status === 4 || app.Status === 5 ? 'text-red-400 line-through' : app.InfoType === 1 && app.Afgerond ? 'text-gray-400 line-through opacity-60' : app.Afgerond ? 'text-gray-400 line-through opacity-60' : app.InfoType === 1 && !app.Afgerond ? 'text-primary-100' : 'text-white'}">
 {app.Vakken?.[0]?.Naam || app.Omschrijving || 'Vrij'}
                           </p>
                           <div class="flex items-center gap-1 text-label-medium text-gray-400 mt-0.5">
@@ -1097,11 +1179,11 @@
             onclick={() => openDetail(app)}
             onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDetail(app); } }}
             in:fly={{ y: 12, duration: 200, delay: i * 20, easing: (t) => 1 - Math.pow(1-t, 3) }}
-            class="w-full text-left rounded-m3-md {$userSettings.compactView ? 'p-2 flex gap-2' : 'p-3 md:p-4 flex gap-3 md:gap-4'} transition-all active:scale-[0.98] hover:scale-[1.005] relative overflow-hidden cursor-pointer border {app.InfoType === 1 && app.Afgerond! ? 'bg-primary-500/10 border-primary-500/30 shadow-sm shadow-primary-500/10' : app.Status === 4 || app.Status === 5 ? 'bg-red-500/8 border-red-500/30' : app.Afgerond ? 'bg-surface-800/50 border-surface-700/40 opacity-70' : 'bg-surface-800/60 border-surface-700/40 hover:bg-surface-700/60 hover:border-surface-600/50'}"
+            class="w-full text-left rounded-m3-md {$userSettings.compactView ? 'p-2 flex gap-2' : 'p-3 md:p-4 flex gap-3 md:gap-4'} transition-all active:scale-[0.98] hover:scale-[1.005] relative overflow-hidden cursor-pointer border {app.InfoType === 1 && !app.Afgerond ? 'bg-primary-500/14 border-primary-500/40 shadow-sm shadow-primary-500/20' : app.InfoType === 1 && app.Afgerond ? 'bg-surface-800/50 border-surface-700/40 opacity-60' : app.Status === 4 || app.Status === 5 ? 'bg-red-500/8 border-red-500/30' : app.Afgerond ? 'bg-surface-800/50 border-surface-700/40 opacity-60' : 'bg-surface-800/60 border-surface-700/40 hover:bg-surface-700/60 hover:border-surface-600/50'}"
           >
-            <!-- Soft background glow -->
+            <!-- Soft background glow - only for pending homework, uses theme primary -->
             {#if app.InfoType === 1 && !app.Afgerond}
-              <div class="absolute top-0 right-0 w-24 h-24 bg-primary-500/10 blur-2xl -mr-12 -mt-12 pointer-events-none"></div>
+              <div class="absolute top-0 right-0 w-24 h-24 bg-primary-500/14 blur-2xl -mr-12 -mt-12 pointer-events-none"></div>
             {/if}
             
             <!-- Time/Period -->
@@ -1120,7 +1202,7 @@
             <!-- Info -->
             <div class="flex-1 min-w-0 flex flex-col justify-center relative z-10">
               <div class="flex items-center justify-between gap-1.5 mb-0.5">
-                <span class="text-title-medium {app.Status === 4 || app.Status === 5 ? 'text-red-400 line-through' : 'text-white'} truncate">
+                <span class="text-title-medium {app.Status === 4 || app.Status === 5 ? 'text-red-400 line-through' : app.InfoType === 1 && app.Afgerond ? 'text-gray-400 line-through opacity-60' : app.Afgerond ? 'text-gray-400 line-through opacity-60' : app.InfoType === 1 && !app.Afgerond ? 'text-primary-100' : 'text-white'} truncate">
                   {app.Vakken?.[0]?.Naam || app.Omschrijving || 'Vrij'}
                 </span>
                 {#if app.Docenten?.[0] && !$userSettings.compactView}
@@ -1149,7 +1231,7 @@
                 </div>
               {:else if app.InfoType && app.InfoType !== 0}
                 <div class="mt-1.5 flex">
-                  <span class="px-2 py-0.5 rounded-m3-sm text-label-small border {getInfoColor(app.InfoType)}">
+                  <span class="px-2 py-0.5 rounded-m3-sm text-label-small border {getInfoColor(app.InfoType, !!app.Afgerond)}">
                     {getInfoLabel(app.InfoType)}
                   </span>
                 </div>
@@ -1168,7 +1250,8 @@
                 <button 
                   onclick={(e) => { e.stopPropagation(); toggleDone(app); }}
                   aria-label={app.Afgerond ? 'Markeer als niet afgerond' : 'Markeer als afgerond'}
-                  class="w-7 h-7 md:w-8 md:h-8 rounded-full border-2 transition-all flex items-center justify-center {app.Afgerond ? 'bg-emerald-500 border-emerald-400 text-white shadow-sm shadow-emerald-500/30' : 'bg-surface-900 border-surface-600 text-transparent hover:border-primary-500 hover:bg-surface-800 active:scale-110'}"
+                  class="w-7 h-7 md:w-8 md:h-8 rounded-full border-2 transition-all flex items-center justify-center {app.Afgerond ? 'bg-emerald-500 border-emerald-400 text-white shadow-sm shadow-emerald-500/30 opacity-70' : 'bg-primary-500/15 border-primary-400/60 text-primary-300 hover:bg-primary-500/25 hover:border-primary-400 active:scale-110 shadow-sm shadow-primary-500/20'}"
+
                 >
                   <svg class="w-3.5 h-3.5 md:w-4 md:h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="4"><path d="M20 6L9 17L4 12"/></svg>
                 </button>
@@ -1309,7 +1392,7 @@
                 </span>
               </Button>
              {/if}
-            <div class="p-4 md:p-5 rounded-m3-md bg-surface-950 border border-white/5 prose prose-sm prose-invert max-w-none shadow-inner">
+            <div class="p-4 md:p-5 rounded-m3-md prose prose-sm prose-invert max-w-none shadow-inner {selectedAppointment.InfoType === 1 && !selectedAppointment.Afgerond ? 'bg-primary-500/12 border border-primary-500/30' : selectedAppointment.Afgerond ? 'bg-surface-950 border border-white/5 opacity-60' : 'bg-surface-950 border border-white/5'}">
                <HtmlRenderer html={selectedAppointment.Inhoud} />
             </div>
           {:else}

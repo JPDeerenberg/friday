@@ -1637,9 +1637,18 @@ pub async fn execute_pending_action(
             let start = action.args.get("start").and_then(|v| v.as_str()).unwrap_or("").to_string();
             let einde = action.args.get("einde").and_then(|v| v.as_str()).unwrap_or("").to_string();
             let duurt_hele_dag = action.args.get("duurt_hele_dag").and_then(|v| v.as_bool()).unwrap_or(false);
-            let omschrijving = action.args.get("omschrijving").and_then(|v| v.as_str()).unwrap_or("").to_string();
-            let lokatie = action.args.get("lokatie").and_then(|v| v.as_str()).map(|s| s.to_string());
-            let inhoud = action.args.get("inhoud").and_then(|v| v.as_str()).map(|s| s.to_string());
+            let omschrijving = action.args.get("omschrijving").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+            let lokatie = action.args
+                .get("lokatie")
+                .and_then(|v| v.as_str())
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty());
+            let inhoud = action.args
+                .get("inhoud")
+                .and_then(|v| v.as_str())
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty());
+            let info_type = if inhoud.is_some() { 1 } else { 0 };
 
             let body = serde_json::json!({
                 "Start": start,
@@ -1650,7 +1659,7 @@ pub async fn execute_pending_action(
                 "Inhoud": inhoud,
                 "Type": 1,
                 "Status": 2,
-                "InfoType": 0
+                "InfoType": info_type
             });
 
             client.post(&format!("personen/{}/afspraken", person_id), &body)

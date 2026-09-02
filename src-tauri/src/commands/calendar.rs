@@ -93,16 +93,29 @@ pub async fn create_calendar_event(
 ) -> Result<(), String> {
     let mut c = client.lock().await;
 
+    // Magister validates Inhoud ↔ InfoType coherence: InfoType 0 (Geen) is
+    // invalid when Inhoud is non-empty. Derive InfoType from Inhoud so a
+    // personal appointment with content gets InfoType 1 (Huiswerk).
+    let inhoud = inhoud.and_then(|s| {
+        let t = s.trim().to_string();
+        if t.is_empty() { None } else { Some(t) }
+    });
+    let lokatie = lokatie.and_then(|s| {
+        let t = s.trim().to_string();
+        if t.is_empty() { None } else { Some(t) }
+    });
+    let info_type = if inhoud.is_some() { 1 } else { 0 };
+
     let body = serde_json::to_value(CreateCalendarEvent {
         start,
         einde,
         duurt_hele_dag,
-        omschrijving,
+        omschrijving: omschrijving.trim().to_string(),
         lokatie,
         inhoud,
         event_type: event_type.unwrap_or(1),
         status: 2, // manually scheduled
-        info_type: 0,
+        info_type,
     })
     .map_err(|e| e.to_string())?;
 

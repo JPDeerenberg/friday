@@ -143,9 +143,9 @@ pub struct CreateCalendarEvent {
     pub duurt_hele_dag: bool,
     #[serde(rename = "Omschrijving")]
     pub omschrijving: String,
-    #[serde(rename = "Lokatie")]
+    #[serde(rename = "Lokatie", skip_serializing_if = "Option::is_none")]
     pub lokatie: Option<String>,
-    #[serde(rename = "Inhoud")]
+    #[serde(rename = "Inhoud", skip_serializing_if = "Option::is_none")]
     pub inhoud: Option<String>,
     #[serde(rename = "Type")]
     pub event_type: i32, // 1 = personal, 16 = schedule
