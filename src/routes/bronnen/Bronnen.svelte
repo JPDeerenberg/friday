@@ -1,8 +1,8 @@
 <script lang="ts">
-  import { personId } from '$lib/stores';
+  import { personId, resumedAt } from '$lib/stores';
   import { getBronnen, getExternalBronSources } from '$lib/api';
   import { getFileIcon } from '$lib/icons';
-  import { cacheGet } from '$lib/cache';
+  import { cacheGet, cacheRefresh } from '$lib/cache';
   import { onMount } from 'svelte';
   import { fade, fly, slide } from 'svelte/transition';
   import IconButton from '$lib/components/IconButton.svelte';
@@ -17,6 +17,21 @@
   }
 
   let sources = $state<any[]>([]);
+
+  // Foreground resume
+  let resumedSeen = $state(false);
+  $effect(() => {
+    const r = $resumedAt;
+    if (!resumedSeen) { resumedSeen = true; return; }
+    if ($personId !== null) reloadBronnen();
+  });
+  async function reloadBronnen() {
+    const pid = $personId;
+    if (!pid) return;
+    try {
+      sources = await cacheRefresh(`bronnen_sources_${pid}`, () => getExternalBronSources(pid), 5 * 60 * 1000);
+    } catch {}
+  }
   let currentItems = $state<any[]>([]);
   let loading = $state(true);
   let pathHistory = $state<any[]>([]); // To support back navigation

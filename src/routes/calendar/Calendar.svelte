@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { personId, userSettings } from '$lib/stores';
+  import { personId, userSettings, resumedAt } from '$lib/stores';
   import { getCalendarEvents, formatDate, getCalendarEvent, toggleCalendarEventDone, downloadFile, createCalendarEvent, deleteCalendarEvent } from '$lib/api';
   import { formatTime } from '$lib/format';
   let downloadingFile = $state<string | null>(null);
@@ -131,6 +131,14 @@
   // Track the date range we have data for
   let loadedStart = $state<Date | null>(null);
   let loadedEnd = $state<Date | null>(null);
+
+    // Foreground resume: force-refresh when app returns from background
+  let resumedSeen = $state(false);
+  $effect(() => {
+    const r = $resumedAt;
+    if (!resumedSeen) { resumedSeen = true; return; }
+    if ($personId !== null) loadAppointments(true);
+  });
 
   async function loadAppointments(force = false) {
     const pid = $personId;

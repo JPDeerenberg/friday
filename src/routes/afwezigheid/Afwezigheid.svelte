@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { personId } from '$lib/stores';
+  import { personId, resumedAt } from '$lib/stores';
   import { getAbsences, formatDate, getSchoolyears } from '$lib/api';
-  import { cacheGet } from '$lib/cache';
+  import { cacheGet, cacheRefresh } from '$lib/cache';
   import { onMount } from 'svelte';
   import { fade, fly, slide } from 'svelte/transition';
   import IconButton from '$lib/components/IconButton.svelte';
@@ -50,19 +50,33 @@
     }
   });
 
-  async function loadAbsences() {
+    // Foreground resume: force-refresh when app returns from background
+  let resumedSeen = $state(false);
+  $effect(() => {
+    const r = $resumedAt;
+    if (!resumedSeen) { resumedSeen = true; return; }
+    if ($personId !== null) loadAbsences(true);
+  });
+
+  async function loadAbsences(force = false) {
     if (!$personId) return;
-    loading = true;
+    if (force) loading = true;
     try {
       // Cache-first, keyed per person+date-range so switching schoolyears in the
       // selector can't serve another year's cached absences. cacheGet resolves
       // near-instantly on a cache hit (background-refreshing silently after), so
       // `loading` only stays true long enough to matter on a genuine cache miss.
-      const raw = await cacheGet(
-        `afwezigheid_${$personId}_${van}_${tot}`,
-        () => getAbsences($personId as number, van, tot),
-        5 * 60 * 1000
-      );
+      const raw = force
+        ? await cacheRefresh(
+            `afwezigheid_${$personId}_${van}_${tot}`,
+            () => getAbsences($personId as number, van, tot),
+            5 * 60 * 1000
+          )
+        : await cacheGet(
+            `afwezigheid_${$personId}_${van}_${tot}`,
+            () => getAbsences($personId as number, van, tot),
+            5 * 60 * 1000
+          );
       absences = raw.sort((a, b) => {
         const dateA = a.Start ? new Date(a.Start).getTime() : 0;
         const dateB = b.Start ? new Date(b.Start).getTime() : 0;
@@ -124,7 +138,7 @@
       <div class="flex items-center justify-between">
         <h1 class="text-xl font-black text-gray-100 italic tracking-tighter uppercase shrink-0">Absenties</h1>
         <IconButton
-          onclick={loadAbsences}
+          onclick={() => loadAbsences(true)}
           class="hover:rotate-180 duration-700"
           aria-label="Vernieuwen"
         >

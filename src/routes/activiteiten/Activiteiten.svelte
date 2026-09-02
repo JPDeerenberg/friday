@@ -1,13 +1,31 @@
 <script lang="ts">
-  import { personId } from '$lib/stores';
+  import { personId, resumedAt } from '$lib/stores';
   import { getActivities, getActivityElements } from '$lib/api';
-  import { cacheGet } from '$lib/cache';
+  import { cacheGet, cacheRefresh } from '$lib/cache';
   import { onMount } from 'svelte';
   import { fade, fly, slide } from 'svelte/transition';
   import Button from '$lib/components/Button.svelte';
   import IconButton from '$lib/components/IconButton.svelte';
 
   let activities = $state<any[]>([]);
+
+  // Foreground resume
+  let resumedSeen = $state(false);
+  $effect(() => {
+    const r = $resumedAt;
+    if (!resumedSeen) { resumedSeen = true; return; }
+    if ($personId !== null) {
+      // force reload activities via cacheRefresh path if available, else re-trigger personId effect
+      loadActivitiesResume();
+    }
+  });
+  async function loadActivitiesResume() {
+    const pid = $personId;
+    if (!pid) return;
+    try {
+      activities = await cacheRefresh(`activiteiten_${pid}`, () => getActivities(pid), 5 * 60 * 1000);
+    } catch {}
+  }
   let selectedActivity = $state<any>(null);
   let elements = $state<any[]>([]);
   let loading = $state(true);

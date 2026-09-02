@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { personId } from '$lib/stores';
+  import { personId, resumedAt } from '$lib/stores';
   import { getProfileInfo, getProfileAddresses, getCareerInfo, getProfilePicture, getAccount } from '$lib/api';
   import { cacheGet, cacheRefresh } from '$lib/cache';
   import { onMount } from 'svelte';
@@ -46,6 +46,14 @@
     await Promise.allSettled(tasks);
     return result;
   }
+
+  // Foreground resume: force-refresh profile when app returns from background
+  let resumedSeen = $state(false);
+  $effect(() => {
+    const r = $resumedAt;
+    if (!resumedSeen) { resumedSeen = true; return; }
+    if ($personId !== null) loadProfile(true);
+  });
 
   async function loadProfile(force = false) {
     const pid = $personId;

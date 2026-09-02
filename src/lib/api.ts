@@ -110,8 +110,15 @@ export async function logout(): Promise<void> {
   return invoke("logout");
 }
 
-export async function restoreSession(): Promise<boolean> {
-  return invoke("restore_session");
+export type RestoreSessionStatus = "restored" | "logged_out" | "unavailable";
+
+export async function restoreSession(): Promise<RestoreSessionStatus> {
+  const result = await invoke<RestoreSessionStatus | boolean>("restore_session");
+  // Backwardscompat: older backend returned boolean; normalize to 3-way string.
+  if (typeof result === "boolean") {
+    return result ? "restored" : "logged_out";
+  }
+  return result as RestoreSessionStatus;
 }
 
 export async function getProfileInfo(personId: number): Promise<ProfileInfo> {

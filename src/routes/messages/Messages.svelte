@@ -1,6 +1,7 @@
 <script lang="ts">
   import { getMessageFolders, getMessages, getMessageDetail, markMessagesAsRead, searchContacts, sendMessage } from '$lib/api';
   import { cacheGet, cacheRefresh } from '$lib/cache';
+  import { resumedAt } from '$lib/stores';
   import { onMount } from 'svelte';
   import { slide, fade } from 'svelte/transition';
   import Button from '$lib/components/Button.svelte';
@@ -68,6 +69,25 @@
       console.error('Error loading folders:', e);
     }
     loading = false;
+  });
+
+  // Foreground resume: force-refresh message folders + current folder messages
+  let resumedSeen = $state(false);
+  $effect(() => {
+    const r = $resumedAt;
+    if (!resumedSeen) { resumedSeen = true; return; }
+    (async () => {
+      try {
+        folders = await cacheRefresh('messages_folders', () => getMessageFolders(), 5 * 60 * 1000);
+        if (selectedFolder) {
+          const updated = folders.find(f => f.id === selectedFolder!.id);
+          if (updated) selectedFolder = updated;
+        }
+        await loadMessages(true);
+      } catch (e) {
+        console.warn('Messages resume refresh failed', e);
+      }
+    })();
   });
 
   async function loadMessages(force = false) {

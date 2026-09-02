@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { personId, userSettings } from '$lib/stores';
+  import { personId, userSettings, resumedAt } from '$lib/stores';
   import { get } from 'svelte/store';
   import {
     getAssignments,
@@ -41,7 +41,7 @@
     await loadAssignments();
   });
 
-  async function loadAssignments(force = false) {
+   async function loadAssignments(force = false) {
     const pid = get(personId);
     if (!pid) return;
     if (assignments.length === 0) loadingList = true;
@@ -61,6 +61,14 @@
       loadingList = false;
     }
   }
+
+  // Foreground resume: force-refresh assignments
+  let resumedSeen = $state(false);
+  $effect(() => {
+    const r = $resumedAt;
+    if (!resumedSeen) { resumedSeen = true; return; }
+    if (get(personId) !== null) loadAssignments(true);
+  });
 
   function getStatus(a: Assignment) {
     if (a.Afgesloten) return { label: 'Afgesloten', key: 'closed' };

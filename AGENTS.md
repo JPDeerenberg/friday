@@ -32,21 +32,9 @@ When everything is valid, update the version and Commit.
 - **Styling**: Tailwind CSS 4 with Material 3 semantic color tokens (`--m3-primary`, `--m3-on-primary`, etc.). Dark theme by default. AMOLED mode via `.mode-amoled` class.
 - **Data flow**: Frontend calls Tauri `invoke()` (see `src/lib/api.ts`) → Rust command (see `src-tauri/src/commands/`) → Magister REST API.
 - **Platforms**: Desktop (Linux/Windows) + Android. Deep link auth via `m6loapp://` scheme.
-- **Android background sync**: `WorkManager` (`SyncWorker.kt`) is the sole background sync
-  driver — periodic, 15-minute minimum interval (OS-enforced floor for `PeriodicWorkRequest`,
-  also intentionally avoids Magister API rate limits). It calls into Rust via JNI
-  (`Java_com_joris_friday_SyncWorker_runSync` in `src-tauri/src/jni.rs`) to fetch messages,
-  grades, assignments, and calendar data, then diffs the result against
-  `sync_state.json` (managed by `SyncStateManager.kt`) to detect what's new, and fires
-  Android notifications for genuinely new items via `NotificationHelper.kt`.
-  **There is no foreground `SyncService`** — it was removed because running it alongside
-  `WorkManager` caused a race condition on the shared state file (duplicate/missing
-  notifications) and doubled network/CPU cost for no benefit. Do not reintroduce a second,
-  independently-scheduled sync driver; if background sync needs to change, change
-  `SyncWorker`/`WorkManager` scheduling, not a parallel mechanism.
-- **DND scheduling**: `DndScheduler.kt` reads calendar data after each sync and schedules
-  precise `AlarmManager` do-not-disturb windows around lessons; `DndReceiver.kt` handles the
-  on/off/safety-timeout alarms.
+- **Android background sync** (two-driver, single execution path): the **primary driver** is a self-rescheduling `AlarmManager` exact-alarm chain (`SyncAlarmReceiver.kt` — `setExactAndAllowWhileIdle()`, re-armed at `now + interval`, interval floor 15 min) that at each tick enqueues a **one-shot** `SyncWorker` via `WorkManager`. The **backstop** is a slow `PeriodicWorkRequest` (`BACKSTOP_INTERVAL_MINUTES = 60`) in case the alarm chain is ever cancelled. Both drivers funnel through the **same execution path** — `SyncWorker.doRemoteWork()` guarded by `SyncWorker.syncLock` (`ReentrantLock`) and `SyncStateManager`'s `@Synchronized` read-diff-write — so concurrent runs are serialized and the historical duplicate/missing-notifications race (from two independent unlocked writers to `sync_state.json`) does not reproduce. **There is no foreground `SyncService`** — it was removed for that reason. Do **not** add a third scheduler, and do not enqueue an extra `SyncWorker` on app resume (see below); to change the cadence change `SyncAlarmReceiver`/`WorkManager` scheduling and `MainActivity.setSyncInterval()`.
+- **DND & sync alarms use exact `AlarmManager` APIs**: `SyncAlarmReceiver` uses `setExactAndAllowWhileIdle()`, `DndScheduler` uses the same for lesson windows. On Android 13+ (`targetSdk = 36`) exact alarms need the user-granted `SCHEDULE_EXACT_ALARM` permission — `MainActivity.onResume()` prompts for it once via `ACTION_REQUEST_SCHEDULE_EXACT_ALARM` and re-arms the chain so it switches from inexact to exact immediately after grant. Without the grant the chain falls back to inexact `setAndAllowWhileIdle()`, which Doze can defer by hours. `USE_EXACT_ALARM` is **not** declared (restricted to alarm/clock apps; would risk Play Store rejection) — rely on the user-granted `SCHEDULE_EXACT_ALARM` path only.
+- **DND scheduling**: `DndScheduler.kt` reads calendar data after each sync and schedules precise `AlarmManager` do-not-disturb windows around lessons; `DndReceiver.kt` handles the on/off/safety-timeout alarms.
 
 ### Key files
 
@@ -81,7 +69,7 @@ When everything is valid, update the version and Commit.
 - **Use `Promise.allSettled()`** for parallel data fetching with per-section error handling.
 - **Stores**: Import from `$lib/stores.ts`. Subscribe with `$storeName` syntax in templates.
 - **Tailwind**: Utility-first. Use `@apply` sparingly. Reference Material 3 tokens for semantic colors.
-- **Caching**: Dashboard data cached to localStorage. Settings persist via `localStorage` merge strategy in stores.
+- **Caching**: App data cached to IndexedDB via `idb` (`src/lib/cache.ts` — `cacheGet`/`cacheRefresh`, 5–30 min TTL, stale-while-revalidate, background refresh). Settings persist via `localStorage` merge strategy in stores.
 
 ### Backend (Rust)
 
@@ -94,10 +82,7 @@ When everything is valid, update the version and Commit.
 
 ### Android (Kotlin, `src-tauri/gen/android/`)
 
-- **One background sync driver only**: `WorkManager`/`SyncWorker` — do not add a second
-  scheduler (foreground `Service`, `AlarmManager` polling loop, etc.) alongside it. Two
-  independent schedulers hitting the same state file without locking is what caused the
-  unreliable-notifications bug (duplicate/missing notifications depending on timing).
+- **Two drivers, one execution path**: `SyncAlarmReceiver`'s exact-alarm chain + `WorkManager` periodic backstop both funnel into `SyncWorker.doRemoteWork()` under `SyncWorker.syncLock` and `SyncStateManager`'s `@Synchronized` block. Do **not** add a third independent scheduler (foreground `Service`, another `AlarmManager` loop, or an extra `SyncWorker` on app resume) — two independent unsynchronized writers to `sync_state.json` is what caused the historical duplicate/missing-notifications bug, and the current locking is what prevents it.
 - **Sync interval floor is 15 minutes** (`PeriodicWorkRequest.MIN_PERIODIC_INTERVAL_MILLIS`).
   Any UI or command that sets a sync interval must clamp to this minimum in both the
   frontend (`Settings.svelte`) and the Kotlin/Rust layer — don't trust a single clamp point.

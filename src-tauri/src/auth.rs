@@ -173,12 +173,16 @@ impl AuthFlow {
     }
 
     /// Refresh an expired token using the refresh_token grant.
+    /// Distinguishes a genuine server rejection (4xx — the refresh token is
+    /// dead, `invalid_grant`) from a transient failure (transport error,
+    /// timeout, 5xx, parse failure) so callers can avoid wiping a still-valid
+    /// local session on a temporary network blip.
     pub async fn refresh_token(refresh_token: &str) -> Result<TokenResponse, AuthError> {
         let client = crate::tls::new_client();
         let body = format!(
             "refresh_token={refresh_token}\
-             &client_id=M6LOAPP\
-             &grant_type=refresh_token"
+              &client_id=M6LOAPP\
+              &grant_type=refresh_token"
         );
 
         let resp = client
@@ -190,8 +194,16 @@ impl AuthFlow {
             .map_err(|e| AuthError::RequestFailed(e.to_string()))?;
 
         if !resp.status().is_success() {
+            let status = resp.status().as_u16();
             let text = resp.text().await.unwrap_or_default();
-            return Err(AuthError::TokenRefreshFailed(text));
+            // 4xx (except 408/429) = server explicitly rejected the grant
+            // (usually 400 invalid_grant). 408/429/5xx/parse errors are transient.
+            let is_rejected = (status >= 400 && status < 500) && status != 408 && status != 429;
+            if is_rejected {
+                return Err(AuthError::TokenRefreshRejected { status, body: text });
+            } else {
+                return Err(AuthError::TokenRefreshFailed(text));
+            }
         }
 
         resp.json()
@@ -229,6 +241,8 @@ pub enum AuthError {
     TokenExchangeFailed(String),
     #[error("Token refresh failed: {0}")]
     TokenRefreshFailed(String),
+    #[error("Token refresh rejected (status {status}): {body}")]
+    TokenRefreshRejected { status: u16, body: String },
     #[error("Failed to parse response: {0}")]
     ParseFailed(String),
     #[error("API endpoint not found in host-meta")]

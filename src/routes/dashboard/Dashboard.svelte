@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { personId, accountInfo, userSettings, currentPage } from '$lib/stores';
+  import { personId, accountInfo, userSettings, currentPage, resumedAt } from '$lib/stores';
   import { getCalendarEvents, getGrades, getSchoolyears, getRecentGrades, getMessageFolders, getAssignments, formatDate, formatTeacherName, toggleCalendarEventDone } from '$lib/api';
   import { getSubjectIcon } from '$lib/icons';
   import { formatTime } from '$lib/format';
@@ -46,6 +46,16 @@
     if ($personId !== null && refreshTrigger >= 0) {
       loadDashboardData();
     }
+  });
+
+  // Foreground resume: hidden→visible triggers a force-refresh via the
+  // existing refreshTrigger branch, so stale-while-revalidate cache is
+  // bypassed and the visible page reloads without manual navigation.
+  let resumedSeen = $state(false);
+  $effect(() => {
+    const r = $resumedAt;
+    if (!resumedSeen) { resumedSeen = true; return; }
+    if ($personId !== null) refreshTrigger++;
   });
 
   async function fetchDashboardData(pid: number) {

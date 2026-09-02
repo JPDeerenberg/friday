@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { personId, userSettings } from '$lib/stores';
+  import { personId, userSettings, resumedAt } from '$lib/stores';
   import { getSchoolyears, getGrades, formatDate, getBulkGradeExtraInfo, formatTeacherName } from '$lib/api';
   import { formatDateShort } from '$lib/format';
   import { cacheGet, cacheRefresh } from '$lib/cache';
@@ -223,6 +223,14 @@
   // Persist UI filter state across sessions
   $effect(() => {
     localStorage.setItem('grades_ui_state', JSON.stringify({ recentFilter, subjectSortMode, currentTab }));
+  });
+
+  // Foreground resume: force-refresh grades when the app comes back from background
+  let resumedSeen = $state(false);
+  $effect(() => {
+    const r = $resumedAt;
+    if (!resumedSeen) { resumedSeen = true; return; }
+    if ($personId !== null) init(true);
   });
 
   async function loadGrades(force = false) {

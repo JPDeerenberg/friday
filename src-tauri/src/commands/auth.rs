@@ -298,12 +298,28 @@ pub async fn logout(client: State<'_, SharedClient>, app: tauri::AppHandle) -> R
     Ok(())
 }
 
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RestoreSessionStatus {
+    Restored,
+    LoggedOut,
+    Unavailable,
+}
+
 /// Try to restore session from saved tokens.
+///
+/// Distinguishes three outcomes:
+/// - `restored` — session is valid (refreshed if needed)
+/// - `logged_out` — no stored session, or server explicitly rejected the
+///   refresh token (`invalid_grant`) — safe to wipe local tokens
+/// - `unavailable` — transient failure (no network, timeout, 5xx, parse
+///   failure) — tokens are kept on disk, frontend should NOT show the login
+///   screen and should retry when connectivity returns.
 #[tauri::command]
 pub async fn restore_session(
     client: State<'_, SharedClient>,
     app: tauri::AppHandle,
-) -> Result<bool, String> {
+) -> Result<RestoreSessionStatus, String> {
     use tauri::Manager;
     let path = app.path().app_data_dir().map_err(|e| e.to_string())?;
 
@@ -319,22 +335,30 @@ pub async fn restore_session(
 
     let token_set = match token_set {
         Some(ts) => ts,
-        None => return Ok(false),
+        None => return Ok(RestoreSessionStatus::LoggedOut),
     };
 
     let mut c = client.lock().await;
     c.token_set = Some(token_set);
 
-    // Try refreshing if expired
-    if let Err(_) = c.ensure_valid_token().await {
-        c.token_set = None;
-        c.clear_persisted_tokens(&app);
-        return Ok(false);
+    match c.ensure_valid_token().await {
+        Ok(_) => {
+            save_tokens_to_disk(&c, &app);
+            Ok(RestoreSessionStatus::Restored)
+        }
+        Err(e) if e.is_rejected() => {
+            log::warn!("restore_session: refresh rejected ({}), clearing persisted tokens", e);
+            c.token_set = None;
+            c.clear_persisted_tokens(&app);
+            Ok(RestoreSessionStatus::LoggedOut)
+        }
+        Err(e) => {
+            // Transient or unexpected — keep the on-disk tokens intact so the
+            // app recovers once connectivity returns, without forcing re-login.
+            log::warn!("restore_session: transient/unavailable ({}), keeping tokens", e);
+            Ok(RestoreSessionStatus::Unavailable)
+        }
     }
-
-    // Save refreshed tokens
-    save_tokens_to_disk(&c, &app);
-    Ok(true)
 }
 
 fn save_tokens_to_disk(client: &MagisterClient, app: &tauri::AppHandle) {

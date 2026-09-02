@@ -3,8 +3,8 @@
   import { onMount } from 'svelte';
   import { listen } from '@tauri-apps/api/event';
   import { getCurrentWindow } from '@tauri-apps/api/window';
-  import { isLoggedIn, personId, accountInfo, profilePicture, currentPage, userSettings, loginError } from '$lib/stores';
-  import { restoreSession, getAccount, getPersonId, getProfilePicture, handleAuthCallback, logout } from '$lib/api';
+  import { isLoggedIn, personId, accountInfo, profilePicture, currentPage, userSettings, loginError, resumedAt, restoreStatus } from '$lib/stores';
+  import { restoreSession, getAccount, getPersonId, getProfilePicture, handleAuthCallback, logout, type RestoreSessionStatus } from '$lib/api';
   import { getCurrent as getCurrentDeepLink } from '@tauri-apps/plugin-deep-link';
   import { getAiConfig } from '$lib/ai';
   import { navIcon } from '$lib/icons';
@@ -19,6 +19,7 @@
   let sidebarCollapsed = $state(false);
   let mobileSidebarOpen = $state(false);
   let aiConfigured = $state(false);
+  let restoreState = $state<RestoreSessionStatus | null>(null);
 
   async function checkAiConfig() {
     try {
@@ -39,6 +40,46 @@
       profilePicture.set(pic);
     } catch (_) {}
     await checkAiConfig();
+  }
+
+  async function attemptRestore(isResume = false): Promise<RestoreSessionStatus> {
+    try {
+      const status = await restoreSession();
+      restoreState = status;
+      restoreStatus.set(status as any);
+      if (status === 'restored') {
+        const account = await getAccount();
+        const pid = await getPersonId();
+        accountInfo.set(account);
+        personId.set(pid);
+        isLoggedIn.set(true);
+        try {
+          const pic = await getProfilePicture(pid);
+          profilePicture.set(pic);
+        } catch (_) {}
+      } else if (status === 'logged_out') {
+        isLoggedIn.set(false);
+        personId.set(null);
+        accountInfo.set(null);
+        profilePicture.set(null);
+      } else if (status === 'unavailable') {
+        console.warn('Session restore unavailable (offline) — will retry on next resume');
+      }
+      return status;
+    } catch (e) {
+      console.warn('restoreSession threw, treating as unavailable', e);
+      restoreState = 'unavailable';
+      restoreStatus.set('unavailable');
+      return 'unavailable';
+    }
+  }
+
+  function retryRestore() {
+    loading = true;
+    attemptRestore(false).finally(async () => {
+      try { await checkAiConfig(); } catch (_) {}
+      loading = false;
+    });
   }
 
   onMount(() => {
@@ -122,26 +163,33 @@
       */
 
       try {
-        const restored = await restoreSession();
-        if (restored) {
-          const account = await getAccount();
-          const pid = await getPersonId();
-          accountInfo.set(account);
-          personId.set(pid);
-          isLoggedIn.set(true);
-
-          try {
-            const pic = await getProfilePicture(pid);
-            profilePicture.set(pic);
-          } catch (_) {}
-        }
-      } catch (_) {
+        await attemptRestore(false);
       } finally {
         try {
           await checkAiConfig();
         } catch (_) {}
         loading = false;
       }
+
+      // Resume signal: hidden→visible triggers a non-destructive session
+      // revalidation and a force-refresh of the currently-mounted page via
+      // the `resumedAt` store (pages watch it alongside their manual refresh
+      // trigger). Mirrors the pattern already proven in Settings.svelte:140.
+      const handleVisibilityChange = async () => {
+        if (document.visibilityState !== 'visible') return;
+        // Publish resume so pages refresh (stale-while-revalidate)
+        resumedAt.set(Date.now());
+        const currentRestore = get(restoreStatus) ?? restoreState;
+        const logged = get(isLoggedIn);
+        if (currentRestore === 'unavailable' || logged) {
+          await attemptRestore(true);
+          // Ensure pages see a fresh signal even if the restore above was slow
+          resumedAt.set(Date.now());
+        }
+      };
+      document.addEventListener('visibilitychange', handleVisibilityChange);
+      // Store for cleanup
+      (window as any).__friday_visibility_handler = handleVisibilityChange;
 
       unlistenBack = await listen('tauri://back-button', () => {
         if (mobileSidebarOpen) {
@@ -189,6 +237,8 @@
       if (unlistenSuccess) unlistenSuccess();
       if (unlistenError) unlistenError();
       if (unlistenBack) unlistenBack();
+      const hv = (window as any).__friday_visibility_handler;
+      if (hv) document.removeEventListener('visibilitychange', hv);
       window.removeEventListener('popstate', handlePopstate);
       window.removeEventListener('wheel', preventZoomWheel);
       window.removeEventListener('keydown', preventZoomKey);
@@ -290,6 +340,20 @@
     <div class="flex flex-col items-center gap-4">
       <div class="w-12 h-12 border-4 border-primary-500 border-t-transparent rounded-full animate-spin"></div>
       <p class="text-gray-400 text-body-medium">Laden...</p>
+    </div>
+  </div>
+{:else if restoreState === 'unavailable' && !$isLoggedIn}
+  <div class="flex items-center justify-center h-screen bg-surface-950 p-6">
+    <div class="flex flex-col items-center gap-4 max-w-sm text-center">
+      <div class="w-12 h-12 rounded-full bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400">
+        <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8v4"/><circle cx="12" cy="16" r="1"/><path d="M12 2a10 10 0 0 0-10 10c0 5.52 4.48 10 10 10s10-4.48 10-10S17.52 2 12 2z"/></svg>
+      </div>
+      <p class="text-title-medium text-white">Geen verbinding</p>
+      <p class="text-body-small text-gray-400 leading-relaxed">Kon niet verbinden met Magister. Je opgeslagen sessie blijft behouden — controleer je internet en probeer opnieuw.</p>
+      <button onclick={retryRestore} class="mt-2 px-6 py-2.5 rounded-m3-sm bg-primary-500 text-white text-label-large hover:bg-primary-600 transition-colors">
+        Opnieuw proberen
+      </button>
+      <p class="text-label-small text-gray-600 mt-1">Of open de app opnieuw zodra je weer online bent.</p>
     </div>
   </div>
 {:else}

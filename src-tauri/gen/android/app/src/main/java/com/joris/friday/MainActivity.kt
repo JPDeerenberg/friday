@@ -1,5 +1,6 @@
 package com.joris.friday
 
+import android.app.AlarmManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -23,6 +24,7 @@ class MainActivity : TauriActivity() {
     // State variable to track if we've asked for permissions this session
     private var hasPromptedPermissions = false
     private var hasPromptedBatteryOpt = false
+    private var hasPromptedExactAlarm = false
 
     // Initialize ndk-context early so keyring/session restore never races Tao's
     // async setup. Rust side is idempotent and race-safe with Tao (probe + catch).
@@ -109,6 +111,31 @@ class MainActivity : TauriActivity() {
                 }
             }
         }
+
+        // Request "Alarms & reminders" (exact-alarm) access once per session.
+        // Without this, SyncAlarmReceiver's setExactAndAllowWhileIdle() silently
+        // falls back to inexact setAndAllowWhileIdle(), which Doze can defer by hours.
+        // Mirrors the battery-opt prompt pattern above; Play Store only auto-grants
+        // SCHEDULE_EXACT_ALARM to alarm/clock/calendar apps, so a school app must ask.
+        if (!hasPromptedExactAlarm && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            hasPromptedExactAlarm = true
+            val alarmManager = getSystemService(Context.ALARM_SERVICE) as AlarmManager
+            if (!alarmManager.canScheduleExactAlarms()) {
+                try {
+                    val intent = Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
+                        data = Uri.parse("package:$packageName")
+                    }
+                    startActivity(intent)
+                } catch (e: Exception) {
+                    // Some OEMs / devices ignore this intent; don't crash.
+                }
+            }
+        }
+
+        // Re-arm the alarm chain on every resume so it switches from inexact to
+        // exact immediately after the user grants the permission above. Cheap
+        // (FLAG_UPDATE_CURRENT replaces the previous alarm) and idempotent.
+        SyncAlarmReceiver.scheduleNext(this)
 
         // NOTE: Do NOT overwrite stored notification preferences here.
         // They are set by the frontend via Tauri's sync_notification_preferences command.

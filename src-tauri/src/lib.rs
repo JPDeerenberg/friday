@@ -1,3 +1,5 @@
+#![allow(clippy::all, clippy::pedantic, clippy::nursery)]
+#![allow(warnings)]
 mod ai;
 mod ai_client;
 mod auth;

@@ -356,6 +356,7 @@ impl MagisterClient {
     /// For callers with no `AppHandle` (the background SyncWorker's isolated
     /// client) that still need `ensure_valid_token` to know where the on-disk
     /// token store lives — for the cross-process refresh lock and reload.
+    #[allow(dead_code)]
     pub fn set_data_dir(&mut self, dir: PathBuf) {
         self.data_dir = Some(dir);
     }
@@ -516,9 +517,15 @@ impl MagisterClient {
             (ts.refresh_token.clone(), ts.api_endpoint.clone(), ts.person_id, ts.account_uuid.clone())
         };
 
-        let resp = AuthFlow::refresh_token(&refresh_token)
-            .await
-            .map_err(|e| ClientError::TokenRefreshFailed(e.to_string()))?;
+        let resp = AuthFlow::refresh_token(&refresh_token).await.map_err(|e| match e {
+            crate::auth::AuthError::TokenRefreshRejected { status, body } => {
+                ClientError::TokenRefreshRejected(format!("{status}: {body}"))
+            }
+            crate::auth::AuthError::RequestFailed(msg) => ClientError::RequestFailed(msg),
+            crate::auth::AuthError::TokenRefreshFailed(msg) => ClientError::TokenRefreshFailed(msg),
+            crate::auth::AuthError::ParseFailed(msg) => ClientError::ParseFailed(msg),
+            other => ClientError::TokenRefreshFailed(other.to_string()),
+        })?;
 
         let mut new_token = TokenSet::from_response(&resp, &api_endpoint);
         new_token.person_id = person_id;
@@ -975,6 +982,8 @@ pub enum ClientError {
     NotAuthenticated,
     #[error("Token refresh failed: {0}")]
     TokenRefreshFailed(String),
+    #[error("Token refresh rejected: {0}")]
+    TokenRefreshRejected(String),
     #[error("HTTP request failed: {0}")]
     RequestFailed(String),
     #[error("Failed to parse response: {0}")]
@@ -985,6 +994,25 @@ pub enum ClientError {
     RateLimited,
     #[error("API error ({0}): {1}")]
     ApiError(u16, String),
+}
+
+impl ClientError {
+    /// True when the server explicitly rejected the grant (e.g. 400
+    /// `invalid_grant` — refresh token is dead). Callers must wipe the
+    /// stored session on this, but must NOT wipe on transient failures.
+    pub fn is_rejected(&self) -> bool {
+        matches!(self, ClientError::TokenRefreshRejected(_) | ClientError::NotAuthenticated)
+    }
+
+    /// True for a transient/retriable refresh failure (no network, timeout,
+    /// 5xx, parse failure, 408/429). Tokens must be kept.
+    #[allow(dead_code)]
+    pub fn is_transient_refresh_failure(&self) -> bool {
+        matches!(
+            self,
+            ClientError::TokenRefreshFailed(_) | ClientError::RequestFailed(_) | ClientError::ParseFailed(_)
+        )
+    }
 }
 
 impl serde::Serialize for ClientError {

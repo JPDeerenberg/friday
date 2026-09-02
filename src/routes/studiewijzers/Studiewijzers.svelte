@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { personId } from '$lib/stores';
+  import { personId, resumedAt } from '$lib/stores';
   import { getStudiewijzers, getStudiewijzerDetail, getStudiewijzerOnderdeelDetail } from '$lib/api';
   import { getFileIcon } from '$lib/icons';
   import { cacheGet, cacheRefresh } from '$lib/cache';
@@ -18,6 +18,14 @@
 
   onMount(async () => {
     await loadInitialData();
+  });
+
+  // Foreground resume: force-refresh
+  let resumedSeen = $state(false);
+  $effect(() => {
+    const r = $resumedAt;
+    if (!resumedSeen) { resumedSeen = true; return; }
+    if (get(personId) !== null) loadInitialData(true);
   });
 
   async function loadInitialData(force = false) {

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { personId } from '$lib/stores';
+  import { personId, resumedAt } from '$lib/stores';
   import { get } from 'svelte/store';
   import { getLeermiddelen, getLeermiddelLaunchUrl } from '$lib/api';
   import { cacheGet, cacheRefresh } from '$lib/cache';
@@ -16,6 +16,14 @@
 
   onMount(async () => {
     await loadData();
+  });
+
+  // Foreground resume: force-refresh leermiddelen on resume
+  let resumedSeen = $state(false);
+  $effect(() => {
+    const r = $resumedAt;
+    if (!resumedSeen) { resumedSeen = true; return; }
+    if (get(personId) !== null) loadData(true);
   });
 
   async function loadData(force = false) {

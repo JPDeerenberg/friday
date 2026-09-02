@@ -12,6 +12,18 @@ export const navigationStack = writable<string[]>([]);
 // show them — currently Login.svelte.
 export const loginError = writable<string>("");
 
+// App resume signal — updated on hidden→visible transition (see
+// +layout.svelte). Pages watch this to force-refresh stale cached data
+// without requiring manual navigation. Initial value is now() so pages
+// that mount after the first resume still have a sensible value.
+export const resumedAt = writable<number>(Date.now());
+
+// Restore status: helps +layout distinguish a transient network failure
+// (offline at cold boot) from a genuine logout. When `unavailable`, the
+// login screen is NOT shown; the app keeps an offline indicator and
+// retries on the next resume.
+export const restoreStatus = writable<"restored" | "logged_out" | "unavailable" | null>(null);
+
 // Sync status
 export const lastSyncTime = writable<Date | null>(null);
 export const syncInProgress = writable(false);
