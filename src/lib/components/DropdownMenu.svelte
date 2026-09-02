@@ -19,6 +19,9 @@
 
   let containerEl: HTMLDivElement | undefined = $state(undefined);
   let triggerWrapEl: HTMLDivElement | undefined = $state(undefined);
+  let menuTop = $state(0);
+  let menuLeft = $state(0);
+  let menuWidth = $state(260);
 
   function toggle() {
     open = !open;
@@ -43,6 +46,41 @@
     }
   }
 
+  function updatePosition() {
+    if (!triggerWrapEl || !containerEl) return;
+    const rect = triggerWrapEl.getBoundingClientRect();
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const width = Math.min(280, vw - 24);
+    menuWidth = width;
+    // Center under trigger, then clamp to viewport with 12px margin
+    let left = rect.left + rect.width / 2 - width / 2;
+    left = Math.max(12, Math.min(left, vw - width - 12));
+    let top = rect.bottom + 8;
+    // If not enough space below, flip above
+    const estHeight = containerEl.offsetHeight || 220;
+    if (top + estHeight > vh - 12 && rect.top - estHeight - 8 > 12) {
+      top = rect.top - estHeight - 8;
+    }
+    menuTop = top;
+    menuLeft = left;
+  }
+
+  $effect(() => {
+    if (open) {
+      // Wait for DOM to render then measure
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => updatePosition());
+      });
+      window.addEventListener('resize', updatePosition);
+      window.addEventListener('scroll', updatePosition, true);
+      return () => {
+        window.removeEventListener('resize', updatePosition);
+        window.removeEventListener('scroll', updatePosition, true);
+      };
+    }
+  });
+
   onMount(() => {
     document.addEventListener('click', handleClickOutside);
     document.addEventListener('keydown', handleKey);
@@ -64,8 +102,8 @@
     <div class="fixed inset-0 z-40 bg-black/30 backdrop-blur-[1px] md:hidden" onclick={close}></div>
     <div
       bind:this={containerEl}
-      class="absolute top-full mt-2 z-50 min-w-[220px] max-w-[min(280px,calc(100vw-24px))] rounded-m3-md bg-surface-900 border border-white/10 shadow-3xl overflow-hidden elevation-3
-        {align === 'right' ? 'right-0' : 'left-0'}"
+      class="fixed z-50 min-w-[200px] rounded-m3-md bg-surface-900 border border-white/10 shadow-3xl overflow-hidden elevation-3 md:absolute"
+      style="top: {menuTop}px; left: {menuLeft}px; width: {menuWidth}px; max-width: calc(100vw - 24px);"
       role="menu"
       in:scale={{ duration: 140, start: 0.96 }}
       out:fade={{ duration: 100 }}
