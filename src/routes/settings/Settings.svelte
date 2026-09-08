@@ -85,6 +85,11 @@
   /** True when an API key is stored on-device (the key itself is never sent to the frontend). */
   let aiHasKey = $state(false);
 
+  // --- AI Schedule settings state ---
+  let blockedDay = $state('monday');
+  let blockedStart = $state('16:00');
+  let blockedEnd = $state('18:00');
+
   // --- GitHub repo info ---
   let repoStats = $state<{ stars: number; forks: number; openIssues: number } | null>(null);
   let repoStatsError = $state<string | null>(null);
@@ -441,6 +446,12 @@
       isAi: true,
     },
     {
+      id: 'aiSchedule',
+      title: 'AI Planning',
+      description: 'Beheer slaaptijden en blokkades voor de AI-planning (Friday\'s Plan).',
+      isAiSchedule: true,
+    },
+    {
       id: 'agenda',
       title: 'Agenda',
       settings: [
@@ -518,6 +529,26 @@
 
   function updateSetting(id: string, value: any) {
     userSettings.update(s => ({ ...s, [id]: value }));
+  }
+
+  function updateAiSchedule(partial: Partial<typeof $userSettings.aiSchedule>) {
+    userSettings.update(s => ({ ...s, aiSchedule: { ...s.aiSchedule, ...partial } }));
+  }
+
+  function addBlockedTime() {
+    if (!blockedDay || !blockedStart || !blockedEnd) return;
+    const nt = { day: blockedDay, start: blockedStart, end: blockedEnd };
+    userSettings.update(s => ({
+      ...s,
+      aiSchedule: { ...s.aiSchedule, blockedTimes: [...s.aiSchedule.blockedTimes, nt] }
+    }));
+  }
+
+  function removeBlockedTime(idx: number) {
+    userSettings.update(s => ({
+      ...s,
+      aiSchedule: { ...s.aiSchedule, blockedTimes: s.aiSchedule.blockedTimes.filter((_, i) => i !== idx) }
+    }));
   }
 
   function intervalLabel(s: number) {
@@ -762,7 +793,102 @@
               <div class="w-6 h-6 border-2 border-primary-500 border-t-transparent rounded-full animate-spin"></div>
             </div>
           {/if}
-        {:else}
+          {:else if section.isAiSchedule}
+          <div class="glass p-6 rounded-m3-md border-primary-500/20 space-y-6">
+            <p class="text-body-medium text-gray-500 leading-relaxed">Configureer je AI-planning: wanneer je slaapt en wanneer je niet beschikbaar bent (sport, werk). De planner houdt hier altijd rekening mee.</p>
+
+            <!-- Enabled toggle -->
+            <div class="flex items-center justify-between">
+              <div>
+                <p class="text-title-small text-gray-100">AI Planning inschakelen</p>
+                <p class="text-label-medium text-gray-500 mt-1">Toon en gebruik Friday's Plan</p>
+              </div>
+              <Switch
+                checked={$userSettings.aiSchedule.enabled}
+                onCheckedChange={(v) => updateAiSchedule({ enabled: v })}
+                ariaLabel="AI Planning inschakelen"
+              />
+            </div>
+
+            <div class="w-full h-px bg-white/5"></div>
+
+            <!-- Bedtime / Wake -->
+            <div class="grid grid-cols-2 gap-4">
+              <div class="space-y-2">
+                <label for="aiScheduleBedtime" class="text-label-medium text-gray-500">Bedtijd</label>
+                <input
+                  id="aiScheduleBedtime"
+                  type="time"
+                  value={$userSettings.aiSchedule.bedtime}
+                  onchange={(e) => updateAiSchedule({ bedtime: e.currentTarget.value })}
+                  class="w-full bg-surface-800/80 border border-white/10 rounded-m3-xs px-4 py-3 text-body-medium text-white focus:outline-none focus:border-primary-500/50"
+                />
+                <p class="text-label-small text-gray-600">Wanneer je gaat slapen. Niets wordt hier gepland.</p>
+              </div>
+              <div class="space-y-2">
+                <label for="aiScheduleWake" class="text-label-medium text-gray-500">Wektijd</label>
+                <input
+                  id="aiScheduleWake"
+                  type="time"
+                  value={$userSettings.aiSchedule.wakeTime}
+                  onchange={(e) => updateAiSchedule({ wakeTime: e.currentTarget.value })}
+                  class="w-full bg-surface-800/80 border border-white/10 rounded-m3-xs px-4 py-3 text-body-medium text-white focus:outline-none focus:border-primary-500/50"
+                />
+                <p class="text-label-small text-gray-600">Wanneer je opstaat.</p>
+              </div>
+            </div>
+
+            <div class="w-full h-px bg-white/5"></div>
+
+            <!-- Blocked times -->
+            <div class="space-y-3">
+              <div>
+                <p class="text-title-small text-gray-100">Geblokkeerde tijden</p>
+                <p class="text-label-medium text-gray-500 mt-1">Terugkerende blokkades (bijv. sport, bijles). De planner vermijdt deze.</p>
+              </div>
+
+              {#if $userSettings.aiSchedule.blockedTimes.length === 0}
+                <p class="text-body-small text-gray-600 italic">Geen blokkades — alles buiten slaap en lessen is beschikbaar.</p>
+              {:else}
+                <div class="space-y-2">
+                  {#each $userSettings.aiSchedule.blockedTimes as bt, i}
+                    <div class="flex items-center gap-2 p-3 rounded-m3-sm bg-surface-800/60 border border-white/5">
+                      <span class="flex-1 text-body-small text-gray-300 font-mono">{bt.day} {bt.start}–{bt.end}</span>
+                      <Button variant="text" onclick={() => removeBlockedTime(i)} class="text-red-400! px-2">Verwijder</Button>
+                    </div>
+                  {/each}
+                </div>
+              {/if}
+
+              <div class="grid grid-cols-3 gap-2 items-end">
+                <div class="space-y-1">
+                  <label for="blockedDay" class="text-label-small text-gray-500">Dag</label>
+                  <select id="blockedDay" bind:value={blockedDay} class="w-full bg-surface-800 border border-white/10 rounded-m3-xs px-3 py-2.5 text-body-small text-white">
+                    <option value="monday">Maandag</option>
+                    <option value="tuesday">Dinsdag</option>
+                    <option value="wednesday">Woensdag</option>
+                    <option value="thursday">Donderdag</option>
+                    <option value="friday">Vrijdag</option>
+                    <option value="saturday">Zaterdag</option>
+                    <option value="sunday">Zondag</option>
+                    <option value="weekday">Werkdagen (ma-vr)</option>
+                    <option value="weekend">Weekend (za-zo)</option>
+                    <option value="daily">Dagelijks</option>
+                  </select>
+                </div>
+                <div class="space-y-1">
+                  <label for="blockedStart" class="text-label-small text-gray-500">Van</label>
+                  <input id="blockedStart" type="time" bind:value={blockedStart} class="w-full bg-surface-800 border border-white/10 rounded-m3-xs px-3 py-2.5 text-body-small text-white" />
+                </div>
+                <div class="space-y-1">
+                  <label for="blockedEnd" class="text-label-small text-gray-500">Tot</label>
+                  <input id="blockedEnd" type="time" bind:value={blockedEnd} class="w-full bg-surface-800 border border-white/10 rounded-m3-xs px-3 py-2.5 text-body-small text-white" />
+                </div>
+              </div>
+              <Button variant="tonal" onclick={addBlockedTime} class="w-full">Blokkade toevoegen</Button>
+            </div>
+          </div>
+          {:else}
         <div class="space-y-2">
           {#each section.settings as setting (setting.id)}
             {#if setting.type !== 'action' || !setting.compactFor}
@@ -774,9 +900,9 @@
 
               {#if setting.type === 'toggle'}
                  <div class="flex items-center gap-2 shrink-0">
-                   <Switch
-                     checked={$userSettings[setting.id]}
-                     onCheckedChange={(v) => updateToggle(setting.id, v)}
+                    <Switch
+                      checked={($userSettings as any)[setting.id]}
+                      onCheckedChange={(v) => updateToggle(setting.id, v)}
                      ariaLabel={setting.label}
                    />
                    {#if section.id === 'meldingen'}
@@ -798,7 +924,7 @@
                {:else if setting.type === 'number'}
                 <input
                   type="number"
-                  value={$userSettings[setting.id]}
+                  value={($userSettings as any)[setting.id]}
                   oninput={(e) => updateNumber(setting.id, e.currentTarget.value)}
                   min={setting.min}
                   max={setting.max}
@@ -808,12 +934,12 @@
               {:else if setting.type === 'theme-picker'}
                 <ColorSwatchPicker
                   colors={themeColors}
-                  value={$userSettings[setting.id]}
+                  value={($userSettings as any)[setting.id]}
                   onSelect={(id) => updateSetting(setting.id, id)}
                 />
               {:else if setting.type === 'select'}
                 <select
-                  value={$userSettings[setting.id]}
+                  value={($userSettings as any)[setting.id]}
                   onchange={(e) => updateSetting(setting.id, e.currentTarget.value)}
                   class="bg-surface-800 border-none text-gray-200 text-label-medium rounded-m3-sm px-4 py-2.5 outline-none cursor-pointer hover:bg-surface-700 transition-colors shadow-sm"
                 >

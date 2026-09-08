@@ -64,6 +64,7 @@ export const DEFAULT_SETTINGS = {
   weekView: "auto",
   themeColor: "violet",
   backgroundMode: "normal",
+  customThemeColor: "",
   // Notification toggles
   notifyMessages: true,
   notifyGrades: true,
@@ -75,6 +76,13 @@ export const DEFAULT_SETTINGS = {
   showBreakSeparator: false,
   breakThresholdMinutes: 20,
   downloadDir: "",
+  // AI Schedule
+  aiSchedule: {
+    enabled: true,
+    bedtime: "23:00",
+    wakeTime: "07:00",
+    blockedTimes: [] as { day: string; start: string; end: string }[],
+  },
 };
 
 // Load settings from localStorage
@@ -84,7 +92,16 @@ export function loadSettings() {
   const savedSettings = localStorage.getItem("user_settings");
   if (savedSettings) {
     try {
-      return { ...DEFAULT_SETTINGS, ...JSON.parse(savedSettings) };
+      const parsed = JSON.parse(savedSettings);
+      const merged: typeof DEFAULT_SETTINGS = { ...DEFAULT_SETTINGS, ...parsed };
+      // Deep merge nested aiSchedule so partial stored objects don't lose defaults
+      if (parsed.aiSchedule) {
+        merged.aiSchedule = { ...DEFAULT_SETTINGS.aiSchedule, ...parsed.aiSchedule };
+        if (!Array.isArray(merged.aiSchedule.blockedTimes)) {
+          merged.aiSchedule.blockedTimes = [];
+        }
+      }
+      return merged;
     } catch (e) {
       return DEFAULT_SETTINGS;
     }

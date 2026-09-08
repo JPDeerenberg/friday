@@ -4,4 +4,5 @@
 pub mod attachment_reader;
 pub mod grade_calc;
 pub mod providers;
+pub mod schedule;
 pub mod tools;

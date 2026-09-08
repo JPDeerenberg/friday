@@ -49,9 +49,11 @@ pub fn run() {
         .setup(move |app| {
             // Initialize AI state with app data directory
             let app_data_dir = app.path().app_data_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
-            let ai_state = AiState::new(app_data_dir);
+            let ai_state = AiState::new(app_data_dir.clone());
             let ai_config = ai_state.config.clone();
             app.manage(ai_state);
+            let ai_schedule_state = commands::ai_schedule::AiScheduleState::new(app_data_dir);
+            app.manage(ai_schedule_state);
 
             // Off the setup-hook critical path so it doesn't delay window creation.
             // Android's keyring store reads ndk-context, which Tao initializes
@@ -166,6 +168,16 @@ pub fn run() {
             commands::ai::ai_page_insight,
             commands::ai::list_ai_models,
             commands::ai::confirm_pending_action,
+            // AI Schedule
+            commands::ai_schedule::get_ai_schedule,
+            commands::ai_schedule::create_ai_schedule_item,
+            commands::ai_schedule::update_ai_schedule_item,
+            commands::ai_schedule::delete_ai_schedule_item,
+            commands::ai_schedule::complete_ai_schedule_item,
+            commands::ai_schedule::dismiss_ai_schedule_item,
+            commands::ai_schedule::get_merged_schedule,
+            commands::ai_schedule::update_ai_schedule,
+            commands::ai_schedule::set_homework_duration,
             // Export
             commands::export::export_all_data,
         ])

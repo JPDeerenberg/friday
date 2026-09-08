@@ -19,6 +19,7 @@
     bronnen: () => import('./bronnen/Bronnen.svelte'),
     studiewijzers: () => import('./studiewijzers/Studiewijzers.svelte'),
     activiteiten: () => import('./activiteiten/Activiteiten.svelte'),
+    'ai-schedule': () => import('./ai-schedule/AiSchedule.svelte'),
     profile: () => import('./profile/Profile.svelte'),
     settings: () => import('./settings/Settings.svelte'),
   };

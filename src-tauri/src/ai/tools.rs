@@ -130,14 +130,13 @@ pub fn get_all_tool_defs() -> Vec<ToolDef> {
         },
         ToolDef {
             name: "get_messages".to_string(),
-            description: "Haal berichten op uit een map (Postvak IN, Verzonden, Prullenbak, etc.).".to_string(),
+            description: "Haal berichten op uit een map (bijv. 'Postvak IN', 'Verzonden items', 'Verwijderde items'). Zonder folder-parameter wordt de eerste map gebruikt (meestal Postvak IN).".to_string(),
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {
                     "folder": {
                         "type": "string",
-                        "description": "Map naam: 'Inbox', 'Sent', 'Trash'",
-                        "default": "Inbox"
+                        "description": "Map naam zoals getoond in Magister (bijv. 'Postvak IN'). Laat leeg voor de standaardmap."
                     },
                     "top": {
                         "type": "integer",
@@ -358,6 +357,101 @@ pub fn get_all_tool_defs() -> Vec<ToolDef> {
                 "required": ["url"]
             }),
         },
+        ToolDef {
+            name: "get_ai_schedule".to_string(),
+            description: "Lees de huidige AI-planning (Friday's Plan) voor een datumbereik. Bevat alleen AI-items (huiswerk-blokken, study, slaap, vrije tijd), niet de echte Magister-lessen.".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "start": { "type": "string", "description": "Startdatum/tijd ISO 8601 (yyyy-MM-dd of yyyy-MM-ddTHH:mm:ss)" },
+                    "end": { "type": "string", "description": "Einddatum/tijd ISO 8601" }
+                },
+                "required": ["start", "end"]
+            }),
+        },
+        ToolDef {
+            name: "create_ai_schedule_item".to_string(),
+            description: "Voeg een item toe aan de AI-planning (huiswerk, studieblok, pauze, eigen item). Alleen voor AI-planning, nooit voor de echte Magister-agenda.".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "title": { "type": "string", "description": "Titel van het item" },
+                    "description": { "type": "string", "description": "Omschrijving / wat er moet gebeuren" },
+                    "item_type": { "type": "string", "enum": ["assignment_work", "study_block", "homework_review", "custom", "break", "free_time", "sleep"], "description": "Type item" },
+                    "start": { "type": "string", "description": "Start ISO 8601 (Europe/Amsterdam)" },
+                    "end": { "type": "string", "description": "Einde ISO 8601" },
+                    "urgency": { "type": "integer", "description": "Urgentie 1-5", "minimum": 1, "maximum": 5 },
+                    "related_assignment_id": { "type": "integer", "description": "Koppeling naar Magister opdracht ID (indien van toepassing)" },
+                    "related_subject": { "type": "string", "description": "Vaknaam (indien van toepassing)" },
+                    "estimated_minutes": { "type": "integer", "description": "Geschatte duur in minuten" }
+                },
+                "required": ["title", "item_type", "start", "end"]
+            }),
+        },
+        ToolDef {
+            name: "update_ai_schedule_item".to_string(),
+            description: "Werk een bestaand AI-planning item bij (verplaatsen, urgentie/duratie wijzigen).".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "id": { "type": "string", "description": "ID van het item" },
+                    "title": { "type": "string" },
+                    "description": { "type": "string" },
+                    "item_type": { "type": "string", "enum": ["assignment_work", "study_block", "homework_review", "custom", "break", "free_time", "sleep"] },
+                    "start": { "type": "string" },
+                    "end": { "type": "string" },
+                    "urgency": { "type": "integer", "minimum": 1, "maximum": 5 },
+                    "estimated_minutes": { "type": "integer" },
+                    "status": { "type": "string", "enum": ["planned", "in_progress", "completed", "dismissed"] }
+                },
+                "required": ["id"]
+            }),
+        },
+        ToolDef {
+            name: "complete_ai_schedule_item".to_string(),
+            description: "Markeer een AI-planning item als voltooid.".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "id": { "type": "string", "description": "ID van het item" }
+                },
+                "required": ["id"]
+            }),
+        },
+        ToolDef {
+            name: "dismiss_ai_schedule_item".to_string(),
+            description: "Negeer/wijs een AI-planning item af (uitsluiten van volgende herplanning). Anders dan verwijderen: dismissed items blijven bestaan maar worden uitgesloten van replans.".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "id": { "type": "string", "description": "ID van het item" }
+                },
+                "required": ["id"]
+            }),
+        },
+        ToolDef {
+            name: "set_homework_duration".to_string(),
+            description: "Stel de geschatte duur in voor een huiswerkopdracht. Gebruik dit wanneer een opdracht geen estimated_minutes heeft — toont een UI voor duur+urgentie en onthoudt het voor volgende planningen. Nooit zelf een duur gissen als deze ontbreekt.".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "assignment_id": { "type": "integer", "description": "ID van de Magister opdracht" },
+                    "estimated_minutes": { "type": "integer", "description": "Geschatte duur in minuten (1-600)" },
+                    "urgency": { "type": "integer", "description": "Urgentie 1-5", "minimum": 1, "maximum": 5 },
+                    "subject": { "type": "string", "description": "Vaknaam voor subject-average prefill hint" }
+                },
+                "required": ["assignment_id", "estimated_minutes"]
+            }),
+        },
+        ToolDef {
+            name: "run_update_ai_schedule".to_string(),
+            description: "Trigger 'Update AI Schedule' — herplan deze week + volgende week op basis van echte lessen, open opdrachten en bestaande planning. Zelfde als de handmatige knop.".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {},
+                "required": []
+            }),
+        },
     ]
 }
 
@@ -406,6 +500,75 @@ fn now_secs() -> u64 {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0)
+}
+
+/// Privacy: redact a single Docent JSON object to only expose code or last-name.
+/// Replaces the full display name with the existing `Docentcode` (short internal
+/// code Magister already exposes). Falls back to last-name-only if no code is
+/// present. The regular (non-AI) UI is unaffected — this only changes what goes
+/// to the model.
+fn redact_docent(v: &Value) -> Value {
+    let code = v
+        .get("Docentcode")
+        .and_then(|c| c.as_str())
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string());
+    let naam = v.get("Naam").and_then(|c| c.as_str()).unwrap_or("").trim();
+    let redacted_naam = if let Some(ref c) = code {
+        c.clone()
+    } else if !naam.is_empty() {
+        // fallback: last whitespace token, stripped of parentheses/commas
+        let last = naam.split_whitespace().last().unwrap_or(naam);
+        let before_comma = last.split(',').next().unwrap_or(last);
+        before_comma
+            .trim_matches(|c| c == '(' || c == ')' || c == ',')
+            .to_string()
+    } else {
+        String::new()
+    };
+    let id = v.get("Id").cloned().unwrap_or(Value::Null);
+    match code {
+        Some(c) => serde_json::json!({ "id": id, "code": c, "naam": redacted_naam }),
+        None => serde_json::json!({ "id": id, "naam": redacted_naam }),
+    }
+}
+
+fn redact_docenten_array(arr: Option<&Vec<Value>>) -> Value {
+    match arr {
+        Some(vec) => Value::Array(vec.iter().map(redact_docent).collect()),
+        None => Value::Array(vec![]),
+    }
+}
+
+/// Privacy: redact a plain teacher-name string (e.g. Grade `Docent` field)
+/// to code (if parenthesised) or last-name-only.
+fn redact_teacher_name_str(name: &str) -> String {
+    let trimmed = name.trim();
+    if trimmed.is_empty() {
+        return String::new();
+    }
+    // Try extract code in parentheses like "Jansen (JNS)" -> use code
+    if let Some(start) = trimmed.rfind('(') {
+        if let Some(end) = trimmed.rfind(')') {
+            if end > start + 1 {
+                let code = trimmed[start + 1..end].trim();
+                if !code.is_empty()
+                    && code.len() <= 10
+                    && code.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+                {
+                    return code.to_string();
+                }
+            }
+        }
+    }
+    // Fallback last token
+    trimmed
+        .split_whitespace()
+        .last()
+        .unwrap_or(trimmed)
+        .trim_matches(|c| c == '(' || c == ')' || c == ',')
+        .to_string()
 }
 
 /// Compute (totalPoints, totalWeight, gradeCount) from a vak node of the
@@ -595,12 +758,20 @@ pub async fn execute_tool(
                         .map(|arr| {
                             arr.iter()
                                 .map(|item| {
+                                    // Privacy: redact Docent name to code/last-name only
+                                    let redacted_docent = item
+                                        .get("Docenten")
+                                        .and_then(|v| v.as_array())
+                                        .and_then(|a| a.first())
+                                        .map(|d| redact_docent(d))
+                                        .and_then(|v| v.get("naam").cloned())
+                                        .unwrap_or(Value::Null);
                                     serde_json::json!({
                                         "id": item.get("Id"),
                                         "start": item.get("Start"),
                                         "einde": item.get("Einde"),
                                         "vak": item.get("Vakken").and_then(|v| v.as_array()).and_then(|a| a.first()).and_then(|v| v.get("Naam")),
-                                        "docent": item.get("Docenten").and_then(|v| v.as_array()).and_then(|a| a.first()).and_then(|v| v.get("Naam")),
+                                        "docent": redacted_docent,
                                         "lokaal": item.get("Lokalen").and_then(|v| v.as_array()).and_then(|a| a.first()).and_then(|v| v.get("Naam")),
                                         "lesuur": item.get("LesuurVan"),
                                         "omschrijving": item.get("Omschrijving"),
@@ -641,13 +812,25 @@ pub async fn execute_tool(
                         .map(|arr| {
                             arr.iter()
                                 .map(|item| {
+                                    let docent_val = item.get("Docent");
+                                    let redacted_docent = match docent_val {
+                                        Some(v) if v.is_string() => {
+                                            let s = v.as_str().unwrap_or("");
+                                            Value::String(redact_teacher_name_str(s))
+                                        }
+                                        Some(v) if v.is_object() => redact_docent(v)
+                                            .get("naam")
+                                            .cloned()
+                                            .unwrap_or(Value::Null),
+                                        _ => Value::Null,
+                                    };
                                     serde_json::json!({
                                         "id": item.get("Id"),
                                         "vak": item.get("Vak").and_then(|v| v.get("Omschrijving")),
                                         "cijfer": item.get("CijferStr"),
                                         "datum": item.get("DatumIngevoerd"),
                                         "weging": item.get("CijferKolom").and_then(|c| c.get("Weging")),
-                                        "docent": item.get("Docent").and_then(|d| d.get("Naam")),
+                                        "docent": redacted_docent,
                                         "titel": item.get("CijferKolom").and_then(|c| c.get("Titel")),
                                     })
                                 })
@@ -728,8 +911,12 @@ pub async fn execute_tool(
             }
         }
         "get_schoolyears" => {
+            let today = chrono::Local::now().format("%Y-%m-%d").to_string();
             match client
-                .get(&format!("leerlingen/{}/aanmeldingen", person_id))
+                .get(&format!(
+                    "leerlingen/{}/aanmeldingen?begin=2013-01-01&einde={}",
+                    person_id, today
+                ))
                 .await
             {
                 Ok(data) => {
@@ -811,52 +998,140 @@ pub async fn execute_tool(
             }
         }
         "get_messages" => {
-            let folder = args.get("folder").and_then(|v| v.as_str()).unwrap_or("Inbox");
+            let folder_arg = args
+                .get("folder")
+                .and_then(|v| v.as_str())
+                .map(|s| s.trim())
+                .filter(|s| !s.is_empty())
+                .map(|s| s.to_string());
             let top = args.get("top").and_then(|v| v.as_i64()).unwrap_or(10);
-            match client.get("berichten/mappen").await {
+            match client.get("berichten/mappen/alle").await {
                 Ok(folders_data) => {
-                    let folders = folders_data.get("Items").and_then(|v| v.as_array()).cloned().unwrap_or_default();
-                    let folder_item = folders.iter().find(|f| {
-                        f.get("Naam").and_then(|v| v.as_str()).map(|n| n == folder).unwrap_or(false)
-                    });
+                    let folders = folders_data
+                        .get("Items")
+                        .or_else(|| folders_data.get("items"))
+                        .and_then(|v| v.as_array())
+                        .cloned()
+                        .unwrap_or_default();
+                    if folders.is_empty() {
+                        return ToolResult {
+                            tool: tool_name.to_string(),
+                            success: false,
+                            data: Value::Null,
+                            error: Some("Geen mappen gevonden.".to_string()),
+                        };
+                    }
+                    // Default to the first folder (same logic Messages.svelte already uses) unless
+                    // the model explicitly names one. Matching is case-insensitive and tries both
+                    // Dutch names ("Postvak IN") and legacy English aliases.
+                    let folder_item = if let Some(ref name) = folder_arg {
+                        folders
+                            .iter()
+                            .find(|f| {
+                                f.get("Naam")
+                                    .or_else(|| f.get("naam"))
+                                    .and_then(|v| v.as_str())
+                                    .map(|n| n.eq_ignore_ascii_case(name))
+                                    .unwrap_or(false)
+                            })
+                            .or_else(|| folders.first())
+                    } else {
+                        folders.first()
+                    };
                     if let Some(f) = folder_item {
-                        let link = f.get("Links").and_then(|l| l.as_array()).and_then(|arr| arr.first())
-                            .and_then(|l| l.get("Href")).and_then(|h| h.as_str()).unwrap_or("");
-                        match client.get(&format!("{}/berichten?top={}", link, top)).await {
+                        let folder_name = f
+                            .get("Naam")
+                            .or_else(|| f.get("naam"))
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        // Robustly extract the berichten link: handle both array-Links and object-links shapes.
+                        let link = f
+                            .get("Links")
+                            .and_then(|l| l.as_array())
+                            .and_then(|arr| arr.first())
+                            .and_then(|l| l.get("Href").or_else(|| l.get("href")))
+                            .and_then(|h| h.as_str())
+                            .or_else(|| {
+                                f.get("links")
+                                    .and_then(|l| l.get("berichten"))
+                                    .and_then(|b| b.get("href"))
+                                    .and_then(|h| h.as_str())
+                            })
+                            .or_else(|| {
+                                f.get("Links")
+                                    .and_then(|l| l.get("berichten"))
+                                    .and_then(|b| b.get("href"))
+                                    .and_then(|h| h.as_str())
+                            })
+                            .unwrap_or("");
+                        let link = if link.is_empty() {
+                            // Fallback: construct via folder id if link missing
+                            let fid = f
+                                .get("Id")
+                                .or_else(|| f.get("id"))
+                                .and_then(|v| v.as_i64())
+                                .unwrap_or(0);
+                            if fid != 0 {
+                                format!("berichten/mappen/{}/berichten", fid)
+                            } else {
+                                link.to_string()
+                            }
+                        } else {
+                            link.trim_start_matches("/api/").to_string()
+                        };
+                        match client.get(&format!("{}/berichten?top={}", link.trim_start_matches('/'), top)).await {
                             Ok(msgs) => {
-                                let items = msgs.get("Items").cloned().unwrap_or(Value::Array(vec![]));
-                                let simplified: Vec<Value> = items.as_array().map(|arr| {
-                                    arr.iter().map(|item| {
-                                        serde_json::json!({
-                                            "id": item.get("Id"),
-                                            "onderwerp": item.get("Onderwerp"),
-                                            "afzender": item.get("Afzender").and_then(|a| a.get("Naam")),
-                                            "datum": item.get("DatumVerzonden"),
-                                            "gelezen": item.get("IsGelezen"),
-                                            "prioriteit": item.get("Prioriteit"),
-                                        })
-                                    }).collect()
-                                }).unwrap_or_default();
+                                let items = msgs
+                                    .get("Items")
+                                    .or_else(|| msgs.get("items"))
+                                    .cloned()
+                                    .unwrap_or(Value::Array(vec![]));
+                                let simplified: Vec<Value> = items
+                                    .as_array()
+                                    .map(|arr| {
+                                        arr.iter()
+                                            .map(|item| {
+                                                serde_json::json!({
+                                                    "id": item.get("Id").or_else(|| item.get("id")),
+                                                    "onderwerp": item.get("Onderwerp").or_else(|| item.get("onderwerp")),
+                                                    "afzender": item.get("Afzender").and_then(|a| a.get("Naam")).or_else(|| item.get("afzender").and_then(|a| a.get("naam"))),
+                                                    "datum": item.get("DatumVerzonden").or_else(|| item.get("verzondenOp")).or_else(|| item.get("VerzondenOp")),
+                                                    "gelezen": item.get("IsGelezen").or_else(|| item.get("isGelezen")),
+                                                    "prioriteit": item.get("Prioriteit").or_else(|| item.get("heeftPrioriteit")),
+                                                })
+                                            })
+                                            .collect()
+                                    })
+                                    .unwrap_or_default();
                                 ToolResult {
                                     tool: tool_name.to_string(),
                                     success: true,
-                                    data: serde_json::json!({ "items": simplified, "count": simplified.len(), "folder": folder }),
+                                    data: serde_json::json!({ "items": simplified, "count": simplified.len(), "folder": folder_name }),
                                     error: None,
                                 }
                             }
                             Err(e) => ToolResult {
-                                tool: tool_name.to_string(), success: false, data: Value::Null, error: Some(e.to_string()),
+                                tool: tool_name.to_string(),
+                                success: false,
+                                data: Value::Null,
+                                error: Some(e.to_string()),
                             },
                         }
                     } else {
                         ToolResult {
-                            tool: tool_name.to_string(), success: false, data: Value::Null,
-                            error: Some(format!("Map '{}' niet gevonden", folder)),
+                            tool: tool_name.to_string(),
+                            success: false,
+                            data: Value::Null,
+                            error: Some("Geen map gevonden.".to_string()),
                         }
                     }
                 }
                 Err(e) => ToolResult {
-                    tool: tool_name.to_string(), success: false, data: Value::Null, error: Some(e.to_string()),
+                    tool: tool_name.to_string(),
+                    success: false,
+                    data: Value::Null,
+                    error: Some(e.to_string()),
                 },
             }
         }
@@ -1004,28 +1279,36 @@ pub async fn execute_tool(
         "get_profile_info" => {
             let mut results = serde_json::Map::new();
 
-            if let Ok(account) = client.get("account").await {
-                results.insert("account".to_string(), account);
-            }
-
+            // Privacy: do NOT send account, adressen, or geboortedatum to the LLM.
+            // Only roepnaam (explicitly OK'd) and academic/class info.
             if let Ok(profile) = client.get(&format!("personen/{}", person_id)).await {
                 let simplified = serde_json::json!({
                     "roepnaam": profile.get("Roepnaam"),
                     "voorletter": profile.get("Voorletter"),
                     "achternaam": profile.get("Achternaam"),
-                    "geboortedatum": profile.get("Geboortedatum"),
                     "klas": profile.get("Groep"),
                 });
                 results.insert("persoon".to_string(), simplified);
             }
 
-            if let Ok(addr_data) = client.get(&format!("personen/{}/adressen", person_id)).await {
-                let items = addr_data.get("Items").cloned().unwrap_or(Value::Array(vec![]));
-                results.insert("adressen".to_string(), Value::Array(items.as_array().cloned().unwrap_or_default()));
-            }
-
             if let Ok(career) = client.get(&format!("personen/{}/opleidinggegevensprofiel", person_id)).await {
-                results.insert("opleiding".to_string(), career);
+                // `opleiding` may contain mentor / klas info which is needed for context;
+                // redact any embedded Docent names to code/last-name only.
+                let mut opleiding_val = career;
+                if let Some(obj) = opleiding_val.as_object_mut() {
+                    for key in ["Mentor", "mentor", "Docent", "docent", "Docenten"] {
+                        if let Some(doc) = obj.get(key).cloned() {
+                            if doc.is_object() {
+                                obj.insert(key.to_string(), redact_docent(&doc));
+                            } else if doc.is_array() {
+                                if let Some(arr) = doc.as_array() {
+                                    obj.insert(key.to_string(), redact_docenten_array(Some(arr)));
+                                }
+                            }
+                        }
+                    }
+                }
+                results.insert("opleiding".to_string(), opleiding_val);
             }
 
             ToolResult {
@@ -1044,7 +1327,17 @@ pub async fn execute_tool(
                 .get(&format!("personen/{}/afspraken?tot={}&van={}", person_id, today, today))
                 .await
             {
-                let items = events.get("Items").cloned().unwrap_or(Value::Array(vec![]));
+                let mut items = events.get("Items").cloned().unwrap_or(Value::Array(vec![]));
+                // Privacy: redact teacher names in today's lessons
+                if let Some(arr) = items.as_array_mut() {
+                    for item in arr.iter_mut() {
+                        if let Some(docenten) = item.get("Docenten").and_then(|v| v.as_array()).cloned() {
+                            if let Some(obj) = item.as_object_mut() {
+                                obj.insert("Docenten".to_string(), redact_docenten_array(Some(&docenten)));
+                            }
+                        }
+                    }
+                }
                 summary.insert("vandaag_lessen".to_string(), items);
             }
 
@@ -1052,7 +1345,18 @@ pub async fn execute_tool(
                 .get(&format!("personen/{}/cijfers/laatste?top=5&skip=0", person_id))
                 .await
             {
-                let items = grades.get("Items").cloned().unwrap_or(Value::Array(vec![]));
+                let mut items = grades.get("Items").cloned().unwrap_or(Value::Array(vec![]));
+                // Privacy: redact teacher names in grades (string field)
+                if let Some(arr) = items.as_array_mut() {
+                    for item in arr.iter_mut() {
+                        if let Some(name) = item.get("Docent").and_then(|v| v.as_str()).map(|s| s.to_string()) {
+                            let redacted = redact_teacher_name_str(&name);
+                            if let Some(obj) = item.as_object_mut() {
+                                obj.insert("Docent".to_string(), Value::String(redacted));
+                            }
+                        }
+                    }
+                }
                 summary.insert("recente_cijfers".to_string(), items);
             }
 
@@ -1060,13 +1364,34 @@ pub async fn execute_tool(
                 .get(&format!("personen/{}/opdrachten?van={}&tot={}", person_id, today, next_week))
                 .await
             {
-                let items = assignments.get("Items").cloned().unwrap_or(Value::Array(vec![]));
+                let mut items = assignments.get("Items").cloned().unwrap_or(Value::Array(vec![]));
+                if let Some(arr) = items.as_array_mut() {
+                    for item in arr.iter_mut() {
+                        if let Some(docenten) = item.get("Docenten").and_then(|v| v.as_array()).cloned() {
+                            if let Some(obj) = item.as_object_mut() {
+                                obj.insert("Docenten".to_string(), redact_docenten_array(Some(&docenten)));
+                            }
+                        }
+                    }
+                }
                 summary.insert("aankomende_opdrachten".to_string(), items);
             }
 
-            if let Ok(folders) = client.get("berichten/mappen").await {
-                let unread = folders.get("Items").and_then(|v| v.as_array())
-                    .map(|arr| arr.iter().filter_map(|f| f.get("aantalOngelezen").and_then(|v| v.as_i64())).sum::<i64>())
+            if let Ok(folders) = client.get("berichten/mappen/alle").await {
+                let unread = folders
+                    .get("Items")
+                    .or_else(|| folders.get("items"))
+                    .and_then(|v| v.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|f| {
+                                f.get("aantalOngelezen")
+                                    .or_else(|| f.get("AantalOngelezen"))
+                                    .or_else(|| f.get("aantal_ongelezen"))
+                                    .and_then(|v| v.as_i64())
+                            })
+                            .sum::<i64>()
+                    })
                     .unwrap_or(0);
                 summary.insert("ongelezen_berichten".to_string(), Value::Number(unread.into()));
             }
@@ -1177,6 +1502,8 @@ pub async fn execute_tool(
 
             match client.get(&format!("personen/{}/opdrachten/{}", person_id, assignment_id)).await {
                 Ok(data) => {
+                    let docenten_raw = data.get("Docenten").and_then(|v| v.as_array()).cloned();
+                    let redacted_docenten = redact_docenten_array(docenten_raw.as_ref());
                     let simplified = serde_json::json!({
                         "id": data.get("Id"),
                         "titel": data.get("Titel"),
@@ -1193,7 +1520,7 @@ pub async fn execute_tool(
                                 "content_type": a.get("ContentType"),
                             })).collect::<Vec<_>>()
                         }),
-                        "docenten": data.get("Docenten"),
+                        "docenten": redacted_docenten,
                         "beoordeling": data.get("Beoordeling"),
                         "beoordeeld_op": data.get("BeoordeeldOp"),
                         "status_laatste_opdracht_versie": data.get("StatusLaatsteOpdrachtVersie"),

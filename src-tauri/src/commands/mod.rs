@@ -1,5 +1,6 @@
 pub mod activities;
 pub mod ai;
+pub mod ai_schedule;
 pub mod assignments;
 pub mod auth;
 pub mod bronnen;

@@ -1,6 +1,7 @@
 use crate::ai::providers::{self, AiConfig, AiMessage, AiProviderType};
 use crate::ai::tools::{self, execute_pending_action, execute_tool, PendingAction, PendingActionStore};
 use crate::client::SharedClient;
+use crate::models::ai_schedule::{AiScheduleItem, AiScheduleItemType, AiScheduleSource, AiScheduleStatus, DurationSource};
 use crate::secure_store;
 use serde::Serialize;
 use serde_json::Value;
@@ -177,6 +178,7 @@ pub struct AiChatWithToolsResult {
 pub async fn ai_chat_with_tools(
     state: State<'_, AiState>,
     client: State<'_, SharedClient>,
+    schedule_state: State<'_, crate::commands::ai_schedule::AiScheduleState>,
     messages_json: String,
     page_context: Option<String>,
     person_id: i64,
@@ -228,25 +230,44 @@ pub async fn ai_chat_with_tools(
             tool_calls: Some(result.tool_calls.clone()),
         });
 
-        // Execute each tool call
-        let tool_results: Vec<(String, String, tools::ToolResult)> = {
-            let mut c = client.lock().await;
-            let mut results = Vec::new();
-            for tool_call in &result.tool_calls {
-                let tool_result =
-                    execute_tool(&mut c, &tool_call.name, &tool_call.arguments, person_id, &state.pending_actions).await;
-                if !tool_result.success {
-                    log::error!(
-                        "AI tool '{}' failed. Arguments: {} Error: {}",
-                        tool_call.name,
-                        tool_call.arguments,
-                        tool_result.error.as_deref().unwrap_or("Onbekende fout")
-                    );
-                }
-                results.push((tool_call.id.clone(), tool_call.name.clone(), tool_result));
+        // Execute each tool call — schedule tools are handled via AiScheduleState,
+        // Magister tools via MagisterClient. Both are auto-applying (schedule is sandboxed),
+        // while Magister writes remain staged for user confirmation.
+        let mut tool_results: Vec<(String, String, tools::ToolResult)> = Vec::new();
+        for tool_call in &result.tool_calls {
+            let is_schedule_tool = matches!(
+                tool_call.name.as_str(),
+                "get_ai_schedule"
+                    | "create_ai_schedule_item"
+                    | "update_ai_schedule_item"
+                    | "complete_ai_schedule_item"
+                    | "dismiss_ai_schedule_item"
+                    | "set_homework_duration"
+                    | "run_update_ai_schedule"
+            );
+            let tool_result = if is_schedule_tool {
+                handle_schedule_tool(
+                    &tool_call.name,
+                    &tool_call.arguments,
+                    &schedule_state,
+                    &client,
+                    person_id,
+                )
+                .await
+            } else {
+                let mut c = client.lock().await;
+                execute_tool(&mut c, &tool_call.name, &tool_call.arguments, person_id, &state.pending_actions).await
+            };
+            if !tool_result.success {
+                log::error!(
+                    "AI tool '{}' failed. Arguments: {} Error: {}",
+                    tool_call.name,
+                    tool_call.arguments,
+                    tool_result.error.as_deref().unwrap_or("Onbekende fout")
+                );
             }
-            results
-        }; // Lock is released here
+            tool_results.push((tool_call.id.clone(), tool_call.name.clone(), tool_result));
+        }
 
         // Add each tool result back as a proper "tool" role message
         for (tool_call_id, tool_name, tool_result) in &tool_results {
@@ -288,6 +309,423 @@ pub async fn ai_chat_with_tools(
         content: final_content,
         pending_actions: staged_pending_actions,
     })
+}
+
+async fn handle_schedule_tool(
+    tool_name: &str,
+    args: &Value,
+    schedule_state: &State<'_, crate::commands::ai_schedule::AiScheduleState>,
+    client: &State<'_, SharedClient>,
+    person_id: i64,
+) -> tools::ToolResult {
+    match tool_name {
+        "get_ai_schedule" => {
+            let start = args.get("start").and_then(|v| v.as_str()).unwrap_or("");
+            let end = args.get("end").and_then(|v| v.as_str()).unwrap_or("");
+            let s = crate::ai::schedule::iso_to_naive(start);
+            let e = crate::ai::schedule::iso_to_naive(end);
+            if s.is_none() || e.is_none() {
+                return tools::ToolResult {
+                    tool: tool_name.to_string(),
+                    success: false,
+                    data: Value::Null,
+                    error: Some("Ongeldige start/eind datum (verwacht ISO 8601).".to_string()),
+                };
+            }
+            let s = s.unwrap();
+            let e = e.unwrap();
+            let items = schedule_state.items.read().await;
+            let filtered: Vec<Value> = items
+                .iter()
+                .filter(|item| {
+                    if let (Some(is), Some(ie)) = (
+                        crate::ai::schedule::iso_to_naive(&item.start),
+                        crate::ai::schedule::iso_to_naive(&item.end),
+                    ) {
+                        ie >= s && is <= e
+                    } else {
+                        false
+                    }
+                })
+                .map(|item| serde_json::to_value(item).unwrap_or(Value::Null))
+                .collect();
+            let count = filtered.len();
+            tools::ToolResult {
+                tool: tool_name.to_string(),
+                success: true,
+                data: serde_json::json!({ "items": filtered, "count": count }),
+                error: None,
+            }
+        }
+        "create_ai_schedule_item" => {
+            // Build item from args
+            let title = args.get("title").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+            if title.is_empty() {
+                return tools::ToolResult {
+                    tool: tool_name.to_string(),
+                    success: false,
+                    data: Value::Null,
+                    error: Some("Titel is verplicht.".to_string()),
+                };
+            }
+            let item_type_str = args.get("item_type").and_then(|v| v.as_str()).unwrap_or("custom");
+            let item_type = match item_type_str {
+                "assignment_work" => AiScheduleItemType::AssignmentWork,
+                "study_block" => AiScheduleItemType::StudyBlock,
+                "homework_review" => AiScheduleItemType::HomeworkReview,
+                "custom" => AiScheduleItemType::Custom,
+                "break" => AiScheduleItemType::Break,
+                "free_time" => AiScheduleItemType::FreeTime,
+                "sleep" => AiScheduleItemType::Sleep,
+                _ => AiScheduleItemType::Custom,
+            };
+            let start = args.get("start").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let end = args.get("end").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let urgency = args.get("urgency").and_then(|v| v.as_i64()).unwrap_or(3) as u8;
+            if !(1..=5).contains(&urgency) {
+                return tools::ToolResult {
+                    tool: tool_name.to_string(),
+                    success: false,
+                    data: Value::Null,
+                    error: Some("Urgency moet 1-5 zijn.".to_string()),
+                };
+            }
+            let now = chrono::Local::now().naive_local().format("%Y-%m-%dT%H:%M:%S").to_string();
+            let mut item = AiScheduleItem {
+                id: format!("ai-{}-{}", chrono::Utc::now().timestamp_millis(), {
+                    use rand::RngExt;
+                    let r: u32 = rand::rng().random();
+                    r
+                }),
+                title,
+                description: args.get("description").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                item_type,
+                start: start.clone(),
+                end: end.clone(),
+                status: AiScheduleStatus::Planned,
+                urgency,
+                related_assignment_id: args.get("related_assignment_id").and_then(|v| v.as_i64()),
+                related_calendar_event_id: args.get("related_calendar_event_id").and_then(|v| v.as_i64()),
+                related_subject: args.get("related_subject").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                estimated_minutes: args.get("estimated_minutes").and_then(|v| v.as_i64()).map(|v| v as u32),
+                duration_source: args
+                    .get("estimated_minutes")
+                    .and_then(|v| v.as_i64())
+                    .map(|_| DurationSource::AiEstimated),
+                source: AiScheduleSource::AiChat,
+                created_at: now.clone(),
+                updated_at: now.clone(),
+                completed_at: None,
+            };
+            // Validate
+            if crate::ai::schedule::iso_to_naive(&item.start).is_none()
+                || crate::ai::schedule::iso_to_naive(&item.end).is_none()
+            {
+                return tools::ToolResult {
+                    tool: tool_name.to_string(),
+                    success: false,
+                    data: Value::Null,
+                    error: Some("Ongeldige start/eind datum.".to_string()),
+                };
+            }
+            let s = crate::ai::schedule::iso_to_naive(&item.start).unwrap();
+            let e = crate::ai::schedule::iso_to_naive(&item.end).unwrap();
+            if e <= s {
+                return tools::ToolResult {
+                    tool: tool_name.to_string(),
+                    success: false,
+                    data: Value::Null,
+                    error: Some("Eind moet na start liggen.".to_string()),
+                };
+            }
+            let mut items = schedule_state.items.write().await;
+            items.push(item.clone());
+            schedule_state.save(&items);
+            tools::ToolResult {
+                tool: tool_name.to_string(),
+                success: true,
+                data: serde_json::to_value(&item).unwrap_or(Value::Null),
+                error: None,
+            }
+        }
+        "update_ai_schedule_item" => {
+            let id = args.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            if id.is_empty() {
+                return tools::ToolResult {
+                    tool: tool_name.to_string(),
+                    success: false,
+                    data: Value::Null,
+                    error: Some("ID is verplicht.".to_string()),
+                };
+            }
+            let mut items = schedule_state.items.write().await;
+            let idx = items.iter().position(|i| i.id == id);
+            let idx = match idx {
+                Some(i) => i,
+                None => {
+                    return tools::ToolResult {
+                        tool: tool_name.to_string(),
+                        success: false,
+                        data: Value::Null,
+                        error: Some(format!("Item '{}' niet gevonden.", id)),
+                    }
+                }
+            };
+            // Apply patch
+            let mut item = items[idx].clone();
+            if let Some(v) = args.get("title").and_then(|v| v.as_str()) {
+                item.title = v.to_string();
+            }
+            if let Some(v) = args.get("description").and_then(|v| v.as_str()) {
+                item.description = Some(v.to_string());
+            }
+            if let Some(v) = args.get("item_type").and_then(|v| v.as_str()) {
+                item.item_type = match v {
+                    "assignment_work" => AiScheduleItemType::AssignmentWork,
+                    "study_block" => AiScheduleItemType::StudyBlock,
+                    "homework_review" => AiScheduleItemType::HomeworkReview,
+                    "custom" => AiScheduleItemType::Custom,
+                    "break" => AiScheduleItemType::Break,
+                    "free_time" => AiScheduleItemType::FreeTime,
+                    "sleep" => AiScheduleItemType::Sleep,
+                    _ => item.item_type,
+                };
+            }
+            if let Some(v) = args.get("start").and_then(|v| v.as_str()) {
+                item.start = v.to_string();
+            }
+            if let Some(v) = args.get("end").and_then(|v| v.as_str()) {
+                item.end = v.to_string();
+            }
+            if let Some(v) = args.get("urgency").and_then(|v| v.as_i64()) {
+                if !(1..=5).contains(&(v as u8)) {
+                    return tools::ToolResult {
+                        tool: tool_name.to_string(),
+                        success: false,
+                        data: Value::Null,
+                        error: Some("Urgency moet 1-5 zijn.".to_string()),
+                    };
+                }
+                item.urgency = v as u8;
+            }
+            if let Some(v) = args.get("estimated_minutes").and_then(|v| v.as_i64()) {
+                item.estimated_minutes = Some(v as u32);
+                item.duration_source = Some(DurationSource::AiEstimated);
+            }
+            if let Some(v) = args.get("status").and_then(|v| v.as_str()) {
+                item.status = match v {
+                    "planned" => AiScheduleStatus::Planned,
+                    "in_progress" => AiScheduleStatus::InProgress,
+                    "completed" => AiScheduleStatus::Completed,
+                    "dismissed" => AiScheduleStatus::Dismissed,
+                    _ => item.status,
+                };
+                if item.status == AiScheduleStatus::Completed && item.completed_at.is_none() {
+                    item.completed_at = Some(chrono::Local::now().naive_local().format("%Y-%m-%dT%H:%M:%S").to_string());
+                }
+                if item.status != AiScheduleStatus::Completed {
+                    item.completed_at = None;
+                }
+            }
+            item.updated_at = chrono::Local::now().naive_local().format("%Y-%m-%dT%H:%M:%S").to_string();
+            // Validate
+            if let (Some(s), Some(e)) = (
+                crate::ai::schedule::iso_to_naive(&item.start),
+                crate::ai::schedule::iso_to_naive(&item.end),
+            ) {
+                if e <= s {
+                    return tools::ToolResult {
+                        tool: tool_name.to_string(),
+                        success: false,
+                        data: Value::Null,
+                        error: Some("Eind moet na start liggen.".to_string()),
+                    };
+                }
+            }
+            items[idx] = item.clone();
+            let snapshot = items.clone();
+            schedule_state.save(&snapshot);
+            tools::ToolResult {
+                tool: tool_name.to_string(),
+                success: true,
+                data: serde_json::to_value(&item).unwrap_or(Value::Null),
+                error: None,
+            }
+        }
+        "complete_ai_schedule_item" => {
+            let id = args.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let mut items = schedule_state.items.write().await;
+            let item = items.iter_mut().find(|i| i.id == id);
+            match item {
+                Some(it) => {
+                    it.status = AiScheduleStatus::Completed;
+                    let now = chrono::Local::now().naive_local().format("%Y-%m-%dT%H:%M:%S").to_string();
+                    it.completed_at = Some(now.clone());
+                    it.updated_at = now;
+                    let snapshot = items.clone();
+                    schedule_state.save(&snapshot);
+                    tools::ToolResult {
+                        tool: tool_name.to_string(),
+                        success: true,
+                        data: serde_json::json!({ "id": id, "status": "completed" }),
+                        error: None,
+                    }
+                }
+                None => tools::ToolResult {
+                    tool: tool_name.to_string(),
+                    success: false,
+                    data: Value::Null,
+                    error: Some(format!("Item '{}' niet gevonden.", id)),
+                },
+            }
+        }
+        "dismiss_ai_schedule_item" => {
+            let id = args.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let mut items = schedule_state.items.write().await;
+            let item = items.iter_mut().find(|i| i.id == id);
+            match item {
+                Some(it) => {
+                    it.status = AiScheduleStatus::Dismissed;
+                    it.updated_at = chrono::Local::now().naive_local().format("%Y-%m-%dT%H:%M:%S").to_string();
+                    let snapshot = items.clone();
+                    schedule_state.save(&snapshot);
+                    tools::ToolResult {
+                        tool: tool_name.to_string(),
+                        success: true,
+                        data: serde_json::json!({ "id": id, "status": "dismissed" }),
+                        error: None,
+                    }
+                }
+                None => tools::ToolResult {
+                    tool: tool_name.to_string(),
+                    success: false,
+                    data: Value::Null,
+                    error: Some(format!("Item '{}' niet gevonden.", id)),
+                },
+            }
+        }
+        "set_homework_duration" => {
+            let assignment_id = args.get("assignment_id").and_then(|v| v.as_i64());
+            let estimated_minutes = args.get("estimated_minutes").and_then(|v| v.as_i64()).map(|v| v as u32);
+            let urgency = args.get("urgency").and_then(|v| v.as_i64()).map(|v| v as u8);
+            if assignment_id.is_none() || estimated_minutes.is_none() {
+                return tools::ToolResult {
+                    tool: tool_name.to_string(),
+                    success: false,
+                    data: Value::Null,
+                    error: Some("assignment_id en estimated_minutes zijn verplicht.".to_string()),
+                };
+            }
+            let assignment_id = assignment_id.unwrap();
+            let estimated_minutes = estimated_minutes.unwrap();
+            if estimated_minutes == 0 || estimated_minutes > 600 {
+                return tools::ToolResult {
+                    tool: tool_name.to_string(),
+                    success: false,
+                    data: Value::Null,
+                    error: Some("Ongeldige duur (1-600).".to_string()),
+                };
+            }
+            if let Some(u) = urgency {
+                if !(1..=5).contains(&u) {
+                    return tools::ToolResult {
+                        tool: tool_name.to_string(),
+                        success: false,
+                        data: Value::Null,
+                        error: Some("Urgency moet 1-5 zijn.".to_string()),
+                    };
+                }
+            }
+            let mut items = schedule_state.items.write().await;
+            let now = chrono::Local::now().naive_local().format("%Y-%m-%dT%H:%M:%S").to_string();
+            if let Some(item) = items.iter_mut().find(|i| i.related_assignment_id == Some(assignment_id)) {
+                item.estimated_minutes = Some(estimated_minutes);
+                item.duration_source = Some(DurationSource::UserEntered);
+                if let Some(u) = urgency {
+                    item.urgency = u;
+                }
+                item.updated_at = now.clone();
+                let cloned = item.clone();
+                let snapshot = items.clone();
+                schedule_state.save(&snapshot);
+                return tools::ToolResult {
+                    tool: tool_name.to_string(),
+                    success: true,
+                    data: serde_json::to_value(&cloned).unwrap_or(Value::Null),
+                    error: None,
+                };
+            }
+            // No existing item: create one
+            let new_item = AiScheduleItem {
+                id: format!("work-{}-manual", assignment_id),
+                title: format!("Huiswerk {}", assignment_id),
+                description: Some("Duur ingesteld via AI".to_string()),
+                item_type: AiScheduleItemType::AssignmentWork,
+                start: now.clone(),
+                end: {
+                    let start_dt = crate::ai::schedule::iso_to_naive(&now).unwrap_or(chrono::Local::now().naive_local());
+                    let end_dt = start_dt + chrono::Duration::minutes(estimated_minutes as i64);
+                    crate::ai::schedule::naive_to_iso(end_dt)
+                },
+                status: AiScheduleStatus::Planned,
+                urgency: urgency.unwrap_or(3),
+                related_assignment_id: Some(assignment_id),
+                related_calendar_event_id: None,
+                related_subject: args.get("subject").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                estimated_minutes: Some(estimated_minutes),
+                duration_source: Some(DurationSource::UserEntered),
+                source: AiScheduleSource::User,
+                created_at: now.clone(),
+                updated_at: now,
+                completed_at: None,
+            };
+            items.push(new_item.clone());
+            let snapshot = items.clone();
+            schedule_state.save(&snapshot);
+            tools::ToolResult {
+                tool: tool_name.to_string(),
+                success: true,
+                data: serde_json::to_value(&new_item).unwrap_or(Value::Null),
+                error: None,
+            }
+        }
+        "run_update_ai_schedule" => {
+            // Trigger the same planning as the manual button
+            if person_id == 0 {
+                return tools::ToolResult {
+                    tool: tool_name.to_string(),
+                    success: false,
+                    data: Value::Null,
+                    error: Some("Geen person_id beschikbaar voor planning.".to_string()),
+                };
+            }
+            // Need to clone client Arc for inner
+            let client_clone = (**client).clone();
+            match crate::commands::ai_schedule::perform_update_inner(schedule_state, client_clone, person_id).await {
+                Ok(updated) => {
+                    let vals: Vec<Value> = updated.iter().map(|i| serde_json::to_value(i).unwrap_or(Value::Null)).collect();
+                    tools::ToolResult {
+                        tool: tool_name.to_string(),
+                        success: true,
+                        data: serde_json::json!({ "items": vals, "count": vals.len(), "message": "Planning bijgewerkt voor deze week + volgende week." }),
+                        error: None,
+                    }
+                }
+                Err(e) => tools::ToolResult {
+                    tool: tool_name.to_string(),
+                    success: false,
+                    data: Value::Null,
+                    error: Some(e),
+                },
+            }
+        }
+        _ => tools::ToolResult {
+            tool: tool_name.to_string(),
+            success: false,
+            data: Value::Null,
+            error: Some(format!("Onbekende schedule tool: {}", tool_name)),
+        },
+    }
 }
 
 /// Confirm and execute a previously-staged AI action (e.g. sending a message).

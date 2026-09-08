@@ -63,6 +63,7 @@ pub fn build_school_context_system_prompt(page_context: Option<&str>, tools_enab
                 Gebruik waar mogelijk opsommingen en concrete voorbeelden. \
                 Wees aanmoedigend maar realistisch. \
                 Als je iets niet weet, zeg dat dan eerlijk. \
+                Als een tool een fout teruggeeft of een leeg resultaat (geen items, geen data), zeg dat dan plain tegen de gebruiker in plaats van plausible klinkende data te verzinnen — no hallucineren. \
                 Formateer je antwoorden met Markdown waar dat helpt: gebruik ## kopjes, **vet**, *cursief*, opsommingen (- of 1.), tabellen voor cijfers/rooster, `inline code` en ```codeblokken``` voor voorbeelden, en [links](url) waar relevant. Houd het beknopt."
     );
 
@@ -86,8 +87,20 @@ pub fn build_school_context_system_prompt(page_context: Option<&str>, tools_enab
              - get_bronnen: Digitale leermaterialen en bronnen\n\
              - get_leermiddelen: Digitale leermiddelen en boeken\n\
              - get_today_summary: Compleet dagoverzicht (rooster, cijfers, opdrachten, berichten, absenties)\n\
-             - get_profile_info: Uitgebreide profielinformatie (naam, klas, adres, opleiding)\n\
-             - download_file: Download een bestand (bijlage) en toon grootte en type\n\n\
+             - get_profile_info: Beperkte profielinformatie (roepnaam, klas, opleiding — geen adres/geboortedatum/contactgegevens)\n\
+             - download_file: Download een bestand (bijlage) en toon grootte en type\n\
+             - get_ai_schedule: Lees de AI-planning (Friday's Plan) voor een datumbereik (alleen AI-items, niet echte Magister-lessen)\n\
+             - create_ai_schedule_item: Voeg een item toe aan de AI-planning (sand-boxed, geen bevestiging nodig)\n\
+             - update_ai_schedule_item: Werk een AI-planning item bij\n\
+             - complete_ai_schedule_item: Markeer AI-item als voltooid\n\
+             - dismiss_ai_schedule_item: Wijs AI-item af (uitsluiten van herplanning, anders dan verwijderen)\n\
+             - set_homework_duration: Stel geschatte duur in voor een opdracht (toont duur+urgentie UI; gebruik dit i.p.v. te gissen)\n\
+             - run_update_ai_schedule: Herplan deze week + volgende week (zelfde als handmatige 'Update AI Schedule' knop)\n\n\
+              BELANGRIJK — AI Schedule vs echte agenda: Er is een aparte AI-planning (Friday's Plan) die naast de echte Magister-agenda bestaat. \
+              Alleen `create_ai_schedule_item`/`update_ai_schedule_item` en de AI-Schedule tools schrijven naar die AI-planning. \
+              Schrijf NOOIT studieblokken of huiswerk in de echte Magister-agenda via `create_calendar_event`; die is alleen voor persoonlijke herinneringen op verzoek van de gebruiker. \
+              Als een opdracht geen `estimated_minutes` heeft, roep `set_homework_duration` aan in plaats van zelf een duur te verzinnen — de gebruiker geeft de duur + urgentie via de UI, en het systeem onthoudt het voor volgende planningen (ook via subject-gemiddelde). \
+              AI-Schedule items zijn sandboxed: ze overschrijven nooit de echte lessen en hebben geen bevestiging nodig.\n\n\
              Gebruik deze tools wanneer de gebruiker vraagt naar specifieke schoolinformatie of acties wil uitvoeren (zoals berichten sturen, opdrachten bekijken, bestanden downloaden).\n\
              Bij vragen over gemiddelden per vak: gebruik eerst get_schoolyears, dan get_full_grade_overview.\n\
              Bij 'wat heb ik nodig'-vragen over cijfers (bv. 'welk cijfer moet ik halen om te slagen'): gebruik get_schoolyears, get_full_grade_overview, en daarna calculate_grade_scenario om het daadwerkelijk te berekenen — geef niet alleen ruwe cijfers terug.\n\
