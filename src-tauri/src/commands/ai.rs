@@ -701,7 +701,8 @@ async fn handle_schedule_tool(
             }
             // Need to clone client Arc for inner
             let client_clone = (**client).clone();
-            match crate::commands::ai_schedule::perform_update_inner(schedule_state, client_clone, person_id).await {
+            let settings = crate::ai::schedule::ScheduleSettings::default();
+            match crate::commands::ai_schedule::perform_update_inner(schedule_state, client_clone, person_id, settings).await {
                 Ok(updated) => {
                     let vals: Vec<Value> = updated.iter().map(|i| serde_json::to_value(i).unwrap_or(Value::Null)).collect();
                     tools::ToolResult {

@@ -64,6 +64,30 @@ fn validate_item(item: &AiScheduleItem) -> Result<(), String> {
     Ok(())
 }
 
+/// Guardrail: no two plannable AI items may occupy the same time.
+/// FreeTime/Sleep are background fillers and are exempt (they get regenerated).
+/// Dismissed/Completed items are history and are exempt.
+fn find_overlap(existing: &[AiScheduleItem], start: &str, end: &str, ignore_id: Option<&str>) -> Option<String> {
+    use crate::models::ai_schedule::AiScheduleItemType;
+    for it in existing {
+        if let Some(ign) = ignore_id {
+            if it.id == ign {
+                continue;
+            }
+        }
+        if it.item_type == AiScheduleItemType::FreeTime || it.item_type == AiScheduleItemType::Sleep {
+            continue;
+        }
+        if it.status == AiScheduleStatus::Dismissed || it.status == AiScheduleStatus::Completed {
+            continue;
+        }
+        if crate::ai::schedule::intervals_overlap_str(start, end, &it.start, &it.end) {
+            return Some(it.id.clone());
+        }
+    }
+    None
+}
+
 #[tauri::command]
 pub async fn get_ai_schedule(
     state: State<'_, AiScheduleState>,
@@ -99,7 +123,6 @@ pub async fn create_ai_schedule_item(
     if item.id.trim().is_empty() {
         let r: u32 = rand::rng().random();
         item.id = format!("ai-{}-{}", chrono::Utc::now().timestamp_millis(), r);
-        // Better: use uuid-like but without uuid crate
     }
     let now = now_iso();
     if item.created_at.is_empty() {
@@ -111,10 +134,47 @@ pub async fn create_ai_schedule_item(
     }
     validate_item(&item)?;
 
+    // Idempotent: same id already exists -> return existing instead of duplicating.
+    // This makes double-clicks / retries safe.
+    {
+        let items = state.items.read().await;
+        if let Some(existing) = items.iter().find(|i| i.id == item.id) {
+            return Ok(existing.clone());
+        }
+        // Same assignment already planned at overlapping time -> don't duplicate.
+        if item.related_assignment_id.is_some() || item.related_calendar_event_id.is_some() {
+            for it in items.iter() {
+                let same_assign = item.related_assignment_id.is_some()
+                    && it.related_assignment_id == item.related_assignment_id;
+                let same_cal = item.related_calendar_event_id.is_some()
+                    && it.related_calendar_event_id == item.related_calendar_event_id;
+                if (same_assign || same_cal)
+                    && it.status != AiScheduleStatus::Dismissed
+                    && crate::ai::schedule::intervals_overlap_str(&item.start, &item.end, &it.start, &it.end)
+                {
+                    return Ok(it.clone());
+                }
+            }
+        }
+        // Guardrail: refuse overlapping planning.
+        if let Some(conflict) = find_overlap(&items, &item.start, &item.end, None) {
+            return Err(format!(
+                "Overlap: er staat al '{}' gepland op dit tijdstip. Kies een ander tijdstip.",
+                conflict
+            ));
+        }
+    }
+
     let mut items = state.items.write().await;
-    // Ensure unique id
-    if items.iter().any(|i| i.id == item.id) {
-        return Err(format!("Item met id '{}' bestaat al.", item.id));
+    // Re-check under write lock (race between read and write).
+    if let Some(existing) = items.iter().find(|i| i.id == item.id) {
+        return Ok(existing.clone());
+    }
+    if let Some(conflict) = find_overlap(&items, &item.start, &item.end, None) {
+        return Err(format!(
+            "Overlap: er staat al '{}' gepland op dit tijdstip. Kies een ander tijdstip.",
+            conflict
+        ));
     }
     items.push(item.clone());
     state.save(&items);
@@ -129,6 +189,13 @@ pub async fn update_ai_schedule_item(
     validate_item(&item)?;
     let mut items = state.items.write().await;
     let idx = items.iter().position(|i| i.id == item.id).ok_or_else(|| format!("Item '{}' niet gevonden.", item.id))?;
+    // Guardrail: moving/resizing onto another planned item is refused.
+    if let Some(conflict) = find_overlap(&items, &item.start, &item.end, Some(&item.id)) {
+        return Err(format!(
+            "Overlap: er staat al '{}' gepland op dit tijdstip. Kies een ander tijdstip.",
+            conflict
+        ));
+    }
     let mut updated = item.clone();
     updated.updated_at = now_iso();
     if updated.status == AiScheduleStatus::Completed && updated.completed_at.is_none() {
@@ -137,23 +204,11 @@ pub async fn update_ai_schedule_item(
     if updated.status != AiScheduleStatus::Completed {
         updated.completed_at = None;
     }
-    // If source was AiChat and user edits, mark as User to protect from replan
-    let prev_source = items[idx].source.clone();
-    if prev_source == crate::models::ai_schedule::AiScheduleSource::AiChat {
-        // If any field changed that looks like user edit, upgrade to User
-        // For simplicity, if update comes from frontend manual edit, set source to User
-        // The frontend should set source: User; but we also auto-promote if item was changed
-        if updated.source == crate::models::ai_schedule::AiScheduleSource::AiChat {
-            // Keep as is if not explicitly changed; but if edited via update command, treat as User edit
-            // We'll assume caller sets source appropriately; if not, auto-promote when title/description changed
-            // To satisfy spec: manually edited afterwards should be treated as fixed constraints.
-            // We'll mark as User if the update changes title/description/start/end/urgency etc.
-            // For now, promote to User if not already User – this ensures incremental replan respects it.
-            // However we should only promote if the item was previously AiChat and is being updated via UI.
-            // The simplest is to keep caller decision, but we add fallback: if source is still AiChat, keep it.
-            // The spec says manually edited afterwards should not be silently overwritten; treat as fixed.
-            // We'll keep as caller provided; frontend will send source: User for manual edits.
-        }
+    // Any manual edit via this command promotes AiChat -> User so the next
+    // "Update AI Schedule" treats it as a fixed constraint instead of
+    // silently rearranging it.
+    if updated.source == crate::models::ai_schedule::AiScheduleSource::AiChat {
+        updated.source = crate::models::ai_schedule::AiScheduleSource::User;
     }
     items[idx] = updated.clone();
     state.save(&items);
@@ -308,14 +363,20 @@ async fn fetch_assignments_inner(
     Ok(items.as_array().cloned().unwrap_or_default())
 }
 
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct BlockedTimeInput {
+    pub day: String,
+    pub start: String,
+    pub end: String,
+}
+
 /// Inner planning logic shared between the manual button command and the AI tool `run_update_ai_schedule`.
 pub async fn perform_update_inner(
     schedule_state: &AiScheduleState,
     client: SharedClient,
     person_id: i64,
+    settings: crate::ai::schedule::ScheduleSettings,
 ) -> Result<Vec<AiScheduleItem>, String> {
-    // This is the same logic as the `update_ai_schedule` command below, but callable without Tauri State wrappers.
-
     // Determine planning window: today through coming Sunday + next week (Europe/Amsterdam)
     let today = chrono::Local::now().date_naive();
     let (window_start, window_end) = crate::ai::schedule::planning_window(today);
@@ -328,21 +389,35 @@ pub async fn perform_update_inner(
         items.clone()
     };
 
-    // Fetch real Magister data: calendar + assignments
+    // Fetch real Magister data: calendar + assignments.
     // Do not hold ai_schedule lock across these awaits.
+    // Assignments: fetch BROAD range (same as Assignments page: 2013-01-01
+    // to +365d) then filter locally by deadline/open state. The narrow
+    // window query misses assignments whose creation falls outside the
+    // window but whose deadline is inside it — that's why planning only
+    // ever produced sleep/free-time.
     let (lessons, assignments_raw) = {
         let lessons = fetch_magister_events_inner(client.clone(), person_id, &window_start_str, &window_end_str)
             .await
             .unwrap_or_default();
 
-        // Fetch assignments for window
-        let assignments = match fetch_assignments_inner(client.clone(), person_id, &window_start_str, &window_end_str).await {
+        let broad_end = (chrono::Local::now().date_naive() + chrono::Duration::days(365))
+            .format("%Y-%m-%d")
+            .to_string();
+        let assignments = match fetch_assignments_inner(client.clone(), person_id, "2013-01-01", &broad_end).await {
             Ok(v) => v,
             Err(e) => {
-                log::warn!("update_ai_schedule: assignments fetch failed, using cached fallback: {}", e);
+                log::warn!("update_ai_schedule: assignments fetch failed: {}", e);
                 Vec::new()
             }
         };
+        log::info!(
+            "update_ai_schedule: {} lessons, {} raw assignments (window {}..{})",
+            lessons.len(),
+            assignments.len(),
+            window_start_str,
+            window_end_str
+        );
         (lessons, assignments)
     };
 
@@ -452,11 +527,7 @@ pub async fn perform_update_inner(
         })
         .collect();
 
-    // Settings: try to read from app data or use default. For now default; frontend will pass via settings later.
-    // We could try to load settings from frontend via a file, but for now use default bedtime/wake.
-    let settings = crate::ai::schedule::ScheduleSettings::default();
-
-    // Generate plan
+    // Generate plan with caller-provided settings (bedtime/wake/blocked)
     let new_items = crate::ai::schedule::generate_plan(
         window_start,
         window_end,
@@ -466,6 +537,13 @@ pub async fn perform_update_inner(
         &existing_items,
         &settings,
         &duration_map,
+    );
+    log::info!(
+        "update_ai_schedule: {} existing, {} locked, {} assignments -> {} new items",
+        existing_items.len(),
+        locked_items.len(),
+        assignment_inputs.len(),
+        new_items.len()
     );
 
     // Now mutate state: prune old Completed/Dismissed past items outside window? Spec: on each Update, items with status Completed/Dismissed and end in past can be pruned.
@@ -517,17 +595,34 @@ pub async fn perform_update_inner(
             true
         });
 
-        // Insert new items, avoiding duplicates with locked
+        // Insert new items idempotently:
+        // - same id already present -> skip (no duplicate on re-press)
+        // - same assignment/calendar link already planned at overlapping time -> skip
+        // - overlaps any kept (locked) item -> skip (guardrail: never double-book)
         for new in new_items {
-            if !items.iter().any(|i| i.id == new.id) {
-                items.push(new);
-            } else {
-                // If id collision with locked, generate new id
-                let mut with_new_id = new.clone();
-                let r: u16 = rand::rng().random();
-                with_new_id.id = format!("{}-{}", new.id, r);
-                items.push(with_new_id);
+            if items.iter().any(|i| i.id == new.id) {
+                continue;
             }
+            let same_link = items.iter().any(|i| {
+                if i.status == AiScheduleStatus::Dismissed {
+                    return false;
+                }
+                let same_assign = new.related_assignment_id.is_some()
+                    && i.related_assignment_id == new.related_assignment_id;
+                let same_cal = new.related_calendar_event_id.is_some()
+                    && i.related_calendar_event_id == new.related_calendar_event_id;
+                (same_assign || same_cal)
+                    && crate::ai::schedule::intervals_overlap_str(&new.start, &new.end, &i.start, &i.end)
+            });
+            if same_link {
+                continue;
+            }
+            if find_overlap(&items, &new.start, &new.end, None).is_some() {
+                // Guardrail: would double-book an already planned time — skip.
+                log::warn!("update_ai_schedule: skipping '{}' ({}..{}) — overlaps existing", new.id, new.start, new.end);
+                continue;
+            }
+            items.push(new);
         }
 
         // Save
@@ -557,6 +652,9 @@ pub async fn perform_update_inner(
 pub async fn update_ai_schedule(
     state: State<'_, AiScheduleState>,
     client: State<'_, SharedClient>,
+    bedtime: Option<String>,
+    wake_time: Option<String>,
+    blocked_times: Option<Vec<BlockedTimeInput>>,
 ) -> Result<Vec<AiScheduleItem>, String> {
     let person_id = {
         let c = client.lock().await;
@@ -565,8 +663,21 @@ pub async fn update_ai_schedule(
             .and_then(|t| t.person_id)
             .ok_or_else(|| "Niet geauthentiseerd.".to_string())?
     };
+    let settings = crate::ai::schedule::ScheduleSettings {
+        bedtime: bedtime.unwrap_or_else(|| "23:00".to_string()),
+        wake_time: wake_time.unwrap_or_else(|| "07:00".to_string()),
+        blocked_times: blocked_times
+            .unwrap_or_default()
+            .into_iter()
+            .map(|b| crate::ai::schedule::BlockedTime {
+                day: b.day,
+                start: b.start,
+                end: b.end,
+            })
+            .collect(),
+    };
     let client_clone = (*client).clone();
-    perform_update_inner(&state, client_clone, person_id).await
+    perform_update_inner(&state, client_clone, person_id, settings).await
 }
 
 async fn fetch_assignments(

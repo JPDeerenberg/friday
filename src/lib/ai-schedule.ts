@@ -31,8 +31,18 @@ export async function getMergedSchedule(start: string, end: string, personId: nu
   return invoke("get_merged_schedule", { start, end, personId });
 }
 
-export async function updateAiSchedule(): Promise<AiScheduleItem[]> {
-  return invoke("update_ai_schedule");
+export interface AiScheduleSettingsInput {
+  bedtime: string;
+  wakeTime: string;
+  blockedTimes: { day: string; start: string; end: string }[];
+}
+
+export async function updateAiSchedule(settings?: AiScheduleSettingsInput): Promise<AiScheduleItem[]> {
+  return invoke("update_ai_schedule", {
+    bedtime: settings?.bedtime ?? null,
+    wakeTime: settings?.wakeTime ?? null,
+    blockedTimes: settings?.blockedTimes ?? null,
+  });
 }
 
 export async function setHomeworkDuration(
