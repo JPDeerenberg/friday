@@ -655,6 +655,8 @@ pub async fn update_ai_schedule(
     bedtime: Option<String>,
     wake_time: Option<String>,
     blocked_times: Option<Vec<BlockedTimeInput>>,
+    after_school_buffer_min: Option<u32>,
+    plan_in_school_gaps: Option<bool>,
 ) -> Result<Vec<AiScheduleItem>, String> {
     let person_id = {
         let c = client.lock().await;
@@ -663,9 +665,10 @@ pub async fn update_ai_schedule(
             .and_then(|t| t.person_id)
             .ok_or_else(|| "Niet geauthentiseerd.".to_string())?
     };
+    let defaults = crate::ai::schedule::ScheduleSettings::default();
     let settings = crate::ai::schedule::ScheduleSettings {
-        bedtime: bedtime.unwrap_or_else(|| "23:00".to_string()),
-        wake_time: wake_time.unwrap_or_else(|| "07:00".to_string()),
+        bedtime: bedtime.unwrap_or(defaults.bedtime),
+        wake_time: wake_time.unwrap_or(defaults.wake_time),
         blocked_times: blocked_times
             .unwrap_or_default()
             .into_iter()
@@ -675,6 +678,9 @@ pub async fn update_ai_schedule(
                 end: b.end,
             })
             .collect(),
+        after_school_buffer_min: after_school_buffer_min
+            .unwrap_or(defaults.after_school_buffer_min),
+        plan_in_school_gaps: plan_in_school_gaps.unwrap_or(defaults.plan_in_school_gaps),
     };
     let client_clone = (*client).clone();
     perform_update_inner(&state, client_clone, person_id, settings).await

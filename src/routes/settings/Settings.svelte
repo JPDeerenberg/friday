@@ -840,6 +840,41 @@
 
             <div class="w-full h-px bg-white/5"></div>
 
+            <!-- After-school buffer: travel home + eating -->
+            <div class="space-y-3">
+              <div class="flex items-center justify-between gap-4">
+                <div>
+                  <p class="text-title-small text-gray-100">Na school: thuiskomen + eten</p>
+                  <p class="text-label-medium text-gray-500 mt-1">Minuten na de laatste les voordat huiswerk ingepland mag worden (fietsen/lopen/auto + eten). Zo plant de AI nooit direct na school of terwijl je nog op school zit.</p>
+                </div>
+                <input
+                  type="number"
+                  min="0"
+                  max="300"
+                  step="5"
+                  value={$userSettings.aiSchedule.afterSchoolBufferMin}
+                  onchange={(e) => {
+                    const v = parseInt(e.currentTarget.value, 10);
+                    if (!isNaN(v)) updateAiSchedule({ afterSchoolBufferMin: Math.max(0, Math.min(300, v)) });
+                  }}
+                  class="w-20 shrink-0 bg-surface-800/80 border border-white/10 rounded-m3-xs px-3 py-2.5 text-body-medium text-white text-center focus:outline-none focus:border-primary-500/50"
+                />
+              </div>
+              <div class="flex items-center justify-between gap-4">
+                <div>
+                  <p class="text-title-small text-gray-100">Ook plannen in tussenuren</p>
+                  <p class="text-label-medium text-gray-500 mt-1">Uit: de hele schooldag telt als bezet (alleen thuis plannen). Aan: gaten tussen lessen mogen ook gebruikt worden.</p>
+                </div>
+                <Switch
+                  checked={$userSettings.aiSchedule.planInSchoolGaps}
+                  onCheckedChange={(v) => updateAiSchedule({ planInSchoolGaps: v })}
+                  ariaLabel="Ook plannen in tussenuren"
+                />
+              </div>
+            </div>
+
+            <div class="w-full h-px bg-white/5"></div>
+
             <!-- Blocked times -->
             <div class="space-y-3">
               <div>

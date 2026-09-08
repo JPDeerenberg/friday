@@ -35,6 +35,8 @@ export interface AiScheduleSettingsInput {
   bedtime: string;
   wakeTime: string;
   blockedTimes: { day: string; start: string; end: string }[];
+  afterSchoolBufferMin: number;
+  planInSchoolGaps: boolean;
 }
 
 export async function updateAiSchedule(settings?: AiScheduleSettingsInput): Promise<AiScheduleItem[]> {
@@ -42,6 +44,8 @@ export async function updateAiSchedule(settings?: AiScheduleSettingsInput): Prom
     bedtime: settings?.bedtime ?? null,
     wakeTime: settings?.wakeTime ?? null,
     blockedTimes: settings?.blockedTimes ?? null,
+    afterSchoolBufferMin: settings?.afterSchoolBufferMin ?? null,
+    planInSchoolGaps: settings?.planInSchoolGaps ?? null,
   });
 }
 

@@ -82,6 +82,12 @@ export const DEFAULT_SETTINGS = {
     bedtime: "23:00",
     wakeTime: "07:00",
     blockedTimes: [] as { day: string; start: string; end: string }[],
+    // Minutes after the last lesson before homework may be planned
+    // (travel home + eating). Prevents planning straight after school.
+    afterSchoolBufferMin: 60,
+    // When false, the whole school day counts as busy (plan at home only).
+    // When true, gaps between lessons (tussenuren) are plannable too.
+    planInSchoolGaps: false,
   },
 };
 
@@ -99,6 +105,12 @@ export function loadSettings() {
         merged.aiSchedule = { ...DEFAULT_SETTINGS.aiSchedule, ...parsed.aiSchedule };
         if (!Array.isArray(merged.aiSchedule.blockedTimes)) {
           merged.aiSchedule.blockedTimes = [];
+        }
+        if (typeof merged.aiSchedule.afterSchoolBufferMin !== "number") {
+          merged.aiSchedule.afterSchoolBufferMin = DEFAULT_SETTINGS.aiSchedule.afterSchoolBufferMin;
+        }
+        if (typeof merged.aiSchedule.planInSchoolGaps !== "boolean") {
+          merged.aiSchedule.planInSchoolGaps = DEFAULT_SETTINGS.aiSchedule.planInSchoolGaps;
         }
       }
       return merged;

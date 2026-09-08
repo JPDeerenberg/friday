@@ -1,4 +1,4 @@
-use chrono::{Datelike, Duration, Local, NaiveDate, NaiveDateTime, NaiveTime, Utc};
+use chrono::{Datelike, Duration, Local, NaiveDate, NaiveDateTime, NaiveTime, Timelike, Utc};
 use serde_json::Value;
 
 use crate::models::ai_schedule::{
@@ -13,6 +13,14 @@ pub struct ScheduleSettings {
     pub bedtime: String, // "23:00"
     pub wake_time: String, // "07:00"
     pub blocked_times: Vec<BlockedTime>,
+    /// Minutes after the last lesson of a school day before homework may be
+    /// planned (travel home by bike/car/foot + eating). Prevents the planner
+    /// from scheduling work the minute school ends — or while still at school.
+    pub after_school_buffer_min: u32,
+    /// When false (default), the whole school day (first lesson start → last
+    /// lesson end) is treated as busy, so homework is only planned at home.
+    /// When true, gaps between lessons (tussenuren) are fair game too.
+    pub plan_in_school_gaps: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -28,6 +36,8 @@ impl Default for ScheduleSettings {
             bedtime: "23:00".to_string(),
             wake_time: "07:00".to_string(),
             blocked_times: vec![],
+            after_school_buffer_min: 60,
+            plan_in_school_gaps: false,
         }
     }
 }
@@ -85,10 +95,14 @@ pub fn compute_free_slots(
     locked_items: &[AiScheduleItem],
     settings: &ScheduleSettings,
 ) -> Vec<FreeSlot> {
+    // Clamp "today" to the current time so nothing is ever planned in the past
+    // (previously the whole of today from wake-up time counted as free, which
+    // stacked everything onto today — including hours already gone).
+    let now = Local::now().naive_local();
     let mut slots = Vec::new();
     let mut current = window_start;
     while current <= window_end {
-        let day_slots = free_slots_for_day(current, lessons, locked_items, settings);
+        let day_slots = free_slots_for_day(current, lessons, locked_items, settings, now);
         slots.extend(day_slots);
         current += Duration::days(1);
     }
@@ -100,6 +114,7 @@ fn free_slots_for_day(
     lessons: &[CalendarEvent],
     locked_items: &[AiScheduleItem],
     settings: &ScheduleSettings,
+    now: NaiveDateTime,
 ) -> Vec<FreeSlot> {
     let bed = parse_hm(&settings.bedtime).unwrap_or((23, 0));
     let wake = parse_hm(&settings.wake_time).unwrap_or((7, 0));
@@ -108,16 +123,36 @@ fn free_slots_for_day(
     let wake_time = NaiveTime::from_hms_opt(wake.0, wake.1, 0).unwrap();
 
     // Day boundaries
-    let day_start = date.and_time(wake_time);
+    let mut day_start = date.and_time(wake_time);
     let day_end = date.and_time(bed_time);
     // If bedtime is after midnight (e.g., 01:00 next day), handle wrap
     // For now assume bedtime > wake_time on same day; if bedtime < wake_time it means after midnight.
-    let (day_start, day_end) = if day_end <= day_start {
+    let day_end = if day_end <= day_start {
         // bedtime is early next morning, so end is next day bedtime
-        (day_start, (date + Duration::days(1)).and_time(bed_time))
+        (date + Duration::days(1)).and_time(bed_time)
     } else {
-        (day_start, day_end)
+        day_end
     };
+
+    // Never offer time that already passed. Round up to the next 5 minutes
+    // so a plan made at 16:37 doesn't start a block at 16:37.
+    if date == now.date() && day_start < now {
+        let mins = now.hour() * 60 + now.minute();
+        let rounded = ((mins + 4) / 5) * 5;
+        if let Some(t) = NaiveTime::from_hms_opt(rounded / 60 % 24, rounded % 60, 0) {
+            let candidate = if rounded >= 24 * 60 {
+                (date + Duration::days(1)).and_time(t)
+            } else {
+                date.and_time(t)
+            };
+            day_start = candidate.max(day_start);
+        } else {
+            day_start = now;
+        }
+    }
+    if day_end <= day_start {
+        return vec![];
+    }
 
     // Collect busy intervals for this day
     let mut busy: Vec<(NaiveDateTime, NaiveDateTime)> = Vec::new();
@@ -125,16 +160,39 @@ fn free_slots_for_day(
     // Sleep is not inside day_start/day_end; it's outside. But we treat day_start-day_end as awake window,
     // so no need to add sleep as busy inside it. Sleep will be materialized separately.
 
+    // School-day handling: collect this day's lessons first so we can block
+    // the whole school day (plus travel/eat buffer afterwards).
+    let mut day_lessons: Vec<(NaiveDateTime, NaiveDateTime)> = Vec::new();
     for ev in lessons {
+        // Cancelled lessons don't keep the student at school.
+        if ev.status == 4 || ev.status == 5 {
+            continue;
+        }
         if let (Some(s), Some(e)) = (iso_to_naive(&ev.start), iso_to_naive(&ev.einde)) {
-            // Only if overlaps this day's awake window
             if e > day_start && s < day_end {
-                let bs = s.max(day_start);
-                let be = e.min(day_end);
-                if be > bs {
-                    busy.push((bs, be));
-                }
+                day_lessons.push((s.max(day_start), e.min(day_end)));
             }
+        }
+    }
+    if !day_lessons.is_empty() {
+        day_lessons.sort_by_key(|(s, _)| *s);
+        let school_start = day_lessons.first().map(|(s, _)| *s).unwrap();
+        let school_end = day_lessons.iter().map(|(_, e)| *e).max().unwrap();
+        if settings.plan_in_school_gaps {
+            // Gaps between lessons stay plannable; only the lessons
+            // themselves plus the after-school buffer are busy.
+            for (s, e) in &day_lessons {
+                busy.push((*s, *e));
+            }
+        } else {
+            // Default: the student is at school the whole day — nothing
+            // gets planned in tussenuren.
+            busy.push((school_start, school_end));
+        }
+        // Travel home + eating buffer after the last lesson.
+        let buffer_end = school_end + Duration::minutes(settings.after_school_buffer_min as i64);
+        if buffer_end > school_end {
+            busy.push((school_end, buffer_end.min(day_end + Duration::hours(6))));
         }
     }
 
@@ -450,12 +508,60 @@ fn info_type_label(t: i32) -> &'static str {
 
 /// Consume `minutes` (+ optional trailing break) from the earliest free slot
 /// that fits. Returns (start, end) and updates `free_slots` in place.
-/// Returns None when no slot fits.
+/// Returns None when no slot fits. Used for triage/review and homework that
+/// should happen ASAP.
 fn take_slot(free_slots: &mut Vec<FreeSlot>, minutes: i64) -> Option<(NaiveDateTime, NaiveDateTime)> {
     let idx = free_slots.iter().position(|s| (s.end - s.start).num_minutes() >= minutes)?;
-    let slot = free_slots[idx].clone();
+    consume_front(free_slots, idx, minutes)
+}
+
+/// Latest-fit placement: picks the latest free slot (by start) that can hold
+/// `minutes` ending no later than `latest_end`, and places the item at the
+/// START of that slot. Work is thus scheduled as close to its deadline as
+/// possible, which naturally spreads assignments with different deadlines
+/// across days instead of piling everything onto today.
+/// `only_before_day`: when Some(d), only slots starting on a day strictly
+/// before `d` qualify — used to spread multi-chunk work across days.
+/// Returns None when nothing fits.
+fn take_latest_slot(
+    free_slots: &mut Vec<FreeSlot>,
+    minutes: i64,
+    latest_end: NaiveDateTime,
+    only_before_day: Option<NaiveDate>,
+) -> Option<(NaiveDateTime, NaiveDateTime)> {
+    let mut best: Option<usize> = None;
+    for (idx, s) in free_slots.iter().enumerate() {
+        if (s.end - s.start).num_minutes() < minutes {
+            continue;
+        }
+        if let Some(d) = only_before_day {
+            if s.start.date() >= d {
+                continue;
+            }
+        }
+        let end_limit = s.end.min(latest_end);
+        if end_limit - s.start < Duration::minutes(minutes) {
+            continue;
+        }
+        if best.map(|b| s.start > free_slots[b].start).unwrap_or(true) {
+            best = Some(idx);
+        }
+    }
+    consume_front(free_slots, best?, minutes)
+}
+
+/// Shared consume-from-front helper for both placement strategies.
+fn consume_front(
+    free_slots: &mut Vec<FreeSlot>,
+    idx: usize,
+    minutes: i64,
+) -> Option<(NaiveDateTime, NaiveDateTime)> {
+    let slot = free_slots.get(idx)?.clone();
     let start = slot.start;
     let end = start + Duration::minutes(minutes);
+    if end > slot.end {
+        return None;
+    }
     let remaining_start = end;
     let remaining_end = slot.end;
     free_slots.remove(idx);
@@ -464,6 +570,17 @@ fn take_slot(free_slots: &mut Vec<FreeSlot>, minutes: i64) -> Option<(NaiveDateT
     }
     free_slots.sort_by_key(|s| s.start);
     Some((start, end))
+}
+
+/// Safety net: true when [start, end) overlaps any already-planned item.
+fn overlaps_planned(result: &[AiScheduleItem], start: NaiveDateTime, end: NaiveDateTime) -> bool {
+    result.iter().any(|it| {
+        if let (Some(s), Some(e)) = (iso_to_naive(&it.start), iso_to_naive(&it.end)) {
+            items_overlap(s, e, start, end)
+        } else {
+            false
+        }
+    })
 }
 
 fn days_until(target: NaiveDate, today: NaiveDate) -> i64 {
@@ -489,7 +606,6 @@ pub fn generate_plan(
     // items can never overlap each other, nor a lesson/locked item.
     let mut free_slots = compute_free_slots(window_start, window_end, lessons, locked_items, settings);
     let now_iso = Local::now().naive_local().format("%Y-%m-%dT%H:%M:%S").to_string();
-    let mut last_subject: Option<String> = None;
 
     // Sort assignments by urgency then deadline (most urgent first).
     // Include overdue (up to 7 days old) — they become urgency 5.
@@ -529,97 +645,120 @@ pub fn generate_plan(
             // This is where the duration gets decided before any AssignmentWork.
             let review_minutes = 15u32;
             if let Some((start, end)) = take_slot(&mut free_slots, review_minutes as i64) {
-                // Avoid same subject back-to-back: if previous block was same vak
-                // and touches this start, shift by inserting the review after a
-                // 10-min buffer when possible.
-                let item = AiScheduleItem {
-                    id: format!("review-{}", assignment.id),
-                    title: format!("Bekijk: {}", assignment.titel),
-                    description: Some(format!(
-                        "Reden: nieuw huiswerk voor {} zonder tijdsinschatting (deadline {}, {}). Eerst 15 min triage: bekijk wat er moet gebeuren en vul de duur in — daarna plant de AI het echte werkblok. Urgentie {}/5.",
-                        vak, deadline.format("%d-%m %H:%M"), days_txt, urgency
-                    )),
-                    item_type: AiScheduleItemType::HomeworkReview,
-                    start: naive_to_iso(start),
-                    end: naive_to_iso(end),
-                    status: AiScheduleStatus::Planned,
-                    urgency,
-                    related_assignment_id: Some(assignment.id),
-                    related_calendar_event_id: None,
-                    related_subject: assignment.vak.clone(),
-                    estimated_minutes: Some(review_minutes),
-                    duration_source: Some(DurationSource::AiEstimated),
-                    source: AiScheduleSource::AiChat,
-                    created_at: now_iso.clone(),
-                    updated_at: now_iso.clone(),
-                    completed_at: None,
-                };
-                last_subject = assignment.vak.clone();
-                result.push(item);
+                if overlaps_planned(&result, start, end) {
+                    // Slot was consumed but collides (shouldn't happen) — give it back.
+                    free_slots.push(FreeSlot { start, end });
+                    free_slots.sort_by_key(|s| s.start);
+                } else {
+                    let item = AiScheduleItem {
+                        id: format!("review-{}", assignment.id),
+                        title: format!("Bekijk: {}", assignment.titel),
+                        description: Some(format!(
+                            "Reden: nieuw huiswerk voor {} zonder tijdsinschatting (deadline {}, {}). Eerst 15 min triage: bekijk wat er moet gebeuren en vul de duur in — daarna plant de AI het echte werkblok. Urgentie {}/5.",
+                            vak, deadline.format("%d-%m %H:%M"), days_txt, urgency
+                        )),
+                        item_type: AiScheduleItemType::HomeworkReview,
+                        start: naive_to_iso(start),
+                        end: naive_to_iso(end),
+                        status: AiScheduleStatus::Planned,
+                        urgency,
+                        related_assignment_id: Some(assignment.id),
+                        related_calendar_event_id: None,
+                        related_subject: assignment.vak.clone(),
+                        estimated_minutes: Some(review_minutes),
+                        duration_source: Some(DurationSource::AiEstimated),
+                        source: AiScheduleSource::AiChat,
+                        created_at: now_iso.clone(),
+                        updated_at: now_iso.clone(),
+                        completed_at: None,
+                    };
+                    result.push(item);
+                }
             }
             continue; // don't create AssignmentWork until review done
         };
 
-        // For assignments with estimate, split if >60 into multiple blocks with Break.
-        let mut remaining = est;
+        // Work is placed latest-first (as close to the deadline as fits),
+        // so assignments with different deadlines spread across days instead
+        // of all piling onto today. Estimates >60 min are split into 60-min
+        // chunks on different days (a day gap is the break); single-day
+        // leftovers keep a 15-min Break between back-to-back chunks.
         let chunk_size = if est > 60 { 60 } else { est };
-        let total_chunks = (est + chunk_size - 1) / chunk_size;
-        let mut chunk_index = 0;
+        let mut placements: Vec<(NaiveDateTime, NaiveDateTime, u32)> = Vec::new();
+        let mut remaining = est;
+        let mut latest = deadline;
+        let mut prev_day: Option<NaiveDate> = None;
         while remaining > 0 {
             let this_chunk = remaining.min(chunk_size);
-            let needed = this_chunk as i64 + if remaining > this_chunk { 15 } else { 0 };
-            // Prefer a slot that avoids same-subject back-to-back when possible.
-            let slot_choice = {
-                let mut chosen: Option<usize> = None;
-                for (idx, s) in free_slots.iter().enumerate() {
-                    if (s.end - s.start).num_minutes() < needed {
-                        continue;
-                    }
-                    // If previous generated block touches this slot start and has
-                    // the same subject, deprioritise this slot (try next first).
-                    let touches_prev = result.last().and_then(|last| iso_to_naive(&last.end)).map(|le| le == s.start).unwrap_or(false);
-                    let same_subj = last_subject.as_deref() == assignment.vak.as_deref() && touches_prev;
-                    if same_subj {
-                        if chosen.is_none() {
-                            chosen = Some(idx); // fallback
-                        }
-                        continue; // look for a non-touching slot first
-                    } else {
-                        chosen = Some(idx);
-                        break;
-                    }
-                }
-                chosen.or_else(|| free_slots.iter().position(|s| (s.end - s.start).num_minutes() >= needed))
-            };
-            let Some(slot_idx) = slot_choice else { break };
-            let slot = free_slots[slot_idx].clone();
-            let start = slot.start;
-            let end = start + Duration::minutes(this_chunk as i64);
-            // Final overlap guard: never emit overlapping the previous result.
-            if let Some(last) = result.last() {
-                if let (Some(ls), Some(le)) = (iso_to_naive(&last.start), iso_to_naive(&last.end)) {
-                    if items_overlap(ls, le, start, end) {
-                        break;
-                    }
-                }
+            // Prefer a strictly earlier day (spread); fall back to any slot
+            // before `latest` (e.g. when only one evening has room).
+            let placed = prev_day
+                .and_then(|d| {
+                    take_latest_slot(&mut free_slots, this_chunk as i64, latest, Some(d))
+                })
+                .or_else(|| take_latest_slot(&mut free_slots, this_chunk as i64, latest, None));
+            let Some((start, end)) = placed else { break };
+            if overlaps_planned(&result, start, end)
+                || placements.iter().any(|(s, e, _)| items_overlap(*s, *e, start, end))
+            {
+                free_slots.push(FreeSlot { start, end });
+                free_slots.sort_by_key(|s| s.start);
+                break;
             }
-            let title = if est > 60 {
-                format!("{} (deel {}/{})", assignment.titel, chunk_index + 1, total_chunks)
+            placements.push((start, end, this_chunk));
+            latest = start;
+            prev_day = Some(start.date());
+            remaining = remaining.saturating_sub(this_chunk);
+            if placements.len() > 10 {
+                break;
+            }
+        }
+        if placements.is_empty() {
+            continue;
+        }
+        // Emit chronologically so deel 1/N is the earliest session.
+        // No explicit Break items: chunks land on different days (a day gap
+        // is the break), and same-evening leftovers are short enough.
+        placements.sort();
+        let total_chunks = placements.len();
+        for (chunk_index, (start, end, mins)) in placements.iter().enumerate() {
+            let (start, end, mins) = (*start, *end, *mins);
+            let title = if total_chunks > 1 {
+                format!(
+                    "{} (deel {}/{})",
+                    assignment.titel,
+                    chunk_index + 1,
+                    total_chunks
+                )
             } else {
                 assignment.titel.clone()
             };
-            let desc = format!(
-                "Reden: {} voor {} (deadline {}, {}) — gepland op {} omdat dit vrije slot past ({} min, urgentie {}/5). {}.",
-                if total_chunks > 1 { format!("deelsessie {}/{}", chunk_index + 1, total_chunks) } else { "werksessie".to_string() },
-                vak,
-                deadline.format("%d-%m %H:%M"),
-                days_txt,
-                start.format("%a %d-%m %H:%M"),
-                this_chunk,
-                urgency,
-                assignment.omschrijving.clone().unwrap_or_else(|| "Huiswerk maken".to_string()),
-            );
-            let item = AiScheduleItem {
+            let desc = if total_chunks > 1 {
+                format!(
+                    "Reden: deelsessie {}/{} voor {} (deadline {}, {}) — gepland op {} ({} min, urgentie {}/5) zodat het werk over meerdere dagen is gespreid. {}.",
+                    chunk_index + 1,
+                    total_chunks,
+                    vak,
+                    deadline.format("%d-%m %H:%M"),
+                    days_txt,
+                    start.format("%a %d-%m %H:%M"),
+                    mins,
+                    urgency,
+                    assignment.omschrijving.clone().unwrap_or_else(|| "Huiswerk maken".to_string()),
+                )
+            } else {
+                format!(
+                    "Reden: werksessie voor {} (deadline {}, {}) — gepland op {} ({} min, urgentie {}/5). {}.",
+                    vak,
+                    deadline.format("%d-%m %H:%M"),
+                    days_txt,
+                    start.format("%a %d-%m %H:%M"),
+                    mins,
+                    urgency,
+                    assignment.omschrijving.clone().unwrap_or_else(|| "Huiswerk maken".to_string()),
+                )
+            };
+            result.push(AiScheduleItem {
                 id: format!("work-{}-{}", assignment.id, chunk_index),
                 title,
                 description: Some(desc),
@@ -631,56 +770,13 @@ pub fn generate_plan(
                 related_assignment_id: Some(assignment.id),
                 related_calendar_event_id: None,
                 related_subject: assignment.vak.clone(),
-                estimated_minutes: Some(this_chunk),
+                estimated_minutes: Some(mins),
                 duration_source: source.clone(),
                 source: AiScheduleSource::AiChat,
                 created_at: now_iso.clone(),
                 updated_at: now_iso.clone(),
                 completed_at: None,
-            };
-            result.push(item);
-            last_subject = assignment.vak.clone();
-            let mut new_start = end;
-            if remaining > this_chunk {
-                let break_end = end + Duration::minutes(15);
-                // Guard: break must still fit inside the slot
-                if break_end > slot.end {
-                    // Roll back: remove the work item we just pushed, slot stays
-                    result.pop();
-                    break;
-                }
-                let break_item = AiScheduleItem {
-                    id: format!("break-{}-{}", assignment.id, chunk_index),
-                    title: "Pauze".to_string(),
-                    description: Some("Korte pauze tussen werksessies — even bewegen.".to_string()),
-                    item_type: AiScheduleItemType::Break,
-                    start: naive_to_iso(new_start),
-                    end: naive_to_iso(break_end),
-                    status: AiScheduleStatus::Planned,
-                    urgency: 1,
-                    related_assignment_id: None,
-                    related_calendar_event_id: None,
-                    related_subject: None,
-                    estimated_minutes: Some(15),
-                    duration_source: None,
-                    source: AiScheduleSource::AiChat,
-                    created_at: now_iso.clone(),
-                    updated_at: now_iso.clone(),
-                    completed_at: None,
-                };
-                result.push(break_item);
-                new_start = break_end;
-            }
-            let remaining_start = new_start;
-            let remaining_end = slot.end;
-            free_slots.remove(slot_idx);
-            if remaining_end > remaining_start && (remaining_end - remaining_start).num_minutes() >= 10 {
-                free_slots.insert(slot_idx, FreeSlot { start: remaining_start, end: remaining_end });
-            }
-            free_slots.sort_by_key(|s| s.start);
-            remaining = remaining.saturating_sub(this_chunk);
-            chunk_index += 1;
-            if chunk_index > 10 { break; }
+            });
         }
     }
 
@@ -692,19 +788,37 @@ pub fn generate_plan(
         let vak = test.vak.clone().unwrap_or_else(|| "Onbekend vak".to_string());
         let label = info_type_label(test.info_type);
         // Study time scales with urgency/proximity: 2 sessions when close, 1 otherwise.
+        // Sessions spread across days before the test (latest-fit), never after it.
         let sessions = if days <= 3 { 2 } else { 1 };
+        let mut placed: Vec<(NaiveDateTime, NaiveDateTime, u32)> = Vec::new();
         for s_idx in 0..sessions {
             let minutes = 45u32;
-            let Some((start, end)) = take_slot(&mut free_slots, minutes as i64) else { break };
-            // Don't schedule study after the test itself
-            if start >= test.start {
-                // Put slot back (take_slot already consumed) — re-insert remainder
+            // Session s_idx must end before the test, each earlier session at
+            // least a day before the previous one so prep spreads out.
+            let latest_end = test.start - Duration::days(s_idx as i64);
+            let slot = if s_idx == 0 {
+                take_latest_slot(&mut free_slots, minutes as i64, latest_end, None)
+            } else {
+                let prev_day = placed.first().map(|(s, _, _)| s.date());
+                prev_day
+                    .and_then(|d| take_latest_slot(&mut free_slots, minutes as i64, latest_end, Some(d)))
+                    .or_else(|| take_latest_slot(&mut free_slots, minutes as i64, latest_end, None))
+            };
+            let Some((start, end)) = slot else { break };
+            if end > test.start || overlaps_planned(&result, start, end) {
                 free_slots.push(FreeSlot { start, end });
                 free_slots.sort_by_key(|s| s.start);
                 break;
             }
-            let title = if sessions > 1 {
-                format!("Leren voor {} {} (sessie {}/{})", label, vak, s_idx + 1, sessions)
+            placed.push((start, end, minutes));
+        }
+        // Emit chronologically so sessie 1 is the earliest.
+        placed.sort();
+        let n = placed.len();
+        for (emit_idx, (start, end, mins)) in placed.iter().enumerate() {
+            let (start, end, mins) = (*start, *end, *mins);
+            let title = if n > 1 {
+                format!("Leren voor {} {} (sessie {}/{})", label, vak, emit_idx + 1, n)
             } else {
                 format!("Leren voor {} {}", label, vak)
             };
@@ -722,7 +836,7 @@ pub fn generate_plan(
                 urgency
             );
             result.push(AiScheduleItem {
-                id: format!("study-test-{}-{}", test.event_id, s_idx),
+                id: format!("study-test-{}-{}", test.event_id, emit_idx),
                 title,
                 description: Some(desc),
                 item_type: AiScheduleItemType::StudyBlock,
@@ -733,14 +847,13 @@ pub fn generate_plan(
                 related_assignment_id: None,
                 related_calendar_event_id: Some(test.event_id),
                 related_subject: test.vak.clone(),
-                estimated_minutes: Some(minutes),
+                estimated_minutes: Some(mins),
                 duration_source: Some(DurationSource::AiEstimated),
                 source: AiScheduleSource::AiChat,
                 created_at: now_iso.clone(),
                 updated_at: now_iso.clone(),
                 completed_at: None,
             });
-            last_subject = test.vak.clone();
         }
     }
 
@@ -758,6 +871,11 @@ pub fn generate_plan(
         let est = hw.vak.as_deref().and_then(|s| subject_average_minutes(existing_items, s)).unwrap_or(30);
         let urgency = 3u8;
         let Some((start, end)) = take_slot(&mut free_slots, est as i64) else { continue };
+        if overlaps_planned(&result, start, end) {
+            free_slots.push(FreeSlot { start, end });
+            free_slots.sort_by_key(|s| s.start);
+            continue;
+        }
         // Homework should be done before/within 2 days after the lesson
         let desc = format!(
             "Reden: huiswerk uit de les ({} op {}). Korte werksessie van {} min — maak/af wat in de les is opgegeven. Vak-gemiddelde of 30 min default.",
@@ -782,8 +900,6 @@ pub fn generate_plan(
             updated_at: now_iso.clone(),
             completed_at: None,
         });
-        last_subject = hw.vak.clone();
-        let _ = last_subject;
     }
 
     // Generate remaining free time items for still-free gaps
@@ -853,17 +969,90 @@ mod tests {
     #[test]
     fn free_slots_excludes_lessons() {
         let date = NaiveDate::from_ymd_opt(2026, 9, 8).unwrap();
+        // `now` before wake-up so no today-clamping interferes.
+        let now = date.and_hms_opt(6, 0, 0).unwrap();
         let lessons = vec![make_lesson("2026-09-08T09:00:00", "2026-09-08T10:00:00")];
         let locked: Vec<AiScheduleItem> = vec![];
         let settings = ScheduleSettings::default();
-        let slots = free_slots_for_day(date, &lessons, &locked, &settings);
-        // Wake 07:00 to bed 23:00 minus 09-10 lesson = 2 slots: 07-09 and 10-23
+        let slots = free_slots_for_day(date, &lessons, &locked, &settings, now);
+        // Wake 07:00 to bed 23:00 minus school block 09-10 plus the default
+        // 60 min after-school buffer = 2 slots: 07-09 and 11-23.
         assert!(slots.len() >= 2);
         let first = &slots[0];
         assert_eq!(first.start, date.and_hms_opt(7,0,0).unwrap());
         assert_eq!(first.end, date.and_hms_opt(9,0,0).unwrap());
         let second = &slots[1];
-        assert_eq!(second.start, date.and_hms_opt(10,0,0).unwrap());
+        assert_eq!(second.start, date.and_hms_opt(11,0,0).unwrap());
+    }
+
+    #[test]
+    fn school_gaps_plannable_when_enabled() {
+        let date = NaiveDate::from_ymd_opt(2026, 9, 8).unwrap();
+        let now = date.and_hms_opt(6, 0, 0).unwrap();
+        let lessons = vec![
+            make_lesson("2026-09-08T09:00:00", "2026-09-08T10:00:00"),
+            make_lesson("2026-09-08T11:00:00", "2026-09-08T12:00:00"),
+        ];
+        let locked: Vec<AiScheduleItem> = vec![];
+        let mut settings = ScheduleSettings::default();
+        settings.plan_in_school_gaps = true;
+        settings.after_school_buffer_min = 0;
+        let slots = free_slots_for_day(date, &lessons, &locked, &settings, now);
+        // The 10:00-11:00 tussenure must be offered when gaps are enabled.
+        assert!(slots.iter().any(|s| s.start == date.and_hms_opt(10, 0, 0).unwrap()
+            && s.end == date.and_hms_opt(11, 0, 0).unwrap()));
+    }
+
+    #[test]
+    fn today_is_clamped_to_now() {
+        let date = NaiveDate::from_ymd_opt(2026, 9, 8).unwrap();
+        // Simulate running the planner at 16:37.
+        let now = date.and_hms_opt(16, 37, 0).unwrap();
+        let lessons: Vec<CalendarEvent> = vec![];
+        let locked: Vec<AiScheduleItem> = vec![];
+        let settings = ScheduleSettings::default();
+        let slots = free_slots_for_day(date, &lessons, &locked, &settings, now);
+        assert_eq!(slots.len(), 1);
+        // Rounded up to the next 5 minutes: 16:40.
+        assert_eq!(slots[0].start, date.and_hms_opt(16, 40, 0).unwrap());
+    }
+
+    #[test]
+    fn latest_fit_spreads_work_across_days() {
+        let start = NaiveDate::from_ymd_opt(2026, 9, 8).unwrap();
+        let end = NaiveDate::from_ymd_opt(2026, 9, 14).unwrap();
+        let lessons: Vec<CalendarEvent> = vec![];
+        let locked: Vec<AiScheduleItem> = vec![];
+        let existing: Vec<AiScheduleItem> = vec![];
+        let settings = ScheduleSettings::default();
+        let mut map = std::collections::HashMap::new();
+        // Two assignments: one due tomorrow, one due in 6 days.
+        let assignments = vec![
+            AssignmentInput {
+                id: 1,
+                titel: "Spoed".to_string(),
+                vak: Some("Nederlands".to_string()),
+                inleveren_voor: "2026-09-09T12:00:00".to_string(),
+                omschrijving: None,
+            },
+            AssignmentInput {
+                id: 2,
+                titel: "Later".to_string(),
+                vak: Some("Wiskunde".to_string()),
+                inleveren_voor: "2026-09-14T12:00:00".to_string(),
+                omschrijving: None,
+            },
+        ];
+        map.insert(1, (45, DurationSource::UserEntered));
+        map.insert(2, (45, DurationSource::UserEntered));
+        let plan = generate_plan(start, end, &lessons, &locked, &assignments, &existing, &settings, &map);
+        let work1 = plan.iter().find(|i| i.related_assignment_id == Some(1)).unwrap();
+        let work2 = plan.iter().find(|i| i.related_assignment_id == Some(2)).unwrap();
+        let d1 = iso_to_naive(&work1.start).unwrap().date();
+        let d2 = iso_to_naive(&work2.start).unwrap().date();
+        // Urgent work lands on/before its deadline day, later work lands later.
+        assert!(d1 <= NaiveDate::from_ymd_opt(2026, 9, 9).unwrap());
+        assert!(d2 > d1, "work for a later deadline should not pile onto the same early day");
     }
 
     #[test]
@@ -919,7 +1108,16 @@ mod tests {
         let plan = generate_plan(start, end, &lessons, &locked, &assignments, &existing, &settings, &map);
         let work_blocks: Vec<_> = plan.iter().filter(|i| i.item_type == AiScheduleItemType::AssignmentWork && i.related_assignment_id == Some(99)).collect();
         assert!(work_blocks.len() >= 2, "long assignment should split into multiple blocks");
-        let has_break = plan.iter().any(|i| i.item_type == AiScheduleItemType::Break);
-        assert!(has_break);
+        // Spread across days: chunks land on different days (day gap = break).
+        let mut days: Vec<NaiveDate> = work_blocks.iter().map(|b| iso_to_naive(&b.start).unwrap().date()).collect();
+        days.sort();
+        days.dedup();
+        assert!(days.len() >= 2, "chunks of a long assignment should spread across days");
+        // No two generated work blocks may overlap.
+        for (a, b) in work_blocks.iter().zip(work_blocks.iter().skip(1)) {
+            let (as_, ae) = (iso_to_naive(&a.start).unwrap(), iso_to_naive(&a.end).unwrap());
+            let (bs, be) = (iso_to_naive(&b.start).unwrap(), iso_to_naive(&b.end).unwrap());
+            assert!(!items_overlap(as_, ae, bs, be), "generated blocks must not overlap");
+        }
     }
 }
