@@ -62,14 +62,12 @@ pub async fn export_all_data(
         Ok(filename.to_string())
     };
 
-    // Acquire one request context up front. The independent fetches below all
-    // share it and run concurrently WITHOUT holding the client lock, so the
-    // network round-trips overlap instead of serializing. Only the cheap
-    // token-validity check needs the lock.
-    let ctx = {
-        let mut client = client.lock().await;
-        client.request_context().await.map_err(|e| e.to_string())?
-    };
+    // Each fetch below snapshots its own request context (short lock) via
+    // get_with_shared and runs concurrently WITHOUT holding the client
+    // lock, so the network round-trips overlap instead of serializing.
+    // Each fetch also refreshes + retries once on a stale-token 401, so a
+    // token that expired mid-export fails only its own category instead of
+    // aborting the whole export.
 
     // Pre-compute the path parameters (cheap, no I/O) so each fetch future can
     // run standalone without re-reading the shared `today`/`person_id`.
@@ -92,7 +90,7 @@ pub async fn export_all_data(
     let calendar = async {
         let mut files = Vec::new();
         let mut errors = Vec::new();
-        match crate::client::get_with_context(&ctx, &lessons_path).await {
+        match crate::client::get_with_shared(&client, &lessons_path).await {
             Ok(data) => {
                 if let Ok(filename) = save_json(&dir_path, "lessen.json", &data) {
                     files.push(filename);
@@ -111,7 +109,7 @@ pub async fn export_all_data(
             "leerlingen/{}/aanmeldingen?begin={}-01-01&einde={}-12-31",
             person_id, today.year() - 4, today.year()
         );
-        match crate::client::get_with_context(&ctx, &schoolyears_path).await {
+        match crate::client::get_with_shared(&client, &schoolyears_path).await {
             Ok(schoolyears) => {
                 let items = schoolyears["Items"].as_array()
                     .or_else(|| schoolyears["items"].as_array())
@@ -131,7 +129,7 @@ pub async fn export_all_data(
                                 "personen/{}/aanmeldingen/{}/cijfers/cijferoverzichtvooraanmelding?actievePerioden=false&alleenBerekendeKolommen=false&alleenPTAKolommen=false&peildatum={}",
                                 person_id, schoolyear_id, peildatum
                             );
-                            match crate::client::get_with_context(&ctx, &path).await {
+                            match crate::client::get_with_shared(&client, &path).await {
                                 Ok(data) => {
                                     if let Ok(filename) = save_json(&dir_path, "cijfers.json", &data) {
                                         files.push(filename);
@@ -157,7 +155,7 @@ pub async fn export_all_data(
     let assignments = async {
         let mut files = Vec::new();
         let mut errors = Vec::new();
-        match crate::client::get_with_context(&ctx, &opdrachten_path).await {
+        match crate::client::get_with_shared(&client, &opdrachten_path).await {
             Ok(data) => {
                 if let Ok(filename) = save_json(&dir_path, "opdrachten.json", &data) {
                     files.push(filename);
@@ -172,7 +170,7 @@ pub async fn export_all_data(
     let messages = async {
         let mut files = Vec::new();
         let mut errors = Vec::new();
-        match crate::client::get_with_context(&ctx, "berichten/mappen/alle").await {
+        match crate::client::get_with_shared(&client, "berichten/mappen/alle").await {
             Ok(folders) => {
                 // Try to find the inbox folder ID — handles {"Items": [...]}, {"items": [...]}, and bare array
                 let inbox_id = folders["Items"].as_array()
@@ -191,7 +189,7 @@ pub async fn export_all_data(
                 match inbox_id {
                     Some(id) => {
                         let path = format!("berichten/mappen/{}/berichten?top=200&skip=0", id);
-                        match crate::client::get_with_context(&ctx, &path).await {
+                        match crate::client::get_with_shared(&client, &path).await {
                             Ok(data) => {
                                 if let Ok(filename) = save_json(&dir_path, "berichten.json", &data) {
                                     files.push(filename);
@@ -211,7 +209,7 @@ pub async fn export_all_data(
     let absences = async {
         let mut files = Vec::new();
         let mut errors = Vec::new();
-        match crate::client::get_with_context(&ctx, &absences_path).await {
+        match crate::client::get_with_shared(&client, &absences_path).await {
             Ok(data) => {
                 if let Ok(filename) = save_json(&dir_path, "afwezigheid.json", &data) {
                     files.push(filename);
@@ -229,7 +227,7 @@ pub async fn export_all_data(
         let mut errors = Vec::new();
         let mut all_items: Vec<serde_json::Value> = Vec::new();
 
-        match crate::client::get_with_context(&ctx, &studiewijzers_path).await {
+        match crate::client::get_with_shared(&client, &studiewijzers_path).await {
             Ok(data) => {
                 if let Some(items) = data["Items"].as_array().or_else(|| data["items"].as_array()) {
                     all_items.extend(items.clone());
@@ -238,7 +236,7 @@ pub async fn export_all_data(
             Err(e) => errors.push(format!("studiewijzers: {}", e)),
         }
 
-        match crate::client::get_with_context(&ctx, &projecten_path).await {
+        match crate::client::get_with_shared(&client, &projecten_path).await {
             Ok(data) => {
                 if let Some(items) = data["Items"].as_array().or_else(|| data["items"].as_array()) {
                     all_items.extend(items.clone());
@@ -257,7 +255,7 @@ pub async fn export_all_data(
     let leermiddelen = async {
         let mut files = Vec::new();
         let mut errors = Vec::new();
-        match crate::client::get_with_context(&ctx, &leermiddelen_path).await {
+        match crate::client::get_with_shared(&client, &leermiddelen_path).await {
             Ok(data) => {
                 if let Ok(filename) = save_json(&dir_path, "leermiddelen.json", &data) {
                     files.push(filename);
@@ -271,7 +269,7 @@ pub async fn export_all_data(
     let bronnen = async {
         let mut files = Vec::new();
         let mut errors = Vec::new();
-        match crate::client::get_with_context(&ctx, &bronnen_path).await {
+        match crate::client::get_with_shared(&client, &bronnen_path).await {
             Ok(data) => {
                 if let Ok(filename) = save_json(&dir_path, "bronnen.json", &data) {
                     files.push(filename);
@@ -285,7 +283,7 @@ pub async fn export_all_data(
     let activities = async {
         let mut files = Vec::new();
         let mut errors = Vec::new();
-        match crate::client::get_with_context(&ctx, &activities_path).await {
+        match crate::client::get_with_shared(&client, &activities_path).await {
             Ok(data) => {
                 if let Ok(filename) = save_json(&dir_path, "activiteiten.json", &data) {
                     files.push(filename);

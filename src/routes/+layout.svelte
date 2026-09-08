@@ -101,6 +101,20 @@
     });
   }
 
+  // Escape hatch on the offline overlay: if the stored session is
+  // unreadable AND retrying never succeeds (e.g. broken keyring rather
+  // than no network), wipe local state so the login screen shows instead
+  // of trapping the user on this overlay with no way forward.
+  async function reloginFromOffline() {
+    try { await logout(); } catch (_) {}
+    isLoggedIn.set(false);
+    personId.set(null);
+    accountInfo.set(null);
+    profilePicture.set(null);
+    restoreState = 'logged_out';
+    restoreStatus.set('logged_out');
+  }
+
   onMount(() => {
     if (typeof window !== 'undefined' && (window as any).__TAURI__) {
       // Double rAF guarantees the "Laden..." spinner below has actually
@@ -376,6 +390,9 @@
       <p class="text-body-small text-gray-400 leading-relaxed">Kon niet verbinden met Magister. Je opgeslagen sessie blijft behouden — controleer je internet en probeer opnieuw.</p>
       <button onclick={retryRestore} class="mt-2 px-6 py-2.5 rounded-m3-sm bg-primary-500 text-white text-label-large hover:bg-primary-600 transition-colors">
         Opnieuw proberen
+      </button>
+      <button onclick={reloginFromOffline} class="px-6 py-2 rounded-m3-sm text-label-medium text-gray-400 hover:text-gray-200 transition-colors">
+        Opnieuw inloggen
       </button>
       <p class="text-label-small text-gray-600 mt-1">Of open de app opnieuw zodra je weer online bent.</p>
     </div>

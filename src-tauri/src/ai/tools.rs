@@ -1975,19 +1975,30 @@ pub async fn execute_pending_action(
                 .and_then(|v| v.as_str())
                 .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty());
-            let info_type = if inhoud.is_some() { 1 } else { 0 };
+            // Same Inhoud ↔ InfoType coherence rule as commands/calendar.rs:
+            // InfoType 0 is invalid with content, and the lesson-bound
+            // types 1-5 are rejected for Type 1 (personal) appointments —
+            // use 7 (Notitie) for content, 0 when empty.
+            let info_type = if inhoud.is_some() { 7 } else { 0 };
 
-            let body = serde_json::json!({
+            let mut body = serde_json::json!({
                 "Start": start,
                 "Einde": einde,
                 "DuurtHeleDag": duurt_hele_dag,
                 "Omschrijving": omschrijving,
-                "Lokatie": lokatie,
-                "Inhoud": inhoud,
                 "Type": 1,
                 "Status": 2,
                 "InfoType": info_type
             });
+            // Omit (don't null) empty optionals — Magister validates
+            // Inhoud/InfoType coherence on what is actually present.
+            if let Some(ref l) = lokatie {
+                body["Lokatie"] = serde_json::json!(l);
+            }
+            if let Some(ref i) = inhoud {
+                body["Inhoud"] = serde_json::json!(i);
+            }
+            log::debug!("AI creating calendar event: {}", body);
 
             client.post(&format!("personen/{}/afspraken", person_id), &body)
                 .await
@@ -2242,6 +2253,81 @@ mod tests {
         let outcome = execute_pending_action(&mut client, &action).await.expect("create succeeds");
         assert_eq!(outcome["status"], "aangemaakt");
         assert_eq!(outcome["omschrijving"], "Werken aan verslag");
+    }
+
+    #[tokio::test]
+    async fn confirm_create_calendar_event_with_inhoud_uses_notitie_infotype() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/personen/123/afspraken"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({})))
+            .mount(&mock_server)
+            .await;
+
+        let store: PendingActionStore = Mutex::new(HashMap::new());
+        let mut client = client_with_token(&mock_server.uri());
+
+        let args = serde_json::json!({
+            "start": "2026-09-01T15:00:00",
+            "einde": "2026-09-01T16:00:00",
+            "omschrijving": "Werken aan verslag",
+            "inhoud": "Hoofdstuk 3 afmaken",
+            "lokatie": "Thuis"
+        });
+        let result = execute_tool(&mut client, "create_calendar_event", &args, 123, &store).await;
+        assert!(result.success);
+
+        let action_id = result.data["action_id"].as_str().unwrap().to_string();
+        let action = store.lock().unwrap().remove(&action_id).unwrap();
+        execute_pending_action(&mut client, &action).await.expect("create succeeds");
+
+        let requests = mock_server.received_requests().await.expect("requests recorded");
+        assert_eq!(requests.len(), 1);
+        let posted: serde_json::Value =
+            serde_json::from_slice(&requests[0].body).expect("posted valid json");
+        // Regression test for the 400 "ongeldig infotype": a content-bearing
+        // personal appointment must use InfoType 7 (Notitie) — never 0
+        // (invalid with content) or 1 (lesson-bound Huiswerk).
+        assert_eq!(posted["InfoType"], 7);
+        assert_eq!(posted["Inhoud"], "Hoofdstuk 3 afmaken");
+        assert_eq!(posted["Lokatie"], "Thuis");
+    }
+
+    #[tokio::test]
+    async fn confirm_create_calendar_event_without_inhoud_omits_optional_fields() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/personen/123/afspraken"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({})))
+            .mount(&mock_server)
+            .await;
+
+        let store: PendingActionStore = Mutex::new(HashMap::new());
+        let mut client = client_with_token(&mock_server.uri());
+
+        let args = serde_json::json!({
+            "start": "2026-09-01T15:00:00",
+            "einde": "2026-09-01T16:00:00",
+            "omschrijving": "Werken aan verslag",
+            "inhoud": "   ",
+            "lokatie": ""
+        });
+        let result = execute_tool(&mut client, "create_calendar_event", &args, 123, &store).await;
+        assert!(result.success);
+
+        let action_id = result.data["action_id"].as_str().unwrap().to_string();
+        let action = store.lock().unwrap().remove(&action_id).unwrap();
+        execute_pending_action(&mut client, &action).await.expect("create succeeds");
+
+        let requests = mock_server.received_requests().await.expect("requests recorded");
+        assert_eq!(requests.len(), 1);
+        let posted: serde_json::Value =
+            serde_json::from_slice(&requests[0].body).expect("posted valid json");
+        assert_eq!(posted["InfoType"], 0);
+        assert!(posted.get("Inhoud").is_none(), "blank Inhoud must be omitted, got {}", posted);
+        assert!(posted.get("Lokatie").is_none(), "blank Lokatie must be omitted, got {}", posted);
     }
 }
 

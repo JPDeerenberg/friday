@@ -11,12 +11,7 @@ use crate::models::messages::{
 pub async fn get_message_folders(
     client: State<'_, SharedClient>,
 ) -> Result<Vec<MessagesFolder>, String> {
-    let ctx = {
-        let mut c = client.lock().await;
-        c.request_context().await.map_err(|e| e.to_string())?
-    };
-
-    let data = crate::client::get_with_context(&ctx, "berichten/mappen/alle")
+    let data = crate::client::get_with_shared(&client, "berichten/mappen/alle")
         .await
         .map_err(|e| e.to_string())?;
 
@@ -34,11 +29,6 @@ pub async fn get_messages(
     skip: Option<i32>,
     query: Option<String>,
 ) -> Result<Vec<Bericht>, String> {
-    let ctx = {
-        let mut c = client.lock().await;
-        c.request_context().await.map_err(|e| e.to_string())?
-    };
-
     let link = berichten_link.replace("/api/", "");
     let mut params = vec![];
     params.push(format!("top={}", top.unwrap_or(15)));
@@ -49,7 +39,7 @@ pub async fn get_messages(
     }
 
     let path = format!("{}?{}", link, params.join("&"));
-    let data = crate::client::get_with_context(&ctx, &path).await.map_err(|e| e.to_string())?;
+    let data = crate::client::get_with_shared(&client, &path).await.map_err(|e| e.to_string())?;
 
     let resp: MessagesResponse = serde_json::from_value(data).map_err(|e| e.to_string())?;
 
@@ -62,12 +52,8 @@ pub async fn get_message_detail(
     client: State<'_, SharedClient>,
     self_link: String,
 ) -> Result<Bericht, String> {
-    let ctx = {
-        let mut c = client.lock().await;
-        c.request_context().await.map_err(|e| e.to_string())?
-    };
     let link = self_link.replace("/api/", "");
-    let data = crate::client::get_with_context(&ctx, &link).await.map_err(|e| e.to_string())?;
+    let data = crate::client::get_with_shared(&client, &link).await.map_err(|e| e.to_string())?;
     serde_json::from_value(data).map_err(|e| e.to_string())
 }
 
@@ -229,14 +215,10 @@ pub async fn search_contacts(
     query: String,
     max_results: Option<i32>,
 ) -> Result<Vec<Contact>, String> {
-    let ctx = {
-        let mut c = client.lock().await;
-        c.request_context().await.map_err(|e| e.to_string())?
-    };
     let max = max_results.unwrap_or(250);
 
     let encoded: String = url::form_urlencoded::byte_serialize(query.as_bytes()).collect();
-    let data = crate::client::get_with_context(&ctx, &format!("contacten/personen?q={encoded}&top={max}&type=alle"))
+    let data = crate::client::get_with_shared(&client, &format!("contacten/personen?q={encoded}&top={max}&type=alle"))
         .await
         .map_err(|e| e.to_string())?;
 

@@ -90,7 +90,17 @@ class SyncWorker(appContext: Context, workerParams: WorkerParameters) :
         Log.d(TAG, "Sync result: ${if (resultString.length > 50 && !resultString.startsWith("ERROR") && !resultString.startsWith("AUTH_ERROR")) resultString.substring(0, 50) + "..." else resultString}")
 
         // Process the sync result and detect changes
-        if (resultString == "ERROR" || resultString.startsWith("AUTH_ERROR")) {
+        // Only transient failures retry: a dead session (logged out /
+        // refresh rejected / corrupt state) will never succeed on retry —
+        // retrying it every tick just burns battery. The alarm chain keeps
+        // firing anyway, so the next tick after a fresh login syncs again.
+        if (resultString.startsWith("AUTH_REJECTED") || resultString == "ERROR: NO_TOKENS" ||
+            resultString == "ERROR: NO_PERSON_ID") {
+            Log.w(TAG, "Sync not possible (no valid session), not retrying: $resultString")
+            return Result.success()
+        }
+        if (resultString == "ERROR" || resultString.startsWith("AUTH_ERROR") ||
+            resultString == "ERROR: STORE_UNAVAILABLE") {
             Log.w(TAG, "Sync failed with error: $resultString. Retrying later...")
             return Result.retry()
         }
@@ -101,10 +111,11 @@ class SyncWorker(appContext: Context, workerParams: WorkerParameters) :
     }
     
     private fun processSyncResult(resultString: String) {
-        // Skip if no tokens or critical error
-        if (resultString == "NO_TOKENS" || resultString == "ERROR" || 
-            resultString.startsWith("AUTH_ERROR") || resultString.startsWith("INVALID") ||
-            resultString == "NO_PERSON_ID") {
+        // Skip if no tokens or critical error (unreachable for the early-
+        // returned cases above, but kept as a safety net).
+        if (resultString == "NO_TOKENS" || resultString == "ERROR" ||
+            resultString.startsWith("ERROR:") || resultString.startsWith("AUTH_") ||
+            resultString.startsWith("INVALID") || resultString == "NO_PERSON_ID") {
             return
         }
         

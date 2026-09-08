@@ -311,14 +311,10 @@ async fn fetch_magister_events(
     start: &str,
     end: &str,
 ) -> Result<Vec<crate::models::calendar::CalendarEvent>, String> {
-    let ctx = {
-        let mut c = client.lock().await;
-        c.request_context().await.map_err(|e| e.to_string())?
-    };
     let start_date = if start.len() >= 10 { &start[0..10] } else { start };
     let end_date = if end.len() >= 10 { &end[0..10] } else { end };
     let events_url = format!("personen/{}/afspraken?tot={}&van={}", person_id, end_date, start_date);
-    let events_data = crate::client::get_with_context(&ctx, &events_url).await.map_err(|e| e.to_string())?;
+    let events_data = crate::client::get_with_shared(&client, &events_url).await.map_err(|e| e.to_string())?;
     let events_resp: crate::models::calendar::CalendarEventsResponse =
         serde_json::from_value(events_data).map_err(|e| e.to_string())?;
 
@@ -332,14 +328,10 @@ async fn fetch_magister_events_inner(
     start: &str,
     end: &str,
 ) -> Result<Vec<crate::models::calendar::CalendarEvent>, String> {
-    let ctx = {
-        let mut c = client.lock().await;
-        c.request_context().await.map_err(|e| e.to_string())?
-    };
     let start_date = if start.len() >= 10 { &start[0..10] } else { start };
     let end_date = if end.len() >= 10 { &end[0..10] } else { end };
     let events_url = format!("personen/{}/afspraken?tot={}&van={}", person_id, end_date, start_date);
-    let events_data = crate::client::get_with_context(&ctx, &events_url).await.map_err(|e| e.to_string())?;
+    let events_data = crate::client::get_with_shared(&client, &events_url).await.map_err(|e| e.to_string())?;
     let events_resp: crate::models::calendar::CalendarEventsResponse =
         serde_json::from_value(events_data).map_err(|e| e.to_string())?;
     Ok(events_resp.items)
@@ -351,14 +343,10 @@ async fn fetch_assignments_inner(
     start: &str,
     end: &str,
 ) -> Result<Vec<Value>, String> {
-    let ctx = {
-        let mut c = client.lock().await;
-        c.request_context().await.map_err(|e| e.to_string())?
-    };
     let start_date = if start.len() >= 10 { &start[0..10] } else { start };
     let end_date = if end.len() >= 10 { &end[0..10] } else { end };
     let path = format!("personen/{}/opdrachten?van={}&tot={}", person_id, start_date, end_date);
-    let data = crate::client::get_with_context(&ctx, &path).await.map_err(|e| e.to_string())?;
+    let data = crate::client::get_with_shared(&client, &path).await.map_err(|e| e.to_string())?;
     let items = data.get("Items").or_else(|| data.get("items")).cloned().unwrap_or(Value::Array(vec![]));
     Ok(items.as_array().cloned().unwrap_or_default())
 }
@@ -692,14 +680,10 @@ async fn fetch_assignments(
     start: &str,
     end: &str,
 ) -> Result<Vec<Value>, String> {
-    let ctx = {
-        let mut c = client.lock().await;
-        c.request_context().await.map_err(|e| e.to_string())?
-    };
     let start_date = if start.len() >= 10 { &start[0..10] } else { start };
     let end_date = if end.len() >= 10 { &end[0..10] } else { end };
     let path = format!("personen/{}/opdrachten?van={}&tot={}", person_id, start_date, end_date);
-    let data = crate::client::get_with_context(&ctx, &path).await.map_err(|e| e.to_string())?;
+    let data = crate::client::get_with_shared(&client, &path).await.map_err(|e| e.to_string())?;
     let items = data.get("Items").or_else(|| data.get("items")).cloned().unwrap_or(Value::Array(vec![]));
     Ok(items.as_array().cloned().unwrap_or_default())
 }

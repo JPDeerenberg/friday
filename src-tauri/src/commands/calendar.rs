@@ -13,11 +13,6 @@ pub async fn get_calendar_events(
     start: String, // yyyy-MM-dd
     end: String,   // yyyy-MM-dd
 ) -> Result<Vec<CalendarEvent>, String> {
-    let ctx = {
-        let mut c = client.lock().await;
-        c.request_context().await.map_err(|e| e.to_string())?
-    };
-
     // Fetch events and absences concurrently
     let start_date = if start.len() >= 10 { &start[0..10] } else { &start };
     let end_date = if end.len() >= 10 { &end[0..10] } else { &end };
@@ -25,9 +20,12 @@ pub async fn get_calendar_events(
     let events_url = format!("personen/{person_id}/afspraken?tot={end_date}&van={start_date}");
     let absences_url = format!("personen/{person_id}/absenties?tot={end_date}&van={start_date}");
 
+    // Each fetch snapshots its own context (short lock) and refreshes +
+    // retries once on a stale-token 401, so the two stay parallel without
+    // sharing one potentially-stale token.
     let (events_data, absences_data) = tokio::try_join!(
-        crate::client::get_with_context(&ctx, &events_url),
-        crate::client::get_with_context(&ctx, &absences_url)
+        crate::client::get_with_shared(&client, &events_url),
+        crate::client::get_with_shared(&client, &absences_url)
     ).map_err(|e| e.to_string())?;
 
     let events_resp: CalendarEventsResponse =
@@ -65,11 +63,7 @@ pub async fn get_calendar_event(
     person_id: i64,
     event_id: i64,
 ) -> Result<CalendarEvent, String> {
-    let ctx = {
-        let mut c = client.lock().await;
-        c.request_context().await.map_err(|e| e.to_string())?
-    };
-    let data = crate::client::get_with_context(&ctx, &format!("personen/{person_id}/afspraken/{event_id}"))
+    let data = crate::client::get_with_shared(&client, &format!("personen/{person_id}/afspraken/{event_id}"))
         .await
         .map_err(|e| e.to_string())?;
 
@@ -94,8 +88,11 @@ pub async fn create_calendar_event(
     let mut c = client.lock().await;
 
     // Magister validates Inhoud ↔ InfoType coherence: InfoType 0 (Geen) is
-    // invalid when Inhoud is non-empty. Derive InfoType from Inhoud so a
-    // personal appointment with content gets InfoType 1 (Huiswerk).
+    // invalid when Inhoud is non-empty (400 "ongeldig infotype"). The
+    // lesson-bound types 1-5 (Huiswerk/Proefwerk/...) are likewise rejected
+    // for a Type 1 (personal) appointment, so content gets InfoType 7
+    // (Notitie) — the generic free-text note type. This also keeps personal
+    // appointments out of the homework flows (they key off InfoType 1).
     let inhoud = inhoud.and_then(|s| {
         let t = s.trim().to_string();
         if t.is_empty() { None } else { Some(t) }
@@ -104,7 +101,7 @@ pub async fn create_calendar_event(
         let t = s.trim().to_string();
         if t.is_empty() { None } else { Some(t) }
     });
-    let info_type = if inhoud.is_some() { 1 } else { 0 };
+    let info_type = if inhoud.is_some() { 7 } else { 0 };
 
     let body = serde_json::to_value(CreateCalendarEvent {
         start,
@@ -118,6 +115,7 @@ pub async fn create_calendar_event(
         info_type,
     })
     .map_err(|e| e.to_string())?;
+    log::debug!("Creating calendar event: {}", body);
 
     c.post(&format!("personen/{person_id}/afspraken"), &body)
         .await
@@ -159,17 +157,12 @@ pub async fn get_absences(
     van: String,
     tot: String,
 ) -> Result<Vec<crate::models::calendar::Absence>, String> {
-    let ctx = {
-        let mut c = client.lock().await;
-        c.request_context().await.map_err(|e| e.to_string())?
-    };
-
     let start_date = if van.len() >= 10 { &van[0..10] } else { &van };
     let end_date = if tot.len() >= 10 { &tot[0..10] } else { &tot };
 
     let url = format!("personen/{}/absenties?van={}&tot={}", person_id, start_date, end_date);
     log::debug!("Fetching absences from: {}", url);
-    let response = crate::client::get_with_context(&ctx, &url).await.map_err(|e| e.to_string())?;
+    let response = crate::client::get_with_shared(&client, &url).await.map_err(|e| e.to_string())?;
 
     let res: crate::models::calendar::AbsencesResponse = serde_json::from_value(response.clone())
         .map_err(|e| {

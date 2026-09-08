@@ -168,11 +168,7 @@ pub async fn is_authenticated(client: State<'_, SharedClient>) -> Result<bool, S
 /// Get current account info.
 #[tauri::command]
 pub async fn get_account(client: State<'_, SharedClient>) -> Result<ApiAccount, String> {
-    let ctx = {
-        let mut c = client.lock().await;
-        c.request_context().await.map_err(|e| e.to_string())?
-    };
-    let data = crate::client::get_with_context(&ctx, "account?noCache=0")
+    let data = crate::client::get_with_shared(&client, "account?noCache=0")
         .await
         .map_err(|e| e.to_string())?;
     serde_json::from_value(data).map_err(|e| e.to_string())
@@ -184,13 +180,9 @@ pub async fn get_profile_info(
     client: State<'_, SharedClient>,
     person_id: i64,
 ) -> Result<crate::models::account::ProfileInfo, String> {
-    let ctx = {
-        let mut c = client.lock().await;
-        c.request_context().await.map_err(|e| e.to_string())?
-    };
     let url = format!("personen/{}/profiel", person_id);
     log::debug!("Fetching profile info: {}", url);
-    let response = crate::client::get_with_context(&ctx, &url).await.map_err(|e| {
+    let response = crate::client::get_with_shared(&client, &url).await.map_err(|e| {
         log::error!("Error fetching profile info: {}", e);
         e.to_string()
     })?;
@@ -208,13 +200,9 @@ pub async fn get_profile_addresses(
     client: State<'_, SharedClient>,
     person_id: i64,
 ) -> Result<Vec<crate::models::account::ProfileAddress>, String> {
-    let ctx = {
-        let mut c = client.lock().await;
-        c.request_context().await.map_err(|e| e.to_string())?
-    };
     let url = format!("personen/{}/adressen", person_id);
     log::debug!("Fetching profile addresses: {}", url);
-    let response = crate::client::get_with_context(&ctx, &url).await.map_err(|e| {
+    let response = crate::client::get_with_shared(&client, &url).await.map_err(|e| {
         log::error!("Error fetching addresses: {}", e);
         e.to_string()
     })?;
@@ -228,13 +216,9 @@ pub async fn get_career_info(
     client: State<'_, SharedClient>,
     person_id: i64,
 ) -> Result<crate::models::account::ProfileCareer, String> {
-    let ctx = {
-        let mut c = client.lock().await;
-        c.request_context().await.map_err(|e| e.to_string())?
-    };
     let url = format!("personen/{}/opleidinggegevensprofiel", person_id);
     log::debug!("Fetching career info: {}", url);
-    let response = crate::client::get_with_context(&ctx, &url).await.map_err(|e| {
+    let response = crate::client::get_with_shared(&client, &url).await.map_err(|e| {
         log::error!("Error fetching career info: {}", e);
         e.to_string()
     })?;
@@ -262,13 +246,9 @@ pub async fn get_profile_picture(
     client: State<'_, SharedClient>,
     person_id: i64,
 ) -> Result<Option<String>, String> {
-    let ctx = {
-        let mut c = client.lock().await;
-        c.request_context().await.map_err(|e| e.to_string())?
-    };
     let url = format!("leerlingen/{person_id}/foto");
     log::debug!("Fetching profile picture: {}", url);
-    match crate::client::get_bytes_with_context(&ctx, &url).await {
+    match crate::client::get_bytes_with_shared(&client, &url).await {
         Ok(Some(bytes)) => {
             use base64::{engine::general_purpose::STANDARD, Engine};
             log::debug!("Got profile picture bytes: {}", bytes.len());
@@ -326,16 +306,31 @@ pub async fn restore_session(
     // Android keyring does JNI; keep it off the async executor so we don't
     // block/panic a tokio worker during startup.
     let path_for_load = path.clone();
-    let token_set = tokio::task::spawn_blocking(move || {
-        crate::client::TokenSetPersistence::load(&path_for_load)
-            .or_else(|| crate::client::migrate_legacy_tokens(&path_for_load))
+    let loaded: Result<Option<TokenSet>, String> = tokio::task::spawn_blocking(move || {
+        // A never-migrated legacy tokens.json (full TokenSet inline) parses
+        // as metadata but has no keyring secrets yet — migrate first so it
+        // isn't misread as "no session". On modern files this is a cheap
+        // read-only detection (no writes).
+        if let Some(ts) = crate::client::migrate_legacy_tokens(&path_for_load) {
+            return Ok(Some(ts));
+        }
+        crate::client::TokenSetPersistence::load_detailed(&path_for_load)
     })
     .await
     .map_err(|e| format!("restore_session join error: {e}"))?;
 
-    let token_set = match token_set {
-        Some(ts) => ts,
-        None => return Ok(RestoreSessionStatus::LoggedOut),
+    // A store failure (corrupt tokens.json, keyring backend error, Android
+    // ndk-context not ready yet at cold boot) means "maybe a session, can't
+    // tell" — keep everything on disk and report unavailable so the UI
+    // offers a retry instead of dropping a healthy session to the login
+    // screen. Only a definitive "nothing stored" is a logout.
+    let token_set = match loaded {
+        Ok(Some(ts)) => ts,
+        Ok(None) => return Ok(RestoreSessionStatus::LoggedOut),
+        Err(e) => {
+            log::warn!("restore_session: token store unreadable ({}), keeping tokens", e);
+            return Ok(RestoreSessionStatus::Unavailable);
+        }
     };
 
     let mut c = client.lock().await;

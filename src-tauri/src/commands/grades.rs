@@ -12,11 +12,6 @@ pub async fn get_schoolyears(
     start: Option<String>, // yyyy-01-01
     end: Option<String>,   // yyyy-01-01
 ) -> Result<Vec<Schoolyear>, String> {
-    let ctx = {
-        let mut c = client.lock().await;
-        c.request_context().await.map_err(|e| e.to_string())?
-    };
-
     let path = if let (Some(start), Some(end)) = (&start, &end) {
         let start_date = if start.len() >= 10 { &start[0..10] } else { start };
         let end_date = if end.len() >= 10 { &end[0..10] } else { end };
@@ -25,7 +20,7 @@ pub async fn get_schoolyears(
         format!("leerlingen/{person_id}/aanmeldingen/")
     };
 
-    let data = crate::client::get_with_context(&ctx, &path).await.map_err(|e| e.to_string())?;
+    let data = crate::client::get_with_shared(&client, &path).await.map_err(|e| e.to_string())?;
 
     // Handle multiple possible response formats:
     // 1. {"Items": [...]} / {"items": [...]} — paginated wrapper
@@ -55,12 +50,7 @@ pub async fn get_grades(
     schoolyear_id: i64,
     einde: String, // peildatum
 ) -> Result<Vec<Grade>, String> {
-    let ctx = {
-        let mut c = client.lock().await;
-        c.request_context().await.map_err(|e| e.to_string())?
-    };
-
-    // Magister requires YYYY-MM-DD for peildatum. 
+    // Magister requires YYYY-MM-DD for peildatum.
     // Passing full ISO string (with T and Z) often causes 500 errors.
     let peildatum = if einde.len() > 10 {
         &einde[0..10]
@@ -77,7 +67,7 @@ pub async fn get_grades(
          &peildatum={peildatum}"
     );
 
-    let data = crate::client::get_with_context(&ctx, &path).await.map_err(|e| e.to_string())?;
+    let data = crate::client::get_with_shared(&client, &path).await.map_err(|e| e.to_string())?;
 
     // Handle multiple possible response formats:
     // 1. {"Items": [...]} / {"items": [...]} — paginated wrapper
@@ -130,17 +120,12 @@ pub async fn get_grade_extra_info(
     schoolyear_id: i64,
     kolom_id: i64,
 ) -> Result<GradeExtraInfo, String> {
-    let ctx = {
-        let mut c = client.lock().await;
-        c.request_context().await.map_err(|e| e.to_string())?
-    };
-
     let path = format!(
         "personen/{person_id}/aanmeldingen/{schoolyear_id}/\
          cijfers/extracijferkolominfo/{kolom_id}"
     );
 
-    let data = crate::client::get_with_context(&ctx, &path).await.map_err(|e| e.to_string())?;
+    let data = crate::client::get_with_shared(&client, &path).await.map_err(|e| e.to_string())?;
     serde_json::from_value(data).map_err(|e| e.to_string())
 }
 
@@ -220,15 +205,11 @@ pub async fn get_recent_grades(
     person_id: i64,
     top: Option<i32>,
 ) -> Result<Vec<Grade>, String> {
-    let ctx = {
-        let mut c = client.lock().await;
-        c.request_context().await.map_err(|e| e.to_string())?
-    };
     let limit = top.unwrap_or(5);
     let path = format!("personen/{person_id}/cijfers/laatste?top={limit}&skip=0");
 
     log::debug!("Fetching recent grades: {}", path);
-    let data = crate::client::get_with_context(&ctx, &path).await.map_err(|e| {
+    let data = crate::client::get_with_shared(&client, &path).await.map_err(|e| {
         log::error!("Error fetching recent grades: {}", e);
         e.to_string()
     })?;

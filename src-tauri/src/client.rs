@@ -25,6 +25,7 @@ pub struct TokenSet {
 impl TokenSet {
     pub fn from_response(resp: &TokenResponse, api_endpoint: &str) -> Self {
         let expires_in = resp.expires_in.unwrap_or(3600);
+        log::debug!("Token response: expires_in={}s", expires_in);
         Self {
             access_token: resp.access_token.clone(),
             id_token: resp.id_token.clone(),
@@ -36,11 +37,17 @@ impl TokenSet {
         }
     }
 
-    /// True once within 30s of actual expiry, not just past it — refreshes
-    /// a little early so a request that starts right at the edge doesn't
-    /// get a token that's already (or about to be) rejected by the server.
+    /// True once within the buffer window of actual expiry, not just past
+    /// it — refreshes a little early so a request that starts right at the
+    /// edge doesn't get a token that's already (or about to be) rejected
+    /// by the server. The buffer is deliberately generous (2 min): Magister
+    /// access tokens are short-lived and on Android a sync alarm can fire
+    /// right at the edge after Doze. A stale-token 401 that still slips
+    /// through (server-side revoke before local expiry) is recovered via
+    /// `TokenExpiredRetryable` + forced refresh, not by widening this
+    /// further.
     pub fn is_expired(&self) -> bool {
-        const EXPIRY_BUFFER_SECS: i64 = 30;
+        const EXPIRY_BUFFER_SECS: i64 = 120;
         Utc::now() + chrono::Duration::seconds(EXPIRY_BUFFER_SECS) >= self.expires_at
     }
 }
@@ -110,21 +117,62 @@ impl TokenSetPersistence {
         }
     }
 
-    /// Load both halves. Returns `None` if no usable session exists.
-    pub fn load(data_dir: &Path) -> Option<TokenSet> {
-        let meta: TokenMetadata = serde_json::from_str(&std::fs::read_to_string(data_dir.join("tokens.json")).ok()?).ok()?;
-        let access_token = secure_store::get_secret(secure_store::USER_ACCESS_TOKEN).ok().flatten()?;
-        let id_token = secure_store::get_secret(secure_store::USER_ID_TOKEN).ok().flatten()?;
-        let refresh_token = secure_store::get_secret(secure_store::USER_REFRESH_TOKEN).ok().flatten()?;
-        Some(TokenSet {
-            access_token,
-            id_token,
-            refresh_token,
+    /// Load both halves, distinguishing "no stored session" from "store
+    /// unreadable". Callers that decide between logged-out vs offline must
+    /// use this, not `load()`.
+    ///
+    /// - `Ok(None)` — genuinely no session: no `tokens.json` metadata, or
+    ///   metadata exists but the keyring holds none of the three secrets
+    ///   (`NoEntry` — e.g. wiped store). Safe to treat as logged-out.
+    /// - `Err(msg)` — a session may exist but could not be read (corrupt
+    ///   metadata file, partial keyring state, keyring backend failure or
+    ///   Android ndk-context not ready). Tokens must be kept on disk and
+    ///   the UI must report `unavailable` (retry), never force re-login
+    ///   for what is usually a transient store hiccup at cold boot.
+    pub fn load_detailed(data_dir: &Path) -> Result<Option<TokenSet>, String> {
+        let raw = match std::fs::read_to_string(data_dir.join("tokens.json")) {
+            Ok(raw) => raw,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(e) => return Err(format!("tokens.json unreadable: {e}")),
+        };
+        let meta: TokenMetadata =
+            serde_json::from_str(&raw).map_err(|e| format!("tokens.json corrupt: {e}"))?;
+        let mut secrets = Vec::with_capacity(3);
+        let mut missing = 0;
+        for username in [
+            secure_store::USER_ACCESS_TOKEN,
+            secure_store::USER_ID_TOKEN,
+            secure_store::USER_REFRESH_TOKEN,
+        ] {
+            match secure_store::get_secret(username) {
+                Ok(Some(v)) => secrets.push(v),
+                Ok(None) => missing += 1,
+                Err(e) => return Err(format!("keyring {username} unreadable: {e}")),
+            }
+        }
+        if missing == 3 {
+            // Metadata without any secrets (e.g. wiped keyring): no session.
+            return Ok(None);
+        }
+        if missing > 0 {
+            return Err("keyring incomplete: some secrets missing".to_string());
+        }
+        let mut it = secrets.into_iter();
+        Ok(Some(TokenSet {
+            access_token: it.next().unwrap_or_default(),
+            id_token: it.next().unwrap_or_default(),
+            refresh_token: it.next().unwrap_or_default(),
             expires_at: meta.expires_at,
             api_endpoint: meta.api_endpoint,
             person_id: meta.person_id,
             account_uuid: meta.account_uuid,
-        })
+        }))
+    }
+
+    /// Load both halves. Returns `None` if no usable session exists.
+    /// Prefer `load_detailed()` wherever logged-out vs unavailable matters.
+    pub fn load(data_dir: &Path) -> Option<TokenSet> {
+        Self::load_detailed(data_dir).ok().flatten()
     }
 
     /// Remove the metadata file and every keyring entry.
@@ -219,12 +267,12 @@ pub fn migrate_legacy_tokens(data_dir: &Path) -> Option<TokenSet> {
 /// commands/grades.rs) — this just formalizes it as a reusable primitive
 /// instead of a one-off.
 ///
-/// Deliberately scoped to GET only, and deliberately NOT used for every
-/// command in the app — see `get_with_context()` below for what's traded
-/// away by not holding the lock, and why that trade is fine for read-only
-/// fetches but not for the OAuth login flow or any write (POST/PUT/PATCH/
-/// DELETE), which all still use the original, fully-serialized `&mut self`
-/// methods unchanged.
+/// Deliberately scoped to GET only, and deliberately NOT used for the
+/// OAuth login flow or any write (POST/PUT/PATCH/DELETE), which all still
+/// use the original, fully-serialized `&mut self` methods unchanged.
+/// Command handlers should prefer `get_with_shared()` /
+/// `get_bytes_with_shared()`, which snapshot a context and add one
+/// forced-refresh-and-retry on a stale-token 401.
 #[derive(Clone)]
 pub struct RequestContext {
     http: reqwest::Client,
@@ -248,18 +296,12 @@ impl RequestContext {
 /// error-handling logic, just operating on cloned values instead of
 /// `&mut self`.
 ///
-/// One deliberate behavioral difference from `MagisterClient::get()`: this
-/// does NOT handle the "401 mid-request, token expired right as we sent
-/// the request" case by refreshing and retrying — it can't, since it has
-/// no way to write a refreshed token back (no lock, no `&mut self`). It
-/// just returns `ClientError::Unauthorized`, the same as every non-GET
-/// method (`put`, `patch`, `delete_with_body`) already does today for this
-/// exact race. Callers using this path are the app's read-only,
-/// best-effort parallel fetches (dashboard-style), which already treat
-/// each fetch independently with its own error handling — a stale-token
-/// failure here surfaces as a normal error, same as any other, and a
-/// retry (or just reopening the page) gets a fresh context with a valid
-/// token.
+/// 401 handling: a 401 whose body shows the access token itself expired
+/// returns `ClientError::TokenExpiredRetryable` (use `get_with_shared()`,
+/// which refreshes and retries once); any other 401 returns
+/// `ClientError::Unauthorized`. Prefer `get_with_shared()` over calling
+/// this directly — a raw `TokenExpiredRetryable` must never reach the
+/// frontend.
 pub async fn get_with_context(ctx: &RequestContext, path: &str) -> Result<serde_json::Value, ClientError> {
     let url = ctx.build_url(path);
 
@@ -277,6 +319,9 @@ pub async fn get_with_context(ctx: &RequestContext, path: &str) -> Result<serde_
 
         if resp.status().as_u16() == 401 {
             let text = resp.text().await.unwrap_or_default();
+            if MagisterClient::is_expired_token_body(&text) {
+                return Err(ClientError::TokenExpiredRetryable(text));
+            }
             return Err(ClientError::Unauthorized(text));
         }
 
@@ -302,9 +347,10 @@ pub async fn get_with_context(ctx: &RequestContext, path: &str) -> Result<serde_
     }
 }
 
-/// Byte-returning counterpart to `get_with_context()` — same rationale and
-/// same 401 behavior difference from `MagisterClient::get_bytes()`. Used
-/// for e.g. the profile picture fetch.
+/// Byte-returning counterpart to `get_with_context()` — same rationale.
+/// A 401 with an expired-token body returns
+/// `ClientError::TokenExpiredRetryable` (see `get_bytes_with_shared()`).
+/// Used for e.g. the profile picture fetch.
 pub async fn get_bytes_with_context(ctx: &RequestContext, path: &str) -> Result<Option<Vec<u8>>, ClientError> {
     let url = ctx.build_url(path);
 
@@ -315,6 +361,14 @@ pub async fn get_bytes_with_context(ctx: &RequestContext, path: &str) -> Result<
         .send()
         .await
         .map_err(|e| ClientError::RequestFailed(e.to_string()))?;
+
+    if resp.status().as_u16() == 401 {
+        let text = resp.text().await.unwrap_or_default();
+        if MagisterClient::is_expired_token_body(&text) {
+            return Err(ClientError::TokenExpiredRetryable(text));
+        }
+        return Err(ClientError::Unauthorized(text));
+    }
 
     if resp.status().as_u16() == 404 {
         return Ok(None);
@@ -333,6 +387,90 @@ pub async fn get_bytes_with_context(ctx: &RequestContext, path: &str) -> Result<
             .map_err(|e| ClientError::ParseFailed(e.to_string()))?
             .to_vec(),
     ))
+}
+
+/// Mark the in-memory token expired and run a full refresh+persist cycle.
+/// Used by the shared retry helpers after a `TokenExpiredRetryable`.
+async fn force_refresh(client: &SharedClient) -> Result<(), ClientError> {
+    let mut c = client.lock().await;
+    if let Some(ts) = c.token_set.as_mut() {
+        ts.expires_at = Utc::now();
+    }
+    c.ensure_valid_token().await?;
+    Ok(())
+}
+
+/// Lock-free GET with one forced-refresh-and-retry on an expired-token
+/// 401 — the race `get_with_context()` alone cannot recover from (no lock
+/// to write a refreshed token back). This is the fix for the recurring
+/// `Unauthorized: SecurityToken Expired` errors: the server can expire or
+/// revoke the access token before the local `expires_at` (clock skew,
+/// short `expires_in`, Doze-delayed Android sync), in which case
+/// `request_context()` hands out a stale token and the first attempt 401s.
+///
+/// Behavior: snapshot a context (short lock) → fetch unlocked → on
+/// `TokenExpiredRetryable`, force a refresh (reuses the cross-process
+/// refresh file-lock in `ensure_valid_token`, so UI and background sync
+/// still can't burn each other's rotated refresh token) and retry once
+/// with a fresh context. Any other error — including a second expired
+/// 401, which is mapped to plain `Unauthorized` — propagates unchanged,
+/// so the frontend never sees the internal retryable variant.
+pub async fn get_with_shared(
+    client: &SharedClient,
+    path: &str,
+) -> Result<serde_json::Value, ClientError> {
+    let ctx = {
+        let mut c = client.lock().await;
+        c.request_context().await?
+    };
+    match get_with_context(&ctx, path).await {
+        Err(ClientError::TokenExpiredRetryable(body)) => {
+            log::info!(
+                "401 expired-token on shared GET {}, forcing refresh and retrying once",
+                path
+            );
+            force_refresh(client).await?;
+            let ctx = {
+                let mut c = client.lock().await;
+                c.request_context().await?
+            };
+            get_with_context(&ctx, path).await.map_err(|e| match e {
+                ClientError::TokenExpiredRetryable(b) => ClientError::Unauthorized(b),
+                other => other,
+            })
+        }
+        other => other,
+    }
+}
+
+/// Byte-returning counterpart to `get_with_shared()` — same
+/// forced-refresh-and-retry contract. Used for e.g. the profile picture.
+pub async fn get_bytes_with_shared(
+    client: &SharedClient,
+    path: &str,
+) -> Result<Option<Vec<u8>>, ClientError> {
+    let ctx = {
+        let mut c = client.lock().await;
+        c.request_context().await?
+    };
+    match get_bytes_with_context(&ctx, path).await {
+        Err(ClientError::TokenExpiredRetryable(body)) => {
+            log::info!(
+                "401 expired-token on shared BYTES GET {}, forcing refresh and retrying once",
+                path
+            );
+            force_refresh(client).await?;
+            let ctx = {
+                let mut c = client.lock().await;
+                c.request_context().await?
+            };
+            get_bytes_with_context(&ctx, path).await.map_err(|e| match e {
+                ClientError::TokenExpiredRetryable(b) => ClientError::Unauthorized(b),
+                other => other,
+            })
+        }
+        other => other,
+    }
 }
 
 impl MagisterClient {
@@ -523,6 +661,7 @@ impl MagisterClient {
             (ts.refresh_token.clone(), ts.api_endpoint.clone(), ts.person_id, ts.account_uuid.clone())
         };
 
+        log::debug!("Access token expired or missing, refreshing via refresh_token grant");
         let resp = AuthFlow::refresh_token(&refresh_token).await.map_err(|e| match e {
             crate::auth::AuthError::TokenRefreshRejected { status, body } => {
                 ClientError::TokenRefreshRejected(format!("{status}: {body}"))
@@ -581,7 +720,7 @@ impl MagisterClient {
     /// case worth a forced-refresh-and-retry. Shared so every verb method
     /// recognizes the same server error text instead of each hand-rolling
     /// (and risking drifting on) the same string match.
-    fn is_expired_token_body(text: &str) -> bool {
+    pub(crate) fn is_expired_token_body(text: &str) -> bool {
         text.contains("SecurityToken Expired") || text.contains("invalid_token")
     }
 
@@ -996,6 +1135,16 @@ pub enum ClientError {
     ParseFailed(String),
     #[error("Unauthorized: {0}")]
     Unauthorized(String),
+    /// A 401 whose body shows the access token itself expired
+    /// (`SecurityToken Expired` / `invalid_token`) on the lock-free read
+    /// path (`get_with_context` / `get_bytes_with_context`). The fetcher
+    /// cannot refresh (no lock), so this bubbles to `get_with_shared` /
+    /// `get_bytes_with_shared`, which force a refresh and retry once, then
+    /// map a second failure to plain `Unauthorized`. This variant must
+    /// never reach the frontend — its display string is intentionally
+    /// identical to `Unauthorized` as a backstop.
+    #[error("Unauthorized: {0}")]
+    TokenExpiredRetryable(String),
     #[error("Rate limited — please wait")]
     RateLimited,
     #[error("API error ({0}): {1}")]
@@ -1180,5 +1329,90 @@ mod tests {
             Err(ClientError::NotAuthenticated) => {}
             _ => panic!("Expected NotAuthenticated, got {:?}", result),
         }
+    }
+
+    fn test_request_context(endpoint: &str) -> crate::client::RequestContext {
+        crate::client::RequestContext {
+            http: crate::tls::new_client(),
+            access_token: "stale_access_token".to_string(),
+            api_endpoint: endpoint.to_string(),
+        }
+    }
+
+    /// A 401 whose body shows the access token expired must surface as
+    /// `TokenExpiredRetryable` (so `get_with_shared` refreshes + retries)
+    /// instead of a terminal `Unauthorized`.
+    #[tokio::test]
+    async fn test_get_with_context_expired_token_is_retryable() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path("/api/test"))
+            .respond_with(ResponseTemplate::new(401).set_body_string("SecurityToken Expired"))
+            .mount(&mock_server)
+            .await;
+
+        let ctx = test_request_context(&mock_server.uri());
+        match crate::client::get_with_context(&ctx, "/api/test").await {
+            Err(ClientError::TokenExpiredRetryable(_)) => {}
+            other => panic!("Expected TokenExpiredRetryable, got {:?}", other),
+        }
+
+        match crate::client::get_bytes_with_context(&ctx, "/api/test").await {
+            Err(ClientError::TokenExpiredRetryable(_)) => {}
+            other => panic!("Expected TokenExpiredRetryable (bytes), got {:?}", other),
+        }
+    }
+
+    /// A 401 for any other reason stays a terminal `Unauthorized` — no
+    /// refresh, no retry.
+    #[tokio::test]
+    async fn test_get_with_context_plain_401_is_unauthorized() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path("/api/test"))
+            .respond_with(ResponseTemplate::new(401).set_body_string("Access denied"))
+            .mount(&mock_server)
+            .await;
+
+        let ctx = test_request_context(&mock_server.uri());
+        match crate::client::get_with_context(&ctx, "/api/test").await {
+            Err(ClientError::Unauthorized(_)) => {}
+            other => panic!("Expected Unauthorized, got {:?}", other),
+        }
+
+        match crate::client::get_bytes_with_context(&ctx, "/api/test").await {
+            Err(ClientError::Unauthorized(_)) => {}
+            other => panic!("Expected Unauthorized (bytes), got {:?}", other),
+        }
+    }
+
+    fn test_temp_dir(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("friday-test-{}-{}", std::process::id(), name));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("create temp dir");
+        dir
+    }
+
+    /// No metadata file at all means "no session" — must NOT look like a
+    /// store failure (and must not touch the keyring at all).
+    #[test]
+    fn test_load_detailed_missing_file_is_none() {
+        let dir = test_temp_dir("missing");
+        let result = crate::client::TokenSetPersistence::load_detailed(&dir);
+        assert!(matches!(result, Ok(None)), "unexpected: {:?}", result);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A corrupt metadata file means "maybe a session, can't tell" — the
+    /// caller must treat it as unavailable (retry), never as logged-out.
+    #[test]
+    fn test_load_detailed_corrupt_file_is_err() {
+        let dir = test_temp_dir("corrupt");
+        std::fs::write(dir.join("tokens.json"), "not json {{{").expect("write corrupt file");
+        let result = crate::client::TokenSetPersistence::load_detailed(&dir);
+        assert!(result.is_err(), "unexpected: {:?}", result);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

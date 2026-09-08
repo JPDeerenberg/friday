@@ -6,7 +6,7 @@ use jni::{
 };
 #[cfg(target_os = "android")]
 use tokio::runtime::{Builder, Runtime};
-use crate::client::{get_with_context, MagisterClient, RequestContext};
+use crate::client::{get_with_context, ClientError, MagisterClient, RequestContext};
 use chrono::Utc;
 use std::sync::{Mutex, OnceLock};
 
@@ -427,20 +427,29 @@ async fn do_sync(data_dir: &str) -> String {
     log::debug!("FridaySync (Rust): app_data_dir: {:?}", dir);
 
     // Load tokens from secure storage (keyring), migrating any legacy plaintext
-    // tokens.json left over from before this feature.
-    let token_set = TokenSetPersistence::load(&dir)
-        .or_else(|| migrate_legacy_tokens(&dir))
-        .map(|ts| {
+    // tokens.json left over from before this feature. A transient store
+    // failure (keyring/ndk hiccup) is retriable; a definitive "nothing
+    // stored" (logged out) or a dead refresh token is not — the Kotlin
+    // side only retries transient failures.
+    let token_set = match TokenSetPersistence::load_detailed(&dir) {
+        Ok(Some(ts)) => {
             log::debug!("FridaySync (Rust): ✓ Tokens loaded from secure storage");
             ts
-        });
-
-    let token_set = match token_set {
-        Some(ts) => ts,
-        None => {
-            log::error!("FridaySyncWorker (Rust): ERROR: Could not load tokens from secure storage (checked data_dir {:?})", dir);
-            return "ERROR: NO_TOKENS".to_string()
+        }
+        Ok(None) => match migrate_legacy_tokens(&dir) {
+            Some(ts) => {
+                log::debug!("FridaySync (Rust): ✓ Legacy tokens migrated");
+                ts
+            }
+            None => {
+                log::error!("FridaySyncWorker (Rust): ERROR: Could not load tokens from secure storage (checked data_dir {:?})", dir);
+                return "ERROR: NO_TOKENS".to_string();
+            }
         },
+        Err(e) => {
+            log::warn!("FridaySyncWorker (Rust): token store unreadable ({}), will retry later", e);
+            return "ERROR: STORE_UNAVAILABLE".to_string();
+        }
     };
 
     let mut client = MagisterClient::new();
@@ -450,6 +459,11 @@ async fn do_sync(data_dir: &str) -> String {
     log::debug!("FridaySync (Rust): Ensuring valid token...");
     if let Err(e) = client.ensure_valid_token().await {
         log::error!("FridaySync (Rust): ERROR: Token validation failed: {}", e);
+        // A rejected refresh (invalid_grant — logged out elsewhere) will
+        // never succeed on retry; only transient failures should retry.
+        if e.is_rejected() {
+            return format!("AUTH_REJECTED: {}", e);
+        }
         return format!("AUTH_ERROR: {}", e);
     }
     log::debug!("FridaySync (Rust): ✓ Token is valid");
@@ -478,6 +492,9 @@ async fn do_sync(data_dir: &str) -> String {
         Ok(ctx) => ctx,
         Err(e) => {
             log::error!("FridaySync (Rust): ERROR: Failed to build request context: {}", e);
+            if e.is_rejected() {
+                return format!("AUTH_REJECTED: {}", e);
+            }
             return format!("AUTH_ERROR: {}", e);
         }
     };
@@ -486,12 +503,50 @@ async fn do_sync(data_dir: &str) -> String {
     // Each fetch takes ~max(request latency) instead of the sum of all four.
     let today = today_string();
     let tomorrow = tomorrow_string();
-    let (messages_result, grades_result, assignments_result, calendar_result) = tokio::join!(
+    let (mut messages_result, mut grades_result, mut assignments_result, mut calendar_result) = tokio::join!(
         fetch_messages(&ctx),
         fetch_recent_grades(&ctx, person_id),
         fetch_assignments(&ctx, person_id),
         fetch_calendar(&ctx, person_id, &today, &tomorrow),
     );
+
+    // The snapshot above can go stale if the server expires the token
+    // mid-sync (same race as the UI parallel reads): force one refresh and
+    // retry just the failed fetches once instead of banking empty data.
+    let stale = [&messages_result, &grades_result, &assignments_result, &calendar_result]
+        .iter()
+        .any(|r| matches!(r, Err(ClientError::TokenExpiredRetryable(_))));
+    if stale {
+        log::info!("FridaySync (Rust): stale token mid-sync, forcing refresh and retrying failed fetches once");
+        if let Some(ts) = client.token_set.as_mut() {
+            ts.expires_at = Utc::now();
+        }
+        match client.ensure_valid_token().await {
+            Ok(_) => match client.request_context().await {
+                Ok(new_ctx) => {
+                    if matches!(messages_result, Err(ClientError::TokenExpiredRetryable(_))) {
+                        messages_result = fetch_messages(&new_ctx).await;
+                    }
+                    if matches!(grades_result, Err(ClientError::TokenExpiredRetryable(_))) {
+                        grades_result = fetch_recent_grades(&new_ctx, person_id).await;
+                    }
+                    if matches!(assignments_result, Err(ClientError::TokenExpiredRetryable(_))) {
+                        assignments_result = fetch_assignments(&new_ctx, person_id).await;
+                    }
+                    if matches!(calendar_result, Err(ClientError::TokenExpiredRetryable(_))) {
+                        calendar_result = fetch_calendar(&new_ctx, person_id, &today, &tomorrow).await;
+                    }
+                }
+                Err(e) => log::warn!("FridaySync (Rust): retry context failed: {}", e),
+            },
+            Err(e) => {
+                log::error!("FridaySync (Rust): refresh during sync retry failed: {}", e);
+                if e.is_rejected() {
+                    return format!("AUTH_REJECTED: {}", e);
+                }
+            }
+        }
+    }
     let messages_result = messages_result.unwrap_or_else(|e| {
         log::warn!("FridaySync (Rust): fetch_messages failed: {}", e);
         serde_json::json!([])
@@ -538,7 +593,7 @@ fn tomorrow_string() -> String {
     (Utc::now() + chrono::Duration::days(1)).format("%Y-%m-%d").to_string()
 }
 
-async fn fetch_messages(ctx: &RequestContext) -> Result<serde_json::Value, String> {
+async fn fetch_messages(ctx: &RequestContext) -> Result<serde_json::Value, ClientError> {
     match get_with_context(ctx, "berichten/mappen/1/berichten?top=50&skip=0").await {
         Ok(data) => {
             if let Some(items) = data.get("items").or(data.get("Items")).filter(|v| v.is_array()) {
@@ -547,11 +602,11 @@ async fn fetch_messages(ctx: &RequestContext) -> Result<serde_json::Value, Strin
                 Ok(data)
             }
         },
-        Err(e) => Err(e.to_string())
+        Err(e) => Err(e)
     }
 }
 
-async fn fetch_recent_grades(ctx: &RequestContext, person_id: i64) -> Result<serde_json::Value, String> {
+async fn fetch_recent_grades(ctx: &RequestContext, person_id: i64) -> Result<serde_json::Value, ClientError> {
     let url = format!("personen/{}/cijfers/laatste?top=50&skip=0", person_id);
     match get_with_context(ctx, &url).await {
         Ok(data) => {
@@ -562,11 +617,11 @@ async fn fetch_recent_grades(ctx: &RequestContext, person_id: i64) -> Result<ser
                 Ok(data)
             }
         },
-        Err(e) => Err(e.to_string())
+        Err(e) => Err(e)
     }
 }
 
-async fn fetch_assignments(ctx: &RequestContext, person_id: i64) -> Result<serde_json::Value, String> {
+async fn fetch_assignments(ctx: &RequestContext, person_id: i64) -> Result<serde_json::Value, ClientError> {
     // Get assignments for next 14 days
     let today = Utc::now().format("%Y-%m-%d").to_string();
     let two_weeks = (Utc::now() + chrono::Duration::days(14)).format("%Y-%m-%d").to_string();
@@ -579,11 +634,11 @@ async fn fetch_assignments(ctx: &RequestContext, person_id: i64) -> Result<serde
                 Ok(data)
             }
         },
-        Err(e) => Err(e.to_string())
+        Err(e) => Err(e)
     }
 }
 
-async fn fetch_calendar(ctx: &RequestContext, person_id: i64, from: &str, to: &str) -> Result<serde_json::Value, String> {
+async fn fetch_calendar(ctx: &RequestContext, person_id: i64, from: &str, to: &str) -> Result<serde_json::Value, ClientError> {
     let url = format!("personen/{}/afspraken?van={}&tot={}", person_id, from, to);
     match get_with_context(ctx, &url).await {
         Ok(data) => {
@@ -593,6 +648,6 @@ async fn fetch_calendar(ctx: &RequestContext, person_id: i64, from: &str, to: &s
                 Ok(data)
             }
         },
-        Err(e) => Err(e.to_string())
+        Err(e) => Err(e)
     }
 }

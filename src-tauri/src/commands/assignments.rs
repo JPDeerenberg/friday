@@ -11,17 +11,12 @@ pub async fn get_assignments(
     start: String, // yyyy-MM-dd
     end: String,   // yyyy-MM-dd
 ) -> Result<Vec<Assignment>, String> {
-    let ctx = {
-        let mut c = client.lock().await;
-        c.request_context().await.map_err(|e| e.to_string())?
-    };
-
     let start_date = if start.len() >= 10 { &start[0..10] } else { &start };
     let end_date = if end.len() >= 10 { &end[0..10] } else { &end };
 
     let url = format!("personen/{person_id}/opdrachten?van={start_date}&tot={end_date}");
 
-    let data = crate::client::get_with_context(&ctx, &url)
+    let data = crate::client::get_with_shared(&client, &url)
         .await
         .map_err(|e| e.to_string())?;
 
@@ -36,12 +31,8 @@ pub async fn get_assignment_detail(
     client: State<'_, SharedClient>,
     self_url: String,
 ) -> Result<Assignment, String> {
-    let ctx = {
-        let mut c = client.lock().await;
-        c.request_context().await.map_err(|e| e.to_string())?
-    };
     let url = self_url.replace("/api/", "");
-    let data = crate::client::get_with_context(&ctx, &url).await.map_err(|e| e.to_string())?;
+    let data = crate::client::get_with_shared(&client, &url).await.map_err(|e| e.to_string())?;
     serde_json::from_value(data).map_err(|e| e.to_string())
 }
 
