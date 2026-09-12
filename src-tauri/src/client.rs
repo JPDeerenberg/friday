@@ -646,11 +646,29 @@ impl MagisterClient {
         // Someone else may have already refreshed (and saved) while we
         // waited for the lock — reload from disk before assuming we still
         // need to hit the network ourselves.
+        //
+        // Bug fix: this must only short-circuit when the disk copy is
+        // actually a *different* token than the one we already hold, i.e.
+        // someone else really did refresh it. Comparing purely on
+        // `is_expired()` (local clock math) is not enough: when we get here
+        // via `force_refresh()` after a server-side 401 "SecurityToken
+        // Expired" (the server rejected the token *before* our locally
+        // computed `expires_at`, e.g. clock skew or a Doze-delayed request
+        // that was queued while the token was still locally "valid"), the
+        // on-disk copy is identical to the one that just failed and its
+        // locally-computed expiry still says "fine". Returning it here
+        // means the caller retries with the exact same already-rejected
+        // token, guaranteed to 401 again — which then gets surfaced to the
+        // user as a terminal "Unauthorized: SecurityToken Expired" instead
+        // of actually being refreshed.
+        let previous_access_token = self.token_set.as_ref().map(|ts| ts.access_token.clone());
         if let Some(dir) = data_dir.as_deref() {
             if let Some(fresh) = TokenSetPersistence::load(dir) {
                 let still_expired = fresh.is_expired();
+                let already_refreshed_elsewhere =
+                    previous_access_token.as_deref() != Some(fresh.access_token.as_str());
                 self.token_set = Some(fresh.clone());
-                if !still_expired {
+                if !still_expired && already_refreshed_elsewhere {
                     return Ok(fresh);
                 }
             }
