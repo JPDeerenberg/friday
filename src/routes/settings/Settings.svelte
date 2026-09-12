@@ -6,6 +6,8 @@
            exportAllData } from '$lib/api';
   import { getAiConfig, setAiConfig, validateAiKey, listAiModels, type AiConfig, type AiProviderType, AI_PROVIDERS } from '$lib/ai';
   import { sectionIcon } from '$lib/icons';
+  import { updateStatus, refreshUpdateStatus, getCurrentVersion } from '$lib/updates';
+  import { openUrl } from '@tauri-apps/plugin-opener';
   import ColorSwatchPicker from '$lib/components/ColorSwatchPicker.svelte';
   import Switch from '$lib/components/Switch.svelte';
   import Button from '$lib/components/Button.svelte';
@@ -94,6 +96,17 @@
   let repoStats = $state<{ stars: number; forks: number; openIssues: number } | null>(null);
   let repoStatsError = $state<string | null>(null);
 
+  // --- App version (dynamic, from Tauri) ---
+  let appVersion = $state('');
+
+  async function openReleasePage(url: string) {
+    try {
+      await openUrl(url);
+    } catch (e) {
+      console.error('Release openen mislukt:', e);
+    }
+  }
+
   function addLog(level: 'info' | 'warn' | 'error', msg: string) {
     const time = new Date().toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     logs = [{ time, level, msg }, ...logs].slice(0, 50);
@@ -160,6 +173,9 @@
       .catch(e => {
         repoStatsError = `Kon repo info niet laden: ${e.message || e}`;
       });
+
+    // Load running app version (dynamic — replaces the old hardcoded footer)
+    getCurrentVersion().then((v) => { appVersion = v; }).catch(() => {});
 
     // Load AI config
     getAiConfig().then((config: AiConfig) => {
@@ -587,6 +603,9 @@
             {@html sectionIcon(item.id)}
           </span>
           <span class="flex-1 text-title-small text-gray-100">{item.title}</span>
+          {#if item.id === 'about' && $updateStatus.status === 'available'}
+            <span class="w-2 h-2 rounded-full bg-primary-500 shrink-0" title="Update beschikbaar"></span>
+          {/if}
           <svg class="w-4 h-4 text-gray-600 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
         </button>
       {/each}
@@ -603,6 +622,9 @@
           >
             {@html sectionIcon(item.id)}
             <span class="truncate">{item.title}</span>
+            {#if item.id === 'about' && $updateStatus.status === 'available'}
+              <span class="w-2 h-2 rounded-full bg-primary-500 shrink-0 ml-auto" title="Update beschikbaar"></span>
+            {/if}
           </button>
         {/each}
       </nav>
@@ -1274,7 +1296,51 @@
 
     <!-- ===== GITHUB REPO INFO ===== -->
     {#if activeSection === 'about'}
-    <section id="settings-about" in:fly={{ y: 20 }}>
+    <section id="settings-about" in:fly={{ y: 20 }} class="space-y-4">
+      <div class="glass p-6 rounded-m3-md border-white/5 space-y-4 hover:bg-surface-800/40 transition-all">
+        <div class="flex items-center justify-between gap-4">
+          <div>
+            <h3 class="text-title-small text-gray-100">Updates</h3>
+            <p class="text-label-small text-gray-600 mt-0.5">
+              {#if appVersion}Huidige versie: {appVersion}{:else}Versie laden…{/if}
+            </p>
+          </div>
+          <Button
+            variant="tonal"
+            onclick={() => refreshUpdateStatus()}
+            disabled={$updateStatus.status === 'checking'}
+            class="shrink-0"
+          >
+            {$updateStatus.status === 'checking' ? '⏳ Controleren…' : 'Controleren'}
+          </Button>
+        </div>
+
+        {#if $updateStatus.status === 'available' && $updateStatus.result}
+          <div class="p-4 rounded-m3-md bg-primary-500/10 border border-primary-500/20 space-y-2">
+            <p class="text-title-small text-gray-100">Update beschikbaar: {$updateStatus.result.tag}</p>
+            {#if $updateStatus.result.publishedAt}
+              <p class="text-label-small text-gray-500">
+                Uitgebracht op {new Date($updateStatus.result.publishedAt).toLocaleDateString('nl-NL', { day: 'numeric', month: 'long', year: 'numeric' })}
+              </p>
+            {/if}
+            {#if $updateStatus.result.notes}
+              <details class="text-body-small text-gray-400">
+                <summary class="cursor-pointer text-label-medium text-primary-400">Release-opmerkingen</summary>
+                <p class="mt-2 whitespace-pre-wrap leading-relaxed">{$updateStatus.result.notes.slice(0, 2000)}</p>
+              </details>
+            {/if}
+            <Button variant="filled" onclick={() => openReleasePage($updateStatus.result?.htmlUrl ?? 'https://github.com/JPDeerenberg/friday/releases/latest')} class="w-full">
+              Bekijk release
+            </Button>
+          </div>
+        {:else if $updateStatus.status === 'up-to-date'}
+          <p class="text-body-small text-emerald-400">✅ Je hebt de nieuwste versie.</p>
+        {:else if $updateStatus.status === 'error'}
+          <p class="text-body-small text-red-400">{$updateStatus.error}</p>
+        {:else if $updateStatus.status === 'idle'}
+          <p class="text-body-small text-gray-600">Nog niet gecontroleerd — tik op Controleren.</p>
+        {/if}
+      </div>
       <div class="glass p-6 rounded-m3-md border-white/5 space-y-4 hover:bg-surface-800/40 transition-all">
         <div class="flex items-center gap-3">
           <div class="w-10 h-10 rounded-m3-sm bg-surface-900 border border-surface-700/50 flex items-center justify-center text-gray-400 group-hover:rotate-6 transition-transform shadow-inner shrink-0">
@@ -1335,7 +1401,7 @@
 
     <div class="pt-10 flex flex-col items-center gap-2">
       <div class="w-10 h-[1px] bg-surface-800"></div>
-      <p class="text-label-small text-gray-600 text-center">Version 2.2.0 • Friday App</p>
+      <p class="text-label-small text-gray-600 text-center">Versie {appVersion || '…'} • Friday App</p>
     </div>
       </div>
     </main>

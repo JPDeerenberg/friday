@@ -12,6 +12,7 @@
   import { fade } from 'svelte/transition';
   import AIAssistant from '$lib/components/AIAssistant.svelte';
   import IconButton from '$lib/components/IconButton.svelte';
+  import { ensureAutoUpdateCheck } from '$lib/updates';
   import type { Account } from '$lib/types';
 
   let { children } = $props();
@@ -202,6 +203,8 @@
           await checkAiConfig();
         } catch (_) {}
         loading = false;
+        // Silent GitHub update check (24h cache) — fire-and-forget, never blocks startup.
+        ensureAutoUpdateCheck().catch(() => {});
       }
 
       // Resume signal: hidden→visible triggers a non-destructive session
