@@ -73,6 +73,10 @@ jobs:
 
       - name: Build static site
         working-directory: source
+        env:
+          # Project site lives at /friday/ — bake the subpath into asset URLs.
+          # (Tauri/Caddy/dev builds never set this and stay root-based.)
+          BASE_PATH: /friday
         run: pnpm build
 
       - name: Overlay build onto Pages branch (fdroid/ excluded)

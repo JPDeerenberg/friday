@@ -12,6 +12,12 @@ const config = {
     adapter: adapter({
       fallback: "index.html",
     }),
+    // Subpath hosting (GitHub Pages project site at /friday/): the Pages
+    // workflow sets BASE_PATH=/friday. Default empty everywhere else
+    // (Tauri, Caddy same-origin, vite dev) so those outputs stay root-based.
+    paths: {
+      base: process.env.BASE_PATH ?? "",
+    },
   },
 };
 

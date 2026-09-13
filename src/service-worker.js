@@ -43,11 +43,20 @@ self.addEventListener('fetch', (event) => {
   if (req.method !== 'GET') return;
 
   const url = new URL(req.url);
-  // API traffic is never served from (or written to) this cache.
-  if (url.pathname.startsWith('/api/')) return;
+  // Never serve cross-cutting infrastructure from (or write it to) this
+  // cache. Segment match (not prefix) so it holds at any base path:
+  // same-origin /api on Caddy, /friday/fdroid on Pages, absolute backend
+  // URLs never even reach this worker's origin scope.
+  const segments = url.pathname.split('/');
+  // API traffic is never cached here. API freshness is owned by IndexedDB
+  // (`cache.ts` TTL + stale-while-revalidate); a second, unversioned HTTP
+  // cache would only serve stale grades as "fresh".
+  if (segments.includes('api')) return;
   // The gh-pages branch also serves the F-Droid repo (/fdroid/*, multi-MB
   // APKs) — never cache those either.
-  if (url.pathname.startsWith('/fdroid/')) return;
+  if (segments.includes('fdroid')) return;
+  // App scope root (base-aware: '/' locally, '/friday/' on Pages).
+  const scopeRoot = new URL(self.registration.scope).pathname;
 
   async function respond() {
     const cache = await caches.open(CACHE);
@@ -72,9 +81,10 @@ self.addEventListener('fetch', (event) => {
     } catch (err) {
       const hit = await cache.match(req);
       if (hit) return hit;
-      // Offline navigation with nothing cached: fall back to the app shell.
+      // Offline navigation with nothing cached: fall back to the app shell
+      // (scope root, so this works at any base path).
       if (req.mode === 'navigate') {
-        const shell = await cache.match('/');
+        const shell = await cache.match(scopeRoot);
         if (shell) return shell;
       }
       throw err;
