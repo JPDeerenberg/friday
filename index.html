@@ -2,53 +2,54 @@
 <html lang="nl" class="dark">
   <head>
     <meta charset="utf-8" />
-    <link rel="icon" href="/favicon.png" />
-    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" href="/friday/favicon.png" />
+    <link rel="manifest" href="/friday/manifest.webmanifest" />
     <meta name="theme-color" content="#131022" />
     <!-- iOS home-screen app -->
-    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="apple-touch-icon" href="/friday/apple-touch-icon.png" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Friday" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <title>Magister Agenda</title>
-    <link href="/_app/immutable/entry/start.DFezrCxM.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/ZX8zy9Ak.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/mkmqxBhz.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/D4vEkREC.js" rel="modulepreload">
-		<link href="/_app/immutable/entry/app.ChC0Rtv1.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/HclGiUj8.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/xihTtKlq.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/0.DSFg6TFU.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/CuBmcILi.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/hTByFGMt.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/CoPT7CfE.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/DUN4_YHH.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/CJiFAhTh.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/DIxhCGJQ.js" rel="modulepreload">
+    <link href="/friday/_app/immutable/entry/start.dyS7vzbT.js" rel="modulepreload">
+		<link href="/friday/_app/immutable/chunks/DRiv0YVv.js" rel="modulepreload">
+		<link href="/friday/_app/immutable/chunks/mkmqxBhz.js" rel="modulepreload">
+		<link href="/friday/_app/immutable/chunks/D4vEkREC.js" rel="modulepreload">
+		<link href="/friday/_app/immutable/entry/app.DcwNOqhl.js" rel="modulepreload">
+		<link href="/friday/_app/immutable/chunks/HclGiUj8.js" rel="modulepreload">
+		<link href="/friday/_app/immutable/chunks/xihTtKlq.js" rel="modulepreload">
+		<link href="/friday/_app/immutable/nodes/0.DSFg6TFU.js" rel="modulepreload">
+		<link href="/friday/_app/immutable/chunks/CuBmcILi.js" rel="modulepreload">
+		<link href="/friday/_app/immutable/chunks/hTByFGMt.js" rel="modulepreload">
+		<link href="/friday/_app/immutable/chunks/CoPT7CfE.js" rel="modulepreload">
+		<link href="/friday/_app/immutable/chunks/DUN4_YHH.js" rel="modulepreload">
+		<link href="/friday/_app/immutable/chunks/CJiFAhTh.js" rel="modulepreload">
+		<link href="/friday/_app/immutable/chunks/DIxhCGJQ.js" rel="modulepreload">
 		
-		<link href="/_app/immutable/assets/0.BmTZfhHC.css" rel="stylesheet">
+		<link href="/friday/_app/immutable/assets/0.BmTZfhHC.css" rel="stylesheet">
   </head>
   <body data-sveltekit-preload-data="hover" class="bg-gray-950 text-gray-100 font-sans">
     <div style="display: contents">
 			<script>
 				{
-					__sveltekit_1n8zyfk = {
-						base: ""
+					__sveltekit_ke7an2 = {
+						base: "/friday",
+						assets: "/friday"
 					};
 
 					const element = document.currentScript.parentElement;
 
 					Promise.all([
-						import("/_app/immutable/entry/start.DFezrCxM.js"),
-						import("/_app/immutable/entry/app.ChC0Rtv1.js")
+						import("/friday/_app/immutable/entry/start.dyS7vzbT.js"),
+						import("/friday/_app/immutable/entry/app.DcwNOqhl.js")
 					]).then(([kit, app]) => {
 						kit.start(app, element);
 					});
 
 					if ('serviceWorker' in navigator) {
-						const script_url = '/service-worker.js';
+						const script_url = '/friday/service-worker.js';
 						const policy = globalThis?.window?.trustedTypes?.createPolicy(
 							'sveltekit-trusted-url',
 							{ createScriptURL(url) { return url; } }
