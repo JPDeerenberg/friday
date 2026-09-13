@@ -1,0 +1,33 @@
+[package]
+name = "spike-password-login"
+version = "0.1.0"
+edition = "2021"
+
+# Phase-0 spike harness for the Friday web/iOS plan (see plan v2, §0).
+# Standalone binary: exercises the MagisterPy password-challenge login flow
+# plus the cookie-authenticated PKCE code-exchange experiment ("Spike 0").
+# Deliberately NOT part of any workspace and NOT referenced by src-tauri,
+# so the desktop/Android app cannot be affected by this crate.
+#
+# Usage (credentials via env only, never CLI args / files):
+#   MAGISTER_SCHOOL="<school>" MAGISTER_USERNAME="<user>" MAGISTER_PASSWORD="<pw>" \
+#     cargo run -p spike-password-login
+# Secrets are never printed: tokens/codes/cookies appear only as lengths.
+
+[dependencies]
+# Shared protocol logic under test by this spike (jsparser proven live here).
+magister-core = { path = "../magister-core" }
+reqwest = { version = "0.13", features = ["json", "rustls"], default-features = false }
+# Same bundled-root TLS setup as src-tauri/src/tls.rs: reqwest 0.13 with
+# minimal features cannot build its own (platform-verifier) TLS backend
+# ("builder error"), so hand it a preconfigured rustls ClientConfig.
+rustls = "0.23"
+webpki-roots = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+base64 = "0.23"
+sha2 = "0.11"
+rand = "0.10"
+url = "2"
+thiserror = "2"

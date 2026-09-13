@@ -1,0 +1,22 @@
+[package]
+name = "web-api"
+version = "0.1.0"
+edition = "2021"
+description = "Stateless Friday web API: password login, token refresh, Tier-A Magister proxy. No sessions, no database in core mode."
+
+[[bin]]
+name = "web-api"
+path = "src/main.rs"
+
+[dependencies]
+# Shared protocol logic (auth flow, TLS, tokens, jsparser, cookies).
+magister-core = { path = "../magister-core" }
+axum = { version = "0.8", features = ["macros"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "net", "sync"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["cors"] }
+reqwest = { version = "0.13", features = ["json", "rustls"], default-features = false }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+url = "2"
+thiserror = "2"

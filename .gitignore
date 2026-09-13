@@ -13,6 +13,9 @@ magister_dump_json/
 json-export-lessen/
 Discipulus/
 Discipulus
+MagisterPy/
+magisterpy/
+MagisterPy
 
 # IDE & Editor
 .idea/
@@ -24,6 +27,7 @@ fixes/
 # Build Output & Logs
 dist/
 dist-ssr/
+target/
 coverage/
 *.log
 npm-debug.log*

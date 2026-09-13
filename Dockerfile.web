@@ -1,0 +1,18 @@
+# Friday web frontend — static SvelteKit build served by Caddy.
+# Build from the REPO ROOT:  docker build -f Dockerfile.web -t friday-web .
+FROM node:20-bookworm-slim AS frontend
+WORKDIR /app
+RUN corepack enable && corepack prepare pnpm@9 --activate
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+# Frozen install for reproducible builds.
+RUN pnpm install --frozen-lockfile
+COPY svelte.config.js vite.config.js tsconfig.json ./
+COPY src src
+COPY static static
+RUN pnpm build
+
+FROM caddy:2-alpine
+COPY --from=frontend /app/build /srv
+COPY Caddyfile /etc/caddy/Caddyfile
+# Caddy auto-HTTPS needs ports 80+443.
+EXPOSE 80 443

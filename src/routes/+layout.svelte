@@ -22,6 +22,11 @@
   let aiConfigured = $state(false);
   let restoreState = $state<RestoreSessionStatus | null>(null);
 
+  // Web build (no Tauri runtime): session lives in IndexedDB and auth is the
+  // password form. Every Tauri-only call below (deep links, listeners,
+  // invoke-based restore) is branched on this — desktop behavior unchanged.
+  const isTauri = typeof window !== 'undefined' && !!(window as any).__TAURI__;
+
   async function checkAiConfig() {
     try {
       const config = await getAiConfig();
@@ -44,6 +49,7 @@
   }
 
   async function attemptRestore(isResume = false): Promise<RestoreSessionStatus> {
+    if (!isTauri) return attemptWebRestore();
     try {
       const status = await restoreSession();
       restoreState = status;
@@ -92,6 +98,61 @@
       restoreStatus.set('unavailable');
       return 'unavailable';
     }
+  }
+
+  // Web twin of attemptRestore: IndexedDB session, refresh when expired.
+  // Same tri-state contract (restored/logged_out/unavailable) so the offline
+  // overlay and resume logic below behave identically on both builds.
+  async function attemptWebRestore(): Promise<RestoreSessionStatus> {
+    try {
+      const { restoreWebSession, loadWebSession, webRequest, webRequestBytes } = await import('$lib/web-session');
+      const status = await restoreWebSession();
+      restoreState = status;
+      restoreStatus.set(status as any);
+      if (status === 'restored') {
+        isLoggedIn.set(true);
+        try {
+          const account = await webRequest('GET', 'account?noCache=0');
+          accountInfo.set(account as Account);
+        } catch (e) {
+          console.warn('getAccount after restore failed (keeping stale cache)', e);
+        }
+        try {
+          const tokens = await loadWebSession();
+          if (tokens?.personId != null) {
+            personId.set(tokens.personId);
+            try {
+              const pic = await webRequestBytes(`leerlingen/${tokens.personId}/foto`);
+              profilePicture.set(pic ? bytesToBase64(pic) : null);
+            } catch (_) {}
+          }
+        } catch (e) {
+          console.warn('personId after restore failed (keeping stale cache)', e);
+        }
+      } else if (status === 'logged_out') {
+        isLoggedIn.set(false);
+        personId.set(null);
+        accountInfo.set(null);
+        profilePicture.set(null);
+      } else {
+        console.warn('Session restore unavailable (offline) — will retry on next resume');
+      }
+      return status;
+    } catch (e) {
+      console.warn('restoreWebSession threw, treating as unavailable', e);
+      restoreState = 'unavailable';
+      restoreStatus.set('unavailable');
+      return 'unavailable';
+    }
+  }
+
+  function bytesToBase64(bytes: Uint8Array): string {
+    let bin = '';
+    const CHUNK = 0x8000;
+    for (let i = 0; i < bytes.length; i += CHUNK) {
+      bin += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+    }
+    return btoa(bin);
   }
 
   function retryRestore() {
@@ -151,19 +212,24 @@
         }
       }
 
-      unlistenCallback = await listen('auth-callback', async (event) => {
-        await processAuthCallback(event.payload as string);
-      });
+      // Tauri-only event listeners (deep-link OAuth flow). On web there is
+      // no listener runtime — and `listen()` would reject, aborting the
+      // startup sequence below — so the whole block is skipped there.
+      if (isTauri) {
+        unlistenCallback = await listen('auth-callback', async (event) => {
+          await processAuthCallback(event.payload as string);
+        });
 
-      unlistenSuccess = await listen('auth-success', async (event) => {
-        loginError.set('');
-        await handleLogin(event.payload as Account);
-      });
+        unlistenSuccess = await listen('auth-success', async (event) => {
+          loginError.set('');
+          await handleLogin(event.payload as Account);
+        });
 
-      unlistenError = await listen('auth-error', (event) => {
-        console.error('Auth error:', event.payload);
-        loginError.set(String(event.payload));
-      });
+        unlistenError = await listen('auth-error', (event) => {
+          console.error('Auth error:', event.payload);
+          loginError.set(String(event.payload));
+        });
+      }
 
       // A deep link that arrived before the listener above registered —
       // e.g. a cold start via the OAuth redirect, because Android killed
@@ -226,16 +292,18 @@
       // Store for cleanup
       (window as any).__friday_visibility_handler = handleVisibilityChange;
 
-      unlistenBack = await listen('tauri://back-button', () => {
-        if (mobileSidebarOpen) {
-          mobileSidebarOpen = false;
-          return;
-        }
-        const cp = get(currentPage);
-        if (cp !== 'dashboard') {
-          currentPage.set('dashboard');
-        }
-      });
+      unlistenBack = isTauri
+        ? await listen('tauri://back-button', () => {
+          if (mobileSidebarOpen) {
+            mobileSidebarOpen = false;
+            return;
+          }
+          const cp = get(currentPage);
+          if (cp !== 'dashboard') {
+            currentPage.set('dashboard');
+          }
+        })
+        : undefined;
     })();
 
     const handlePopstate = () => {
@@ -344,7 +412,16 @@
 
   async function handleLogout() {
     try {
-      await logout();
+      if (isTauri) {
+        await logout();
+      } else {
+        const { webBackend, loadWebSession, clearWebSession } = await import('$lib/web-session');
+        const tokens = await loadWebSession();
+        if (tokens) {
+          try { await webBackend().logout(tokens); } catch (_) {}
+        }
+        await clearWebSession();
+      }
     } catch (e) {
       console.error('Logout error:', e);
     }

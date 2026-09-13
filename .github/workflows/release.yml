@@ -276,3 +276,8 @@ jobs:
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./gh-pages
+          # The gh-pages branch ALSO hosts the Friday web app at site root
+          # (deployed by deploy-web.yml). Without keep_files, every Android
+          # release would wipe the app. fdroid/ itself is still fully synced
+          # from publish_dir; only unrelated files (the app) are preserved.
+          keep_files: true

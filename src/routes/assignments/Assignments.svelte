@@ -8,7 +8,8 @@
     handInAssignment,
     uploadAssignmentAttachment,
     formatTeacherName,
-    downloadFile
+    downloadFile,
+    isWebBuild
   } from '$lib/api';
   import { formatDateFull } from '$lib/format';
   import { cacheGet, cacheRefresh } from '$lib/cache';
@@ -121,6 +122,11 @@
   }
 
   async function handlePickFile() {
+    // Web: native file picker (Tauri dialog has no web equivalent).
+    if (isWebBuild()) {
+      webFileInput?.click();
+      return;
+    }
     try {
       const selected = await open({
         multiple: true,
@@ -144,6 +150,25 @@
 
   function removeAttachment(idx: number) {
     attachments = attachments.filter((_, i) => i !== idx);
+  }
+
+  // Web file-picker backing store (hidden <input type="file"> below).
+  let webFileInput = $state<HTMLInputElement | null>(null);
+
+  async function handleWebFilesPicked() {
+    const files = webFileInput?.files;
+    if (!files || files.length === 0) return;
+    uploadLoading = true;
+    for (const file of Array.from(files)) {
+      try {
+        const [id, storageId] = await uploadAssignmentAttachment(file);
+        attachments = [...attachments, { id, storageId, name: file.name, path: file.name }];
+      } catch (e) {
+        console.error(`Upload failed for ${file.name}:`, e);
+      }
+    }
+    uploadLoading = false;
+    if (webFileInput) webFileInput.value = "";
   }
 
   async function handleDownload(bijlage: AssignmentAttachment) {
@@ -491,6 +516,16 @@
                 {/if}
 
                 <div class="flex items-center justify-between">
+                  <!-- Web file picker (hidden; opened via handlePickFile). -->
+                  {#if isWebBuild()}
+                    <input
+                      type="file"
+                      multiple
+                      class="hidden"
+                      bind:this={webFileInput}
+                      onchange={handleWebFilesPicked}
+                    />
+                  {/if}
                   <Button
                     variant="text"
                     onclick={handlePickFile}

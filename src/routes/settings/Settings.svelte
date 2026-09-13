@@ -3,7 +3,7 @@
   import { currentPage } from '$lib/stores';
   import { triggerTestNotification, notifyNewMessage, notifyNewGrade, notifyDeadline, notifyCalendarChange,
             triggerSync, getDebugInfo, getSyncStateDebug, clearSyncState, setSyncInterval, getSyncInterval, getNightSleepConfig, setNightSleepConfig, getDisableAllNotifications, setDisableAllNotifications, getDndAccessStatus, triggerDndTest,
-           exportAllData } from '$lib/api';
+           exportAllData, isWebBuild } from '$lib/api';
   import { getAiConfig, setAiConfig, validateAiKey, listAiModels, type AiConfig, type AiProviderType, AI_PROVIDERS } from '$lib/ai';
   import { sectionIcon } from '$lib/icons';
   import { updateStatus, refreshUpdateStatus, getCurrentVersion } from '$lib/updates';
@@ -19,7 +19,7 @@
 
   let isMobile = $state(false);
   let testingNotification = $state<string | null>(null);
-  let activeSection = $state('ai');
+  let activeSection = $state(isWebBuild() ? 'agenda' : 'ai');
   let activeSectionTitle = $state('AI Assistent');
   // Layout: viewport-based (matches the app's `md` breakpoint), used for sidebar vs master–detail.
   let isDesktopLayout = $state(true);
@@ -27,9 +27,12 @@
   let mobilePanel = $state<'list' | 'detail'>('list');
 
   // Section navigation items (sidebar on desktop, list on mobile)
+  // Web build additionally hides native-only sections (hideOnWeb).
+  const isWeb = isWebBuild();
   const navItems = $derived.by(() => {
     const items = sections
       .filter(s => !s.hideIfDesktop || isMobile)
+      .filter(s => !s.hideOnWeb || !isWeb)
       .map(s => ({ id: s.id, title: s.title }));
     items.push({ id: 'about', title: 'Over de app' });
     return items;
@@ -460,6 +463,9 @@
       title: 'AI Assistent',
       description: 'Configureer AI voor studiedvies, cijferanalyse, samenvattingen en meer.',
       isAi: true,
+      // AI providers need a server-side key proxy (plan v2 §4, BYO key) —
+      // not wired for web yet, so the section stays desktop-only for now.
+      hideOnWeb: true,
     },
     {
       id: 'aiSchedule',
@@ -516,9 +522,9 @@
         { id: 'testDeadline', label: 'Deadline Notificatie', description: 'Test deadline notificatie.', type: 'action', compactFor: 'notifyDeadlines', action: () => testNotificationType('deadline', 'Deadline Aankomst', 'Een opdracht deadline nadert') },
         { id: 'notifyCalendar', label: 'Agenda Wijzigingen', description: 'Melding bij agenda wijzigingen.', type: 'toggle', notificationType: 'calendar' },
         { id: 'testCalendar', label: 'Agenda Notificatie', description: 'Test agenda notificatie.', type: 'action', compactFor: 'notifyCalendar', action: () => testNotificationType('calendar', 'Agenda Gewijzigd', 'Er is een wijziging in je agenda') },
-        { id: 'notifyAutoDnd', label: 'Autom. Niet Storen', description: 'Zet DND aan tijdens lessen (Android DND toegang nodig).', type: 'toggle' },
+        { id: 'notifyAutoDnd', label: 'Autom. Niet Storen', description: 'Zet DND aan tijdens lessen (Android DND toegang nodig).', type: 'toggle', hideOnWeb: true },
         { id: 'testBasic', label: 'Basis Test', description: 'Standaard test notificatie.', type: 'action', action: () => testNotificationType('test', 'Test Notificatie', 'Dit is een test van het Friday meldingen systeem!') },
-        { id: 'openDndSettings', label: 'DND Toegang', description: 'Open Android instellingen voor Niet Storen toegang.', type: 'action', action: () => openDndSettings() },
+        { id: 'openDndSettings', label: 'DND Toegang', description: 'Open Android instellingen voor Niet Storen toegang.', type: 'action', action: () => openDndSettings(), hideOnWeb: true },
       ],
       hideIfDesktop: true
     },
@@ -527,7 +533,7 @@
       title: 'Data & Downloads',
       settings: [
         { id: 'exportAll', label: 'Alles Exporteren', description: 'Exporteer al je data (lessen, cijfers, opdrachten, etc.) naar JSON-bestanden.', type: 'action', action: () => doExport() },
-        { id: 'downloadDir', label: 'Downloadmap', description: 'Kies waar gedownloade bestanden worden opgeslagen. Leeg = systeemstandaard.', type: 'download-dir' },
+        { id: 'downloadDir', label: 'Downloadmap', description: 'Kies waar gedownloade bestanden worden opgeslagen. Leeg = systeemstandaard.', type: 'download-dir', hideOnWeb: true },
       ]
     },
   ];
@@ -641,7 +647,7 @@
         </div>
 
     {#each sections as section, i}
-      {#if (!section.hideIfDesktop || isMobile) && section.id === activeSection}
+      {#if (!section.hideIfDesktop || isMobile) && (!section.hideOnWeb || !isWeb) && section.id === activeSection}
         <section id="settings-{section.id}" in:fly={{ y: 20, delay: 0 }} class="space-y-4">
 
         {#if section.isAi}
@@ -948,7 +954,7 @@
           {:else}
         <div class="space-y-2">
           {#each section.settings as setting (setting.id)}
-            {#if setting.type !== 'action' || !setting.compactFor}
+            {#if (!setting.hideOnWeb || !isWeb) && (setting.type !== 'action' || !setting.compactFor)}
             <div class="glass p-5 rounded-m3-md border-white/5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-6 transition-all hover:bg-surface-800/40">
               <div class="flex-1">
                 <p class="text-title-small text-gray-100">{setting.id === 'openDndSettings' ? dndActionLabel() : setting.label}</p>

@@ -1,0 +1,22 @@
+# Keep build contexts small for the Docker images.
+.git/
+.github/
+node_modules/
+.pnpm-store/
+target/
+.svelte-kit/
+build/
+dist/
+coverage/
+# Tauri native app: irrelevant to both images (frontend builder + web-api).
+src-tauri/
+# Reference/vendor material, not needed at runtime or build time.
+MagisterPy/
+Discipulus/
+fixes/
+# Local/dev only.
+.env
+*.log
+.DS_Store
+.idea/
+.vscode/

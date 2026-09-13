@@ -1,0 +1,44 @@
+# Friday production stack: Caddy (HTTPS + static) + web-api (stateless).
+# Usage:  cp .env.example .env   # fill in DOMAIN
+#         docker compose up -d --build
+# Update: docker compose pull && docker compose up -d --build
+name: friday
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    image: friday-web:latest
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:?set DOMAIN in .env}
+    volumes:
+      - caddy-data:/data/caddy
+    depends_on:
+      - web-api
+    # Caddy needs real 80/443 from the internet for auto-HTTPS.
+
+  web-api:
+    build:
+      context: .
+      dockerfile: crates/web-api/Dockerfile
+    image: friday-web-api:latest
+    restart: unless-stopped
+    # Not published: reachable only via the `web` service (same-origin /api).
+    expose:
+      - "3000"
+    environment:
+      PORT: 3000
+      # Optional: comma-separated origins. Unset = permissive (safe: the API
+      # uses per-request Bearer headers, never cookies — no ambient auth).
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
+      RUST_LOG: ${RUST_LOG:-info}
+    # Push module (optional, off by default): add its DB volume + keys here
+    # when that ships — core mode needs no volumes at all.
+
+volumes:
+  caddy-data:

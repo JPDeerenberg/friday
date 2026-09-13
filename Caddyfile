@@ -1,0 +1,44 @@
+# Friday production front door. Set {$DOMAIN} in .env (bare domain only,
+# e.g. friday.example.com) — Caddy provisions and renews HTTPS automatically.
+{
+	# Small VPS: persist certs + config across restarts.
+	storage file_system {
+		root /data/caddy
+	}
+}
+
+{$DOMAIN} {
+	# Security headers (CSP is intentionally permissive on connect-src:
+	# the app also talks to the same origin only; inline scripts stay
+	# blocked, which is what protects the IndexedDB session tokens).
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; worker-src 'self'; manifest-src 'self'"
+		-Server
+	}
+
+	encode gzip zstd
+
+	# API first — never cached, never the SPA fallback.
+	handle /api/* {
+		reverse_proxy web-api:3000
+	}
+
+	# Static frontend with SPA fallback (adapter-static index.html).
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server {
+			precompressed gzip zstd br
+		}
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}

@@ -61,6 +61,39 @@ pnpm tauri dev
 
 ---
 
+## Web version (iOS / browser) — self-hosting
+
+The same SvelteKit app also runs as an installable web app (Add to Home
+Screen). It needs the tiny stateless `web-api` next to it — no database, no
+sessions on the server; Magister tokens stay in the browser.
+
+**Production (any $4–6/mo VPS with Docker, one domain):**
+
+```bash
+cp .env.example .env   # fill in DOMAIN=
+docker compose up -d --build
+```
+
+Caddy terminates HTTPS automatically and serves the static frontend;
+`/api/*` proxies to `web-api`. Resource use is minimal (tens of MB RAM).
+
+**Local development:**
+
+```bash
+# Terminal 1 — API on :3000
+cd crates/web-api && PORT=3000 cargo run
+# Terminal 2 — frontend on :1420 (reachable on your LAN for phone testing)
+pnpm dev
+```
+
+Open `http://<your-lan-ip>:1420`, log in with school + Magister username +
+password. The password is used for one login call only and never stored.
+
+> Note: using an unofficial client may conflict with Magister's terms of
+> service — self-hosters accept that responsibility (see also MagisterPy).
+
+---
+
 ## Acknowledgements
 
 This project wouldn't be possible without the inspiration and foundational work from other open-source projects.

@@ -1,0 +1,115 @@
+# Deploy the Friday web app to GitHub Pages (gh-pages BRANCH).
+#
+# Coexists with the F-Droid repo on the SAME branch:
+# - the app lives at site root (/friday/), fdroid at /friday/fdroid/ (untouched)
+# - rsync --delete prunes stale APP files only; /fdroid is always excluded
+# - release.yml's peaceiris step has keep_files:true so Android releases
+#   never wipe the app (and this workflow never touches fdroid/)
+# - pushes retry with rebase in case an Android release lands mid-deploy
+#
+# One-time setup (user, dashboard only):
+#   1. Render → Apply the render.yaml Blueprint, note the public URL.
+#   2. Repo Settings → Variables → Actions → VITE_API_URL =
+#      https://<your-render-service>.onrender.com/api
+#      (Before that, builds use the placeholder below and the login screen
+#      will fail — the site itself still deploys fine.)
+#   3. Repo Settings → Pages → Source already = Deploy from a branch
+#      (gh-pages) — leave exactly as is; do NOT switch to GitHub Actions.
+
+name: Deploy web app to Pages branch
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "static/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "svelte.config.js"
+      - "vite.config.js"
+      - "tsconfig.json"
+      - ".github/workflows/deploy-web.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: gh-pages-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    env:
+      VITE_API_URL: ${{ vars.VITE_API_URL || 'https://REPLACE-WITH-RENDER-URL.onrender.com/api' }}
+    steps:
+      - name: Checkout source (main)
+        uses: actions/checkout@v4
+        with:
+          path: source
+          fetch-depth: 1
+
+      - name: Checkout Pages branch
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: pages
+          fetch-depth: 0
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: source/pnpm-lock.yaml
+
+      - name: Install dependencies
+        working-directory: source
+        run: pnpm install --frozen-lockfile
+
+      - name: Build static site
+        working-directory: source
+        run: pnpm build
+
+      - name: Overlay build onto Pages branch (fdroid/ excluded)
+        run: |
+          set -euo pipefail
+          # Jekyll would ignore _app/ — disable it (one empty file, harmless to fdroid).
+          touch pages/.nojekyll
+          # Merge build output into branch root; prune stale app files;
+          # never touch fdroid/ (or .git/.nojekyll/CNAME if present).
+          rsync -a --delete \
+            --exclude='/fdroid' \
+            --exclude='/.git' \
+            --exclude='/.nojekyll' \
+            source/build/ pages/
+          cd pages
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes to deploy."
+            echo "changed=false" >> "$GITHUB_ENV"
+          else
+            echo "changed=true" >> "$GITHUB_ENV"
+          fi
+
+      - name: Commit and push (rebase-retry vs concurrent release)
+        if: env.changed == 'true'
+        working-directory: pages
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B gh-pages origin/gh-pages
+          git commit -m "Deploy web app ${{ github.sha }}"
+          for i in 1 2 3; do
+            git pull --rebase origin gh-pages && git push origin HEAD:gh-pages && break
+            echo "Push conflict, retry $i/3…"
+            sleep 10
+          done

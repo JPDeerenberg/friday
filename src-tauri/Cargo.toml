@@ -1,6 +1,6 @@
 [package]
 name = "friday"
-version = "2.5.0"
+version = "2.6.0"
 description = "A Tauri App"
 authors = ["you"]
 edition = "2021"
@@ -28,6 +28,11 @@ keyring = { version = "4.1", features = ["cli", "android-native-keyring-store"] 
 
 [dependencies]
 tauri = { version = "2", features = [] }
+# Shared Magister protocol logic (auth flow, TLS, tokens, jsparser).
+# src/auth.rs, src/tls.rs and TokenSet re-export from here so every
+# existing `crate::auth::` / `crate::tls::` / `crate::client::TokenSet`
+# path keeps working unchanged.
+magister-core = { path = "../crates/magister-core" }
 log = "0.4"
 tauri-plugin-log = "2"
 tauri-plugin-opener = "2"

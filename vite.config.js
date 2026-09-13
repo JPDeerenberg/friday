@@ -4,6 +4,9 @@ import tailwindcss from "@tailwindcss/vite";
 import process from "node:process";
 
 const host = process.env.TAURI_DEV_HOST;
+// Web dev: forward same-origin /api to the local web-api (default :3000).
+// Harmless for Tauri dev — the desktop app never calls /api.
+const webApiTarget = process.env.WEB_API_TARGET || "http://localhost:3000";
 
 // https://vite.dev/config/
 export default defineConfig(async () => ({
@@ -17,7 +20,10 @@ export default defineConfig(async () => ({
   server: {
     port: 1420,
     strictPort: true,
-    host: host ? "0.0.0.0" : false,
+    // Listen on all interfaces so phones/tablets on the same Wi-Fi can
+    // open the dev app (e.g. http://192.168.2.161:1420). Tauri dev is
+    // unaffected — it connects via localhost anyway.
+    host: "0.0.0.0",
     hmr: host
       ? {
           protocol: "ws",
@@ -28,6 +34,12 @@ export default defineConfig(async () => ({
     watch: {
       // 3. tell Vite to ignore watching `src-tauri`
       ignored: ["**/src-tauri/**"],
+    },
+    proxy: {
+      "/api": {
+        target: webApiTarget,
+        changeOrigin: true,
+      },
     },
   },
 }));

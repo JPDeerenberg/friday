@@ -1,5 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import { sanitizeHtml } from "$lib/sanitize";
+import { clearWebSession, loadWebSession, sessionTierA, webBackend, webRequest, webRequestBytes } from "./web-session.ts";
+import * as tierB from "./web-tier-b.ts";
+import type { SessionTokens } from "./backend.ts";
 import type {
   Absence,
   Account,
@@ -19,6 +22,27 @@ import type {
 
 // Sanitize HTML fields at the boundary where remote data enters the frontend.
 // Every {@html} call site downstream receives already-safe markup.
+
+/** True outside the Tauri runtime (browser/PWA build). */
+export function isWebBuild(): boolean {
+  return typeof window !== "undefined" && !(window as any).__TAURI__;
+}
+
+/** Stored web session or a Dutch "not logged in" error. */
+async function wtokens(): Promise<SessionTokens> {
+  const t = await loadWebSession();
+  if (!t) throw new Error("Niet ingelogd.");
+  return t;
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let bin = "";
+  const CHUNK = 0x8000;
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    bin += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+  }
+  return btoa(bin);
+}
 
 function stripApiPrefix(href: string): string {
   if (href.startsWith("/api/")) return href.slice("/api/".length);
@@ -89,24 +113,49 @@ export async function handleAuthCallback(redirectUrl: string): Promise<Account> 
 }
 
 export async function isAuthenticated(): Promise<boolean> {
+  if (isWebBuild()) return (await loadWebSession()) !== null;
   return invoke("is_authenticated");
 }
 
 export async function getAccount(): Promise<Account> {
+  if (isWebBuild()) return (await webRequest("GET", "account?noCache=0")) as unknown as Account;
   return invoke("get_account");
 }
 
 export async function getPersonId(): Promise<number> {
+  if (isWebBuild()) {
+    const pid = (await wtokens()).personId;
+    if (pid == null) throw new Error("Geen leerling gevonden bij dit account.");
+    return pid;
+  }
   return invoke("get_person_id");
 }
 
 export async function getProfilePicture(
   personId: number,
 ): Promise<string | null> {
+  if (isWebBuild()) {
+    try {
+      const pic = await webRequestBytes(`leerlingen/${personId}/foto`);
+      return pic ? bytesToBase64(pic) : null;
+    } catch {
+      return null;
+    }
+  }
   return invoke("get_profile_picture", { personId });
 }
 
 export async function logout(): Promise<void> {
+  if (isWebBuild()) {
+    const tokens = await loadWebSession();
+    if (tokens) {
+      try {
+        await webBackend().logout(tokens);
+      } catch (_) {}
+    }
+    await clearWebSession();
+    return;
+  }
   return invoke("logout");
 }
 
@@ -143,16 +192,32 @@ export async function restoreSession(): Promise<RestoreSessionStatus> {
 }
 
 export async function getProfileInfo(personId: number): Promise<ProfileInfo> {
+  if (isWebBuild()) {
+    return (await webRequest("GET", `personen/${personId}/profiel`)) as unknown as ProfileInfo;
+  }
   return invoke("get_profile_info", { personId });
 }
 
 export async function getProfileAddresses(
   personId: number,
 ): Promise<ProfileAddress[]> {
+  if (isWebBuild()) {
+    const data = (await webRequest("GET", `personen/${personId}/adressen`)) as unknown as {
+      Items?: ProfileAddress[];
+      items?: ProfileAddress[];
+    };
+    return data.Items ?? data.items ?? [];
+  }
   return invoke("get_profile_addresses", { personId });
 }
 
 export async function getCareerInfo(personId: number): Promise<ProfileCareer> {
+  if (isWebBuild()) {
+    return (await webRequest(
+      "GET",
+      `personen/${personId}/opleidinggegevensprofiel`,
+    )) as unknown as ProfileCareer;
+  }
   return invoke("get_career_info", { personId });
 }
 
@@ -162,6 +227,7 @@ export async function getCalendarEvents(
   start: string,
   end: string,
 ): Promise<CalendarEvent[]> {
+  if (isWebBuild()) return tierB.webGetCalendarEvents(sessionTierA(), await wtokens(), personId, start, end);
   const events = await invoke("get_calendar_events", { personId, start, end });
   return (events as CalendarEvent[]).map(sanitizeCalendarEvent);
 }
@@ -171,6 +237,7 @@ export async function getAbsences(
   van: string,
   tot: string,
 ): Promise<Absence[]> {
+  if (isWebBuild()) return tierB.webGetAbsences(sessionTierA(), await wtokens(), personId, van, tot);
   return invoke("get_absences", { personId, van, tot });
 }
 
@@ -178,6 +245,7 @@ export async function getCalendarEvent(
   personId: number,
   eventId: number,
 ): Promise<CalendarEvent> {
+  if (isWebBuild()) return tierB.webGetCalendarEvent(sessionTierA(), await wtokens(), personId, eventId);
   const event = (await invoke("get_calendar_event", {
     personId,
     eventId,
@@ -190,6 +258,20 @@ export async function downloadFile(
   filename: string,
   downloadDir?: string,
 ): Promise<string> {
+  if (isWebBuild()) {
+    // Browser: save via object URL + anchor click instead of a disk path.
+    void downloadDir;
+    const blob = await tierB.webDownloadFile(sessionTierA(), await wtokens(), url);
+    const objectUrl = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = objectUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 10_000);
+    return filename;
+  }
   return invoke("download_file", {
     url,
     filename,
@@ -207,6 +289,17 @@ export async function createCalendarEvent(params: {
   inhoud?: string;
   eventType?: number;
 }): Promise<void> {
+  if (isWebBuild()) {
+    return tierB.webCreateCalendarEvent(sessionTierA(), await wtokens(), params.personId, {
+      start: params.start,
+      einde: params.einde,
+      duurtHeleDag: params.duurtHeleDag,
+      omschrijving: params.omschrijving,
+      lokatie: params.lokatie,
+      inhoud: params.inhoud,
+      eventType: params.eventType,
+    });
+  }
   return invoke("create_calendar_event", {
     personId: params.personId,
     start: params.start,
@@ -223,10 +316,12 @@ export async function updateCalendarEvent(
   selfUrl: string,
   eventJson: string,
 ): Promise<void> {
+  if (isWebBuild()) return tierB.webUpdateCalendarEvent(sessionTierA(), await wtokens(), selfUrl, eventJson);
   return invoke("update_calendar_event", { selfUrl, eventJson });
 }
 
 export async function deleteCalendarEvent(selfUrl: string): Promise<void> {
+  if (isWebBuild()) return tierB.webDeleteCalendarEvent(sessionTierA(), await wtokens(), selfUrl);
   return invoke("delete_calendar_event", { selfUrl });
 }
 
@@ -248,6 +343,7 @@ export async function getSchoolyears(
   start?: string,
   end?: string,
 ): Promise<Schoolyear[]> {
+  if (isWebBuild()) return tierB.webGetSchoolyears(sessionTierA(), await wtokens(), personId, start, end);
   return invoke("get_schoolyears", { personId, start, end });
 }
 
@@ -256,6 +352,7 @@ export async function getGrades(
   schoolyearId: number,
   einde: string,
 ): Promise<Grade[]> {
+  if (isWebBuild()) return tierB.webGetGrades(sessionTierA(), await wtokens(), personId, schoolyearId, einde);
   return invoke("get_grades", { personId, schoolyearId, einde });
 }
 
@@ -264,6 +361,8 @@ export async function getGradeExtraInfo(
   schoolyearId: number,
   kolomId: number,
 ): Promise<GradeExtraInfo> {
+  if (isWebBuild())
+    return tierB.webGetGradeExtraInfo(sessionTierA(), await wtokens(), personId, schoolyearId, kolomId);
   return await invoke("get_grade_extra_info", {
     personId,
     schoolyearId,
@@ -276,6 +375,16 @@ export async function getBulkGradeExtraInfo(
   schoolyearId: number,
   kolomIds: number[],
 ): Promise<Record<number, GradeExtraInfo>> {
+  if (isWebBuild()) {
+    const be = sessionTierA();
+    const tokens = await wtokens();
+    return tierB.webGetBulkGradeExtraInfo(
+      be,
+      tokens,
+      (id) => tierB.webGetGradeExtraInfo(be, tokens, personId, schoolyearId, id),
+      kolomIds,
+    );
+  }
   return await invoke("get_bulk_grade_extra_info", {
     personId,
     schoolyearId,
@@ -287,11 +396,13 @@ export async function getRecentGrades(
   personId: number,
   top?: number,
 ): Promise<Grade[]> {
+  if (isWebBuild()) return tierB.webGetRecentGrades(sessionTierA(), await wtokens(), personId, top);
   return await invoke("get_recent_grades", { personId, top });
 }
 
 // === Messages ===
 export async function getMessageFolders(): Promise<MessagesFolder[]> {
+  if (isWebBuild()) return tierB.webGetMessageFolders(sessionTierA(), await wtokens());
   return invoke("get_message_folders");
 }
 
@@ -301,6 +412,7 @@ export async function getMessages(
   skip?: number,
   query?: string,
 ): Promise<Message[]> {
+  if (isWebBuild()) return tierB.webGetMessages(sessionTierA(), await wtokens(), berichtenLink, top, skip, query);
   const messages = await invoke("get_messages", {
     berichtenLink,
     top,
@@ -311,6 +423,7 @@ export async function getMessages(
 }
 
 export async function getMessageDetail(selfLink: string): Promise<Message> {
+  if (isWebBuild()) return tierB.webGetMessageDetail(sessionTierA(), await wtokens(), selfLink);
   const msg = (await invoke("get_message_detail", { selfLink })) as Message;
   return sanitizeMessage(msg);
 }
@@ -327,6 +440,7 @@ export async function sendMessage(params: {
   relatedMessageId?: number;
   attachmentIds: number[];
 }): Promise<void> {
+  if (isWebBuild()) return tierB.webSendMessage(sessionTierA(), await wtokens(), params);
   return invoke("send_message", params);
 }
 
@@ -334,6 +448,7 @@ export async function markMessagesAsRead(
   messageIds: number[],
   read: boolean,
 ): Promise<void> {
+  if (isWebBuild()) return tierB.webMarkMessagesAsRead(sessionTierA(), await wtokens(), messageIds, read);
   return invoke("mark_messages_as_read", { messageIds, read });
 }
 
@@ -341,6 +456,8 @@ export async function moveMessagesToFolder(
   messageIds: number[],
   folderId: number,
 ): Promise<void> {
+  if (isWebBuild())
+    return tierB.webMoveMessagesToFolder(sessionTierA(), await wtokens(), messageIds, folderId);
   return invoke("move_messages_to_folder", { messageIds, folderId });
 }
 
@@ -348,6 +465,7 @@ export async function deleteMessages(
   messageIds: number[],
   areConcepts: boolean,
 ): Promise<void> {
+  if (isWebBuild()) return tierB.webDeleteMessages(sessionTierA(), await wtokens(), messageIds, areConcepts);
   return invoke("delete_messages", { messageIds, areConcepts });
 }
 
@@ -355,6 +473,7 @@ export async function searchContacts(
   query: string,
   maxResults?: number,
 ): Promise<Contact[]> {
+  if (isWebBuild()) return tierB.webSearchContacts(sessionTierA(), await wtokens(), query, maxResults);
   return invoke("search_contacts", { query, maxResults });
 }
 
@@ -364,6 +483,7 @@ export async function getAssignments(
   start: string,
   end: string,
 ): Promise<Assignment[]> {
+  if (isWebBuild()) return tierB.webGetAssignments(sessionTierA(), await wtokens(), personId, start, end);
   const assignments = await invoke("get_assignments", {
     personId,
     start,
@@ -373,6 +493,7 @@ export async function getAssignments(
 }
 
 export async function getAssignmentDetail(selfUrl: string): Promise<Assignment> {
+  if (isWebBuild()) return tierB.webGetAssignmentDetail(sessionTierA(), await wtokens(), selfUrl);
   const assignment = (await invoke("get_assignment_detail", {
     selfUrl,
   })) as Assignment;
@@ -384,26 +505,37 @@ export async function handInAssignment(
   opdrachtId: number,
   versionJson: string,
 ): Promise<void> {
+  if (isWebBuild()) return tierB.webHandInAssignment(sessionTierA(), await wtokens(), selfUrl, opdrachtId, versionJson);
   return invoke("hand_in_assignment", { selfUrl, opdrachtId, versionJson });
 }
 
 export async function uploadAssignmentAttachment(
-  filePath: string,
+  file: File | string,
 ): Promise<[number, string]> {
-  return invoke("upload_assignment_attachment", { filePath });
+  if (typeof file !== "string") {
+    if (!isWebBuild()) throw new Error("Bestandsobjecten worden alleen in de webversie ondersteund.");
+    return tierB.webUploadAssignmentAttachment(sessionTierA(), await wtokens(), file);
+  }
+  if (isWebBuild()) {
+    throw new Error("Bestanden uploaden via pad werkt in de webversie niet — kies een bestand.");
+  }
+  return invoke("upload_assignment_attachment", { filePath: file });
 }
 
 // === Leermiddelen ===
 export async function getLeermiddelen(personId: number): Promise<any[]> {
+  if (isWebBuild()) return tierB.webGetLeermiddelen(sessionTierA(), await wtokens(), personId);
   return invoke("get_leermiddelen", { personId });
 }
 
 export async function getLeermiddelLaunchUrl(href: string): Promise<string> {
+  if (isWebBuild()) return tierB.webGetLeermiddelLaunchUrl(sessionTierA(), await wtokens(), href);
   return invoke("get_leermiddel_launch_url", { href });
 }
 
 // === Activities ===
 export async function getActivities(personId: number): Promise<any[]> {
+  if (isWebBuild()) return tierB.webGetActivities(sessionTierA(), await wtokens(), personId);
   const activities = await invoke("get_activities", { personId });
   return (activities as any[]).map(sanitizeActivity);
 }
@@ -412,6 +544,8 @@ export async function getActivityElements(
   personId: number,
   activityId: number,
 ): Promise<any[]> {
+  if (isWebBuild())
+    return tierB.webGetActivityElements(sessionTierA(), await wtokens(), personId, activityId);
   const elements = await invoke("get_activity_elements", {
     personId,
     activityId,
@@ -421,15 +555,18 @@ export async function getActivityElements(
 
 // === Bronnen ===
 export async function getBronnen(path: string): Promise<any[]> {
+  if (isWebBuild()) return tierB.webGetBronnen(sessionTierA(), await wtokens(), path);
   return invoke("get_bronnen", { path });
 }
 
 export async function getExternalBronSources(personId: number): Promise<any[]> {
+  if (isWebBuild()) return tierB.webGetExternalBronSources(sessionTierA(), await wtokens(), personId);
   return invoke("get_external_bron_sources", { personId });
 }
 
 // === Studiewijzers ===
 export async function getStudiewijzers(personId: number): Promise<any[]> {
+  if (isWebBuild()) return tierB.webGetStudiewijzers(sessionTierA(), await wtokens(), personId);
   return invoke("get_studiewijzers", { personId });
 }
 
@@ -438,6 +575,8 @@ export async function getStudiewijzerDetail(
   id: number,
   isProject: boolean,
 ): Promise<any> {
+  if (isWebBuild())
+    return tierB.webGetStudiewijzerDetail(sessionTierA(), await wtokens(), personId, id, isProject);
   const detail = await invoke("get_studiewijzer_detail", {
     personId,
     id,
@@ -452,6 +591,15 @@ export async function getStudiewijzerOnderdeelDetail(
   onderdeelId: number,
   isProject: boolean,
 ): Promise<any> {
+  if (isWebBuild())
+    return tierB.webGetStudiewijzerOnderdeelDetail(
+      sessionTierA(),
+      await wtokens(),
+      personId,
+      swId,
+      onderdeelId,
+      isProject,
+    );
   const detail = await invoke("get_studiewijzer_onderdeel_detail", {
     personId,
     swId,
@@ -462,6 +610,7 @@ export async function getStudiewijzerOnderdeelDetail(
 }
 
 export async function triggerTestNotification(): Promise<void> {
+  if (isWebBuild()) return showNotification(NotificationType.Test, "Test", "Meldingen werken in deze browser.");
   return invoke("trigger_test_notification");
 }
 
@@ -480,6 +629,18 @@ export async function showNotification(
   message: string,
   extra?: string,
 ): Promise<void> {
+  if (isWebBuild()) {
+    // Foreground web notifications only (no background sync on iOS PWAs —
+    // persistent push is the optional push module, plan v2 §5).
+    void type;
+    void extra;
+    try {
+      if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+        new Notification(title, { body: message });
+      }
+    } catch (_) {}
+    return;
+  }
   return invoke("show_notification", {
     notificationType: type,
     title,
@@ -536,32 +697,46 @@ export async function notifyDeadline(
 }
 
 export async function triggerSync(): Promise<void> {
+  if (isWebBuild()) return; // Web data refreshes via cache + resume; no background sync to trigger.
   return invoke("trigger_sync");
 }
 
 export async function getDebugInfo(): Promise<string> {
+  if (isWebBuild()) return "Webversie — geen native debug-info beschikbaar.";
   return invoke("get_debug_info");
 }
 
 export async function getSyncStateDebug(): Promise<string> {
+  if (isWebBuild()) return "Webversie — synchronisatie loopt via de browsercache.";
   return invoke("get_sync_state_debug");
 }
 
 export async function clearSyncState(): Promise<string> {
+  if (isWebBuild()) {
+    const { cacheClearAll } = await import("./cache");
+    await cacheClearAll();
+    return "Browsercache gewist.";
+  }
   return invoke("clear_sync_state");
 }
 
 export async function getSyncInterval(): Promise<number> {
+  if (isWebBuild()) return 900; // Web has no background scheduler; 15 min floor kept for parity.
   return invoke("get_sync_interval");
 }
 
 export async function setSyncInterval(seconds: number): Promise<string> {
+  if (isWebBuild()) {
+    void seconds;
+    return "Achtergrondsynchronisatie is niet beschikbaar in de webversie.";
+  }
   return invoke("set_sync_interval", { seconds });
 }
 
 // === AI Relevance Scoring ===
 
 export async function getNightSleepConfig(): Promise<any> {
+  if (isWebBuild()) return { enabled: false, startHour: 23, endHour: 7 };
   return invoke("get_night_sleep_config");
 }
 
@@ -570,24 +745,37 @@ export async function setNightSleepConfig(
   startHour: number,
   endHour: number,
 ): Promise<string> {
+  if (isWebBuild()) {
+    void enabled;
+    void startHour;
+    void endHour;
+    return "Niet beschikbaar in de webversie.";
+  }
   return invoke("set_night_sleep_config", { enabled, startHour, endHour });
 }
 
 export async function getDisableAllNotifications(): Promise<boolean> {
+  if (isWebBuild()) return false;
   return invoke("get_disable_all_notifications");
 }
 
 export async function getDndAccessStatus(): Promise<boolean> {
+  if (isWebBuild()) return false;
   return invoke("get_dnd_access_status");
 }
 
 export async function triggerDndTest(): Promise<void> {
+  if (isWebBuild()) return;
   return invoke("trigger_dnd_test");
 }
 
 export async function setDisableAllNotifications(
   enabled: boolean,
 ): Promise<string> {
+  if (isWebBuild()) {
+    void enabled;
+    return "Niet beschikbaar in de webversie.";
+  }
   return invoke("set_disable_all_notifications", { enabled });
 }
 
@@ -598,6 +786,7 @@ export async function syncNotificationPreferences(
   notifyCalendar: boolean,
   notifyAutoDnd: boolean,
 ): Promise<void> {
+  if (isWebBuild()) return;
   return invoke("sync_notification_preferences", {
     notifyMessages,
     notifyGrades,
@@ -615,6 +804,28 @@ export interface ExportResult {
 }
 
 export async function exportAllData(): Promise<ExportResult> {
+  if (isWebBuild()) {
+    // Browsers can't write a folder of files: same 9 categories as one JSON
+    // download instead (see webExportAllData, mirrors export.rs).
+    const tokens = await wtokens();
+    const pid = tokens.personId;
+    if (pid == null) throw new Error("Geen leerling gevonden bij dit account.");
+    const result = await tierB.webExportAllData(sessionTierA(), tokens, pid);
+    const blob = new Blob([result.json], { type: "application/json" });
+    const objectUrl = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = objectUrl;
+    a.download = result.filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 10_000);
+    return {
+      success: true,
+      files: [result.filename],
+      error: result.warnings.length > 0 ? `Waarschuwingen bij: ${result.warnings.join("; ")}` : null,
+    };
+  }
   return invoke("export_all_data");
 }
 

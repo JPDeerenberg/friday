@@ -1820,7 +1820,7 @@ dependencies = [
 
 [[package]]
 name = "friday"
-version = "2.5.0"
+version = "2.6.0"
 dependencies = [
  "async-trait",
  "base64 0.23.1",
@@ -1831,6 +1831,7 @@ dependencies = [
  "keyring",
  "keyring-core",
  "log",
+ "magister-core",
  "mime_guess",
  "ndk-context",
  "pdf-extract",
@@ -3313,6 +3314,24 @@ name = "lru-slab"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "112b39cec0b298b6c1999fee3e31427f74f676e4cb9879ed1a121b43661a4154"
+
+[[package]]
+name = "magister-core"
+version = "0.1.0"
+dependencies = [
+ "base64 0.23.1",
+ "chrono",
+ "log",
+ "rand 0.10.2",
+ "reqwest",
+ "rustls",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "thiserror 2.0.20",
+ "url",
+ "webpki-roots",
+]
 
 [[package]]
 name = "markup5ever"
