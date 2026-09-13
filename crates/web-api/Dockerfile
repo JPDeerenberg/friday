@@ -3,6 +3,9 @@
 #   docker build -f crates/web-api/Dockerfile -t friday-web-api .
 FROM rust:1.94-bookworm AS builder
 WORKDIR /build
+# Predictable output path: without a workspace each crate would otherwise
+# use its own crates/web-api/target (which broke the strip+COPY below).
+ENV CARGO_TARGET_DIR=/build/target
 COPY crates/magister-core crates/magister-core
 COPY crates/web-api crates/web-api
 WORKDIR /build/crates/web-api
