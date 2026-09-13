@@ -7,14 +7,11 @@
 #   never wipe the app (and this workflow never touches fdroid/)
 # - pushes retry with rebase in case an Android release lands mid-deploy
 #
-# One-time setup (user, dashboard only):
-#   1. Render → Apply the render.yaml Blueprint, note the public URL.
-#   2. Repo Settings → Variables → Actions → VITE_API_URL =
-#      https://<your-render-service>.onrender.com/api
-#      (Before that, builds use the placeholder below and the login screen
-#      will fail — the site itself still deploys fine.)
-#   3. Repo Settings → Pages → Source already = Deploy from a branch
-#      (gh-pages) — leave exactly as is; do NOT switch to GitHub Actions.
+# One-time setup (user, dashboard only): nothing required. The workflow
+# defaults VITE_API_URL to the live Render backend; override anytime via
+# repo Settings → Variables → Actions → VITE_API_URL.
+# Repo Settings → Pages → Source stays "Deploy from a branch" (gh-pages) —
+# do NOT switch to GitHub Actions.
 
 name: Deploy web app to Pages branch
 
@@ -43,7 +40,7 @@ jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
     env:
-      VITE_API_URL: ${{ vars.VITE_API_URL || 'https://REPLACE-WITH-RENDER-URL.onrender.com/api' }}
+      VITE_API_URL: ${{ vars.VITE_API_URL || 'https://friday-api-ogqk.onrender.com/api' }}
     steps:
       - name: Checkout source (main)
         uses: actions/checkout@v4
