@@ -46,11 +46,42 @@ impl LoginError {
             LoginError::Upstream(_) => "Magister gaf een onverwacht antwoord, probeer het later opnieuw.",
         }
     }
+
+    /// Server-side diagnostic, safe for Render logs (values redacted at
+    /// construction). Never sent to the client — see `message()`.
+    pub fn detail(&self) -> Option<&str> {
+        match self {
+            LoginError::Upstream(d) => Some(d),
+            _ => None,
+        }
+    }
+}
+
+/// Redact sensitive query-param values (sessionId, PKCE state/nonce/code)
+/// from a diagnostic string. Passwords and tokens never appear in URLs.
+fn redact_query_values(msg: &str) -> String {
+    let mut out = msg.to_string();
+    for param in ["sessionId", "returnUrl", "code", "code_verifier", "state", "nonce"] {
+        let mut search_from = 0;
+        loop {
+            let needle = format!("{param}=");
+            let Some(rel) = out[search_from..].find(&needle) else { break };
+            let val_start = search_from + rel + needle.len();
+            let val_end = out[val_start..]
+                .find(|c: char| c == '&' || c == '"' || c == '\'' || c == ' ' || c == ')')
+                .map(|i| val_start + i)
+                .unwrap_or(out.len());
+            out.replace_range(val_start..val_end, "…");
+            search_from = val_start + "…".len();
+        }
+    }
+    out
 }
 
 impl From<reqwest::Error> for LoginError {
     fn from(e: reqwest::Error) -> Self {
-        LoginError::Upstream(e.to_string())
+        // Debug format carries the source chain (Display hides it); redacted.
+        LoginError::Upstream(redact_query_values(&format!("{e:?}")))
     }
 }
 
@@ -401,8 +432,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn error_status_mapping() {
-        assert_eq!(LoginError::BadRequest("x").status(), axum::http::StatusCode::BAD_REQUEST);
+    fn redact_query_values_hides_secrets() {
+        let msg = "url: \"https://x/search?sessionId=abc123&key=school\" state=zzz code=ccc";
+        let out = redact_query_values(msg);
+        assert!(!out.contains("abc123"), "{out}");
+        assert!(!out.contains("state=zzz"), "{out}");
+        assert!(!out.contains("code=ccc"), "{out}");
+        assert!(out.contains("key=school"), "{out}");
+    }
+
+    #[test]
+    fn error_status_mapping() {        assert_eq!(LoginError::BadRequest("x").status(), axum::http::StatusCode::BAD_REQUEST);
         assert_eq!(LoginError::Unauthorized("x").status(), axum::http::StatusCode::UNAUTHORIZED);
         assert_eq!(LoginError::UpstreamThrottled.status(), axum::http::StatusCode::TOO_MANY_REQUESTS);
         assert_eq!(LoginError::Upstream("x".into()).status(), axum::http::StatusCode::BAD_GATEWAY);

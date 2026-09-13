@@ -78,7 +78,12 @@ async fn login(
     .await
     {
         Ok(ok) => (StatusCode::OK, Json(serde_json::to_value(&ok).unwrap())).into_response(),
-        Err(e) => error_json(e.status(), e.message()),
+        Err(e) => {
+            if let Some(d) = e.detail() {
+                eprintln!("login upstream detail: {d}");
+            }
+            error_json(e.status(), e.message())
+        }
     }
 }
 
