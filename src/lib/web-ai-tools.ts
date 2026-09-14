@@ -1243,7 +1243,8 @@ export async function confirmWebPendingAction(
       const omschrijving = strArg(args, "omschrijving").trim();
       const lokatie = strArg(args, "lokatie").trim() || null;
       const inhoud = strArg(args, "inhoud").trim() || null;
-      const info_type = inhoud ? 7 : 0;
+      // Live-probed 2026-09: content on Type 1 needs InfoType 6, 0 when empty.
+      const info_type = inhoud ? 6 : 0;
       const body: Record<string, unknown> = {
         Start: start,
         Einde: einde,

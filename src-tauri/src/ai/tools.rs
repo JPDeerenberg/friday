@@ -1976,10 +1976,9 @@ pub async fn execute_pending_action(
                 .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty());
             // Same Inhoud ↔ InfoType coherence rule as commands/calendar.rs:
-            // InfoType 0 is invalid with content, and the lesson-bound
-            // types 1-5 are rejected for Type 1 (personal) appointments —
-            // use 7 (Notitie) for content, 0 when empty.
-            let info_type = if inhoud.is_some() { 7 } else { 0 };
+            // live-probed 2026-09, content on Type 1 needs 6 (Informatie),
+            // 0 when empty.
+            let info_type = if inhoud.is_some() { 6 } else { 0 };
 
             let mut body = serde_json::json!({
                 "Start": start,
@@ -2287,9 +2286,9 @@ mod tests {
         let posted: serde_json::Value =
             serde_json::from_slice(&requests[0].body).expect("posted valid json");
         // Regression test for the 400 "ongeldig infotype": a content-bearing
-        // personal appointment must use InfoType 7 (Notitie) — never 0
-        // (invalid with content) or 1 (lesson-bound Huiswerk).
-        assert_eq!(posted["InfoType"], 7);
+        // personal appointment must use InfoType 6 (Informatie) — live-probed
+        // 2026-09, every other value 400s.
+        assert_eq!(posted["InfoType"], 6);
         assert_eq!(posted["Inhoud"], "Hoofdstuk 3 afmaken");
         assert_eq!(posted["Lokatie"], "Thuis");
     }

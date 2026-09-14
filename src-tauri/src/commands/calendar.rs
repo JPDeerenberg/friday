@@ -88,11 +88,11 @@ pub async fn create_calendar_event(
     let mut c = client.lock().await;
 
     // Magister validates Inhoud ↔ InfoType coherence: InfoType 0 (Geen) is
-    // invalid when Inhoud is non-empty (400 "ongeldig infotype"). The
-    // lesson-bound types 1-5 (Huiswerk/Proefwerk/...) are likewise rejected
-    // for a Type 1 (personal) appointment, so content gets InfoType 7
-    // (Notitie) — the generic free-text note type. This also keeps personal
-    // appointments out of the homework flows (they key off InfoType 1).
+    // invalid when Inhoud is non-empty (400 "ongeldig infotype"). Live-probed
+    // 2026-09: for a Type 1 (personal) appointment with Inhoud, ONLY InfoType
+    // 6 (Informatie) is accepted — 1-5, 7 (Notitie) and even 0 all 400.
+    // Without Inhoud, 0. This also keeps personal appointments out of the
+    // homework flows (they key off InfoType 1).
     let inhoud = inhoud.and_then(|s| {
         let t = s.trim().to_string();
         if t.is_empty() { None } else { Some(t) }
@@ -101,7 +101,7 @@ pub async fn create_calendar_event(
         let t = s.trim().to_string();
         if t.is_empty() { None } else { Some(t) }
     });
-    let info_type = if inhoud.is_some() { 7 } else { 0 };
+    let info_type = if inhoud.is_some() { 6 } else { 0 };
 
     let body = serde_json::to_value(CreateCalendarEvent {
         start,

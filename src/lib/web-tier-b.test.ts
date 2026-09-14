@@ -157,7 +157,7 @@ test("buildCreateEventBody InfoType coherence", () => {
   assert.strictEqual(plain["InfoType"], 0);
   assert.strictEqual(plain["Inhoud"], null);
   const noted = buildCreateEventBody({ ...base, inhoud: "huiswerk", eventType: 1 }) as Record<string, unknown>;
-  assert.strictEqual(noted["InfoType"], 7);
+  assert.strictEqual(noted["InfoType"], 6);
   assert.strictEqual(noted["Type"], 1);
   assert.strictEqual(noted["Status"], 2);
   const blank = buildCreateEventBody({ ...base, inhoud: "   " }) as Record<string, unknown>;

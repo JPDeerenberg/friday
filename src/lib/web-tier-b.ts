@@ -235,9 +235,10 @@ export function buildDeleteBody(messageIds: number[], areConcepts: boolean): { e
 
 /**
  * Magister validates Inhoud ↔ InfoType coherence: InfoType 0 (Geen) is
- * invalid with non-empty Inhoud, and lesson-bound types 1-5 are rejected
- * for personal appointments — content gets InfoType 7 (Notitie).
- * Mirrors create_calendar_event in commands/calendar.rs.
+ * invalid when Inhoud is non-empty. Live-probed 2026-09: for a Type 1
+ * (personal) appointment with Inhoud, ONLY InfoType 6 (Informatie) is
+ * accepted — 1-5, 7 (Notitie) and even 0 all 400. Without Inhoud, 0.
+ * (The old "7" rule and Discipulus' "0" both fail today.)
  */
 export function buildCreateEventBody(p: {
   start: string;
@@ -260,7 +261,7 @@ export function buildCreateEventBody(p: {
     Omschrijving: p.omschrijving.trim(),
     Lokatie: clean(p.lokatie) ?? null,
     Inhoud: inhoud ?? null,
-    InfoType: inhoud !== undefined ? 7 : 0,
+    InfoType: inhoud !== undefined ? 6 : 0,
     Type: p.eventType ?? 1,
     Status: 2,
   };
