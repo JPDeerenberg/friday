@@ -215,6 +215,22 @@ fn check_throttle(status: reqwest::StatusCode) -> Result<(), LoginError> {
     Ok(())
 }
 
+/// Forced post-password actions Magister can demand (e.g. a school-wide
+/// password reset policy). The challenge answers HTTP 200, but the session
+/// is NOT authenticated until the user completes the action out-of-band —
+/// without this check the flow fails later with a cryptic error.
+fn forced_action_message(body: &serde_json::Value) -> Option<&'static str> {
+    match body.get("action").and_then(|v| v.as_str()) {
+        Some("changepassword") => Some(
+            "Je school vereist een nieuw wachtwoord. Log eerst in via de Magister-website of -app, stel een nieuw wachtwoord in en probeer het daarna opnieuw.",
+        ),
+        Some(_) => Some(
+            "Magister vereist eerst een extra stap op je account. Log in via de Magister-website of -app en probeer het daarna opnieuw.",
+        ),
+        None => None,
+    }
+}
+
 /// Full login. `http` must be redirect-disabled (Policy::none).
 pub async fn password_login(
     http: &reqwest::Client,
@@ -329,6 +345,14 @@ async fn finish_with_authcode(
     if !r.status().is_success() {
         return Err(LoginError::Unauthorized("Onjuist wachtwoord, of even wachten bij te vaak proberen."));
     }
+    // HTTP 200 is not the whole story: Magister can demand an out-of-band
+    // action (e.g. forced password change) while leaving the session
+    // unauthenticated. Surface that plainly instead of failing downstream.
+    if let Ok(body) = r.json::<serde_json::Value>().await {
+        if let Some(msg) = forced_action_message(&body) {
+            return Err(LoginError::Unauthorized(msg));
+        }
+    }
 
     // 4. Profile token → api_url → app token → account/person.
     let profile_url = format!(
@@ -439,6 +463,17 @@ mod tests {
         assert!(!out.contains("state=zzz"), "{out}");
         assert!(!out.contains("code=ccc"), "{out}");
         assert!(out.contains("key=school"), "{out}");
+    }
+
+    #[test]
+    fn forced_action_detection() {
+        assert!(forced_action_message(&serde_json::json!({})).is_none());
+        assert!(forced_action_message(&serde_json::json!({ "action": "changepassword" }))
+            .unwrap()
+            .contains("nieuw wachtwoord"));
+        assert!(forced_action_message(&serde_json::json!({ "action": "something-else" }))
+            .unwrap()
+            .contains("extra stap"));
     }
 
     #[test]

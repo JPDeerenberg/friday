@@ -405,7 +405,9 @@ async fn run() -> Result<serde_json::Value, SpikeError> {
     step!("profile token + api discovery", t0);
     let profile_url = format!("{ACCOUNTS}/connect/authorize?client_id=iam-profile&redirect_uri=https%3A%2F%2Faccounts.magister.net%2Fprofile%2Foidc%2Fredirect_callback.html&response_type=id_token%20token&scope=openid%20profile%20email%20magister.iam.profile&state=spike&nonce=spike");
     let r = sess.get(&profile_url).await?;
-    let profile_token = fragment_access_token(&header_location(&r)?)
+    let loc = header_location(&r)?;
+    eprintln!("  DEBUG profile redirect: status={} loc-prefix={}", r.status(), &loc[..loc.len().min(200)]);
+    let profile_token = fragment_access_token(&loc)
         .ok_or_else(|| SpikeError::LoginFailed("profile-token", "no access_token in redirect fragment".into()))?;
     eprintln!("  {}", secret_len("profile_token", &profile_token));
 

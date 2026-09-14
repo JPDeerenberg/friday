@@ -11,6 +11,7 @@
 //! - `POST /api/auth/logout`   no-op acknowledgement (stateless)
 //! - `ANY  /api/magister/*`    Tier-A generic proxy
 
+mod ai;
 mod auth;
 mod proxy;
 mod ratelimit;
@@ -131,6 +132,72 @@ async fn logout() -> impl IntoResponse {
     Json(serde_json::json!({ "ok": true }))
 }
 
+/// BYO-key AI chat forward. The key travels per-request in memory only —
+/// never logged (not even the request body), never stored.
+async fn ai_chat(State(state): State<AppState>, Json(body): Json<ai::ChatRequest>) -> impl IntoResponse {
+    match ai::chat(&state.http, body).await {
+        Ok(out) => (StatusCode::OK, Json(serde_json::to_value(&out).unwrap())).into_response(),
+        Err((status, msg)) => error_json(
+            StatusCode::from_u16(status).unwrap_or(StatusCode::BAD_GATEWAY),
+            &msg,
+        ),
+    }
+}
+
+async fn ai_validate(State(state): State<AppState>, Json(body): Json<ai::ValidateRequest>) -> impl IntoResponse {
+    match ai::validate(&state.http, body).await {
+        Ok(_) => Json(serde_json::json!({ "ok": true })).into_response(),
+        Err((status, msg)) => error_json(
+            StatusCode::from_u16(status).unwrap_or(StatusCode::BAD_GATEWAY),
+            &msg,
+        ),
+    }
+}
+
+async fn ai_models(State(state): State<AppState>, Json(body): Json<ai::ValidateRequest>) -> impl IntoResponse {
+    match ai::list_models(&state.http, body).await {
+        Ok(models) => (StatusCode::OK, Json(serde_json::json!({ "models": models }))).into_response(),
+        Err((status, msg)) => error_json(
+            StatusCode::from_u16(status).unwrap_or(StatusCode::BAD_GATEWAY),
+            &msg,
+        ),
+    }
+}
+
+/// Resolve a Magister indirection link to its real target URL (see the
+/// `__resolve` branch of `magister_proxy`). Mirrors desktop
+/// `get_redirect_location`: 302 Location header first, JSON `location`
+/// wrapper second. The target is returned, never fetched, so multi-MB
+/// payloads never transit the proxy.
+async fn resolve_link(http: &reqwest::Client, url: String, bearer: String) -> axum::response::Response {
+    let resp = match http
+        .get(&url)
+        .header("Authorization", format!("Bearer {bearer}"))
+        .header("Accept", "application/json")
+        .send()
+        .await
+    {
+        Ok(r) => r,
+        Err(_) => return error_json(StatusCode::BAD_GATEWAY, "Magister is niet bereikbaar, probeer het later opnieuw."),
+    };
+    if resp.status().is_redirection() {
+        if let Some(loc) = resp.headers().get(reqwest::header::LOCATION).and_then(|v| v.to_str().ok()) {
+            return (StatusCode::OK, Json(serde_json::json!({ "location": loc }))).into_response();
+        }
+    }
+    let status = resp.status().as_u16();
+    let body = resp.text().await.unwrap_or_default();
+    if let Ok(json) = serde_json::from_str::<serde_json::Value>(&body) {
+        if let Some(loc) = json.get("location").and_then(|l| l.as_str()) {
+            return (StatusCode::OK, Json(serde_json::json!({ "location": loc }))).into_response();
+        }
+    }
+    error_json(
+        StatusCode::from_u16(status).unwrap_or(StatusCode::BAD_GATEWAY),
+        "Kon de link niet resolven.",
+    )
+}
+
 async fn magister_proxy(
     State(state): State<AppState>,
     method: Method,
@@ -148,10 +215,31 @@ async fn magister_proxy(
     if bearer.is_empty() || endpoint.is_empty() {
         return error_json(StatusCode::BAD_REQUEST, "Ontbrekende sessiegegevens, log opnieuw in.");
     }
-    let url = match proxy::upstream_url(endpoint, &path, query.as_deref()) {
+    // Resolve mode (?__resolve=1): Magister indirection links (launch URLs,
+    // download/Self links) answer with a 302 or a {"location": ...} wrapper,
+    // never bytes. Browsers follow the 302 silently into HTML, so resolve
+    // server-side with the no-redirect client and return the target URL.
+    // The `__resolve` marker itself is stripped before forwarding.
+    let is_resolve = query
+        .as_deref()
+        .map(|q| q.split('&').any(|p| p == "__resolve" || p.starts_with("__resolve=")))
+        .unwrap_or(false);
+    let forward_q = if is_resolve {
+        let clean: Vec<&str> = query
+            .as_deref()
+            .map(|q| q.split('&').filter(|p| *p != "__resolve" && !p.starts_with("__resolve=")).collect())
+            .unwrap_or_default();
+        if clean.is_empty() { None } else { Some(clean.join("&")) }
+    } else {
+        query.clone()
+    };
+    let url = match proxy::upstream_url(endpoint, &path, forward_q.as_deref()) {
         Ok(u) => u,
         Err(m) => return error_json(StatusCode::BAD_REQUEST, m),
     };
+    if is_resolve {
+        return resolve_link(&state.no_redirect, url, bearer.to_string()).await;
+    }
     let content_type = headers.get("content-type").and_then(|v| v.to_str().ok()).map(|s| s.to_string());
     match proxy::forward(&state.http, method, url, bearer.to_string(), content_type, body).await {
         Ok((status, ct, bytes)) => {
@@ -211,6 +299,9 @@ async fn main() {
         .route("/api/auth/login", post(login))
         .route("/api/auth/refresh", post(refresh))
         .route("/api/auth/logout", post(logout))
+        .route("/api/ai/chat", post(ai_chat))
+        .route("/api/ai/validate", post(ai_validate))
+        .route("/api/ai/models", post(ai_models))
         .route("/api/magister/{*path}", get(magister_proxy).post(magister_proxy).put(magister_proxy).patch(magister_proxy).delete(magister_proxy))
         .layer(cors)
         .with_state(state);
