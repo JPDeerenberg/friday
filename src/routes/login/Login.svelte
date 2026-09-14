@@ -4,8 +4,30 @@
   import Button from '$lib/components/Button.svelte';
   import InstallPrompt from '$lib/components/InstallPrompt.svelte';
 
+  import { webBackend, saveWebSession, webRequest, webRequestBytes, bytesToBase64 } from '$lib/web-session';
+
   let loading = $state(false);
   let error = $state('');
+  // Cold-start messaging: free Render sleeps after 15 min idle, so the first
+  // login of the day can take 30–60 s. Timed messages keep that from looking
+  // broken. Deliberately no hard timeout — it would kill legit slow logins.
+  let loginStartedAt = $state(0);
+  let loginElapsed = $state(0);
+  let loginTimer: ReturnType<typeof setInterval> | null = null;
+
+  function startLoginTimer() {
+    stopLoginTimer();
+    loginStartedAt = Date.now();
+    loginElapsed = 0;
+    loginTimer = setInterval(() => {
+      loginElapsed = Date.now() - loginStartedAt;
+    }, 1000);
+  }
+
+  function stopLoginTimer() {
+    if (loginTimer) clearInterval(loginTimer);
+    loginTimer = null;
+  }
 
   // Web build (no Tauri runtime): password-form login against web-api.
   // Desktop/Android keep the OAuth system-browser flow below, untouched.
@@ -15,15 +37,6 @@
   let password = $state('');
   let showPassword = $state(false);
 
-  function bytesToBase64(bytes: Uint8Array): string {
-    let bin = '';
-    const CHUNK = 0x8000;
-    for (let i = 0; i < bytes.length; i += CHUNK) {
-      bin += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
-    }
-    return btoa(bin);
-  }
-
   async function startWebLogin() {
     if (!school.trim() || !username.trim() || !password) {
       error = 'Vul school, gebruikersnaam en wachtwoord in.';
@@ -31,6 +44,7 @@
     }
     loading = true;
     error = '';
+    startLoginTimer();
     try {
       const { webBackend, saveWebSession, webRequest, webRequestBytes } = await import('$lib/web-session');
       const be = webBackend();
@@ -50,6 +64,8 @@
     } catch (e: any) {
       error = e?.message ?? e?.toString() ?? 'Inloggen mislukt';
       loading = false;
+    } finally {
+      stopLoginTimer();
     }
   }
 
@@ -65,6 +81,7 @@
   $effect(() => {
     if ($isLoggedIn) {
       loading = false;
+      stopLoginTimer();
     }
   });
 
@@ -185,6 +202,16 @@
           <div class="text-center space-y-4 py-4">
             <div class="w-12 h-12 border-4 border-primary-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
             <p class="text-sm text-gray-300 font-medium">Bezig met inloggen...</p>
+            {#if loginElapsed > 8000}
+              <p class="text-xs text-gray-500 leading-relaxed">
+                De server wordt wakker gemaakt (gratis hosting slaapt bij inactiviteit).
+                {#if loginElapsed > 30000}
+                  <br />Dit duurt langer dan normaal — nog even geduld…
+                {:else}
+                  <br />Dit kan een halve minuut duren.
+                {/if}
+              </p>
+            {/if}
           </div>
         {/if}
       {:else if !loading}

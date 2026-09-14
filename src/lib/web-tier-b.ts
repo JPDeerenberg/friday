@@ -37,6 +37,57 @@ import type {
 /** Minimal Tier-A surface Tier-B builds on. `WebBackend` satisfies this structurally. */
 export interface TierA {
   magister<T>(tokens: SessionTokens, method: MagisterMethod, path: string, body?: unknown): Promise<T>;
+  /** Raw bytes (photos, files). Optional: helpers needing it fall back when absent. */
+  magisterBytes?(tokens: SessionTokens, path: string): Promise<Uint8Array | null>;
+}
+
+/** MIME sniff for fetched bytes (PNG/JPEG/GIF magic). */
+export function sniffImageMime(bytes: Uint8Array): string {
+  if (bytes.length > 4 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) {
+    return "image/png";
+  }
+  if (bytes.length > 4 && bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46) {
+    return "image/gif";
+  }
+  return "image/jpeg";
+}
+
+/**
+ * Authorized image URL for `<img>` tags. Magister image URLs need a Bearer
+ * header, which `<img>` can't send — so same-endpoint images are fetched
+ * through the proxy into a Blob object URL. Foreign hosts pass through
+ * untouched (browser handles CORS; element onError covers failure).
+ * Returns null when unresolvable; callers render a fallback instead.
+ */
+const authedImageCache = new Map<string, string>();
+
+export async function webAuthedImageUrl(
+  be: TierA,
+  tokens: SessionTokens,
+  url: string | null | undefined,
+): Promise<string | null> {
+  if (!url) return null;
+  const hit = authedImageCache.get(url);
+  if (hit) return hit;
+  const endpoint = tokens.apiEndpoint.replace(/\/$/, "");
+  let resolved: string | null = null;
+  if (url.startsWith(endpoint)) {
+    const path = url.slice(endpoint.length).replace(/^\//, "");
+    try {
+      const bytes = await be.magisterBytes?.(tokens, path);
+      if (bytes && bytes.length > 0) {
+        resolved = URL.createObjectURL(new Blob([bytes as BlobPart], { type: sniffImageMime(bytes) }));
+      }
+    } catch {
+      resolved = null;
+    }
+  } else if (!/^https?:\/\//.test(url)) {
+    resolved = url; // site-relative asset: nothing to authorize
+  } else {
+    resolved = url; // foreign host: best effort, element onError covers it
+  }
+  if (resolved) authedImageCache.set(url, resolved);
+  return resolved;
 }
 
 // ─── Pure helpers (unit-tested) ────────────────────────────────────────────
@@ -46,8 +97,16 @@ export function truncateDate(s: string): string {
   return s.length >= 10 ? s.slice(0, 10) : s;
 }
 
+/**
+ * Normalize a Magister link to an endpoint-relative path. Handles all shapes
+ * seen in the wild: `/api/personen/1`, `api/personen/1`, `personen/1`,
+ * full `https://host/api/...` URLs are reduced separately by callers.
+ * (A previous version stripped leading slashes BEFORE the prefix check,
+ * producing `api/api/personen/...` → Magister 404. Never again.)
+ */
 export function stripApiPrefix(href: string): string {
-  return href.startsWith("/api/") ? href.slice("/api/".length) : href;
+  const noLead = href.replace(/^\/+/, "");
+  return noLead.startsWith("api/") ? noLead.slice("api/".length) : noLead;
 }
 
 /**
@@ -317,21 +376,49 @@ export async function webToggleCalendarEventDone(
 }
 
 /**
- * Web download: resolve Magister's indirection link (JSON `{"location": ...}`
- * wrapper or plain bytes) and return a Blob for the browser to save.
+ * Web download: resolve Magister's indirection link server-side (JSON
+ * `{"location": ...}` wrapper or 302 — browsers swallow the latter silently)
+ * and return a Blob for the browser to save.
  */
 export async function webDownloadFile(be: TierA, tokens: SessionTokens, url: string): Promise<Blob> {
-  const first = await be.magister<unknown>(tokens, "GET", stripApiPrefix(url));
-  if (first && typeof first === "object" && typeof (first as Record<string, unknown>)["location"] === "string") {
-    const resolved = (first as Record<string, unknown>)["location"] as string;
-    // Absolute content URL (e.g. Azure): fetch directly, browser handles CORS.
-    const res = await fetch(resolved);
-    if (!res.ok) throw new Error(`Download mislukt (HTTP ${res.status})`);
-    return await res.blob();
+  let path = stripApiPrefix(url);
+  const endpoint = tokens.apiEndpoint.replace(/\/$/, "");
+  if (/^https?:\/\//.test(path)) {
+    if (!path.startsWith(endpoint)) {
+      // Foreign host: fetch directly (browser handles CORS/CSP).
+      const res = await fetch(path);
+      if (!res.ok) throw new Error(`Download mislukt (HTTP ${res.status})`);
+      return await res.blob();
+    }
+    path = path.slice(endpoint.length).replace(/^\/+/, "");
   }
-  // Already the payload: re-encode as Blob.
-  const text = typeof first === "string" ? first : JSON.stringify(first);
-  return new Blob([text], { type: "application/octet-stream" });
+  const sep = path.includes("?") ? "&" : "?";
+  // Fast path: JSON location wrapper answered inline.
+  try {
+    const first = await be.magister<unknown>(tokens, "GET", path);
+    if (first && typeof first === "object" && typeof (first as Record<string, unknown>)["location"] === "string") {
+      return await fetchBlob((first as Record<string, unknown>)["location"] as string);
+    }
+    if (first instanceof Blob) return first;
+  } catch {
+    // Fall through to byte-level inspection + server-side resolve below.
+  }
+  // An HTML answer here is a "Doorsturen" redirect page, not file bytes:
+  // hand its target back so the UI opens it in a tab instead of saving HTML.
+  const raw = await fetchBytes(be, tokens, path);
+  if (raw && /<html|<!doctype/i.test(raw.text.trimStart().slice(0, 500))) {
+    const redirect = extractHtmlRedirect(raw.text);
+    if (redirect) throw new Error(`OPEN_IN_BROWSER:${redirect}`);
+  }
+  const resolved = await be.magister<{ location?: string }>(tokens, "GET", `${path}${sep}__resolve=1`);
+  if (!resolved?.location) throw new Error("Kon downloadlink niet resolven.");
+  return await fetchBlob(resolved.location);
+}
+
+async function fetchBlob(url: string): Promise<Blob> {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Download mislukt (HTTP ${res.status})`);
+  return await res.blob();
 }
 
 // ─── Grades ────────────────────────────────────────────────────────────────
@@ -683,16 +770,73 @@ export async function webGetLeermiddelen(be: TierA, tokens: SessionTokens, perso
 
 /**
  * Launch-URL resolve (mirrors get_leermiddel_launch_url): Magister links are
- * indirection links, so read the JSON `location` wrapper. Browsers follow
- * plain redirects themselves, which covers the Location-header variant.
+ * indirection links with three answers: a JSON `location` wrapper, a 302
+ * (resolved server-side via `__resolve`), or — for publisher books — an
+ * HTTP-200 HTML "Doorsturen" page with a meta-refresh/script redirect into
+ * federated SSO. Browsers must open that final URL in a tab (it completes
+ * login flows our Bearer token can't complete).
  */
-export async function webGetLeermiddelLaunchUrl(be: TierA, tokens: SessionTokens, href: string): Promise<string> {
-  const path = href.startsWith("http") ? href : stripApiPrefix(href.replace(/^\/+/, ""));
-  const data = await be.magister<unknown>(tokens, "GET", path);
-  if (data && typeof data === "object" && typeof (data as Record<string, unknown>)["location"] === "string") {
-    return (data as Record<string, unknown>)["location"] as string;
+export function extractHtmlRedirect(html: string): string | null {
+  const meta = html.match(/<meta[^>]+http-equiv=["']?refresh["']?[^>]*content=["']?\d+\s*;\s*url=([^"'>\s]+)/i);
+  if (meta?.[1]) return meta[1].replace(/&amp;/g, "&");
+  const script = html.match(/window\.location(?:\.href)?\s*=\s*["']([^"']+)["']/);
+  if (script?.[1]) return script[1].replace(/&amp;/g, "&");
+  return null;
+}
+
+async function fetchBytes(be: TierA, tokens: SessionTokens, path: string): Promise<{ text: string } | null> {
+  if (!be.magisterBytes) return null;
+  try {
+    const bytes = await be.magisterBytes(tokens, path);
+    if (!bytes || bytes.length === 0 || bytes.length > 2 * 1024 * 1024) return null;
+    return { text: new TextDecoder("utf-8", { fatal: false }).decode(bytes) };
+  } catch {
+    return null;
   }
-  if (typeof data === "string") return data;
+}
+
+export async function webGetLeermiddelLaunchUrl(be: TierA, tokens: SessionTokens, href: string): Promise<string> {
+  // Normalize to an endpoint-relative path: same-host absolute URLs are
+  // stripped, anything else can't be authorized and is rejected.
+  let path = stripApiPrefix(href);
+  const endpoint = tokens.apiEndpoint.replace(/\/$/, "");
+  if (/^https?:\/\//.test(path)) {
+    if (!path.startsWith(endpoint)) throw new Error("Kon de startlink niet openen.");
+    path = path.slice(endpoint.length).replace(/^\/+/, "");
+  }
+  try {
+    const data = await be.magister<unknown>(tokens, "GET", path);
+    if (data && typeof data === "object" && typeof (data as Record<string, unknown>)["location"] === "string") {
+      return (data as Record<string, unknown>)["location"] as string;
+    }
+    if (typeof data === "string") {
+      if (data.startsWith("http")) return data;
+      const redirect = extractHtmlRedirect(data);
+      if (redirect) return redirect;
+    }
+  } catch {
+    // Fall through to byte-level inspection + server-side resolve below.
+  }
+  // Same endpoint, raw bytes: catches the HTML "Doorsturen" redirect page
+  // that JSON parsing (above) and plain redirects both miss.
+  const raw = await fetchBytes(be, tokens, path);
+  if (raw) {
+    const trimmed = raw.text.trimStart();
+    if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+      try {
+        const data = JSON.parse(trimmed) as Record<string, unknown>;
+        if (typeof data["location"] === "string") return data["location"] as string;
+      } catch {
+        // Not JSON after all — continue to __resolve.
+      }
+    } else if (/<html|<!doctype/i.test(trimmed.slice(0, 500))) {
+      const redirect = extractHtmlRedirect(raw.text);
+      if (redirect) return redirect;
+    }
+  }
+  const sep = path.includes("?") ? "&" : "?";
+  const resolved = await be.magister<{ location?: string }>(tokens, "GET", `${path}${sep}__resolve=1`);
+  if (resolved?.location) return resolved.location;
   throw new Error("Kon de startlink niet openen.");
 }
 

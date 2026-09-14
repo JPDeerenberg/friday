@@ -1,6 +1,7 @@
 <script lang="ts">
   import { personId, resumedAt } from '$lib/stores';
   import { getProfileInfo, getProfileAddresses, getCareerInfo, getProfilePicture, getAccount } from '$lib/api';
+  import { photoDataUrl } from '$lib/web-session';
   import { cacheGet, cacheRefresh } from '$lib/cache';
   import { onMount } from 'svelte';
   import { fade, fly, slide } from 'svelte/transition';
@@ -177,7 +178,7 @@
             <div class="absolute -inset-6 bg-gradient-to-tr from-primary-500 to-accent-500 rounded-[3rem] blur-[40px] opacity-20 group-hover:opacity-40 transition-opacity duration-1000"></div>
             <div class="relative w-40 h-40 rounded-m3-xl overflow-hidden border-4 border-surface-800/80 shadow-2xl bg-surface-900/40 backdrop-blur-md flex items-center justify-center ring-1 ring-white/10 group-hover:scale-105 transition-transform duration-700">
               {#if profilePic}
-                <img src="data:image/jpeg;base64,{profilePic}" alt="Profielfoto" class="w-full h-full object-cover group-hover:scale-110 transition-transform duration-1000" />
+                <img src={photoDataUrl(profilePic) ?? ''} alt="Profielfoto" class="w-full h-full object-cover group-hover:scale-110 transition-transform duration-1000" />
               {:else}
                 <div class="text-gray-600 group-hover:text-primary-400 transition-colors duration-500">
                   <svg class="w-16 h-16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>

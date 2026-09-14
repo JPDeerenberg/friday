@@ -5,6 +5,16 @@
     <link rel="icon" href="%sveltekit.assets%/favicon.png" />
     <link rel="manifest" href="%sveltekit.assets%/manifest.webmanifest" />
     <meta name="theme-color" content="#131022" />
+    <!-- Baseline content policy (GitHub Pages can't send headers, so this
+      meta tag is the enforcement point; Caddy mirrors it as a real header
+      for self-hosted deploys). Deliberately moderate: SvelteKit's boot
+      needs inline scripts, and connect-src stays broad because self-hosters
+      point the app at their own backend URL. Still blocks objects/frames
+      and restricts where images, media and workers may load from. -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' blob:; font-src 'self' data:; connect-src 'self' https: wss:; worker-src 'self' blob:; manifest-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'"
+    />
     <!-- iOS home-screen app -->
     <link rel="apple-touch-icon" href="%sveltekit.assets%/apple-touch-icon.png" />
     <meta name="mobile-web-app-capable" content="yes" />

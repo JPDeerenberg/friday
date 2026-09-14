@@ -14,6 +14,7 @@ import {
   buildMessagesQuery,
   buildPatchBody,
   buildSendMessageBody,
+  extractHtmlRedirect,
   extractVakGrades,
   itemsArray,
   mergeAbsencesIntoEvents,
@@ -21,9 +22,11 @@ import {
   selfUrlFromLinks,
   stripApiPrefix,
   truncateDate,
+  webAuthedImageUrl,
   webExportAllData,
   webGetBulkGradeExtraInfo,
   webGetCalendarEvents,
+  webGetLeermiddelLaunchUrl,
   type TierA,
 } from "./web-tier-b.ts";
 import type { SessionTokens } from "./backend.ts";
@@ -50,9 +53,11 @@ test("truncateDate keeps YYYY-MM-DD, cuts ISO", () => {
   assert.strictEqual(truncateDate("kort"), "kort");
 });
 
-test("stripApiPrefix only strips leading /api/", () => {
+test("stripApiPrefix never double-prefixes", () => {
   assert.strictEqual(stripApiPrefix("/api/personen/1"), "personen/1");
+  assert.strictEqual(stripApiPrefix("api/personen/1"), "personen/1");
   assert.strictEqual(stripApiPrefix("personen/1"), "personen/1");
+  assert.strictEqual(stripApiPrefix("///api/personen/1"), "personen/1");
 });
 
 test("itemsArray handles Items/items/bare/missing", () => {
@@ -177,6 +182,36 @@ test("webGetCalendarEvents fetches in parallel, merges, sanitizes", async () => 
   assert.strictEqual(out[0].merged_absence?.Id, 9);
   // Sanitization boundary applied (stub prefixes output).
   assert.strictEqual(out[0].Inhoud, "stub-sanitized:<b>les</b>");
+});
+
+test("extractHtmlRedirect reads meta refresh and script redirects", () => {
+  assert.strictEqual(
+    extractHtmlRedirect('<meta http-equiv="refresh" content="0;url=https://x.example/a?b=1&amp;c=2" />'),
+    "https://x.example/a?b=1&c=2",
+  );
+  assert.strictEqual(
+    extractHtmlRedirect('<script>window.location.href = "https://y.example/b";</script>'),
+    "https://y.example/b",
+  );
+  assert.strictEqual(extractHtmlRedirect("<html><body>plain</body></html>"), null);
+});
+
+test("webGetLeermiddelLaunchUrl follows HTML Doorsturen pages", async () => {
+  const html = '<html><head><meta http-equiv="refresh" content="0;url=https://sso.example/login" /></head></html>';
+  const be: TierA = {
+    async magister<T>(): Promise<T> {
+      throw new Error("not json");
+    },
+    async magisterBytes(): Promise<Uint8Array> {
+      return new TextEncoder().encode(html);
+    },
+  };
+  const url = await webGetLeermiddelLaunchUrl(be, TOKENS, "personen/1/digitaallesmateriaal/Ean/123");
+  assert.strictEqual(url, "https://sso.example/login");
+});
+
+test("webGetLeermiddelLaunchUrl rejects foreign absolute hrefs", async () => {
+  await assert.rejects(webGetLeermiddelLaunchUrl({ async magister<T>(): Promise<T> { throw new Error("x"); } } as TierA, TOKENS, "https://evil.example.com/book"));
 });
 
 test("webExportAllData combines categories, collects warnings", async () => {

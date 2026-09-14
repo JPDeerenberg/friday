@@ -401,12 +401,26 @@ async fn run() -> Result<serde_json::Value, SpikeError> {
     }
     eprintln!("  password challenge accepted");
 
+    // ── 3b. Session validity probe: follow the ReturnUrl like the official
+    // client would. A bounce back to /Account/Login here means the session
+    // was NOT authenticated by the challenges (vs. a later step failing).
+    {
+        let abs = if return_url.starts_with("http") {
+            return_url.clone()
+        } else {
+            format!("{ACCOUNTS}{}", if return_url.starts_with('/') { return_url.clone() } else { format!("/{return_url}") })
+        };
+        let r = sess.get(&abs).await?;
+        if !r.status().is_redirection() {
+            return Err(SpikeError::Unexpected("ReturnUrl did not redirect — session not authenticated".into()));
+        }
+    }
+
     // ── 3. Profile token → api_url → app token → account/person ──
     step!("profile token + api discovery", t0);
     let profile_url = format!("{ACCOUNTS}/connect/authorize?client_id=iam-profile&redirect_uri=https%3A%2F%2Faccounts.magister.net%2Fprofile%2Foidc%2Fredirect_callback.html&response_type=id_token%20token&scope=openid%20profile%20email%20magister.iam.profile&state=spike&nonce=spike");
     let r = sess.get(&profile_url).await?;
     let loc = header_location(&r)?;
-    eprintln!("  DEBUG profile redirect: status={} loc-prefix={}", r.status(), &loc[..loc.len().min(200)]);
     let profile_token = fragment_access_token(&loc)
         .ok_or_else(|| SpikeError::LoginFailed("profile-token", "no access_token in redirect fragment".into()))?;
     eprintln!("  {}", secret_len("profile_token", &profile_token));

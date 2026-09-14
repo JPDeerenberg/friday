@@ -261,16 +261,27 @@ export async function downloadFile(
   if (isWebBuild()) {
     // Browser: save via object URL + anchor click instead of a disk path.
     void downloadDir;
-    const blob = await tierB.webDownloadFile(sessionTierA(), await wtokens(), url);
-    const objectUrl = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = objectUrl;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(objectUrl), 10_000);
-    return filename;
+    try {
+      const blob = await tierB.webDownloadFile(sessionTierA(), await wtokens(), url);
+      const objectUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = objectUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 10_000);
+      return filename;
+    } catch (e) {
+      // Redirect pages (publisher SSO) aren't files: open in a tab instead.
+      const msg = e instanceof Error ? e.message : String(e);
+      const marker = "OPEN_IN_BROWSER:";
+      if (msg.startsWith(marker)) {
+        window.open(msg.slice(marker.length), "_blank", "noopener,noreferrer");
+        return filename;
+      }
+      throw e;
+    }
   }
   return invoke("download_file", {
     url,

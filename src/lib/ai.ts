@@ -1,4 +1,15 @@
 import { invoke } from "@tauri-apps/api/core";
+import { loadWebSession, sessionTierA, webBackend } from "./web-session.ts";
+import { loadWebAiConfig, saveWebAiConfig, toPublicConfig } from "./web-ai-store.ts";
+import {
+  WEB_TOOL_DEFS,
+  confirmWebPendingAction,
+  executeWebTool,
+} from "./web-ai-tools.ts";
+
+function isWeb(): boolean {
+  return typeof window !== "undefined" && !(window as any).__TAURI__;
+}
 
 export type AiProviderType = "openai" | "anthropic" | "gemini" | "deepseek" | "mistral" | "openai_compatible";
 
@@ -105,6 +116,14 @@ export const AI_PROVIDERS: Record<
  * The API key is stored encrypted on disk via Rust.
  */
 export async function getAiConfig(): Promise<AiConfig> {
+  if (isWeb()) {
+    try {
+      return toPublicConfig(await loadWebAiConfig());
+    } catch (e) {
+      console.error("Failed to get AI config:", e);
+      return DEFAULT_AI_CONFIG;
+    }
+  }
   try {
     return await invoke("get_ai_config");
   } catch (e) {
@@ -124,6 +143,19 @@ export async function setAiConfig(
   provider?: string,
   useDataAccess?: boolean,
 ): Promise<void> {
+  if (isWeb()) {
+    // Empty key keeps the stored one (Settings shows an empty field even
+    // when a key is stored — same contract as desktop).
+    await saveWebAiConfig({
+      apiKey,
+      baseUrl,
+      model,
+      enabled,
+      provider: (provider as AiConfig["provider"]) || "openai",
+      useDataAccess: useDataAccess ?? true,
+    });
+    return;
+  }
   return invoke("set_ai_config", {
     apiKey,
     baseUrl,
@@ -138,6 +170,22 @@ export async function setAiConfig(
  * Validate the configured API key by testing the connection.
  */
 export async function validateAiKey(): Promise<boolean> {
+  if (isWeb()) {
+    try {
+      const cfg = await loadWebAiConfig();
+      if (!cfg.enabled || !cfg.apiKey.trim()) return false;
+      const out = await webBackend().aiProxy<{ ok: boolean }>("validate", {
+        provider: cfg.provider,
+        baseUrl: cfg.baseUrl,
+        model: cfg.model,
+        apiKey: cfg.apiKey,
+      });
+      return out.ok === true;
+    } catch (e) {
+      console.error("AI key validation failed:", e);
+      return false;
+    }
+  }
   try {
     return await invoke("validate_ai_key");
   } catch (e) {
@@ -156,6 +204,18 @@ export async function aiChat(
   messages: AiMessage[],
   pageContext?: string,
 ): Promise<string> {
+  if (isWeb()) {
+    const cfg = await requireWebAi();
+    const out = await webBackend().aiProxy<{ content: string; toolCalls: unknown[] }>("chat", {
+      provider: cfg.provider,
+      baseUrl: cfg.baseUrl,
+      model: cfg.model,
+      apiKey: cfg.apiKey,
+      messages: [{ role: "system", content: buildWebSystemPrompt(pageContext, false) }, ...messages],
+      tools: [],
+    });
+    return out.content;
+  }
   let result: string;
   try {
     result = await invoke("ai_chat", {
@@ -181,6 +241,9 @@ export async function aiChatWithTools(
   pageContext?: string,
   personId?: number,
 ): Promise<AiChatWithToolsResult> {
+  if (isWeb()) {
+    return webChatWithToolsLoop(messages, pageContext, personId ?? 0);
+  }
   let result: AiChatWithToolsResult;
   try {
     result = await invoke("ai_chat_with_tools", {
@@ -201,6 +264,15 @@ export async function aiChatWithTools(
  * @returns A JSON string describing the outcome
  */
 export async function confirmPendingAction(actionId: string): Promise<string> {
+  if (isWeb()) {
+    const tokens = await loadWebSession();
+    if (!tokens) throw new Error("Niet ingelogd.");
+    const outcome = await confirmWebPendingAction(
+      { be: sessionTierA(), tokens, personId: tokens.personId ?? 0 },
+      actionId,
+    );
+    return JSON.stringify(outcome);
+  }
   let result: string;
   try {
     result = await invoke("confirm_pending_action", { actionId });
@@ -222,6 +294,28 @@ export async function aiPageInsight(
   data: any,
   query: string,
 ): Promise<string> {
+  if (isWeb()) {
+    const dataJson = JSON.stringify(data);
+    const pageContext =
+      page === "dashboard"
+        ? `Pagina: Dashboard (overzicht)\nData: ${dataJson}\nVraag: ${query}`
+        : page === "grades"
+          ? `Pagina: Cijfers\nData: ${dataJson}\nVraag: ${query}`
+          : `Pagina: ${page}\nData: ${dataJson}\nVraag: ${query}`;
+    const cfg = await requireWebAi();
+    const out = await webBackend().aiProxy<{ content: string; toolCalls: unknown[] }>("chat", {
+      provider: cfg.provider,
+      baseUrl: cfg.baseUrl,
+      model: cfg.model,
+      apiKey: cfg.apiKey,
+      messages: [
+        { role: "system", content: buildWebSystemPrompt(pageContext, false) },
+        { role: "user", content: query },
+      ],
+      tools: [],
+    });
+    return out.content;
+  }
   let result: string;
   try {
     result = await invoke("ai_page_insight", {
@@ -239,6 +333,22 @@ export async function aiPageInsight(
  * List available models from the configured provider.
  */
 export async function listAiModels(): Promise<string[]> {
+  if (isWeb()) {
+    try {
+      const cfg = await loadWebAiConfig();
+      if (!cfg.apiKey.trim()) return [];
+      const out = await webBackend().aiProxy<{ models: string[] }>("models", {
+        provider: cfg.provider,
+        baseUrl: cfg.baseUrl,
+        model: cfg.model,
+        apiKey: cfg.apiKey,
+      });
+      return Array.isArray(out.models) ? out.models : [];
+    } catch (e) {
+      console.warn("Failed to list AI models:", e);
+      return [];
+    }
+  }
   try {
     return await invoke("list_ai_models");
   } catch (e) {
@@ -281,4 +391,132 @@ export async function tryAiInsight(
     console.warn("AI insight failed:", e);
     return null;
   }
+}
+
+// ─── Web-only internals (BYO key + browser tool loop) ──────────────────────
+
+async function requireWebAi() {
+  const cfg = await loadWebAiConfig();
+  if (!cfg.enabled || !cfg.apiKey.trim()) {
+    // AIAssistant maps "niet geconfigureerd" to its Settings hint — keep it.
+    throw new Error("AI is niet geconfigureerd: vul een API-sleutel in bij Instellingen > AI Assistent.");
+  }
+  if (!cfg.model.trim()) throw new Error("AI is niet geconfigureerd: kies een model.");
+  return cfg;
+}
+
+function dutchWeekday(date: Date): string {
+  const s = new Intl.DateTimeFormat("nl-NL", { weekday: "long" }).format(date);
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+function localYMD(date: Date): string {
+  const m = `${date.getMonth() + 1}`.padStart(2, "0");
+  const d = `${date.getDate()}`.padStart(2, "0");
+  return `${date.getFullYear()}-${m}-${d}`;
+}
+
+function localHM(date: Date): string {
+  return `${`${date.getHours()}`.padStart(2, "0")}:${`${date.getMinutes()}`.padStart(2, "0")}`;
+}
+
+/**
+ * Port of `build_school_context_system_prompt` (ai_client.rs), minus the
+ * AI-Schedule tool family (that feature isn't on web yet — the model must
+ * not be instructed to call tools that don't exist here).
+ */
+export function buildWebSystemPrompt(pageContext: string | undefined, toolsEnabled: boolean): string {
+  const now = new Date();
+  const dateContext =
+    `Vandaag is ${dutchWeekday(now)}, ${localYMD(now)} (${localHM(now)} uur, tijdzone Europe/Amsterdam). ` +
+    `Gebruik altijd deze datum als 'vandaag' bij het bepalen van datumbereiken voor tools zoals ` +
+    `get_calendar_events, get_assignments en get_full_grade_overview — verzin nooit zelf een datum.`;
+  let base =
+    `${dateContext}\n\nJe bent Friday AI, een behulpzame assistent voor scholieren in het Nederlandse middelbaar onderwijs. ` +
+    `Je helpt met schoolgerelateerde vragen, planning, studieadvies en uitleg. ` +
+    `Je spreekt altijd Nederlands en reageert bondig en helder. ` +
+    `Gebruik waar mogelijk opsommingen en concrete voorbeelden. ` +
+    `Wees aanmoedigend maar realistisch. ` +
+    `Als je iets niet weet, zeg dat dan eerlijk. ` +
+    `Als een tool een fout teruggeeft of een leeg resultaat (geen items, geen data), zeg dat dan plain tegen de gebruiker in plaats van plausible klinkende data te verzinnen — no hallucineren. ` +
+    `Formateer je antwoorden met Markdown waar dat helpt: gebruik ## kopjes, **vet**, *cursief*, opsommingen (- of 1.), tabellen voor cijfers/rooster, ` +
+    `inline code en codeblokken voor voorbeelden, en [links](url) waar relevant. Houd het beknopt.`;
+  if (pageContext) base += `\n\nContext van de huidige pagina:\n${pageContext}`;
+  if (!toolsEnabled) return base;
+
+  const toolLines = WEB_TOOL_DEFS.map((t) => `- ${t.name}: ${(t.description as string).split(".")[0]}`).join("\n");
+  base +=
+    `\n\nJe hebt toegang tot de volgende tools om schoolgegevens op te vragen en acties uit te voeren:\n${toolLines}\n\n` +
+    `Gebruik deze tools wanneer de gebruiker vraagt naar specifieke schoolinformatie of acties wil uitvoeren (zoals berichten sturen, opdrachten bekijken, bestanden downloaden).\n` +
+    `Bij vragen over gemiddelden per vak: gebruik eerst get_schoolyears, dan get_full_grade_overview.\n` +
+    `Bij 'wat heb ik nodig'-vragen over cijfers (bv. 'welk cijfer moet ik halen om te slagen'): gebruik get_schoolyears, get_full_grade_overview, en daarna calculate_grade_scenario om het daadwerkelijk te berekenen — geef niet alleen ruwe cijfers terug.\n` +
+    `Bij een opdracht met een bijlage (uit get_assignment_detail) waarvan de gebruiker hulp wil met de inhoud: gebruik read_attachment_text om de bijlage te lezen voordat je antwoord geeft. Alleen platte tekstbijlagen kunnen worden gelezen.\n` +
+    `Bij vragen over berichtinhoud: gebruik eerst get_messages, dan get_message_content, of stuur een bericht met send_message.\n` +
+    `Bij acties met een echte bijwerking (send_message, mark_messages_read, create_calendar_event): de tool zet de actie klaar en de gebruiker bevestigt deze in de app voordat er iets gebeurt. Vertel de gebruiker wat er klaarstaat.\n`;
+  return base;
+}
+
+/**
+ * Browser twin of desktop `ai_chat_with_tools`: up to 5 rounds of
+ * chat → execute tools locally via Tier-B → feed results back.
+ * Write tools stage pending actions; nothing with side effects runs
+ * without the user tapping confirm (same contract as desktop).
+ */
+async function webChatWithToolsLoop(
+  messages: AiMessage[],
+  pageContext: string | undefined,
+  personId: number,
+): Promise<AiChatWithToolsResult> {
+  const cfg = await requireWebAi();
+  const tokens = await loadWebSession();
+  if (!tokens) throw new Error("Niet ingelogd.");
+  const be = webBackend();
+  const proxyBase = {
+    provider: cfg.provider,
+    baseUrl: cfg.baseUrl,
+    model: cfg.model,
+    apiKey: cfg.apiKey,
+  };
+  const tools = WEB_TOOL_DEFS.map((t) => ({ name: t.name, description: t.description as string, parameters: t.parameters }));
+
+  const current: AiMessage[] = [{ role: "system", content: buildWebSystemPrompt(pageContext, true) }, ...messages];
+  let finalContent = "";
+  const staged: PendingActionInfo[] = [];
+  const maxRounds = 5;
+
+  for (let round = 0; round < maxRounds; round++) {
+    const res = await be.aiProxy<{ content: string; toolCalls: Array<{ id: string; name: string; arguments: unknown }> }>(
+      "chat",
+      { ...proxyBase, messages: current, tools },
+    );
+    if (res.content) finalContent = res.content;
+    if (!res.toolCalls || res.toolCalls.length === 0) break;
+
+    current.push({
+      role: "assistant",
+      content: res.content,
+      tool_calls: res.toolCalls.map((tc) => ({ ...tc, status: "Pending" as const })),
+    });
+
+    for (const tc of res.toolCalls) {
+      let resultText: string;
+      try {
+        const r = await executeWebTool({ be: sessionTierA(), tokens, personId }, tc.name, tc.arguments);
+        resultText = r.success ? JSON.stringify(r.data) : `Fout bij ophalen van data: ${r.error ?? "Onbekende fout"}`;
+        const data = r.data as Record<string, unknown> | null;
+        if (r.success && data && data["status"] === "pending_user_confirmation") {
+          staged.push(data as unknown as PendingActionInfo);
+        }
+      } catch (e) {
+        resultText = `Fout bij ophalen van data: ${e instanceof Error ? e.message : String(e)}`;
+      }
+      current.push({ role: "tool", content: resultText, tool_call_id: tc.id, name: tc.name });
+    }
+
+    if (round === maxRounds - 1 && !finalContent) {
+      finalContent = "Ik heb de beschikbare data opgehaald. Meer details nodig? Stel gerust een vervolgvraag!";
+    }
+  }
+
+  return { content: finalContent, pending_actions: staged };
 }

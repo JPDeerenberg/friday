@@ -40,7 +40,7 @@ jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
     env:
-      VITE_API_URL: ${{ vars.VITE_API_URL || 'https://friday-api-ogqk.onrender.com/api' }}
+      VITE_API_URL: ${{ vars.VITE_API_URL || 'https://friday-api-n772.onrender.com/api' }}
     steps:
       - name: Checkout source (main)
         uses: actions/checkout@v4

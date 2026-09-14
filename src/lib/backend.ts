@@ -128,6 +128,31 @@ export class WebBackend implements Backend {
     return new Uint8Array(await res.arrayBuffer());
   }
 
+  /**
+   * BYO-key AI forward (`chat` | `validate` | `models`). The API key travels
+   * per-request in memory only — the server never logs, stores, or caches it.
+   */
+  async aiProxy<T>(op: "chat" | "validate" | "models", body: unknown): Promise<T> {
+    let res: Response;
+    try {
+      res = await fetch(`${this.base}/ai/${op}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    } catch {
+      throw new WebApiError(0, "Geen verbinding met de server.");
+    }
+    const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+    if (!res.ok) {
+      throw new WebApiError(
+        res.status,
+        typeof data["error"] === "string" ? (data["error"] as string) : `AI-verzoek mislukt (HTTP ${res.status})`,
+      );
+    }
+    return data as T;
+  }
+
   async magister<T>(tokens: SessionTokens, method: MagisterMethod, path: string, body?: unknown): Promise<T> {
     const res = await fetch(`${this.base}/magister/${path.replace(/^\//, "")}`, {
       method,

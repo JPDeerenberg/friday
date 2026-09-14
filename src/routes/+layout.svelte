@@ -13,6 +13,8 @@
   import AIAssistant from '$lib/components/AIAssistant.svelte';
   import IconButton from '$lib/components/IconButton.svelte';
   import { ensureAutoUpdateCheck } from '$lib/updates';
+  import { photoDataUrl } from '$lib/web-session';
+  import { base } from '$app/paths';
   import type { Account } from '$lib/types';
 
   let { children } = $props();
@@ -105,7 +107,7 @@
   // overlay and resume logic below behave identically on both builds.
   async function attemptWebRestore(): Promise<RestoreSessionStatus> {
     try {
-      const { restoreWebSession, loadWebSession, webRequest, webRequestBytes } = await import('$lib/web-session');
+      const { restoreWebSession, loadWebSession, webRequest, webRequestBytes, bytesToBase64 } = await import('$lib/web-session');
       const status = await restoreWebSession();
       restoreState = status;
       restoreStatus.set(status as any);
@@ -144,15 +146,6 @@
       restoreStatus.set('unavailable');
       return 'unavailable';
     }
-  }
-
-  function bytesToBase64(bytes: Uint8Array): string {
-    let bin = '';
-    const CHUNK = 0x8000;
-    for (let i = 0; i < bytes.length; i += CHUNK) {
-      bin += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
-    }
-    return btoa(bin);
   }
 
   function retryRestore() {
@@ -493,7 +486,7 @@
           <div class="flex items-center justify-between px-5 py-4 border-b border-surface-700/50">
             <div class="flex items-center gap-3 p-6 mb-2">
               <div class="w-10 h-10 rounded-m3-sm flex items-center justify-center shrink-0 overflow-hidden">
-                <img src="/logo.png" alt="Friday Logo" class="w-full h-full object-cover" />
+                <img src="{base}/logo.png" alt="Friday Logo" class="w-full h-full object-cover" />
               </div>
               <div class="flex flex-col">
                 <h1 class="text-title-large text-white" in:fade>Friday</h1>
@@ -523,7 +516,7 @@
             <div class="space-y-1 border-t border-surface-700/50 pt-4">
               <button onclick={() => navigate('profile')} class="w-full flex items-center gap-3 px-4 py-3 rounded-m3-md text-label-large text-gray-400 hover:bg-surface-800 hover:text-gray-200 transition-all">
                 {#if $profilePicture}
-                  <img src="data:image/jpeg;base64,{$profilePicture}" alt="Profiel" class="w-6 h-6 rounded-full object-cover shrink-0" />
+                  <img src={photoDataUrl($profilePicture) ?? ''} alt="Profiel" class="w-6 h-6 rounded-full object-cover shrink-0" />
                 {:else}
                   <span class="text-primary-400">
                     <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
@@ -563,7 +556,7 @@
         <!-- Logo -->
         <div class="flex items-center gap-3 px-4 py-5 border-b border-surface-700/50 shrink-0">
           <div class="w-8 h-8 rounded-m3-sm flex items-center justify-center shrink-0 overflow-hidden">
-            <img src="/logo.png" alt="Friday" class="w-full h-full object-cover" />
+            <img src="{base}/logo.png" alt="Friday" class="w-full h-full object-cover" />
           </div>
           {#if !sidebarCollapsed}
             <span class="text-title-medium text-white truncate">Friday</span>
@@ -599,7 +592,7 @@
         <button onclick={() => navigate('profile')} class="border-t border-surface-700/50 p-3 hover:bg-surface-800 transition-colors w-full text-left">
           <div class="flex items-center gap-3">
             {#if $profilePicture}
-              <img src="data:image/jpeg;base64,{$profilePicture}" alt="Profielfoto" class="w-8 h-8 rounded-full object-cover shrink-0" />
+              <img src={photoDataUrl($profilePicture) ?? ''} alt="Profielfoto" class="w-8 h-8 rounded-full object-cover shrink-0" />
             {:else}
               <div class="w-8 h-8 rounded-full bg-primary-600 flex items-center justify-center text-white text-xs font-semibold shrink-0">
                 {$accountInfo?.Persoon?.Roepnaam?.[0] ?? '?'}

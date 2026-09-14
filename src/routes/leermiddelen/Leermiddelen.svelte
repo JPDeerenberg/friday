@@ -8,6 +8,7 @@
   import { fade, fly } from 'svelte/transition';
   import Button from '$lib/components/Button.svelte';
   import IconButton from '$lib/components/IconButton.svelte';
+  import AuthedImg from '$lib/components/AuthedImg.svelte';
 
   let leermiddelen = $state<any[]>([]);
   let loading = $state(true);
@@ -44,8 +45,8 @@
   }
 
   const filteredMaterials = $derived(() => {
-    return leermiddelen.filter(m => 
-      m.Titel.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    return leermiddelen.filter(m =>
+      (m.Titel ?? '').toLowerCase().includes(searchQuery.toLowerCase()) ||
       (m.Vak?.Omschrijving || '').toLowerCase().includes(searchQuery.toLowerCase())
     );
   });
@@ -58,7 +59,12 @@
   async function handleOpen(href: string) {
     try {
       const launchUrl = await getLeermiddelLaunchUrl(href);
-      await openUrl(launchUrl);
+      // Tauri shell opener doesn't exist on web — plain tab instead.
+      if (typeof window !== 'undefined' && (window as any).__TAURI__) {
+        await openUrl(launchUrl);
+      } else {
+        window.open(launchUrl, '_blank', 'noopener,noreferrer');
+      }
     } catch (e) {
       console.error('Failed to open leermiddel:', e);
       alert('Kon leermiddel niet openen.');
@@ -128,9 +134,15 @@
              <div in:fly={{ y: 20, delay: i * 40 }} class="flex flex-col group h-full">
               <!-- Book Cover Container -->
               <div class="mb-5 relative aspect-[3/4.2] rounded-m3-lg overflow-hidden shadow-2xl transition-all duration-700 group-hover:-translate-y-4 group-hover:scale-[1.04] group-hover:shadow-[0_40px_70px_-20px_rgba(0,0,0,0.8)] border border-white/5">
-                 {#if material.PreviewImageUrl}
-                   <img src={material.PreviewImageUrl} alt={material.Titel} class="w-full h-full object-cover group-hover:brightness-110 transition-all duration-700" />
-                 {:else}
+                  {#if material.PreviewImageUrl}
+                    <AuthedImg
+                      src={material.PreviewImageUrl}
+                      alt={material.Titel ?? 'Lesmateriaal'}
+                      class="w-full h-full object-cover group-hover:brightness-110 transition-all duration-700"
+                    >
+                      <div class="w-full h-full bg-gradient-to-br from-surface-800 to-surface-950"></div>
+                    </AuthedImg>
+                  {:else}
                     <div class="w-full h-full bg-gradient-to-br from-surface-800 to-surface-950 flex flex-col items-center justify-center p-6 text-center shadow-inner">
                       <div class="text-gray-600 group-hover:text-emerald-400 transition-colors duration-500 drop-shadow-2xl mb-4">
                          <svg class="w-16 h-16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20M4 19.5A2.5 2.5 0 0 0 6.5 22H20M4 19.5V5A2.5 2.5 0 0 1 6.5 2.5H20v11H6.5A2.5 2.5 0 0 0 4 16v3.5z"/></svg>
@@ -155,7 +167,7 @@
 
                  <!-- Action Button -->
                  <div class="absolute inset-x-5 bottom-5 translate-y-10 opacity-0 group-hover:translate-y-0 group-hover:opacity-100 transition-all duration-700 cubic-bezier(0.16, 1, 0.3, 1)">
-                    {#each material.Links as link}
+                     {#each material.Links ?? [] as link}
                       {#if link.Rel === 'content'}
                         <Button
                           variant="filled"

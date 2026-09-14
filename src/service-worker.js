@@ -43,6 +43,11 @@ self.addEventListener('fetch', (event) => {
   if (req.method !== 'GET') return;
 
   const url = new URL(req.url);
+  // Only handle same-origin traffic. Cross-origin fetches (Magister file
+  // hosts, AI providers, blob: object URLs are same-origin already) must
+  // never enter this versioned cache — authentication or freshness can't be
+  // judged here, and large files would evict the app shell.
+  if (url.origin !== self.location.origin) return;
   // Never serve cross-cutting infrastructure from (or write it to) this
   // cache. Segment match (not prefix) so it holds at any base path:
   // same-origin /api on Caddy, /friday/fdroid on Pages, absolute backend

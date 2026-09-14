@@ -40,6 +40,30 @@ export function webBackend(): WebBackend {
   return backend;
 }
 
+export function bytesToBase64(bytes: Uint8Array): string {
+  let bin = "";
+  const CHUNK = 0x8000;
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    bin += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+  }
+  return btoa(bin);
+}
+
+/**
+ * Full data URL for a stored base64 photo, with sniffed MIME. Base64 magic
+ * prefixes: PNG `iVBORw0KGgo`, GIF `R0lGOD`, JPEG `/9j/`. Fixes PNG photos
+ * rendered under a hardcoded jpeg prefix (broken in some browsers).
+ */
+export function photoDataUrl(b64: string | null | undefined): string | null {
+  if (!b64) return null;
+  const mime = b64.startsWith("iVBORw0KGgo")
+    ? "image/png"
+    : b64.startsWith("R0lGOD")
+      ? "image/gif"
+      : "image/jpeg";
+  return `data:${mime};base64,${b64}`;
+}
+
 export async function loadWebSession(): Promise<SessionTokens | null> {
   try {
     const db = await getDb();
@@ -132,6 +156,9 @@ export function sessionTierA(): TierA {
   return {
     magister<T>(_: SessionTokens, method: MagisterMethod, path: string, body?: unknown): Promise<T> {
       return webRequest<T>(method, path, body);
+    },
+    magisterBytes(_: SessionTokens, path: string): Promise<Uint8Array | null> {
+      return webRequestBytes(path);
     },
   };
 }

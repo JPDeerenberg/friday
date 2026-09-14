@@ -1,13 +1,13 @@
 {
   "name": "friday",
-  "version": "2.6.1",
+  "version": "2.7.0",
   "description": "",
   "type": "module",
   "scripts": {
     "dev": "vite dev",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node src/lib/stores.test.ts && node --import ./src/lib/test-hooks-register.ts src/lib/web-tier-b.test.ts",
+    "test": "node src/lib/stores.test.ts && node --import ./src/lib/test-hooks-register.ts src/lib/web-tier-b.test.ts && node --import ./src/lib/test-hooks-register.ts src/lib/web-ai-tools.test.ts && node --import ./src/lib/test-hooks-register.ts src/lib/ai.test.ts",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
     "tauri": "tauri"

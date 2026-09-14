@@ -463,9 +463,8 @@
       title: 'AI Assistent',
       description: 'Configureer AI voor studiedvies, cijferanalyse, samenvattingen en meer.',
       isAi: true,
-      // AI providers need a server-side key proxy (plan v2 §4, BYO key) —
-      // not wired for web yet, so the section stays desktop-only for now.
-      hideOnWeb: true,
+      // Web uses your own provider key (BYO), proxied per-request and never
+      // stored server-side — same Settings form works on both builds.
     },
     {
       id: 'aiSchedule',
