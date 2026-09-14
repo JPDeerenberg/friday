@@ -7,6 +7,11 @@ services:
     name: friday-api
     runtime: docker
     plan: free
+    # Frankfurt: closest to Magister (NL) — every proxy request crosses the
+    # Atlantic twice from Oregon. NOTE: Render forbids changing region after
+    # creation, so this only applies to NEW services from this file; the
+    # existing Oregon service must be recreated (see README web section).
+    region: frankfurt
     dockerfilePath: ./crates/web-api/Dockerfile
     dockerContext: .
     healthCheckPath: /health
