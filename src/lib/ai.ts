@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { WebApiError } from "./backend.ts";
 import { loadWebSession, sessionTierA, webBackend } from "./web-session.ts";
 import { loadWebAiConfig, saveWebAiConfig, toPublicConfig } from "./web-ai-store.ts";
 import {
@@ -182,6 +183,10 @@ export async function validateAiKey(): Promise<boolean> {
       });
       return out.ok === true;
     } catch (e) {
+      // Re-throw server failures with message + ref so the Settings test
+      // button shows *why* (bad key? bad URL? provider down?) instead of a
+      // generic "check key and URL". Only true network failures return false.
+      if (e instanceof WebApiError) throw new Error(e.withRef());
       console.error("AI key validation failed:", e);
       return false;
     }

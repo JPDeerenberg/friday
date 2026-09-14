@@ -367,11 +367,16 @@ fn parse_gemini_response(body: &serde_json::Value) -> Result<(String, Vec<ToolCa
 
 // ─── Entry points (called from main.rs handlers) ───────────────────────────
 
-pub async fn chat(http: &reqwest::Client, req: ChatRequest) -> Result<ChatResponse, (u16, String)> {
-    if req.api_key.trim().is_empty() {
+pub async fn chat(http: &reqwest::Client, mut req: ChatRequest) -> Result<ChatResponse, (u16, String)> {
+    // Defensive trim: pasted keys/URLs/models with stray whitespace fail with
+    // a bare provider 401 that looks exactly like a wrong key.
+    req.api_key = req.api_key.trim().to_string();
+    req.model = req.model.trim().to_string();
+    req.base_url = req.base_url.trim().to_string();
+    if req.api_key.is_empty() {
         return Err((400, "Geen API-sleutel ingesteld.".to_string()));
     }
-    if req.model.trim().is_empty() {
+    if req.model.is_empty() {
         return Err((400, "Geen model gekozen.".to_string()));
     }
     let base = check_base_url(&req.provider, &req.base_url).map_err(|m| (400, m))?;
@@ -497,8 +502,11 @@ pub async fn chat(http: &reqwest::Client, req: ChatRequest) -> Result<ChatRespon
     Ok(ChatResponse { content, tool_calls })
 }
 
-pub async fn validate(http: &reqwest::Client, req: ValidateRequest) -> Result<bool, (u16, String)> {
-    if req.api_key.trim().is_empty() {
+pub async fn validate(http: &reqwest::Client, mut req: ValidateRequest) -> Result<bool, (u16, String)> {
+    req.api_key = req.api_key.trim().to_string();
+    req.model = req.model.trim().to_string();
+    req.base_url = req.base_url.trim().to_string();
+    if req.api_key.is_empty() {
         return Err((400, "Geen API-sleutel ingesteld.".to_string()));
     }
     let base = check_base_url(&req.provider, &req.base_url).map_err(|m| (400, m))?;
@@ -544,8 +552,10 @@ pub async fn validate(http: &reqwest::Client, req: ValidateRequest) -> Result<bo
     Ok(true)
 }
 
-pub async fn list_models(http: &reqwest::Client, req: ValidateRequest) -> Result<Vec<String>, (u16, String)> {
-    if req.api_key.trim().is_empty() {
+pub async fn list_models(http: &reqwest::Client, mut req: ValidateRequest) -> Result<Vec<String>, (u16, String)> {
+    req.api_key = req.api_key.trim().to_string();
+    req.base_url = req.base_url.trim().to_string();
+    if req.api_key.is_empty() {
         return Err((400, "Geen API-sleutel ingesteld.".to_string()));
     }
     if !is_openai_family(&req.provider) {

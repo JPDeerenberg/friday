@@ -38,8 +38,34 @@ struct AppState {
     login_limiter: Arc<Mutex<ratelimit::RateLimiter>>,
 }
 
-fn error_json(status: StatusCode, message: &str) -> axum::response::Response {
-    (status, Json(serde_json::json!({ "error": message }))).into_response()
+use std::sync::atomic::{AtomicU64, Ordering};
+
+static REQ_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+/// Short correlation ID matching a client-visible error to server logs.
+/// Nanos + atomic counter, base32 (no confusables). Contains no secrets —
+/// safe to show users and store in Render logs.
+fn new_ref() -> String {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.subsec_nanos() as u64)
+        .unwrap_or(0);
+    let mut x = nanos.wrapping_add(REQ_COUNTER.fetch_add(1, Ordering::Relaxed).wrapping_mul(0x9E3779B97F4A7C15));
+    const CHARS: &[u8] = b"0123456789abcdefghijkmnopqrstuvwxyz"; // no l
+    let mut s = String::with_capacity(8);
+    for _ in 0..8 {
+        s.push(CHARS[(x & 31) as usize] as char);
+        x >>= 5;
+    }
+    s
+}
+
+fn error_json(status: StatusCode, message: &str, ref_: &str) -> axum::response::Response {
+    (
+        status,
+        Json(serde_json::json!({ "error": message, "ref": ref_ })),
+    )
+        .into_response()
 }
 
 async fn health() -> impl IntoResponse {
@@ -68,7 +94,9 @@ async fn login(
     username.hash(&mut hasher);
     let key = format!("login:{}:{:x}", addr.ip(), hasher.finish());
     if !state.login_limiter.lock().await.check(&key) {
-        return error_json(StatusCode::TOO_MANY_REQUESTS, "Te vaak geprobeerd, wacht een minuut.");
+        let cref = new_ref();
+        eprintln!("[{cref}] login rate-limited for {}", addr.ip());
+        return error_json(StatusCode::TOO_MANY_REQUESTS, "Te vaak geprobeerd, wacht een minuut.", &cref);
     }
     match auth::password_login(
         &state.no_redirect,
@@ -80,10 +108,12 @@ async fn login(
     {
         Ok(ok) => (StatusCode::OK, Json(serde_json::to_value(&ok).unwrap())).into_response(),
         Err(e) => {
-            if let Some(d) = e.detail() {
-                eprintln!("login upstream detail: {d}");
-            }
-            error_json(e.status(), e.message())
+            let cref = new_ref();
+            // LoginError details are pre-redacted at construction (sessionId,
+            // PKCE values) or static Dutch strings — safe for Render logs.
+            // Passwords, tokens and cookies never flow through here.
+            eprintln!("[{cref}] login failed ({}): {}", e.status().as_u16(), e.log_detail());
+            error_json(e.status(), e.message(), &cref)
         }
     }
 }
@@ -98,7 +128,8 @@ struct RefreshBody {
 async fn refresh(State(_state): State<AppState>, Json(body): Json<RefreshBody>) -> impl IntoResponse {
     let rt = body.refresh_token.unwrap_or_default();
     if rt.is_empty() {
-        return error_json(StatusCode::BAD_REQUEST, "Geen refresh-token meegegeven.");
+        let cref = new_ref();
+        return error_json(StatusCode::BAD_REQUEST, "Geen refresh-token meegegeven.", &cref);
     }
     match magister_core::auth::AuthFlow::refresh_token(&rt).await {
         Ok(tok) => {
@@ -116,13 +147,24 @@ async fn refresh(State(_state): State<AppState>, Json(body): Json<RefreshBody>) 
             };
             (StatusCode::OK, Json(serde_json::to_value(&out).unwrap())).into_response()
         }
-        Err(magister_core::auth::AuthError::TokenRefreshRejected { .. }) => {
-            error_json(StatusCode::UNAUTHORIZED, "Sessie verlopen, log opnieuw in.")
+        Err(magister_core::auth::AuthError::TokenRefreshRejected { status, body }) => {
+            let cref = new_ref();
+            // Rejected grant: expected lifecycle event (logged-out elsewhere),
+            // not a fault. Log the ref + upstream status only, never the body
+            // (it can echo token-adjacent values).
+            eprintln!("[{cref}] refresh rejected by Magister (HTTP {status})");
+            let _ = body;
+            error_json(StatusCode::UNAUTHORIZED, "Sessie verlopen, log opnieuw in.", &cref)
         }
-        Err(_) => error_json(
-            StatusCode::BAD_GATEWAY,
-            "Verversen mislukt, controleer je verbinding.",
-        ),
+        Err(e) => {
+            let cref = new_ref();
+            eprintln!("[{cref}] refresh transient failure: {e}");
+            error_json(
+                StatusCode::BAD_GATEWAY,
+                "Verversen mislukt, controleer je verbinding.",
+                &cref,
+            )
+        }
     }
 }
 
@@ -137,30 +179,47 @@ async fn logout() -> impl IntoResponse {
 async fn ai_chat(State(state): State<AppState>, Json(body): Json<ai::ChatRequest>) -> impl IntoResponse {
     match ai::chat(&state.http, body).await {
         Ok(out) => (StatusCode::OK, Json(serde_json::to_value(&out).unwrap())).into_response(),
-        Err((status, msg)) => error_json(
-            StatusCode::from_u16(status).unwrap_or(StatusCode::BAD_GATEWAY),
-            &msg,
-        ),
+        Err((status, msg)) => {
+            let cref = new_ref();
+            // Provider + status only: the message is user-safe Dutch, the key
+            // and request body stay out of logs entirely.
+            eprintln!("[{cref}] ai chat failed (HTTP {status}): {msg}");
+            error_json(
+                StatusCode::from_u16(status).unwrap_or(StatusCode::BAD_GATEWAY),
+                &msg,
+                &cref,
+            )
+        }
     }
 }
 
 async fn ai_validate(State(state): State<AppState>, Json(body): Json<ai::ValidateRequest>) -> impl IntoResponse {
     match ai::validate(&state.http, body).await {
         Ok(_) => Json(serde_json::json!({ "ok": true })).into_response(),
-        Err((status, msg)) => error_json(
-            StatusCode::from_u16(status).unwrap_or(StatusCode::BAD_GATEWAY),
-            &msg,
-        ),
+        Err((status, msg)) => {
+            let cref = new_ref();
+            eprintln!("[{cref}] ai validate failed (HTTP {status}): {msg}");
+            error_json(
+                StatusCode::from_u16(status).unwrap_or(StatusCode::BAD_GATEWAY),
+                &msg,
+                &cref,
+            )
+        }
     }
 }
 
 async fn ai_models(State(state): State<AppState>, Json(body): Json<ai::ValidateRequest>) -> impl IntoResponse {
     match ai::list_models(&state.http, body).await {
         Ok(models) => (StatusCode::OK, Json(serde_json::json!({ "models": models }))).into_response(),
-        Err((status, msg)) => error_json(
-            StatusCode::from_u16(status).unwrap_or(StatusCode::BAD_GATEWAY),
-            &msg,
-        ),
+        Err((status, msg)) => {
+            let cref = new_ref();
+            eprintln!("[{cref}] ai models failed (HTTP {status}): {msg}");
+            error_json(
+                StatusCode::from_u16(status).unwrap_or(StatusCode::BAD_GATEWAY),
+                &msg,
+                &cref,
+            )
+        }
     }
 }
 
@@ -170,6 +229,9 @@ async fn ai_models(State(state): State<AppState>, Json(body): Json<ai::ValidateR
 /// wrapper second. The target is returned, never fetched, so multi-MB
 /// payloads never transit the proxy.
 async fn resolve_link(http: &reqwest::Client, url: String, bearer: String) -> axum::response::Response {
+    // Strip any query noise from the log line (defense in depth; resolve
+    // targets shouldn't carry secrets, but never assume).
+    let logged_url = url.split('?').next().unwrap_or(&url);
     let resp = match http
         .get(&url)
         .header("Authorization", format!("Bearer {bearer}"))
@@ -178,7 +240,11 @@ async fn resolve_link(http: &reqwest::Client, url: String, bearer: String) -> ax
         .await
     {
         Ok(r) => r,
-        Err(_) => return error_json(StatusCode::BAD_GATEWAY, "Magister is niet bereikbaar, probeer het later opnieuw."),
+        Err(_) => {
+            let cref = new_ref();
+            eprintln!("[{cref}] resolve transport failure for {logged_url}");
+            return error_json(StatusCode::BAD_GATEWAY, "Magister is niet bereikbaar, probeer het later opnieuw.", &cref);
+        }
     };
     if resp.status().is_redirection() {
         if let Some(loc) = resp.headers().get(reqwest::header::LOCATION).and_then(|v| v.to_str().ok()) {
@@ -192,9 +258,12 @@ async fn resolve_link(http: &reqwest::Client, url: String, bearer: String) -> ax
             return (StatusCode::OK, Json(serde_json::json!({ "location": loc }))).into_response();
         }
     }
+    let cref = new_ref();
+    eprintln!("[{cref}] resolve: no target for {logged_url} (upstream HTTP {status})");
     error_json(
         StatusCode::from_u16(status).unwrap_or(StatusCode::BAD_GATEWAY),
         "Kon de link niet resolven.",
+        &cref,
     )
 }
 
@@ -213,7 +282,8 @@ async fn magister_proxy(
         .unwrap_or_default();
     let endpoint = headers.get("x-magister-endpoint").and_then(|v| v.to_str().ok()).unwrap_or_default();
     if bearer.is_empty() || endpoint.is_empty() {
-        return error_json(StatusCode::BAD_REQUEST, "Ontbrekende sessiegegevens, log opnieuw in.");
+        let cref = new_ref();
+        return error_json(StatusCode::BAD_REQUEST, "Ontbrekende sessiegegevens, log opnieuw in.", &cref);
     }
     // Resolve mode (?__resolve=1): Magister indirection links (launch URLs,
     // download/Self links) answer with a 302 or a {"location": ...} wrapper,
@@ -235,13 +305,16 @@ async fn magister_proxy(
     };
     let url = match proxy::upstream_url(endpoint, &path, forward_q.as_deref()) {
         Ok(u) => u,
-        Err(m) => return error_json(StatusCode::BAD_REQUEST, m),
+        Err(m) => {
+            let cref = new_ref();
+            return error_json(StatusCode::BAD_REQUEST, m, &cref);
+        }
     };
     if is_resolve {
         return resolve_link(&state.no_redirect, url, bearer.to_string()).await;
     }
     let content_type = headers.get("content-type").and_then(|v| v.to_str().ok()).map(|s| s.to_string());
-    match proxy::forward(&state.http, method, url, bearer.to_string(), content_type, body).await {
+    match proxy::forward(&state.http, method.clone(), url, bearer.to_string(), content_type, body).await {
         Ok((status, ct, bytes)) => {
             let mut resp_headers = HeaderMap::new();
             if let Some(ct) = ct {
@@ -255,7 +328,13 @@ async fn magister_proxy(
             }
             (StatusCode::from_u16(status).unwrap_or(StatusCode::BAD_GATEWAY), resp_headers, bytes).into_response()
         }
-        Err(_) => error_json(StatusCode::BAD_GATEWAY, "Magister is niet bereikbaar, probeer het later opnieuw."),
+        Err(_) => {
+            // Transport failure only (statuses pass through above): log the
+            // method + path shape, never headers/body (Bearer lives there).
+            let cref = new_ref();
+            eprintln!("[{cref}] proxy transport failure: {} /magister/{path}", method.as_str());
+            error_json(StatusCode::BAD_GATEWAY, "Magister is niet bereikbaar, probeer het later opnieuw.", &cref)
+        }
     }
 }
 
@@ -312,4 +391,20 @@ async fn main() {
     axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>())
         .await
         .expect("serve");
+}
+
+#[cfg(test)]
+mod ref_tests {
+    use super::*;
+    use std::collections::HashSet;
+
+    #[test]
+    fn refs_are_short_alphanumeric_and_unique() {
+        let refs: HashSet<String> = (0..1000).map(|_| new_ref()).collect();
+        assert_eq!(refs.len(), 1000);
+        for r in &refs {
+            assert_eq!(r.len(), 8);
+            assert!(r.chars().all(|c| c.is_ascii_alphanumeric() && c != 'l' && c != 'L'));
+        }
+    }
 }

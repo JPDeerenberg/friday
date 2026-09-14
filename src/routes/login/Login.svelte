@@ -62,7 +62,8 @@
         profilePicture.set(pic ? bytesToBase64(pic) : null);
       } catch (_) {}
     } catch (e: any) {
-      error = e?.message ?? e?.toString() ?? 'Inloggen mislukt';
+      const base = e?.withRef?.() ?? e?.message ?? e?.toString() ?? 'Inloggen mislukt';
+      error = base;
       loading = false;
     } finally {
       stopLoginTimer();

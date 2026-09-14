@@ -34,11 +34,32 @@ export type MagisterMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 /** HTTP failure from web-api. `status` drives refresh/logout decisions. */
 export class WebApiError extends Error {
   readonly status: number;
-  constructor(status: number, message: string) {
+  /** Server correlation ID — matches a line in the Render logs. */
+  ref?: string;
+  constructor(status: number, message: string, ref?: string) {
     super(message);
     this.name = "WebApiError";
     this.status = status;
+    this.ref = ref;
   }
+  /** Display string with the ref appended when present. */
+  withRef(): string {
+    return this.ref ? `${this.message} (ref: ${this.ref})` : this.message;
+  }
+}
+
+function errorRef(data: unknown): string | undefined {
+  if (data && typeof data === "object" && typeof (data as Record<string, unknown>)["ref"] === "string") {
+    return (data as Record<string, unknown>)["ref"] as string;
+  }
+  return undefined;
+}
+
+/** Throw a WebApiError preferring the server's Dutch message + ref. */
+async function throwApiError(res: Response, fallback: string): Promise<never> {
+  const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+  const message = typeof data["error"] === "string" ? (data["error"] as string) : fallback;
+  throw new WebApiError(res.status, message, errorRef(data));
 }
 
 export interface Backend {
@@ -107,9 +128,11 @@ export class WebBackend implements Backend {
       throw new WebApiError(0, "Geen verbinding met de server.");
     }
     if (!res.ok) {
-      if (res.status === 401) throw new WebApiError(401, "Onjuiste inloggegevens of school.");
-      if (res.status === 429) throw new WebApiError(429, "Te vaak geprobeerd, wacht een minuut.");
-      throw new WebApiError(res.status, `Inloggen mislukt (HTTP ${res.status})`);
+      if (res.status === 429) {
+        const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+        throw new WebApiError(429, "Te vaak geprobeerd, wacht een minuut.", errorRef(data));
+      }
+      await throwApiError(res, `Inloggen mislukt (HTTP ${res.status})`);
     }
     return (await res.json()) as PasswordLoginResult;
   }
@@ -123,8 +146,7 @@ export class WebBackend implements Backend {
       },
     });
     if (res.status === 404) return null;
-    if (res.status === 401) throw new WebApiError(401, "Sessie verlopen, ververs en probeer opnieuw");
-    if (!res.ok) throw new WebApiError(res.status, `Verzoek mislukt (HTTP ${res.status})`);
+    if (!res.ok) await throwApiError(res, `Verzoek mislukt (HTTP ${res.status})`);
     return new Uint8Array(await res.arrayBuffer());
   }
 
@@ -143,14 +165,8 @@ export class WebBackend implements Backend {
     } catch {
       throw new WebApiError(0, "Geen verbinding met de server.");
     }
-    const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
-    if (!res.ok) {
-      throw new WebApiError(
-        res.status,
-        typeof data["error"] === "string" ? (data["error"] as string) : `AI-verzoek mislukt (HTTP ${res.status})`,
-      );
-    }
-    return data as T;
+    if (!res.ok) await throwApiError(res, `AI-verzoek mislukt (HTTP ${res.status})`);
+    return ((await res.json().catch(() => ({}))) as T);
   }
 
   async magister<T>(tokens: SessionTokens, method: MagisterMethod, path: string, body?: unknown): Promise<T> {
@@ -164,9 +180,11 @@ export class WebBackend implements Backend {
       },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
-    if (res.status === 401) throw new WebApiError(401, "Unauthorized: sessie verlopen, ververs en probeer opnieuw");
-    if (res.status === 429) throw new WebApiError(429, "Te veel verzoeken, probeer het later opnieuw");
-    if (!res.ok) throw new WebApiError(res.status, `Magister-verzoek mislukt (HTTP ${res.status})`);
+    if (res.status === 429) {
+      const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+      throw new WebApiError(429, "Te veel verzoeken, probeer het later opnieuw", errorRef(data));
+    }
+    if (!res.ok) await throwApiError(res, `Magister-verzoek mislukt (HTTP ${res.status})`);
     return (await res.json()) as T;
   }
 
@@ -181,8 +199,7 @@ export class WebBackend implements Backend {
     } catch {
       throw new WebApiError(0, "Geen verbinding met de server.");
     }
-    if (res.status === 401) throw new WebApiError(401, "Sessie verlopen, log opnieuw in.");
-    if (!res.ok) throw new WebApiError(res.status, `Verversen mislukt (HTTP ${res.status})`);
+    if (!res.ok) await throwApiError(res, `Verversen mislukt (HTTP ${res.status})`);
     const fresh = (await res.json()) as SessionTokens;
     // The server never learns personId on refresh; keep the browser's own.
     if (fresh.personId == null) fresh.personId = tokens.personId;

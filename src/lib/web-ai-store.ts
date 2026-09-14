@@ -64,6 +64,11 @@ export async function saveWebAiConfig(partial: Partial<WebAiStoredConfig>): Prom
   // which shows an empty field even when a key is stored).
   const next: WebAiStoredConfig = { ...current, ...partial };
   if (partial.apiKey === "") next.apiKey = current.apiKey;
+  // Pasted keys/URLs/models routinely carry trailing spaces or newlines that
+  // providers reject with a bare 401 — trim once, at rest.
+  next.apiKey = next.apiKey.trim();
+  next.baseUrl = next.baseUrl.trim();
+  next.model = next.model.trim();
   const db = await getDb();
   await db.put(STORE_NAME, next, CONFIG_KEY);
 }

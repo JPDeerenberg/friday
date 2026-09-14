@@ -29,6 +29,11 @@ pub enum LoginError {
 }
 
 impl LoginError {
+    /// Dynamic upstream detail, redacted for server logs. Use this (never
+    /// `Upstream(..)` directly) for anything derived from requests/responses.
+    fn upstream_redacted(detail: String) -> Self {
+        LoginError::Upstream(redact_query_values(&detail))
+    }
     pub fn status(&self) -> axum::http::StatusCode {
         match self {
             LoginError::BadRequest(_) => axum::http::StatusCode::BAD_REQUEST,
@@ -38,21 +43,22 @@ impl LoginError {
         }
     }
 
+    /// Redacted detail for server logs (see `upstream_redacted`). Static
+    /// Dutch strings for the other variants.
+    pub fn log_detail(&self) -> String {
+        match self {
+            LoginError::BadRequest(m) | LoginError::Unauthorized(m) => m.to_string(),
+            LoginError::UpstreamThrottled => "upstream throttled".to_string(),
+            LoginError::Upstream(d) => d.clone(),
+        }
+    }
+
     pub fn message(&self) -> &'static str {
         match self {
             LoginError::BadRequest(m) => m,
             LoginError::Unauthorized(m) => m,
             LoginError::UpstreamThrottled => "Magister is druk, probeer het over een minuut opnieuw.",
             LoginError::Upstream(_) => "Magister gaf een onverwacht antwoord, probeer het later opnieuw.",
-        }
-    }
-
-    /// Server-side diagnostic, safe for Render logs (values redacted at
-    /// construction). Never sent to the client — see `message()`.
-    pub fn detail(&self) -> Option<&str> {
-        match self {
-            LoginError::Upstream(d) => Some(d),
-            _ => None,
         }
     }
 }
@@ -188,9 +194,9 @@ fn header_location(resp: &reqwest::Response) -> Result<String, LoginError> {
         .map(|s| s.to_string())
         .ok_or_else(|| LoginError::Upstream(format!("no Location header (HTTP {})", resp.status())))?;
     Ok(url::Url::parse(resp.url().as_str())
-        .map_err(|e| LoginError::Upstream(e.to_string()))?
+        .map_err(|e| LoginError::upstream_redacted(e.to_string()))?
         .join(&raw)
-        .map_err(|e| LoginError::Upstream(e.to_string()))?
+        .map_err(|e| LoginError::upstream_redacted(e.to_string()))?
         .to_string())
 }
 
@@ -256,7 +262,7 @@ pub async fn password_login(
     }
     let final_url = r.url().to_string();
     let query: HashMap<String, String> =
-        url::Url::parse(&final_url).map_err(|e| LoginError::Upstream(e.to_string()))?.query_pairs().into_owned().collect();
+        url::Url::parse(&final_url).map_err(|e| LoginError::upstream_redacted(e.to_string()))?.query_pairs().into_owned().collect();
     let session_id = query.get("sessionId").cloned().ok_or(LoginError::Upstream("no sessionId".into()))?;
     let return_url = query.get("returnUrl").cloned().ok_or(LoginError::Upstream("no returnUrl".into()))?;
 
@@ -286,7 +292,7 @@ pub async fn password_login(
         .ok_or_else(|| LoginError::Upstream("login page changed shape".into()))?;
     let js_url = if script_src.starts_with("http") { script_src } else { format!("{ACCOUNTS}/{script_src}") };
     let js = sess.get(&js_url).await?.text().await?;
-    let authcode = jsparser::extract_authcode(&js).map_err(|e| LoginError::Upstream(e.to_string()))?;
+    let authcode = jsparser::extract_authcode(&js).map_err(|e| LoginError::upstream_redacted(e.to_string()))?;
 
     finish_with_authcode(http, &mut sess, &authcode, &session_id, &return_url, school, username, password).await
 }
@@ -371,7 +377,7 @@ async fn finish_with_authcode(
         .ok_or_else(|| LoginError::Upstream("api discovery failed".into()))?
         .to_string();
     let api_host = url::Url::parse(&api_url)
-        .map_err(|e| LoginError::Upstream(e.to_string()))?
+        .map_err(|e| LoginError::upstream_redacted(e.to_string()))?
         .host_str()
         .unwrap_or_default()
         .to_string();
@@ -440,9 +446,9 @@ async fn finish_with_authcode(
         if !loc.starts_with("m6loapp://") {
             continue;
         }
-        auth.verify_state(&loc).map_err(|e| LoginError::Upstream(e.to_string()))?;
-        let tok = auth.exchange_code(&loc).await.map_err(|e| LoginError::Upstream(e.to_string()))?;
-        auth.verify_id_token_nonce(&tok.id_token).map_err(|e| LoginError::Upstream(e.to_string()))?;
+        auth.verify_state(&loc).map_err(|e| LoginError::upstream_redacted(e.to_string()))?;
+        let tok = auth.exchange_code(&loc).await.map_err(|e| LoginError::upstream_redacted(e.to_string()))?;
+        auth.verify_id_token_nonce(&tok.id_token).map_err(|e| LoginError::upstream_redacted(e.to_string()))?;
         let mut ts = TokenSet::from_response(&tok, &api_url);
         ts.person_id = Some(person_id);
         ts.account_uuid = Some(account_id.clone());
