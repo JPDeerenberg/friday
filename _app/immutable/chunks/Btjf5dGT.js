@@ -1,1 +1,0 @@
-import{Mt as e}from"./IqIYzhlE.js";async function t(t,n){await e(`plugin:opener|open_url`,{url:t,with:n})}export{t};
