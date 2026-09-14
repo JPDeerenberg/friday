@@ -5,6 +5,16 @@
     <link rel="icon" href="/friday/favicon.png" />
     <link rel="manifest" href="/friday/manifest.webmanifest" />
     <meta name="theme-color" content="#131022" />
+    <!-- Baseline content policy (GitHub Pages can't send headers, so this
+      meta tag is the enforcement point; Caddy mirrors it as a real header
+      for self-hosted deploys). Deliberately moderate: SvelteKit's boot
+      needs inline scripts, and connect-src stays broad because self-hosters
+      point the app at their own backend URL. Still blocks objects/frames
+      and restricts where images, media and workers may load from. -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' blob:; font-src 'self' data:; connect-src 'self' https: wss:; worker-src 'self' blob:; manifest-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'"
+    />
     <!-- iOS home-screen app -->
     <link rel="apple-touch-icon" href="/friday/apple-touch-icon.png" />
     <meta name="mobile-web-app-capable" content="yes" />
@@ -13,20 +23,20 @@
     <meta name="apple-mobile-web-app-title" content="Friday" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <title>Magister Agenda</title>
-    <link href="/friday/_app/immutable/entry/start.CX0uDf23.js" rel="modulepreload">
-		<link href="/friday/_app/immutable/chunks/CeI3neSf.js" rel="modulepreload">
-		<link href="/friday/_app/immutable/chunks/mkmqxBhz.js" rel="modulepreload">
-		<link href="/friday/_app/immutable/chunks/D4vEkREC.js" rel="modulepreload">
-		<link href="/friday/_app/immutable/entry/app.CIoQPHwQ.js" rel="modulepreload">
+    <link href="/friday/_app/immutable/entry/start.Cx_ES5eg.js" rel="modulepreload">
+		<link href="/friday/_app/immutable/chunks/BFl52c9w.js" rel="modulepreload">
+		<link href="/friday/_app/immutable/chunks/DZ88dlpr.js" rel="modulepreload">
+		<link href="/friday/_app/immutable/chunks/CNfbRVOZ.js" rel="modulepreload">
+		<link href="/friday/_app/immutable/entry/app.Bbqb-Adj.js" rel="modulepreload">
 		<link href="/friday/_app/immutable/chunks/HclGiUj8.js" rel="modulepreload">
 		<link href="/friday/_app/immutable/chunks/xihTtKlq.js" rel="modulepreload">
-		<link href="/friday/_app/immutable/nodes/0.DSFg6TFU.js" rel="modulepreload">
-		<link href="/friday/_app/immutable/chunks/CuBmcILi.js" rel="modulepreload">
+		<link href="/friday/_app/immutable/nodes/0.DTRZzYvH.js" rel="modulepreload">
+		<link href="/friday/_app/immutable/chunks/IqIYzhlE.js" rel="modulepreload">
 		<link href="/friday/_app/immutable/chunks/hTByFGMt.js" rel="modulepreload">
-		<link href="/friday/_app/immutable/chunks/CoPT7CfE.js" rel="modulepreload">
-		<link href="/friday/_app/immutable/chunks/DUN4_YHH.js" rel="modulepreload">
+		<link href="/friday/_app/immutable/chunks/DUTI0P8F.js" rel="modulepreload">
+		<link href="/friday/_app/immutable/chunks/Cq3vIzZt.js" rel="modulepreload">
 		<link href="/friday/_app/immutable/chunks/CJiFAhTh.js" rel="modulepreload">
-		<link href="/friday/_app/immutable/chunks/DIxhCGJQ.js" rel="modulepreload">
+		<link href="/friday/_app/immutable/chunks/49Qw5x6E.js" rel="modulepreload">
 		
 		<link href="/friday/_app/immutable/assets/0.BmTZfhHC.css" rel="stylesheet">
   </head>
@@ -34,7 +44,7 @@
     <div style="display: contents">
 			<script>
 				{
-					__sveltekit_ptqant = {
+					__sveltekit_irkmtv = {
 						base: "/friday",
 						assets: "/friday"
 					};
@@ -42,8 +52,8 @@
 					const element = document.currentScript.parentElement;
 
 					Promise.all([
-						import("/friday/_app/immutable/entry/start.CX0uDf23.js"),
-						import("/friday/_app/immutable/entry/app.CIoQPHwQ.js")
+						import("/friday/_app/immutable/entry/start.Cx_ES5eg.js"),
+						import("/friday/_app/immutable/entry/app.Bbqb-Adj.js")
 					]).then(([kit, app]) => {
 						kit.start(app, element);
 					});
