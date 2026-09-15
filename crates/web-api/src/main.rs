@@ -72,6 +72,23 @@ async fn health() -> impl IntoResponse {
     Json(serde_json::json!({ "status": "ok", "version": env!("CARGO_PKG_VERSION") }))
 }
 
+/// Human-friendly root: uptime monitors (and curious browsers) hit `/`
+/// first. Lists where the real endpoints live — no auth, no data.
+async fn index() -> impl IntoResponse {
+    Json(serde_json::json!({
+        "service": "friday-web-api",
+        "status": "ok",
+        "version": env!("CARGO_PKG_VERSION"),
+        "endpoints": {
+            "health": "GET /health",
+            "login": "POST /api/auth/login",
+            "refresh": "POST /api/auth/refresh",
+            "proxy": "ANY /api/magister/*",
+            "ai": "POST /api/ai/chat, /api/ai/validate, /api/ai/models"
+        }
+    }))
+}
+
 #[derive(Debug, serde::Deserialize)]
 struct LoginBody {
     school: Option<String>,
@@ -374,6 +391,7 @@ async fn main() {
     };
 
     let app = Router::new()
+        .route("/", get(index))
         .route("/health", get(health))
         .route("/api/auth/login", post(login))
         .route("/api/auth/refresh", post(refresh))
