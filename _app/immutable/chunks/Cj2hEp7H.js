@@ -1,0 +1,1 @@
+import{Ft as e}from"./7wrPX8F1.js";async function t(t={}){return typeof t==`object`&&Object.freeze(t),await e(`plugin:dialog|open`,{options:t})}export{t};
