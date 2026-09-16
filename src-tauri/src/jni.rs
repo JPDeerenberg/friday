@@ -387,17 +387,36 @@ pub fn share_downloaded_file(file_path: &std::path::Path) -> Result<(), String> 
         .attach_current_thread()
         .map_err(|e| format!("Failed to attach current thread to JVM: {}", e))?;
 
-    let class = env
-        .find_class("com/joris/friday/ShareHelper")
-        .map_err(|e| format!("Failed to find ShareHelper: {}", e))?;
+    let class = match env.find_class("com/joris/friday/ShareHelper") {
+        Ok(c) => c,
+        Err(e) => {
+            // find_class leaves a pending ClassNotFoundException on this thread.
+            // Clear it so the failure surfaces as a normal Tauri error string
+            // instead of escalating to a FATAL EXCEPTION that kills the process
+            // (this is what crashed 'Alles exporteren' in release builds where
+            // R8 had stripped ShareHelper — see proguard-rules.pro).
+            let _ = env.exception_clear();
+            return Err(format!("Failed to find ShareHelper: {}", e));
+        }
+    };
     let context = unsafe { jni::objects::JObject::from_raw(ctx.context() as jni::sys::jobject) };
     let mime = mime_guess::from_path(file_path).first_or_octet_stream().to_string();
-    let j_path = env
-        .new_string(file_path.to_string_lossy().as_ref())
-        .map_err(|e| e.to_string())?;
-    let j_mime = env.new_string(&mime).map_err(|e| e.to_string())?;
+    let j_path = match env.new_string(file_path.to_string_lossy().as_ref()) {
+        Ok(s) => s,
+        Err(e) => {
+            let _ = env.exception_clear();
+            return Err(e.to_string());
+        }
+    };
+    let j_mime = match env.new_string(&mime) {
+        Ok(s) => s,
+        Err(e) => {
+            let _ = env.exception_clear();
+            return Err(e.to_string());
+        }
+    };
 
-    env.call_static_method(
+    if let Err(e) = env.call_static_method(
         &class,
         "shareFile",
         "(Landroid/content/Context;Ljava/lang/String;Ljava/lang/String;)V",
@@ -406,8 +425,12 @@ pub fn share_downloaded_file(file_path: &std::path::Path) -> Result<(), String> 
             JValue::from(&j_path),
             JValue::from(&j_mime),
         ],
-    )
-    .map_err(|e| e.to_string())?;
+    ) {
+        // A Java-side throw also leaves a pending exception behind — clear it
+        // for the same reason as above: never let it kill the process.
+        let _ = env.exception_clear();
+        return Err(e.to_string());
+    }
 
     if let Ok(true) = env.exception_check() {
         let _ = env.exception_clear();

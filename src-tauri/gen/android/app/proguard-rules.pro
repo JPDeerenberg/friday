@@ -20,11 +20,19 @@
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
 
-# Keep JNI classes and their members so Rust can find them
+# Keep JNI classes and their members so Rust can find them.
+# NOTE: every Kotlin helper reached only via JNI reflection from Rust
+# (find_class + call_static_method) MUST be listed here — R8 cannot see
+# the reflective reference and strips the class from release builds
+# (minifyEnabled=true), which crashes the app with ClassNotFoundException.
+# This is what removed ShareHelper and crashed 'Alles exporteren'.
 -keep class com.joris.friday.NotificationHelper { *; }
+-keep class com.joris.friday.ShareHelper { *; }
 -keep class com.joris.friday.SyncStateManager { *; }
 -keep class com.joris.friday.MainActivity { *; }
 -keep class com.joris.friday.SyncWorker { *; }
 -keep class com.joris.friday.DndScheduler { *; }
 -keep class com.joris.friday.DndReceiver { *; }
 -keep class com.joris.friday.BootReceiver { *; }
+-keep class com.joris.friday.BatteryReceiver { *; }
+-keep class com.joris.friday.SyncAlarmReceiver { *; }
