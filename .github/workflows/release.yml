@@ -101,12 +101,7 @@ jobs:
         uses: android-actions/setup-android@v3
         with:
           accept-android-sdk-licenses: true
-          packages: |
-            platform-tools
-            build-tools;29.0.3
-            platforms;android-28
-            platforms;android-36
-            ndk;26.1.10909125
+          packages: "platform-tools build-tools;29.0.3 platforms;android-28 platforms;android-36 ndk;26.1.10909125"
 
       - name: Configure Android NDK
         if: ${{ matrix.settings.is-android }}
