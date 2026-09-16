@@ -840,6 +840,17 @@ export async function exportAllData(): Promise<ExportResult> {
   return invoke("export_all_data");
 }
 
+// === Diagnostics ===
+export interface LogExportResult {
+  success: boolean;
+  file_name: string;
+  error: string | null;
+}
+
+export async function exportDebugLog(): Promise<LogExportResult> {
+  return invoke("export_debug_log");
+}
+
 // === Helpers ===
 export function formatDate(date: Date | string): string {
   if (!date) return "";

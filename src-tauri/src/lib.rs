@@ -30,6 +30,19 @@ pub fn run() {
                 .target(tauri_plugin_log::Target::new(
                     tauri_plugin_log::TargetKind::Stdout,
                 ))
+                // Persist logs to disk (app_log_dir) so intermittent bugs —
+                // like the token-refresh issue, which can happen hours apart
+                // and is impractical to catch live with `adb logcat` — leave
+                // a trail that can be exported after the fact via the
+                // `export_debug_log` command, instead of only being visible
+                // while a debugger/logcat is actively attached.
+                .target(tauri_plugin_log::Target::new(
+                    tauri_plugin_log::TargetKind::LogDir {
+                        file_name: Some("friday".to_string()),
+                    },
+                ))
+                .max_file_size(5_000_000) // 5MB per file before rotating
+                .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepSome(3))
                 .level(if cfg!(debug_assertions) {
                     log::LevelFilter::Debug
                 } else {
@@ -180,6 +193,8 @@ pub fn run() {
             commands::ai_schedule::set_homework_duration,
             // Export
             commands::export::export_all_data,
+            // Diagnostics
+            commands::diagnostics::export_debug_log,
         ])
         .plugin(tauri_plugin_dialog::init())
         .run(tauri::generate_context!())

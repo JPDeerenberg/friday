@@ -3,7 +3,7 @@
   import { currentPage } from '$lib/stores';
   import { triggerTestNotification, notifyNewMessage, notifyNewGrade, notifyDeadline, notifyCalendarChange,
             triggerSync, getDebugInfo, getSyncStateDebug, clearSyncState, setSyncInterval, getSyncInterval, getNightSleepConfig, setNightSleepConfig, getDisableAllNotifications, setDisableAllNotifications, getDndAccessStatus, triggerDndTest,
-           exportAllData, isWebBuild } from '$lib/api';
+           exportAllData, exportDebugLog, isWebBuild } from '$lib/api';
   import { getAiConfig, setAiConfig, validateAiKey, listAiModels, type AiConfig, type AiProviderType, AI_PROVIDERS } from '$lib/ai';
   import { sectionIcon } from '$lib/icons';
   import { updateStatus, refreshUpdateStatus, getCurrentVersion } from '$lib/updates';
@@ -72,6 +72,8 @@
   let logs = $state<{ time: string; level: 'info' | 'warn' | 'error'; msg: string }[]>([]);
   let exportBusy = $state(false);
   let exportResult = $state<string | null>(null);
+  let logExportBusy = $state(false);
+  let logExportResult = $state<string | null>(null);
   let pickingDir = $state(false);
 
   // --- AI config state ---
@@ -389,6 +391,30 @@
     }
   }
 
+  async function doExportLog() {
+    logExportBusy = true;
+    logExportResult = null;
+    addLog('info', 'Logbestand exporteren gestart...');
+    try {
+      const result = await exportDebugLog();
+      if (result.success) {
+        logExportResult = isMobile
+          ? `✅ Logbestand gedeeld: ${result.file_name}`
+          : `✅ Logbestand geëxporteerd: ${result.file_name}`;
+        addLog('info', `Log-export voltooid: ${result.file_name}`);
+      } else if (result.error) {
+        logExportResult = `❌ Fout: ${result.error}`;
+        addLog('error', `Log-export mislukt: ${result.error}`);
+      }
+      // else: user cancelled the folder picker on desktop — no message needed
+    } catch (e) {
+      logExportResult = `❌ Fout: ${e}`;
+      addLog('error', `Log-export mislukt: ${e}`);
+    } finally {
+      logExportBusy = false;
+    }
+  }
+
   async function pickDownloadDir() {
     pickingDir = true;
     try {
@@ -532,6 +558,7 @@
       title: 'Data & Downloads',
       settings: [
         { id: 'exportAll', label: 'Alles Exporteren', description: 'Exporteer al je data (lessen, cijfers, opdrachten, etc.) naar JSON-bestanden.', type: 'action', action: () => doExport() },
+        { id: 'exportLog', label: 'Logbestand Exporteren', description: 'Exporteer het interne logbestand — handig om een probleem te melden, ook als het al even geleden is gebeurd.', type: 'action', action: () => doExportLog() },
         { id: 'downloadDir', label: 'Downloadmap', description: 'Kies waar gedownloade bestanden worden opgeslagen. Leeg = systeemstandaard.', type: 'download-dir', hideOnWeb: true },
       ]
     },
@@ -1013,11 +1040,17 @@
                 <Button
                   variant="tonal"
                   onclick={() => setting.action()}
-                  disabled={setting.id === 'exportAll' ? exportBusy : isTestBusy(setting.id)}
+                  disabled={setting.id === 'exportAll' ? exportBusy : setting.id === 'exportLog' ? logExportBusy : isTestBusy(setting.id)}
                   class="px-5"
                 >
                   {#if setting.id === 'exportAll'}
                     {#if exportBusy}
+                      <span class="animate-pulse">⏳ Bezig met exporteren...</span>
+                    {:else}
+                      Exporteren
+                    {/if}
+                  {:else if setting.id === 'exportLog'}
+                    {#if logExportBusy}
                       <span class="animate-pulse">⏳ Bezig met exporteren...</span>
                     {:else}
                       Exporteren
@@ -1032,6 +1065,9 @@
                 </Button>
                 {#if setting.id === 'exportAll' && exportResult}
                   <p class="text-label-small text-gray-400 font-mono mt-2 text-right max-w-[200px] leading-relaxed">{exportResult}</p>
+                {/if}
+                {#if setting.id === 'exportLog' && logExportResult}
+                  <p class="text-label-small text-gray-400 font-mono mt-2 text-right max-w-[200px] leading-relaxed">{logExportResult}</p>
                 {/if}
               {:else if setting.type === 'download-dir'}
                 <div class="flex items-center gap-2">

@@ -5,6 +5,7 @@ pub mod assignments;
 pub mod auth;
 pub mod bronnen;
 pub mod calendar;
+pub mod diagnostics;
 pub mod export;
 pub mod grades;
 pub mod leermiddelen;

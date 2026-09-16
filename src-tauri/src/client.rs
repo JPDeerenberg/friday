@@ -359,7 +359,10 @@ async fn force_refresh(client: &SharedClient) -> Result<(), ClientError> {
     if let Some(ts) = c.token_set.as_mut() {
         ts.expires_at = Utc::now();
     }
-    c.ensure_valid_token().await?;
+    if let Err(e) = c.ensure_valid_token().await {
+        log::warn!("force_refresh: ensure_valid_token failed: {}", e);
+        return Err(e);
+    }
     Ok(())
 }
 
@@ -631,7 +634,12 @@ impl MagisterClient {
                 let already_refreshed_elsewhere =
                     previous_access_token.as_deref() != Some(fresh.access_token.as_str());
                 self.token_set = Some(fresh.clone());
+                log::info!(
+                    "ensure_valid_token: reload-from-disk check — disk_still_expired={}, token_changed_on_disk={}",
+                    still_expired, already_refreshed_elsewhere
+                );
                 if !still_expired && already_refreshed_elsewhere {
+                    log::info!("ensure_valid_token: using token already refreshed elsewhere, skipping network refresh");
                     return Ok(fresh);
                 }
             }
@@ -642,15 +650,19 @@ impl MagisterClient {
             (ts.refresh_token.clone(), ts.api_endpoint.clone(), ts.person_id, ts.account_uuid.clone())
         };
 
-        log::debug!("Access token expired or missing, refreshing via refresh_token grant");
-        let resp = AuthFlow::refresh_token(&refresh_token).await.map_err(|e| match e {
-            crate::auth::AuthError::TokenRefreshRejected { status, body } => {
-                ClientError::TokenRefreshRejected(format!("{status}: {body}"))
-            }
-            crate::auth::AuthError::RequestFailed(msg) => ClientError::RequestFailed(msg),
-            crate::auth::AuthError::TokenRefreshFailed(msg) => ClientError::TokenRefreshFailed(msg),
-            crate::auth::AuthError::ParseFailed(msg) => ClientError::ParseFailed(msg),
-            other => ClientError::TokenRefreshFailed(other.to_string()),
+        log::info!("ensure_valid_token: calling refresh_token grant over the network");
+        let resp = AuthFlow::refresh_token(&refresh_token).await.map_err(|e| {
+            let mapped = match e {
+                crate::auth::AuthError::TokenRefreshRejected { status, body } => {
+                    ClientError::TokenRefreshRejected(format!("{status}: {body}"))
+                }
+                crate::auth::AuthError::RequestFailed(msg) => ClientError::RequestFailed(msg),
+                crate::auth::AuthError::TokenRefreshFailed(msg) => ClientError::TokenRefreshFailed(msg),
+                crate::auth::AuthError::ParseFailed(msg) => ClientError::ParseFailed(msg),
+                other => ClientError::TokenRefreshFailed(other.to_string()),
+            };
+            log::warn!("ensure_valid_token: refresh_token grant failed: {}", mapped);
+            mapped
         })?;
 
         let mut new_token = TokenSet::from_response(&resp, &api_endpoint);
@@ -672,6 +684,13 @@ impl MagisterClient {
             if let Some(ts) = &self.token_set {
                 TokenSetPersistence::save(dir, ts);
             }
+        }
+
+        if let Some(ts) = &self.token_set {
+            log::info!(
+                "ensure_valid_token: refresh succeeded, new token valid until {}",
+                ts.expires_at
+            );
         }
 
         self.token_set
