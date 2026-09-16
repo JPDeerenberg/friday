@@ -99,12 +99,18 @@ jobs:
       - name: Setup Android SDK & NDK (Android Only)
         if: ${{ matrix.settings.is-android }}
         uses: android-actions/setup-android@v3
+        with:
+          accept-android-sdk-licenses: true
+          packages: |
+            platform-tools
+            build-tools;29.0.3
+            platforms;android-28
+            platforms;android-36
+            ndk;26.1.10909125
 
-      - name: Install Android NDK
+      - name: Configure Android NDK
         if: ${{ matrix.settings.is-android }}
-        run: |
-          echo "y" | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "ndk;26.1.10909125"
-          echo "NDK_HOME=$ANDROID_HOME/ndk/26.1.10909125" >> $GITHUB_ENV
+        run: echo "NDK_HOME=$ANDROID_HOME/ndk/26.1.10909125" >> "$GITHUB_ENV"
 
       - name: Install frontend dependencies
         run: pnpm install
@@ -123,10 +129,6 @@ jobs:
           # Your preferred lean build
           pnpm tauri android build --apk --target aarch64 --split-per-abi
           ls -la src-tauri/gen/android/app/build/outputs/apk || true
-
-      - name: Install Build Tools & Platforms for Signing
-        if: ${{ matrix.settings.is-android }}
-        run: echo "y" | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "build-tools;29.0.3" "platform-tools" "platforms;android-36" "platforms;android-28"
 
       - name: Sign Android APK
         if: ${{ matrix.settings.is-android }}
