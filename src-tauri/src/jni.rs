@@ -387,19 +387,29 @@ pub fn share_downloaded_file(file_path: &std::path::Path) -> Result<(), String> 
         .attach_current_thread()
         .map_err(|e| format!("Failed to attach current thread to JVM: {}", e))?;
 
-    let class = match env.find_class("com/joris/friday/ShareHelper") {
+    let context = unsafe { jni::objects::JObject::from_raw(ctx.context() as jni::sys::jobject) };
+
+    // Resolve through the context's own ClassLoader, NOT `find_class`: this runs
+    // on a Tauri worker thread attached via `attach_current_thread` (no Java
+    // frames), where `find_class` uses the system classloader and can never see
+    // app classes — it always throws ClassNotFoundException, even when R8 kept
+    // the class (the ProGuard `-keep` in proguard-rules.pro is still required,
+    // just not sufficient on its own). Same JNI thread isolation already
+    // handled by `find_app_class` for test notifications.
+    let class = match crate::commands::notifications::find_app_class(
+        &mut env,
+        &context,
+        "com.joris.friday.ShareHelper",
+    ) {
         Ok(c) => c,
         Err(e) => {
-            // find_class leaves a pending ClassNotFoundException on this thread.
-            // Clear it so the failure surfaces as a normal Tauri error string
-            // instead of escalating to a FATAL EXCEPTION that kills the process
-            // (this is what crashed 'Alles exporteren' in release builds where
-            // R8 had stripped ShareHelper — see proguard-rules.pro).
+            // A failed load leaves a pending exception on this thread — clear it
+            // so the failure surfaces as a normal Tauri error string instead of
+            // escalating to a FATAL EXCEPTION that kills the process.
             let _ = env.exception_clear();
             return Err(format!("Failed to find ShareHelper: {}", e));
         }
     };
-    let context = unsafe { jni::objects::JObject::from_raw(ctx.context() as jni::sys::jobject) };
     let mime = mime_guess::from_path(file_path).first_or_octet_stream().to_string();
     let j_path = match env.new_string(file_path.to_string_lossy().as_ref()) {
         Ok(s) => s,

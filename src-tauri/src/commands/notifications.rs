@@ -24,7 +24,14 @@ impl Default for NotificationType {
 
 
 #[cfg(target_os = "android")]
-fn find_app_class<'local>(
+/// Resolve an app class through a Context/Activity's own ClassLoader.
+///
+/// `JNIEnv::find_class` on a natively-attached thread (no Java frames, e.g. a
+/// Tauri async worker attached via `attach_current_thread`) uses the system
+/// classloader, which cannot see app classes — it always throws
+/// `ClassNotFoundException`. Loading through the context's ClassLoader avoids
+/// that JNI thread isolation. Shared with `crate::jni::share_downloaded_file`.
+pub(crate) fn find_app_class<'local>(
     env: &mut jni::JNIEnv<'local>,
     activity: &jni::objects::JObject<'_>,
     name: &str,
