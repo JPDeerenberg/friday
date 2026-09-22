@@ -127,6 +127,12 @@
     if (saved) {
       try { localOverrides = JSON.parse(saved); } catch (e) { console.error(e); }
     }
+    // If weekends are hidden and today is Sat/Sun, start on next Monday
+    // instead of parking on an empty weekend day.
+    if (!$userSettings.showWeekend) {
+      const skipped = skipWeekendForward(selectedDate);
+      if (skipped.getTime() !== selectedDate.getTime()) selectedDate = skipped;
+    }
     await loadAppointments();
   });
 
@@ -288,6 +294,26 @@
   let swipeDirection = $state(0); // -1 = left (next), 1 = right (prev)
   let dayKey = $state(0); // increment to trigger card re-animation
 
+  // When weekends are hidden, Sat/Sun have no visible day — push forward
+  // to next Monday so the user never gets stuck on an empty weekend.
+  function skipWeekendForward(d: Date): Date {
+    const copy = new Date(d);
+    if (copy.getDay() === 6) copy.setDate(copy.getDate() + 2);
+    else if (copy.getDay() === 0) copy.setDate(copy.getDate() + 1);
+    return copy;
+  }
+
+  // If the user disables weekends while sitting on Sat/Sun, jump to Monday.
+  $effect(() => {
+    if (!$userSettings.showWeekend) {
+      const day = selectedDate.getDay();
+      if (day === 0 || day === 6) {
+        selectedDate = skipWeekendForward(selectedDate);
+        loadAppointments();
+      }
+    }
+  });
+
   async function navigateToDay(newDate: Date, force = false) {
     if (isAnimating && !force) return;
     selectedDate = newDate;
@@ -328,7 +354,8 @@
   }
 
   function goToToday() {
-    navigateToDay(new Date());
+    const today = new Date();
+    navigateToDay(!$userSettings.showWeekend ? skipWeekendForward(today) : today);
   }
 
   async function handleDownload(bijlage: CalendarAttachment) {
@@ -490,11 +517,10 @@
     }
   }
 
-  function getInfoColor(info: number, afgerond = false) {
+  function getInfoColor(info: number, _afgerond = false) {
     if (info === 1) {
-      // Pending homework uses theme primary (always works with chosen color),
-      // done homework is muted to look cleaned up.
-      if (afgerond) return 'border-surface-600 text-gray-400 bg-surface-700/40 opacity-60';
+      // Homework badge always uses theme primary (even when done) so it
+      // stays readable — the emerald checkmark alone signals completion.
       return 'border-primary-400/60 text-primary-200 bg-primary-500/25';
     }
     if ([2, 3, 4, 5].includes(info)) return 'border-red-400/60 text-red-200 bg-red-500/25';
@@ -768,7 +794,8 @@
             value={selectedDate.toISOString().split('T')[0]}
             onchange={(e) => { 
               if (e.currentTarget.value) {
-                selectedDate = new Date(e.currentTarget.value); 
+                const picked = new Date(e.currentTarget.value);
+                selectedDate = !$userSettings.showWeekend ? skipWeekendForward(picked) : picked;
                 loadAppointments(); 
               }
             }}
@@ -1073,12 +1100,12 @@
                     {#each day.apps as app}
                       <button
                         onclick={() => openDetail(app)}
-                        class="absolute rounded-m3-sm border px-2 py-1.5 text-left overflow-hidden transition-all active:scale-[0.98] hover:brightness-125 cursor-pointer {app.InfoType === 1 && !app.Afgerond ? 'bg-primary-500/16 border-primary-500/40 shadow-sm' : app.InfoType === 1 && app.Afgerond ? 'bg-surface-800/50 border-surface-700/40 opacity-60' : app.Status === 4 || app.Status === 5 ? 'bg-red-500/10 border-red-500/30' : app.Afgerond ? 'bg-surface-800/50 border-surface-700/40 opacity-60' : 'bg-surface-800/80 border-surface-700/50 hover:bg-surface-700/70'}"
+                        class="absolute rounded-m3-sm border px-2 py-1.5 text-left overflow-hidden transition-all active:scale-[0.98] hover:brightness-125 cursor-pointer {app.InfoType === 1 && !app.Afgerond ? 'bg-primary-500/16 border-primary-500/40 shadow-sm' : app.Status === 4 || app.Status === 5 ? 'bg-red-500/10 border-red-500/30' : 'bg-surface-800/80 border-surface-700/50 hover:bg-surface-700/70'}"
                         style="top: {appTopPx(app)}px; height: {appHeightPx(app)}px; left: calc({app._column} / {app._columnCount} * 100% + 4px); width: calc(100% / {app._columnCount} - 8px);"
                         title="{(app.Vakken?.[0]?.Naam || app.Omschrijving || 'Vrij')} · {formatTime(app.Start)} – {formatTime(app.Einde)}"
                       >
                         <div class="flex flex-col min-w-0 h-full">
-                          <p class="text-title-small leading-tight truncate {app.Status === 4 || app.Status === 5 ? 'text-red-400 line-through' : app.InfoType === 1 && app.Afgerond ? 'text-gray-400 line-through opacity-60' : app.Afgerond ? 'text-gray-400 line-through opacity-60' : app.InfoType === 1 && !app.Afgerond ? 'text-primary-100' : 'text-white'}">
+                          <p class="text-title-small leading-tight truncate {app.Status === 4 || app.Status === 5 ? 'text-red-400 line-through' : app.InfoType === 1 && !app.Afgerond ? 'text-primary-100' : 'text-white'}">
 {app.Vakken?.[0]?.Naam || app.Omschrijving || 'Vrij'}
                           </p>
                           <div class="flex items-center gap-1 text-label-medium text-gray-400 mt-0.5">
@@ -1090,6 +1117,8 @@
                         </div>
                         {#if app.InfoType === 1 && !app.Afgerond}
                           <div class="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-primary-400"></div>
+                        {:else if app.InfoType === 1 && app.Afgerond}
+                          <div class="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-emerald-500"></div>
                         {:else if [2, 3, 4, 5].includes(app.InfoType)}
                           <div class="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-red-500"></div>
                         {/if}
@@ -1179,7 +1208,7 @@
             onclick={() => openDetail(app)}
             onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDetail(app); } }}
             in:fly={{ y: 12, duration: 200, delay: i * 20, easing: (t) => 1 - Math.pow(1-t, 3) }}
-            class="w-full text-left rounded-m3-md {$userSettings.compactView ? 'p-2 flex gap-2' : 'p-3 md:p-4 flex gap-3 md:gap-4'} transition-all active:scale-[0.98] hover:scale-[1.005] relative overflow-hidden cursor-pointer border {app.InfoType === 1 && !app.Afgerond ? 'bg-primary-500/14 border-primary-500/40 shadow-sm shadow-primary-500/20' : app.InfoType === 1 && app.Afgerond ? 'bg-surface-800/50 border-surface-700/40 opacity-60' : app.Status === 4 || app.Status === 5 ? 'bg-red-500/8 border-red-500/30' : app.Afgerond ? 'bg-surface-800/50 border-surface-700/40 opacity-60' : 'bg-surface-800/60 border-surface-700/40 hover:bg-surface-700/60 hover:border-surface-600/50'}"
+            class="w-full text-left rounded-m3-md {$userSettings.compactView ? 'p-2 flex gap-2' : 'p-3 md:p-4 flex gap-3 md:gap-4'} transition-all active:scale-[0.98] hover:scale-[1.005] relative overflow-hidden cursor-pointer border {app.InfoType === 1 && !app.Afgerond ? 'bg-primary-500/14 border-primary-500/40 shadow-sm shadow-primary-500/20' : app.Status === 4 || app.Status === 5 ? 'bg-red-500/8 border-red-500/30' : 'bg-surface-800/60 border-surface-700/40 hover:bg-surface-700/60 hover:border-surface-600/50'}"
           >
             <!-- Soft background glow - only for pending homework, uses theme primary -->
             {#if app.InfoType === 1 && !app.Afgerond}
@@ -1202,7 +1231,7 @@
             <!-- Info -->
             <div class="flex-1 min-w-0 flex flex-col justify-center relative z-10">
               <div class="flex items-center justify-between gap-1.5 mb-0.5">
-                <span class="text-title-medium {app.Status === 4 || app.Status === 5 ? 'text-red-400 line-through' : app.InfoType === 1 && app.Afgerond ? 'text-gray-400 line-through opacity-60' : app.Afgerond ? 'text-gray-400 line-through opacity-60' : app.InfoType === 1 && !app.Afgerond ? 'text-primary-100' : 'text-white'} truncate">
+                <span class="text-title-medium {app.Status === 4 || app.Status === 5 ? 'text-red-400 line-through' : app.InfoType === 1 && !app.Afgerond ? 'text-primary-100' : 'text-white'} truncate">
                   {app.Vakken?.[0]?.Naam || app.Omschrijving || 'Vrij'}
                 </span>
                 {#if app.Docenten?.[0] && !$userSettings.compactView}
@@ -1250,7 +1279,7 @@
                 <button 
                   onclick={(e) => { e.stopPropagation(); toggleDone(app); }}
                   aria-label={app.Afgerond ? 'Markeer als niet afgerond' : 'Markeer als afgerond'}
-                  class="w-7 h-7 md:w-8 md:h-8 rounded-full border-2 transition-all flex items-center justify-center {app.Afgerond ? 'bg-emerald-500 border-emerald-400 text-white shadow-sm shadow-emerald-500/30 opacity-70' : 'bg-primary-500/15 border-primary-400/60 text-primary-300 hover:bg-primary-500/25 hover:border-primary-400 active:scale-110 shadow-sm shadow-primary-500/20'}"
+                  class="w-7 h-7 md:w-8 md:h-8 rounded-full border-2 transition-all flex items-center justify-center {app.Afgerond ? 'bg-emerald-500 border-emerald-400 text-white shadow-sm shadow-emerald-500/30' : 'bg-primary-500/15 border-primary-400/60 text-primary-300 hover:bg-primary-500/25 hover:border-primary-400 active:scale-110 shadow-sm shadow-primary-500/20'}"
 
                 >
                   <svg class="w-3.5 h-3.5 md:w-4 md:h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="4"><path d="M20 6L9 17L4 12"/></svg>
@@ -1392,7 +1421,7 @@
                 </span>
               </Button>
              {/if}
-            <div class="p-4 md:p-5 rounded-m3-md prose prose-sm prose-invert max-w-none shadow-inner {selectedAppointment.InfoType === 1 && !selectedAppointment.Afgerond ? 'bg-primary-500/12 border border-primary-500/30' : selectedAppointment.Afgerond ? 'bg-surface-950 border border-white/5 opacity-60' : 'bg-surface-950 border border-white/5'}">
+            <div class="p-4 md:p-5 rounded-m3-md prose prose-sm prose-invert max-w-none shadow-inner {selectedAppointment.InfoType === 1 && !selectedAppointment.Afgerond ? 'bg-primary-500/12 border border-primary-500/30' : 'bg-surface-950 border border-white/5'}">
                <HtmlRenderer html={selectedAppointment.Inhoud} />
             </div>
           {:else}
