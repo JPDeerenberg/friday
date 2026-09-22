@@ -7,7 +7,7 @@
     "dev": "vite dev",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node src/lib/stores.test.ts && node --import ./src/lib/test-hooks-register.ts src/lib/web-tier-b.test.ts && node --import ./src/lib/test-hooks-register.ts src/lib/web-ai-tools.test.ts && node --import ./src/lib/test-hooks-register.ts src/lib/ai.test.ts && node --import ./src/lib/test-hooks-register.ts src/lib/web-planner.test.ts",
+    "test": "node src/lib/stores.test.ts && node --import ./src/lib/test-hooks-register.ts src/lib/web-tier-b.test.ts && node --import ./src/lib/test-hooks-register.ts src/lib/web-ai-tools.test.ts && node --import ./src/lib/test-hooks-register.ts src/lib/ai.test.ts && node --import ./src/lib/test-hooks-register.ts src/lib/web-planner.test.ts && node --import ./src/lib/test-hooks-register.ts src/lib/web-stores.test.ts",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
     "tauri": "tauri"
@@ -39,6 +39,7 @@
     "@tauri-apps/cli": "^2.11.4",
     "@types/node": "^26.2.0",
     "autoprefixer": "^10.5.4",
+    "fake-indexeddb": "^6.2.5",
     "svelte": "^5.56.10",
     "svelte-check": "^4.7.6",
     "tailwindcss": "^4.3.3",

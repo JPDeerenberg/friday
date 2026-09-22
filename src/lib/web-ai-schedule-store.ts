@@ -40,8 +40,10 @@ export async function saveScheduleItems(items: AiScheduleItem[]): Promise<void> 
   const db = await getDb();
   const tx = db.transaction(STORE_NAME, "readwrite");
   await tx.store.clear();
-  // No keyPath on the store (v1): key explicitly by item id.
-  for (const item of items) await tx.store.put(item, item.id);
+  // Store uses in-line keys (keyPath "id"): NO explicit key argument —
+  // passing one alongside in-line keys throws DataError. Items always
+  // carry an id (generated on create).
+  for (const item of items) await tx.store.put(item);
   await tx.done;
 }
 

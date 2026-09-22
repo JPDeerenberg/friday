@@ -78,6 +78,9 @@ importers:
       autoprefixer:
         specifier: ^10.5.4
         version: 10.5.4(postcss@8.5.26)
+      fake-indexeddb:
+        specifier: ^6.2.5
+        version: 6.2.5
       svelte:
         specifier: ^5.56.10
         version: 5.56.10(@typescript-eslint/types@8.57.2)
@@ -798,6 +801,10 @@ packages:
     peerDependenciesMeta:
       '@typescript-eslint/types':
         optional: true
+
+  fake-indexeddb@6.2.5:
+    resolution: {integrity: sha512-CGnyrvbhPlWYMngksqrSSUT1BAVP49dZocrHuK0SvtR0D5TMs5wP0o3j7jexDJW01KSadjBp1M/71o/KR3nD1w==}
+    engines: {node: '>=18'}
 
   fdir@6.5.0:
     resolution: {integrity: sha512-tIbYtZbucOs0BRGqPJkshJUYdL+SDH7dVM8gjy+ERp3WAUjLEFJE+02kanyHtwjWOnwrKYBiwAmM0p4kLJAnXg==}
@@ -1823,6 +1830,8 @@ snapshots:
       '@jridgewell/sourcemap-codec': 1.5.5
     optionalDependencies:
       '@typescript-eslint/types': 8.57.2
+
+  fake-indexeddb@6.2.5: {}
 
   fdir@6.5.0(picomatch@4.0.5):
     optionalDependencies:
