@@ -72,6 +72,17 @@ async fn health() -> impl IntoResponse {
     Json(serde_json::json!({ "status": "ok", "version": env!("CARGO_PKG_VERSION") }))
 }
 
+/// Minimal keep-alive target for uptime monitors (cron-job.org and friends
+/// FAIL jobs whose output exceeds ~1KB — their own blog recommends answering
+/// pings with literally `OK`). Two bytes, no JSON, nothing to parse.
+async fn ping() -> impl IntoResponse {
+    (
+        StatusCode::OK,
+        [(axum::http::header::CONTENT_TYPE, "text/plain")],
+        "OK",
+    )
+}
+
 /// Human-friendly root: uptime monitors (and curious browsers) hit `/`
 /// first. Lists where the real endpoints live — no auth, no data.
 async fn index() -> impl IntoResponse {
@@ -392,6 +403,7 @@ async fn main() {
 
     let app = Router::new()
         .route("/", get(index))
+        .route("/ping", get(ping))
         .route("/health", get(health))
         .route("/api/auth/login", post(login))
         .route("/api/auth/refresh", post(refresh))
