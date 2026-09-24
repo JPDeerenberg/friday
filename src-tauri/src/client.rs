@@ -354,8 +354,27 @@ pub async fn get_bytes_with_context(ctx: &RequestContext, path: &str) -> Result<
 
 /// Mark the in-memory token expired and run a full refresh+persist cycle.
 /// Used by the shared retry helpers after a `TokenExpiredRetryable`.
-async fn force_refresh(client: &SharedClient) -> Result<(), ClientError> {
+///
+/// Only actually forces a refresh if `stale_access_token` — the token that
+/// 401'd for *this specific caller* — is still the live one. Without this
+/// guard, N concurrent callers that all 401 on the same expired access
+/// token (e.g. Dashboard.svelte's resume-time fan-out) each queue up on
+/// `client.lock()` and each unconditionally force *another* live
+/// refresh_token grant after the previous one already fixed it — burning
+/// the refresh token N times in a row for one real expiry. See
+/// FRIDAY_AUTH_LOGOUT_DIAGNOSIS.md for the full writeup and a runnable
+/// proof (before/after call counts).
+async fn force_refresh(client: &SharedClient, stale_access_token: &str) -> Result<(), ClientError> {
     let mut c = client.lock().await;
+    let still_current = c
+        .token_set
+        .as_ref()
+        .map(|ts| ts.access_token == stale_access_token)
+        .unwrap_or(false);
+    if !still_current {
+        log::info!("force_refresh: token already refreshed by a concurrent caller, skipping duplicate refresh");
+        return Ok(());
+    }
     if let Some(ts) = c.token_set.as_mut() {
         ts.expires_at = Utc::now();
     }
@@ -395,7 +414,7 @@ pub async fn get_with_shared(
                 "401 expired-token on shared GET {}, forcing refresh and retrying once",
                 path
             );
-            force_refresh(client).await?;
+            force_refresh(client, &ctx.access_token).await?;
             let ctx = {
                 let mut c = client.lock().await;
                 c.request_context().await?
@@ -425,7 +444,7 @@ pub async fn get_bytes_with_shared(
                 "401 expired-token on shared BYTES GET {}, forcing refresh and retrying once",
                 path
             );
-            force_refresh(client).await?;
+            force_refresh(client, &ctx.access_token).await?;
             let ctx = {
                 let mut c = client.lock().await;
                 c.request_context().await?
@@ -567,12 +586,22 @@ impl MagisterClient {
             file.lock().ok()?;
             Some(file)
         });
-        match tokio::time::timeout(std::time::Duration::from_secs(5), fut).await {
+        // 5s was too tight: AuthFlow::refresh_token() has no internal
+        // timeout and no retry/backoff of its own, so under the exact
+        // conditions this lock exists to protect against — a slow or
+        // rate-limited connection — a *legitimate* holder can easily still
+        // be mid-refresh past 5s. When that happens the waiter gives up,
+        // fails open, and races the holder directly on /connect/token with
+        // the same (about-to-be-rotated) refresh token: the loser gets a
+        // genuine invalid_grant and the user is logged out for real. Raised
+        // to 30s so we wait out realistic slow-network refreshes instead of
+        // racing them. See FRIDAY_AUTH_LOGOUT_DIAGNOSIS.md.
+        match tokio::time::timeout(std::time::Duration::from_secs(30), fut).await {
             Ok(Ok(Some(file))) => Some(file),
             Ok(Ok(None)) => None,
             Ok(Err(_)) => None,
             Err(_) => {
-                log::warn!("acquire_refresh_lock timeout after 5s, proceeding without lock (fail-open)");
+                log::warn!("acquire_refresh_lock timeout after 30s, proceeding without lock (fail-open)");
                 None
             }
         }
