@@ -1,101 +1,120 @@
 # Friday — AI Agent Guidelines
 
-See [README.md](./README.md) for general project overview and setup instructions.
+> Companion for humans: [README.md](./README.md) (live demo, self-hosting, contributing).
+> This file is the operational reference for AI coding agents working in this repo.
 
----
-
-## Build & Test
+## 1. Quick commands
 
 ```bash
-pnpm install              # Install dependencies
-pnpm dev                  # Start Vite dev server (ported to 1420)
-pnpm tauri dev            # Run full Tauri app in dev mode
-pnpm build                # Build frontend only (Vite)
-pnpm check                # Type-check (svelte-check + TypeScript)
-pnpm tauri build          # Build desktop production binary
-pnpm tauri android build --apk  # Build Android APK
+pnpm install                    # install frontend deps (pnpm only, never npm/yarn)
+pnpm dev                        # Vite dev server on :1420 (LAN-reachable, phone testing)
+pnpm build                      # frontend-only static build → build/
+pnpm check                      # svelte-kit sync + svelte-check (type-check)
+pnpm test                       # all 6 frontend test files (node built-in test runner)
+pnpm tauri dev                  # full desktop app (frontend + Rust backend)
+pnpm tauri build                # desktop production binary
+pnpm tauri android build --apk  # Android APK (needs Android SDK + JDK 17)
+
+cd src-tauri && cargo check --lib   # fast Rust compile check (~30s)
+cd src-tauri && cargo test --lib    # Rust tests (wiremock; full build takes several minutes)
+cd crates/web-api && PORT=3000 cargo run   # stateless web API for web dev
 ```
 
-- **Frontend tests**: `node src/lib/stores.test.ts` (Node.js built-in `test` module + `node:assert`)
-- **Backend tests**: `cargo test` in `src-tauri/` (uses `wiremock`)
+- Node 20+, pnpm 9+, stable Rust toolchain. Android builds need Android SDK + JDK 17.
+- `pnpm test` runs: `stores`, `web-tier-b`, `web-ai-tools`, `ai`, `web-planner`, `web-stores` (all `*.test.ts` via plain `node`, some with `test-hooks-register.ts` for DOM shims).
+- When everything is valid: bump version (`package.json` + `src-tauri/Cargo.toml` + `src-tauri/Cargo.lock`) and commit. `src-tauri/tauri.conf.json` version field is stale — leave it.
 
-When everything is valid, update the version and Commit.
+## 2. What this repo is
 
----
+Friday is a Magister school client (agenda, grades, messages, assignments, absences) with three distributable forms from one SvelteKit codebase:
 
-## Architecture
+| Form | How it runs | Auth | Backend |
+|---|---|---|---|
+| **Desktop** (Windows/Linux via `pnpm tauri build`) | Tauri v2 webview + Rust | OAuth in system browser, `m6loapp://` deep-link callback | Rust commands in `src-tauri/` |
+| **Android** (APK via `pnpm tauri android build --apk`, CI release) | Tauri v2 + Kotlin | Same OAuth deep-link | Rust + Kotlin (`SyncWorker`, JNI) |
+| **Web / PWA** (live at https://jpdeerenberg.github.io/friday, self-hostable) | Static SvelteKit SPA + stateless `web-api` | School + username + password form (one login call, never stored) | `crates/web-api` (Axum, no DB, no sessions) |
 
-- **Frontend**: SvelteKit 5 with `@sveltejs/adapter-static` (SPA mode, fallback `index.html`), Tailwind CSS 4, Vite 6.
-- **Backend**: Rust (Tauri v2) — commands registered in `src-tauri/src/lib.rs` via `generate_handler!`.
-- **Routing**: Custom client-side routing via Svelte writable stores (`$currentPage`), **not** SvelteKit file-based routing. See `src/routes/+page.svelte`.
-- **State**: Global state lives in `src/lib/stores.ts` (Svelte writable stores). No external state library.
-- **Styling**: Tailwind CSS 4 with Material 3 semantic color tokens (`--m3-primary`, `--m3-on-primary`, etc.). Dark theme by default. AMOLED mode via `.mode-amoled` class.
-- **Data flow**: Frontend calls Tauri `invoke()` (see `src/lib/api.ts`) → Rust command (see `src-tauri/src/commands/`) → Magister REST API.
-- **Platforms**: Desktop (Linux/Windows) + Android. Deep link auth via `m6loapp://` scheme.
-- **Android background sync** (two-driver, single execution path): the **primary driver** is a self-rescheduling `AlarmManager` exact-alarm chain (`SyncAlarmReceiver.kt` — `setExactAndAllowWhileIdle()`, re-armed at `now + interval`, interval floor 15 min) that at each tick enqueues a **one-shot** `SyncWorker` via `WorkManager`. The **backstop** is a slow `PeriodicWorkRequest` (`BACKSTOP_INTERVAL_MINUTES = 60`) in case the alarm chain is ever cancelled. Both drivers funnel through the **same execution path** — `SyncWorker.doRemoteWork()` guarded by `SyncWorker.syncLock` (`ReentrantLock`) and `SyncStateManager`'s `@Synchronized` read-diff-write — so concurrent runs are serialized and the historical duplicate/missing-notifications race (from two independent unlocked writers to `sync_state.json`) does not reproduce. **There is no foreground `SyncService`** — it was removed for that reason. Do **not** add a third scheduler, and do not enqueue an extra `SyncWorker` on app resume (see below); to change the cadence change `SyncAlarmReceiver`/`WorkManager` scheduling and `MainActivity.setSyncInterval()`.
-- **DND & sync alarms use exact `AlarmManager` APIs**: `SyncAlarmReceiver` uses `setExactAndAllowWhileIdle()`, `DndScheduler` uses the same for lesson windows. On Android 13+ (`targetSdk = 36`) exact alarms need the user-granted `SCHEDULE_EXACT_ALARM` permission — `MainActivity.onResume()` prompts for it once via `ACTION_REQUEST_SCHEDULE_EXACT_ALARM` and re-arms the chain so it switches from inexact to exact immediately after grant. Without the grant the chain falls back to inexact `setAndAllowWhileIdle()`, which Doze can defer by hours. `USE_EXACT_ALARM` is **not** declared (restricted to alarm/clock apps; would risk Play Store rejection) — rely on the user-granted `SCHEDULE_EXACT_ALARM` path only.
-- **DND scheduling**: `DndScheduler.kt` reads calendar data after each sync and schedules precise `AlarmManager` do-not-disturb windows around lessons; `DndReceiver.kt` handles the on/off/safety-timeout alarms.
+Dutch UI throughout. Unofficial Magister client — see README disclaimer.
 
-### Key files
+## 3. Repo map
 
-| Area                     | File(s)                                                                 |
-| ------------------------ | ------------------------------------------------------------------------ |
-| Commands (Rust)          | `src-tauri/src/commands/*.rs`                                            |
-| Models (Rust)            | `src-tauri/src/models/*.rs`                                              |
-| AI attachment reading    | `src-tauri/src/ai/attachment_reader.rs`                                 |
-| AI grade calculations    | `src-tauri/src/ai/grade_calc.rs` (Rust port of `src/lib/grades/predictor.ts` — keep in sync) |
-| Shared client            | `src-tauri/src/client.rs`                                               |
-| Auth (Rust)              | `src-tauri/src/auth.rs`                                                 |
-| JNI bridge (Rust ↔ Kotlin) | `src-tauri/src/jni.rs`                                                |
-| API layer (TS)           | `src/lib/api.ts`                                                         |
-| State (TS)               | `src/lib/stores.ts`                                                      |
-| Components                | `src/lib/components/*.svelte`                                           |
-| Pages                     | `src/routes/*.svelte`                                                   |
-| Design tokens             | `src/app.css`                                                            |
-| Android background sync  | `src-tauri/gen/android/app/src/main/java/com/joris/friday/SyncWorker.kt` |
-| Android sync state/diff  | `src-tauri/gen/android/app/src/main/java/com/joris/friday/SyncStateManager.kt` |
-| Android notifications    | `src-tauri/gen/android/app/src/main/java/com/joris/friday/NotificationHelper.kt` |
-| Android DND scheduling   | `src-tauri/gen/android/app/src/main/java/com/joris/friday/DndScheduler.kt`, `DndReceiver.kt` |
-| Android entry point      | `src-tauri/gen/android/app/src/main/java/com/joris/friday/MainActivity.kt` |
+```
+src/                          SvelteKit SPA (adapter-static, SPA fallback index.html)
+  routes/                     dashboard, calendar, grades, messages, assignments,
+                              afwezigheid, activiteiten, bronnen, leermiddelen,
+                              studiewijzers, ai-schedule, profile, settings, login
+  lib/                        api.ts (Tauri invoke wrappers), backend.ts (Tauri/Web seam),
+                              web-session.ts / web-tier-b.ts (web transport + aggregation),
+                              stores.ts (global state), cache.ts (IndexedDB), grades/,
+                              components/*.svelte (M3 design system), ai.ts, web-planner.ts
+  app.css / app.html / service-worker.js / ...
+static/                       icons, manifest.webmanifest (PWA, nl)
+src-tauri/src/                Rust backend (Tauri v2)
+  lib.rs / main.rs            command registration via generate_handler!
+  commands/*.rs               activities, ai, ai_schedule, assignments, auth, bronnen,
+                              calendar, diagnostics, export, grades, leermiddelen,
+                              messages, studiewijzers, notifications
+  models/*.rs                 PascalCase Magister JSON → snake_case (serde renames)
+  client.rs                   token lifecycle + HTTP (see §5 — read before touching auth)
+  auth.rs / tls.rs / secure_store.rs / jni.rs
+  ai/                         attachment_reader, grade_calc, schedule, tools, providers
+crates/
+  magister-core/              shared protocol: auth flow, TLS, TokenSet, jsparser
+  web-api/                    stateless Axum API: /health, /ping, /api/auth/*,
+                              /api/magister/* proxy, AI endpoints (Dockerfile included)
+  spike-password-login/       one-off login experiment, not shipped
+src-tauri/gen/android/        Kotlin: MainActivity, SyncWorker, SyncAlarmReceiver,
+                              SyncStateManager, NotificationHelper, DndScheduler/Receiver
+Dockerfile.web / Caddyfile / docker-compose.yml   VPS self-host stack
+crates/web-api/Dockerfile / render.yaml           free-tier self-host pieces
+.github/workflows/
+  deploy-web.yml              main → GitHub Pages (/friday/, VITE_API_URL baked at build)
+  release.yml                 manual dispatch → draft GitHub release (Windows, Linux, Android)
+fixes/                        diagnosis docs (e.g. FRIDAY_AUTH_LOGOUT_DIAGNOSIS.md) — read
+                              the relevant one before touching auth/sync
+```
 
----
+## 4. Architecture & data flow
 
-## Conventions
+- **Routing**: custom, not file-based. `src/routes/+page.svelte` lazy-loads page components keyed by `$currentPage` store (`src/lib/stores.ts`: `currentPage`, `navigationStack`, `resumedAt`, `restoreStatus`). `+layout.svelte` owns auth-callback events and the hidden→visible resume signal.
+- **Desktop/Android data path**: Svelte → `src/lib/api.ts` (`invoke()`) → Rust command (`src-tauri/src/commands/`) → `MagisterClient` (`client.rs`) → Magister REST. All commands `async`, errors are `Result<T, String>`.
+- **Web data path**: Svelte → `backend.ts`/`web-session.ts` (`fetch`) → `web-api` (`/api/magister/*` Tier-A passthrough, `/api/auth/*` grants) → Magister. Tokens stay in browser IndexedDB; server holds nothing. Tier-B aggregation (grades shaping, planner) runs in TypeScript (`web-tier-b.ts`); Tier-C (auth/AI/export) has dedicated endpoints.
+- **Build variants**: `BASE_PATH` env controls subpath. GitHub Pages sets `BASE_PATH=/friday`; Tauri/Caddy/dev leave it empty (root-based). `VITE_API_URL` is baked at web build time (`/api` default for same-origin Caddy, full URL for split Pages+Render hosting). `vite.config.js` proxies `/api` → `WEB_API_TARGET` (default `localhost:3000`) in dev.
+- **State & caching**: global state in `src/lib/stores.ts` (writable stores, `$store` in templates). App data cached to IndexedDB via `idb` (`cacheGet`/`cacheRefresh`, 5–30 min TTL, stale-while-revalidate). Settings in `localStorage` (merge strategy). Dashboard fans out with `Promise.allSettled()` (per-section errors).
+- **Styling**: Tailwind CSS 4 + Material 3 semantic tokens (`--m3-*` in `src/app.css`). Dark default, AMOLED via `.mode-amoled`. Utility-first, `@apply` sparingly. Shared primitives in `src/lib/components/` (Button, Card, Chip, Switch, …).
 
-### Frontend (Svelte 5 / TypeScript)
+## 5. Auth & token lifecycle — read this before touching `client.rs`
 
-- **Use Svelte 5 runes**: `$state()` for local state, `$derived()` for computed values, `$effect()` for side effects. Avoid legacy `let` bindings for reactive state.
-- **API calls**: Import from `$lib/api.ts`. All functions are `async` and return `Promise<T>`. Wrap in try/catch; errors are strings.
-- **Use `Promise.allSettled()`** for parallel data fetching with per-section error handling.
-- **Stores**: Import from `$lib/stores.ts`. Subscribe with `$storeName` syntax in templates.
-- **Tailwind**: Utility-first. Use `@apply` sparingly. Reference Material 3 tokens for semantic colors.
-- **Caching**: App data cached to IndexedDB via `idb` (`src/lib/cache.ts` — `cacheGet`/`cacheRefresh`, 5–30 min TTL, stale-while-revalidate, background refresh). Settings persist via `localStorage` merge strategy in stores.
+`client.rs` is the highest-risk file in the repo. Two fixed logout bugs document the invariants (see `fixes/FRIDAY_AUTH_LOGOUT_DIAGNOSIS.md`):
 
-### Backend (Rust)
+- **`force_refresh(client, stale_access_token)` must keep its staleness guard.** N concurrent 401s (Dashboard fires ~6) queue on the client mutex; only the caller whose token is still live may trigger a real `refresh_token` grant. Removing the guard turns one expiry into N sequential token rotations and invites rate-limiting + races.
+- **`acquire_refresh_lock` timeout is 30s — do not lower it.** The foreground app and background `SyncWorker` are separate processes sharing one rotating refresh token via the `token_refresh.lock` file. `AuthFlow::refresh_token()` has no internal timeout; a legitimate refresh under degraded network easily exceeds 5s. Failing open early causes a genuine `invalid_grant` → `restore_session()` wipes tokens (correct behavior for a dead session, catastrophic for a live one).
+- Only `force_refresh` (used by lock-free `get_with_shared`/`get_bytes_with_shared`) force-expires. The `get`/`post`/`put`/`delete`/`patch` methods run under an already-held lock — leave them as-is. `jni.rs do_sync` batches one retry per sync, not per fetch.
+- `TokenSet` shape/expiry lives in `magister-core` (`tokens.rs`); `client.rs` re-exports it. `TokenSetPersistence` splits secrets (OS keyring via `secure_store`) from metadata (`tokens.json`). `load_detailed()` distinguishes logged-out (`Ok(None)`) from transient store failure (`Err` → UI `unavailable`, retry, never wipe). `restore_session` wipes only on `is_rejected()` (`TokenRefreshRejected`/`NotAuthenticated`), never on transient failures.
+- `GET` path is lock-free by design (`RequestContext`: clone http+token, drop lock, fetch unlocked, one forced-refresh-and-retry). Writes and OAuth stay fully serialized under the client mutex.
 
-- **Tauri commands**: Annotate `#[tauri::command]`, accept `State<'_, SharedClient>`, return `Result<T, String>`.
-- **Error handling**: Use `.map_err(|e| e.to_string())?` to propagate errors as strings to the frontend.
-- **Shared state**: `type SharedClient = Arc<Mutex<MagisterClient>>` — always lock with `.lock().await`.
-- **Serde**: Use `#[serde(rename = "PascalCase")]` to map Magister API's PascalCase fields to Rust's snake_case.
-- **Models**: Response wrappers follow `*Response { #[serde(rename = "Items")] pub items: Vec<T> }` pattern.
-- **HTTP**: Use `client.get(&url).await` (reqwest wrapper) which auto-injects auth tokens and refreshes if expired.
+## 6. Android sync & DND — do not add schedulers
 
-### Android (Kotlin, `src-tauri/gen/android/`)
+Two drivers, one execution path. Keep it that way:
 
-- **Two drivers, one execution path**: `SyncAlarmReceiver`'s exact-alarm chain + `WorkManager` periodic backstop both funnel into `SyncWorker.doRemoteWork()` under `SyncWorker.syncLock` and `SyncStateManager`'s `@Synchronized` block. Do **not** add a third independent scheduler (foreground `Service`, another `AlarmManager` loop, or an extra `SyncWorker` on app resume) — two independent unsynchronized writers to `sync_state.json` is what caused the historical duplicate/missing-notifications bug, and the current locking is what prevents it.
-- **Sync interval floor is 15 minutes** (`PeriodicWorkRequest.MIN_PERIODIC_INTERVAL_MILLIS`).
-  Any UI or command that sets a sync interval must clamp to this minimum in both the
-  frontend (`Settings.svelte`) and the Kotlin/Rust layer — don't trust a single clamp point.
-- **`SyncStateManager` is a shared singleton `object`** read/written from background sync
-  work. Any code path that reads-then-writes `sync_state.json` (or the in-memory
-  `cachedState` field) must go through its existing locking — don't add a second code path
-  that touches that file directly.
-- **JNI native methods** (`Java_com_joris_friday_*`) live in `src-tauri/src/jni.rs`; the
-  Rust side reuses one Tokio runtime rather than constructing a new one per call — keep it
-  that way when adding new native calls.
+- **Primary**: self-rescheduling `AlarmManager` exact-alarm chain (`SyncAlarmReceiver`, `setExactAndAllowWhileIdle`, re-armed at `now + interval`). **Backstop**: slow `PeriodicWorkRequest` (60 min) in case the chain is cancelled. Both funnel into `SyncWorker.doRemoteWork()` under `syncLock` + `SyncStateManager`'s `@Synchronized` read-diff-write. There is **no foreground `SyncService`** (removed deliberately). Never add a third scheduler or enqueue a `SyncWorker` on app resume — two unsynchronized writers to `sync_state.json` caused the historical duplicate/missing-notifications bug.
+- **Interval floor 15 min** (`MIN_PERIODIC_INTERVAL_MILLIS`). Clamp in both `Settings.svelte` and Kotlin/Rust.
+- **Exact alarms**: both sync and DND use `setExactAndAllowWhileIdle()`. On Android 13+ (`targetSdk 36`) this needs user-granted `SCHEDULE_EXACT_ALARM`; `MainActivity.onResume()` prompts once and re-arms. Without grant it falls back to inexact (Doze may defer hours). Never declare `USE_EXACT_ALARM` (Play Store risk).
+- **`SyncStateManager` is a shared singleton `object`** — every read-then-write of `sync_state.json`/`cachedState` goes through its locking, no side paths.
+- **JNI** (`Java_com_joris_friday_*` in `jni.rs`): one shared Tokio runtime, never per-call. `set_data_dir()` (not `AppHandle`) wires the SyncWorker's token store location.
 
-### General
+## 7. Conventions
 
-- **Language**: Dutch (UI text, API interactions with Magister).
-- **Events**: Tauri events for auth flow (`auth-callback`, `auth-success`, `auth-error`). Listen in `$effect`, unsubscribe on cleanup.
-- **Packages**: Use `pnpm` (not npm/yarn). Rust deps in `src-tauri/Cargo.toml`.
+**Frontend (Svelte 5 / TS):** runes (`$state`/`$derived`/`$effect`), no legacy reactive `let`. API via `$lib/api.ts`, try/catch with string errors. `Promise.allSettled()` for parallel fetches. Dutch user-facing text. Sanitize remote HTML at the boundary (`sanitize.ts`, DOMPurify); every `{@html}` gets already-safe markup. Tauri events (`auth-callback`/`auth-success`/`auth-error`) listened in `$effect` with cleanup. Keep `src-tauri/src/ai/grade_calc.rs` in sync with `src/lib/grades/predictor.ts` (Rust port).
+
+**Backend (Rust):** `#[tauri::command]`, `State<'_, SharedClient>`, `Result<T, String>`, `.map_err(|e| e.to_string())?`. Lock via `.lock().await`. Serde `PascalCase` renames; `*Response { Items: Vec<T> }` wrappers. `MagisterClient::new()` has a 30s timeout — reuse it, don't build ad-hoc clients.
+
+**Web/API:** `web-api` stays stateless (no DB, no sessions, per-request Bearer). CORS `ALLOWED_ORIGINS` unset = permissive is intentional. Keep `/health` (JSON) and `/ping` (2-byte `OK` for size-limited uptime monitors).
+
+**Docs:** `fixes/klaar/` holds finished fix notes; the top-level `fixes/*.md` diagnosis files are the record — don't delete them.
+
+## 8. Versioning & commits
+
+- Version lives in three places, bump together: `package.json`, `src-tauri/Cargo.toml`, `src-tauri/Cargo.lock` (`[[package]] name = "friday"` entry).
+- Commit style: `fix(scope): … (x.y.z)` / `feat(scope): … (x.y.z)`, e.g. `fix(auth): dedupe concurrent refresh storm (2.9.5)`.
+- Only commit/amend/push/PR on explicit request. Before committing: `git status`, `git diff`, stage only intended files, never commit secrets.
