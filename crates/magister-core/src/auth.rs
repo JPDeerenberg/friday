@@ -178,6 +178,21 @@ impl AuthFlow {
     /// timeout, 5xx, parse failure) so callers can avoid wiping a still-valid
     /// local session on a temporary network blip.
     pub async fn refresh_token(refresh_token: &str) -> Result<TokenResponse, AuthError> {
+        Self::refresh_token_with_url(
+            refresh_token,
+            "https://accounts.magister.net/connect/token",
+        )
+        .await
+    }
+
+    /// Same as [`Self::refresh_token`], but against an explicit token
+    /// endpoint URL. Production callers must keep using `refresh_token`
+    /// (which pins the real Magister URL); this exists so tests can point
+    /// the grant at a local mock server.
+    pub async fn refresh_token_with_url(
+        refresh_token: &str,
+        url: &str,
+    ) -> Result<TokenResponse, AuthError> {
         let client = crate::tls::new_client();
         let body = format!(
             "refresh_token={refresh_token}\
@@ -186,7 +201,7 @@ impl AuthFlow {
         );
 
         let resp = client
-            .post("https://accounts.magister.net/connect/token")
+            .post(url)
             .header("Content-Type", "application/x-www-form-urlencoded")
             .body(body)
             .send()

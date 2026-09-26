@@ -20,6 +20,11 @@ pub struct MagisterClient {
     pub http: reqwest::Client,
     pub token_set: Option<TokenSet>,
     pub auth_flow: Option<AuthFlow>,
+    /// Test-only override for the OAuth token endpoint, so
+    /// `ensure_valid_token` can be exercised against a local mock server
+    /// instead of the real `accounts.magister.net`. Always `None` in
+    /// production (`new()`); set only by tests.
+    token_endpoint_override: Option<String>,
     /// Set once at app startup via set_app_handle(). Needed so ensure_valid_token()
     /// can persist a mid-session refresh to disk (bug: refreshed tokens were only
     /// kept in memory, tokens.json was only written at login/logout/restore).
@@ -458,6 +463,21 @@ pub async fn get_bytes_with_shared(
     }
 }
 
+/// Refresh-grant call honoring the test-only endpoint override.
+/// Production always passes `None` (real Magister URL); tests pass
+/// `Some(mock_url)` to exercise rejection handling without network access.
+/// This is the seam FRIDAY_AUTH_LOGOUT_DIAGNOSIS.md asked for so the
+/// refresh-storm/rejection fixes are covered by real regression tests.
+async fn refresh_grant(
+    refresh_token: &str,
+    url_override: Option<&str>,
+) -> Result<TokenResponse, crate::auth::AuthError> {
+    match url_override {
+        Some(url) => AuthFlow::refresh_token_with_url(refresh_token, url).await,
+        None => AuthFlow::refresh_token(refresh_token).await,
+    }
+}
+
 impl MagisterClient {
     pub fn new() -> Self {
         Self {
@@ -469,6 +489,7 @@ impl MagisterClient {
             auth_flow: None,
             app_handle: None,
             data_dir: None,
+            token_endpoint_override: None,
         }
     }
 
@@ -583,7 +604,11 @@ impl MagisterClient {
                 .write(true)
                 .open(dir.join("token_refresh.lock"))
                 .ok()?;
-            file.lock().ok()?;
+            // fs4's flock-based advisory lock (well-tested on Android/Linux).
+            // UFCS is required: std::fs::File has an inherent `lock` method
+            // (recently stabilized) that would otherwise shadow the trait
+            // method, silently keeping the old behavior.
+            fs4::fs_std::FileExt::lock_exclusive(&file).ok()?;
             Some(file)
         });
         // 5s was too tight: AuthFlow::refresh_token() has no internal
@@ -598,8 +623,14 @@ impl MagisterClient {
         // racing them. See FRIDAY_AUTH_LOGOUT_DIAGNOSIS.md.
         match tokio::time::timeout(std::time::Duration::from_secs(30), fut).await {
             Ok(Ok(Some(file))) => Some(file),
-            Ok(Ok(None)) => None,
-            Ok(Err(_)) => None,
+            Ok(Ok(None)) => {
+                log::warn!("acquire_refresh_lock: failed to open/lock token_refresh.lock (not a timeout), proceeding without lock (fail-open)");
+                None
+            }
+            Ok(Err(e)) => {
+                log::warn!("acquire_refresh_lock: spawn_blocking join error ({:?}), proceeding without lock (fail-open)", e);
+                None
+            }
             Err(_) => {
                 log::warn!("acquire_refresh_lock timeout after 30s, proceeding without lock (fail-open)");
                 None
@@ -680,19 +711,57 @@ impl MagisterClient {
         };
 
         log::info!("ensure_valid_token: calling refresh_token grant over the network");
-        let resp = AuthFlow::refresh_token(&refresh_token).await.map_err(|e| {
-            let mapped = match e {
-                crate::auth::AuthError::TokenRefreshRejected { status, body } => {
-                    ClientError::TokenRefreshRejected(format!("{status}: {body}"))
+        let url_override = self.token_endpoint_override.clone();
+        let resp = match refresh_grant(&refresh_token, url_override.as_deref()).await {
+            Ok(resp) => resp,
+            Err(crate::auth::AuthError::TokenRefreshRejected { status, body }) => {
+                let mapped = ClientError::TokenRefreshRejected(format!("{status}: {body}"));
+                log::warn!("ensure_valid_token: refresh_token grant failed: {}", mapped);
+
+                // Fix A: we might just have LOST a race against a
+                // concurrent refresh (another caller, another process)
+                // that used the same refresh_token and won. If disk now
+                // holds a different, non-expired token, that's what
+                // happened — adopt it instead of treating this as a dead
+                // session. See FRIDAY_AUTH_LOGOUT_DIAGNOSIS_V2.md.
+                if let Some(dir) = data_dir.as_deref() {
+                    if let Some(fresh) = TokenSetPersistence::load(dir) {
+                        if !fresh.is_expired()
+                            && previous_access_token.as_deref() != Some(fresh.access_token.as_str())
+                        {
+                            log::info!("ensure_valid_token: rejected, but disk now has a fresher token from a concurrent refresh — adopting it instead of failing");
+                            self.token_set = Some(fresh.clone());
+                            return Ok(fresh);
+                        }
+                    }
                 }
-                crate::auth::AuthError::RequestFailed(msg) => ClientError::RequestFailed(msg),
-                crate::auth::AuthError::TokenRefreshFailed(msg) => ClientError::TokenRefreshFailed(msg),
-                crate::auth::AuthError::ParseFailed(msg) => ClientError::ParseFailed(msg),
-                other => ClientError::TokenRefreshFailed(other.to_string()),
-            };
-            log::warn!("ensure_valid_token: refresh_token grant failed: {}", mapped);
-            mapped
-        })?;
+
+                // Fix B: confirmed dead, not a lost race. Stop holding a
+                // token that will never work again — otherwise every
+                // *other* caller (each of Dashboard's concurrent fetches,
+                // spread over real time; restore_session; background
+                // sync) independently retries this same dead token
+                // against the network, forever, until the app happens to
+                // background/resume. Clearing it here makes the very next
+                // caller fail fast with NotAuthenticated instead of
+                // another doomed round-trip.
+                self.token_set = None;
+                if let Some(dir) = data_dir.as_deref() {
+                    TokenSetPersistence::clear(dir);
+                }
+                return Err(mapped);
+            }
+            Err(e) => {
+                let mapped = match e {
+                    crate::auth::AuthError::RequestFailed(msg) => ClientError::RequestFailed(msg),
+                    crate::auth::AuthError::TokenRefreshFailed(msg) => ClientError::TokenRefreshFailed(msg),
+                    crate::auth::AuthError::ParseFailed(msg) => ClientError::ParseFailed(msg),
+                    other => ClientError::TokenRefreshFailed(other.to_string()),
+                };
+                log::warn!("ensure_valid_token: refresh_token grant failed: {}", mapped);
+                return Err(mapped);
+            }
+        };
 
         let mut new_token = TokenSet::from_response(&resp, &api_endpoint);
         new_token.person_id = person_id;
@@ -1443,5 +1512,58 @@ mod tests {
         let result = crate::client::TokenSetPersistence::load_detailed(&dir);
         assert!(result.is_err(), "unexpected: {:?}", result);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// V2 regression (FRIDAY_AUTH_LOGOUT_DIAGNOSIS_V2.md, Fix B): a confirmed
+    /// `invalid_grant` rejection must clear the dead token, so the *next*
+    /// caller fails fast locally (`NotAuthenticated`) instead of repeating
+    /// the same doomed network refresh. Runs against wiremock via the
+    /// token-endpoint override — no real network access. `data_dir` is unset
+    /// here, so the disk halves of Fix A/B are out of play; this covers the
+    /// in-memory fail-fast core (the shape of the 34-call cascade in the V2
+    /// log, collapsed to 1 live call).
+    #[tokio::test]
+    async fn test_rejected_refresh_clears_token_and_fails_fast() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/connect/token"))
+            .respond_with(
+                ResponseTemplate::new(400)
+                    .set_body_json(serde_json::json!({"error": "invalid_grant"})),
+            )
+            .mount(&mock_server)
+            .await;
+
+        let mut client = MagisterClient::new();
+        client.token_endpoint_override =
+            Some(format!("{}/connect/token", mock_server.uri()));
+        let mut dead = create_mock_token_set(&mock_server.uri());
+        dead.expires_at = Utc::now() - Duration::seconds(60);
+        client.token_set = Some(dead);
+
+        // Caller #1: makes the one real attempt, gets rejected, drops the token.
+        match client.ensure_valid_token().await {
+            Err(ClientError::TokenRefreshRejected(_)) => {}
+            other => panic!("Expected TokenRefreshRejected, got {:?}", other),
+        }
+        assert!(
+            client.token_set.is_none(),
+            "rejected refresh must clear the dead token"
+        );
+
+        // Caller #2: fails fast with no further network round-trip.
+        match client.ensure_valid_token().await {
+            Err(ClientError::NotAuthenticated) => {}
+            other => panic!("Expected NotAuthenticated, got {:?}", other),
+        }
+
+        let hits = mock_server.received_requests().await.unwrap_or_default();
+        assert_eq!(
+            hits.len(),
+            1,
+            "expected exactly 1 live refresh call, got {}",
+            hits.len()
+        );
     }
 }

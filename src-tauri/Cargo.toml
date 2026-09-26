@@ -1,6 +1,6 @@
 [package]
 name = "friday"
-version = "2.9.5"
+version = "2.9.6"
 description = "A Tauri App"
 authors = ["you"]
 edition = "2021"
@@ -75,6 +75,11 @@ async-trait = "0.1"
 # zip is only used to unwrap .docx containers (pure-Rust deflate via zlib-rs).
 pdf-extract = "0.12"
 zip = { version = "8.6", default-features = false, features = ["deflate"] }
+# Cross-process advisory file locking for the token-refresh critical section
+# (acquire_refresh_lock in client.rs). Uses flock(2) on Unix (incl. Android)
+# instead of the recently-stabilized std::fs::File::lock — well-tested
+# cross-platform behavior, called via UFCS since std has an inherent `lock`.
+fs4 = "0.13"
 
 # Desktop (Linux/Windows/macOS): OS keychain via keyring's `v1` feature.
 [target.'cfg(not(target_os = "android"))'.dependencies]

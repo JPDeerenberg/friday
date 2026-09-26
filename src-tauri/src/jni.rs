@@ -18,6 +18,70 @@ use std::sync::{Mutex, OnceLock};
 static SYNC_RUNTIME: OnceLock<Mutex<Runtime>> = OnceLock::new();
 
 #[cfg(target_os = "android")]
+static SYNC_LOGGING_INITIALIZED: OnceLock<()> = OnceLock::new();
+
+/// Minimal `log::Log` impl for the `:sync` process. See the "background
+/// sync process has been invisible" writeup in
+/// FRIDAY_AUTH_LOGOUT_DIAGNOSIS_V3.md for why this is needed: the
+/// `tauri_plugin_log` logger `lib.rs::run()` installs only exists in the
+/// main app process, which `:sync` never runs.
+#[cfg(target_os = "android")]
+struct SyncFileLogger {
+    file: Mutex<std::fs::File>,
+}
+
+#[cfg(target_os = "android")]
+impl log::Log for SyncFileLogger {
+    fn enabled(&self, metadata: &log::Metadata) -> bool {
+        metadata.level() <= log::Level::Info
+    }
+    fn log(&self, record: &log::Record) {
+        if !self.enabled(record.metadata()) {
+            return;
+        }
+        if let Ok(mut f) = self.file.lock() {
+            use std::io::Write;
+            let _ = writeln!(f, "[{}] {}", record.target(), record.args());
+        }
+    }
+    fn flush(&self) {
+        if let Ok(mut f) = self.file.lock() {
+            let _ = std::io::Write::flush(&mut *f);
+        }
+    }
+}
+
+/// Installs the logger above (writing into the SAME app_log_dir directory
+/// `export_debug_log` already zips wholesale — as a separate
+/// `friday-sync.log` file, so no changes needed there) and a panic hook
+/// that logs through it. Idempotent per-process: WorkManager can invoke
+/// `runSync` more than once on a warm `:sync` process.
+#[cfg(target_os = "android")]
+fn ensure_sync_logging(data_dir: &str) {
+    SYNC_LOGGING_INITIALIZED.get_or_init(|| {
+        let log_dir = std::path::PathBuf::from(data_dir).join("logs");
+        if std::fs::create_dir_all(&log_dir).is_err() {
+            return;
+        }
+        let path = log_dir.join("friday-sync.log");
+        let Ok(file) = std::fs::OpenOptions::new().create(true).append(true).open(&path) else {
+            return;
+        };
+        if log::set_boxed_logger(Box::new(SyncFileLogger { file: Mutex::new(file) })).is_ok() {
+            log::set_max_level(log::LevelFilter::Info);
+        }
+        // A panic anywhere in do_sync()'s call graph currently aborts this
+        // process outright (unwinding across runSync's FFI boundary,
+        // caught below). Without this hook, an abort leaves no trace
+        // anywhere. This is what makes the *cause* visible instead of
+        // just "sync silently stopped happening".
+        std::panic::set_hook(Box::new(|info| {
+            log::error!("FridaySync (Rust): PANIC: {}", info);
+        }));
+    });
+}
+
+#[cfg(target_os = "android")]
 static NDK_CONTEXT_INITIALIZED: OnceLock<()> = OnceLock::new();
 
 #[cfg(target_os = "android")]
@@ -157,10 +221,16 @@ pub extern "system" fn Java_com_joris_friday_SyncWorker_runSync<'local>(
         Err(_) => "/data/user/0/com.joris.friday/files".to_string(),
     };
 
+    ensure_sync_logging(&dir_path);
+
     let rt = sync_runtime();
     let guard = rt.lock().unwrap_or_else(|e| e.into_inner());
-    let sync_result = guard.block_on(async {
-        do_sync(&dir_path).await
+    let sync_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        guard.block_on(async { do_sync(&dir_path).await })
+    }))
+    .unwrap_or_else(|_| {
+        log::error!("FridaySync (Rust): do_sync panicked — recovered, returning an error instead of aborting the process");
+        "ERROR: PANIC".to_string()
     });
     drop(guard);
 
