@@ -1201,5 +1201,74 @@
     "size": 20227559,
     "apkName": "friday_20905.apk",
     "added": 1790286171.837999
+  },
+  "friday_20906.apk": {
+    "hash": "913f5a37700eeaefd9e5d3b654f7b0d2ee390f9ba709120f405845808fd4b933",
+    "hashType": "sha256",
+    "uses-permission": [
+      [
+        "android.permission.INTERNET",
+        null
+      ],
+      [
+        "android.permission.POST_NOTIFICATIONS",
+        null
+      ],
+      [
+        "android.permission.RECEIVE_BOOT_COMPLETED",
+        null
+      ],
+      [
+        "android.permission.ACCESS_NOTIFICATION_POLICY",
+        null
+      ],
+      [
+        "android.permission.BATTERY_STATS",
+        null
+      ],
+      [
+        "android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS",
+        null
+      ],
+      [
+        "android.permission.SCHEDULE_EXACT_ALARM",
+        null
+      ],
+      [
+        "android.permission.WAKE_LOCK",
+        null
+      ],
+      [
+        "android.permission.ACCESS_NETWORK_STATE",
+        null
+      ],
+      [
+        "android.permission.FOREGROUND_SERVICE",
+        null
+      ],
+      [
+        "com.joris.friday.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION",
+        null
+      ]
+    ],
+    "uses-permission-sdk-23": [],
+    "features": [],
+    "icons_src": {},
+    "icons": {},
+    "antiFeatures": {},
+    "packageName": "com.joris.friday",
+    "versionCode": 20906,
+    "name": "Friday",
+    "versionName": "2.9.6",
+    "minSdkVersion": 24,
+    "targetSdkVersion": 36,
+    "nativecode": [
+      "arm64-v8a"
+    ],
+    "sig": "4ce727eccd89c0bef16a0dfad1f8fe33",
+    "signer": "a78c487208a97ffb2dadf9a69bdec2a6c0050b2f99ef528ed43a01dd5c5687a3",
+    "size": 20239847,
+    "apkName": "friday_20906.apk",
+    "added": 1790438113.326975
   }
 }
