@@ -29,6 +29,7 @@
   });
 
   async function loadInitialData(force = false) {
+    console.info(`[Studiewijzers] loadInitialData triggered: ${force ? 'resume/manual' : 'mount'}`);
     const pid = get(personId);
     if (!pid) return;
     if (studiewijzers.length === 0) loading = true;

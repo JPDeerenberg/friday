@@ -43,6 +43,7 @@
   });
 
    async function loadAssignments(force = false) {
+    console.info(`[Assignments] loadAssignments triggered: ${force ? 'resume/manual' : 'mount'}`);
     const pid = get(personId);
     if (!pid) return;
     if (assignments.length === 0) loadingList = true;

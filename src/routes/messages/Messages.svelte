@@ -91,6 +91,7 @@
   });
 
   async function loadMessages(force = false) {
+    console.info(`[Messages] loadMessages triggered: ${force ? 'resume/manual' : 'mount'}`);
     const href = selectedFolder?.links?.berichten?.href;
     if (!href) return;
     if (messages.length === 0) loadingMessages = true;

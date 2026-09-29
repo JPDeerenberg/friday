@@ -57,6 +57,7 @@
   });
 
   async function loadProfile(force = false) {
+    console.info(`[Profile] loadProfile triggered: ${force ? 'resume/manual' : 'mount'}`);
     const pid = $personId;
     if (!pid) return;
     if (!info) loading = true;

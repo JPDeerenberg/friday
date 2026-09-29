@@ -59,6 +59,7 @@
   });
 
   async function loadAbsences(force = false) {
+    console.info(`[Afwezigheid] loadAbsences triggered: ${force ? 'resume/manual' : 'mount'}`);
     if (!$personId) return;
     if (force) loading = true;
     try {

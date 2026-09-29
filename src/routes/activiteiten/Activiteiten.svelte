@@ -20,6 +20,7 @@
     }
   });
   async function loadActivitiesResume() {
+    console.info('[Activiteiten] loadActivitiesResume triggered: resume');
     const pid = $personId;
     if (!pid) return;
     try {
@@ -34,6 +35,7 @@
   onMount(async () => {
     const pid = $personId;
     if (!pid) return;
+    console.info('[Activiteiten] initial load triggered: mount');
     try {
       activities = await cacheGet(`activiteiten_${pid}`, () => getActivities(pid), 5 * 60 * 1000);
     } catch (e) {

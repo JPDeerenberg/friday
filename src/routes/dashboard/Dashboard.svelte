@@ -212,6 +212,7 @@
     if (pid === null) return;
 
     const forcing = refreshTrigger > 0;
+    console.info(`[Dashboard] loadDashboardData triggered: ${forcing ? 'resume/manual' : 'mount'}`);
     // Set all to loading if we are manually refreshing
     if (forcing) {
         loadingEvents = true;

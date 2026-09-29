@@ -3,6 +3,7 @@
   import { onMount } from 'svelte';
   import { listen } from '@tauri-apps/api/event';
   import { getCurrentWindow } from '@tauri-apps/api/window';
+  import { attachConsole } from '@tauri-apps/plugin-log';
   import { isLoggedIn, personId, accountInfo, profilePicture, currentPage, userSettings, loginError, resumedAt, restoreStatus } from '$lib/stores';
   import { restoreSession, getAccount, getPersonId, getProfilePicture, handleAuthCallback, logout, type RestoreSessionStatus } from '$lib/api';
   import { getCurrent as getCurrentDeepLink } from '@tauri-apps/plugin-deep-link';
@@ -171,6 +172,13 @@
   }
 
   onMount(() => {
+    if (isTauri) {
+      // Forward console.* (info/warn/error) into friday.log via the Rust
+      // logger, so frontend diagnostic lines land in the same exported log
+      // bundle the user already knows how to grab (V4: cache trigger tags).
+      // Web builds skip this — no Tauri runtime to forward to.
+      attachConsole().catch(() => {});
+    }
     if (typeof window !== 'undefined' && (window as any).__TAURI__) {
       // Double rAF guarantees the "Laden..." spinner below has actually
       // painted before the native window is revealed — avoids a blank frame.

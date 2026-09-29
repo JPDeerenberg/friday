@@ -149,6 +149,7 @@
   });
 
   async function loadAppointments(force = false) {
+    console.info(`[Calendar] loadAppointments triggered: ${force ? 'resume/manual' : 'mount'}`);
     const pid = $personId;
     if (!pid) return;
 

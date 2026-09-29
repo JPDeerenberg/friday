@@ -20,6 +20,16 @@
 
 import { openDB, type IDBPDatabase } from 'idb';
 
+// How long a *failed* background refresh backs off before the next read
+// of that key is allowed to retry it. Without this, a key that fails once
+// stays "expired" forever and refires on literally every subsequent read.
+const FAILED_REFRESH_BACKOFF_MS = 60 * 1000;
+
+// In-flight background refreshes, keyed by cache key — so N reads of the
+// same stale key while a refresh is already running share that one
+// refresh instead of each firing their own.
+const inFlightRefreshes = new Map<string, Promise<void>>();
+
 const DB_NAME = 'friday-cache';
 const STORE_NAME = 'cache';
 const DB_VERSION = 1;
@@ -65,8 +75,10 @@ export async function cacheGet<T>(
 
   // If cache hit but expired, return stale data and refresh in background
   if (cached && !options?.skipCache) {
-    // Don't await — fire and forget
-    refreshCache(key, fetcher, ttlMs);
+    if (!inFlightRefreshes.has(key)) {
+      const p = refreshCache(key, fetcher, ttlMs).finally(() => inFlightRefreshes.delete(key));
+      inFlightRefreshes.set(key, p);
+    }
     return cached.data;
   }
 
@@ -155,5 +167,11 @@ async function refreshCache<T>(key: string, fetcher: () => Promise<T>, ttlMs: nu
     await setCache(key, data, ttlMs);
   } catch (e) {
     console.warn(`[Cache] Background refresh failed for "${key}":`, e);
+    // Back off instead of leaving the entry expired: re-stamp it with a
+    // short TTL so the next read tries again in a minute, not immediately.
+    const existing = await getFromCache<T>(key);
+    if (existing) {
+      await setCache(key, existing.data, FAILED_REFRESH_BACKOFF_MS);
+    }
   }
 }

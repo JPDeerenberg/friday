@@ -28,6 +28,7 @@
   });
 
   async function loadData(force = false) {
+    console.info(`[Leermiddelen] loadData triggered: ${force ? 'resume/manual' : 'mount'}`);
     const pid = get(personId);
     if (!pid) return;
     if (leermiddelen.length === 0) loading = true;

@@ -26,6 +26,7 @@
     if ($personId !== null) reloadBronnen();
   });
   async function reloadBronnen() {
+    console.info('[Bronnen] reloadBronnen triggered: resume');
     const pid = $personId;
     if (!pid) return;
     try {
@@ -49,6 +50,7 @@
     }
     const pid = $personId;
     if (!pid) return;
+    console.info('[Bronnen] initial load triggered: mount');
     try {
       sources = await cacheGet(`bronnen_sources_${pid}`, () => getExternalBronSources(pid), 5 * 60 * 1000);
       console.log('[Bronnen] External sources:', JSON.stringify(sources));

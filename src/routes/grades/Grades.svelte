@@ -234,6 +234,7 @@
   });
 
   async function loadGrades(force = false) {
+    console.info(`[Grades] loadGrades triggered: ${force ? 'resume/manual' : 'mount'}`);
     if (!selectedYear?.id || !$personId) return;
     loading = true;
     errorMessage = null;
