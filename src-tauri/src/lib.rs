@@ -195,6 +195,7 @@ pub fn run() {
             commands::export::export_all_data,
             // Diagnostics
             commands::diagnostics::export_debug_log,
+            commands::diagnostics::clear_debug_logs,
         ])
         .plugin(tauri_plugin_dialog::init())
         .run(tauri::generate_context!())

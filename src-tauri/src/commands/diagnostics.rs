@@ -9,6 +9,51 @@ pub struct LogExportResult {
     pub error: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LogClearResult {
+    pub success: bool,
+    pub cleared: usize,
+    pub error: Option<String>,
+}
+
+/// Delete every file in the app's log directory (`friday.log` rotations,
+/// `friday-sync.log`, …) so the next captured window starts clean — e.g.
+/// after an app update, when old lines would otherwise muddy a fresh
+/// diagnosis. Best-effort per file; reports how many were removed. A marker
+/// line is logged afterwards so the fresh file shows when it was cleared.
+#[tauri::command]
+pub async fn clear_debug_logs(app: AppHandle) -> Result<LogClearResult, String> {
+    let log_dir = app
+        .path()
+        .app_log_dir()
+        .map_err(|e| format!("Kan logmap niet vinden: {}", e))?;
+
+    if !log_dir.exists() {
+        return Ok(LogClearResult {
+            success: true,
+            cleared: 0,
+            error: None,
+        });
+    }
+
+    let mut cleared = 0usize;
+    let entries = std::fs::read_dir(&log_dir)
+        .map_err(|e| format!("Kan logmap niet lezen: {}", e))?;
+    for entry in entries.filter_map(|e| e.ok()).map(|e| e.path()) {
+        if entry.is_file() && std::fs::remove_file(&entry).is_ok() {
+            cleared += 1;
+        }
+    }
+
+    log::info!("Logbestanden gewist door gebruiker ({} bestanden), nieuwe sessie", cleared);
+
+    Ok(LogClearResult {
+        success: true,
+        cleared,
+        error: None,
+    })
+}
+
 /// Zip up everything in the app's log directory (populated by the
 /// `tauri_plugin_log` `LogDir` target configured in `lib.rs`) and hand it to
 /// the user — via the OS share sheet on Android, or a folder picker on

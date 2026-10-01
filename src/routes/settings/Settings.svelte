@@ -3,7 +3,7 @@
   import { currentPage } from '$lib/stores';
   import { triggerTestNotification, notifyNewMessage, notifyNewGrade, notifyDeadline, notifyCalendarChange,
             triggerSync, getDebugInfo, getSyncStateDebug, clearSyncState, setSyncInterval, getSyncInterval, getNightSleepConfig, setNightSleepConfig, getDisableAllNotifications, setDisableAllNotifications, getDndAccessStatus, triggerDndTest,
-           exportAllData, exportDebugLog, isWebBuild } from '$lib/api';
+           exportAllData, exportDebugLog, clearDebugLogs, isWebBuild } from '$lib/api';
   import { getAiConfig, setAiConfig, validateAiKey, listAiModels, type AiConfig, type AiProviderType, AI_PROVIDERS } from '$lib/ai';
   import { sectionIcon } from '$lib/icons';
   import { updateStatus, refreshUpdateStatus, getCurrentVersion } from '$lib/updates';
@@ -74,6 +74,8 @@
   let exportResult = $state<string | null>(null);
   let logExportBusy = $state(false);
   let logExportResult = $state<string | null>(null);
+  let logClearBusy = $state(false);
+  let logClearResult = $state<string | null>(null);
   let pickingDir = $state(false);
 
   // --- AI config state ---
@@ -415,6 +417,30 @@
     }
   }
 
+  async function doClearLogs() {
+    if (!confirm('Weet je zeker dat je alle logbestanden wilt wissen? Oude logs zijn daarna niet meer terug te halen.')) {
+      return;
+    }
+    logClearBusy = true;
+    logClearResult = null;
+    addLog('info', 'Logbestanden wissen gestart...');
+    try {
+      const result = await clearDebugLogs();
+      if (result.success) {
+        logClearResult = `✅ ${result.cleared} logbestand(en) gewist — nieuwe logs beginnen schoon.`;
+        addLog('info', `Logs gewist: ${result.cleared} bestand(en)`);
+      } else if (result.error) {
+        logClearResult = `❌ Fout: ${result.error}`;
+        addLog('error', `Log-wissen mislukt: ${result.error}`);
+      }
+    } catch (e) {
+      logClearResult = `❌ Fout: ${e}`;
+      addLog('error', `Log-wissen mislukt: ${e}`);
+    } finally {
+      logClearBusy = false;
+    }
+  }
+
   async function pickDownloadDir() {
     pickingDir = true;
     try {
@@ -559,6 +585,7 @@
       settings: [
         { id: 'exportAll', label: 'Alles Exporteren', description: 'Exporteer al je data (lessen, cijfers, opdrachten, etc.) naar JSON-bestanden.', type: 'action', action: () => doExport() },
         { id: 'exportLog', label: 'Logbestand Exporteren', description: 'Exporteer het interne logbestand — handig om een probleem te melden, ook als het al even geleden is gebeurd.', type: 'action', action: () => doExportLog() },
+        { id: 'clearLogs', label: 'Logbestanden Wissen', description: 'Wis alle opgeslagen logs, zodat je na een update met een schone lei begint en oude regels nieuwe niet vervuilen.', type: 'action', action: () => doClearLogs() },
         { id: 'downloadDir', label: 'Downloadmap', description: 'Kies waar gedownloade bestanden worden opgeslagen. Leeg = systeemstandaard.', type: 'download-dir', hideOnWeb: true },
       ]
     },
@@ -1040,7 +1067,7 @@
                 <Button
                   variant="tonal"
                   onclick={() => setting.action()}
-                  disabled={setting.id === 'exportAll' ? exportBusy : setting.id === 'exportLog' ? logExportBusy : isTestBusy(setting.id)}
+                  disabled={setting.id === 'exportAll' ? exportBusy : setting.id === 'exportLog' ? logExportBusy : setting.id === 'clearLogs' ? logClearBusy : isTestBusy(setting.id)}
                   class="px-5"
                 >
                   {#if setting.id === 'exportAll'}
@@ -1055,6 +1082,12 @@
                     {:else}
                       Exporteren
                     {/if}
+                  {:else if setting.id === 'clearLogs'}
+                    {#if logClearBusy}
+                      <span class="animate-pulse">⏳ Bezig met wissen...</span>
+                    {:else}
+                      Wissen
+                    {/if}
                   {:else if isTestBusy(setting.id)}
                     <span class="animate-pulse">⏳ Wachten...</span>
                   {:else if setting.id === 'openDndSettings'}
@@ -1068,6 +1101,9 @@
                 {/if}
                 {#if setting.id === 'exportLog' && logExportResult}
                   <p class="text-label-small text-gray-400 font-mono mt-2 text-right max-w-[200px] leading-relaxed">{logExportResult}</p>
+                {/if}
+                {#if setting.id === 'clearLogs' && logClearResult}
+                  <p class="text-label-small text-gray-400 font-mono mt-2 text-right max-w-[200px] leading-relaxed">{logClearResult}</p>
                 {/if}
               {:else if setting.type === 'download-dir'}
                 <div class="flex items-center gap-2">

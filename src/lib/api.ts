@@ -851,6 +851,16 @@ export async function exportDebugLog(): Promise<LogExportResult> {
   return invoke("export_debug_log");
 }
 
+export interface LogClearResult {
+  success: boolean;
+  cleared: number;
+  error: string | null;
+}
+
+export async function clearDebugLogs(): Promise<LogClearResult> {
+  return invoke("clear_debug_logs");
+}
+
 // === Helpers ===
 export function formatDate(date: Date | string): string {
   if (!date) return "";
