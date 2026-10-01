@@ -1,6 +1,6 @@
 {
   "name": "friday",
-  "version": "2.9.9",
+  "version": "2.9.10",
   "description": "",
   "type": "module",
   "scripts": {
@@ -41,6 +41,8 @@
     "@types/node": "^26.6.3",
     "autoprefixer": "^10.6.1",
     "fake-indexeddb": "^6.2.5",
+    "prettier": "^3.9.9",
+    "prettier-plugin-svelte": "^4.1.1",
     "svelte": "^5.57.1",
     "svelte-check": "^4.7.6",
     "tailwindcss": "^4.3.3",
