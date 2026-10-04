@@ -1,6 +1,12 @@
 allowBuilds:
-  '@parcel/watcher': true
+  "@parcel/watcher": true
   esbuild: true
 
 packages:
-  - '.'
+  - "."
+
+# GHSA: cookie <0.7.0 accepts out-of-bounds chars in name/path/domain.
+# @sveltejs/kit 2.x (latest 2.70.3) still pins cookie ^0.6.0; force 0.7.2
+# (same parse/serialize API; 1.x/2.x are breaking so stay on 0.7.x).
+overrides:
+  "cookie@<0.7.0": "0.7.2"
