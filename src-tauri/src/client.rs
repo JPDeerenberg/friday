@@ -746,8 +746,18 @@ impl MagisterClient {
                 // caller fail fast with NotAuthenticated instead of
                 // another doomed round-trip.
                 self.token_set = None;
-                if let Some(dir) = data_dir.as_deref() {
-                    TokenSetPersistence::clear(dir);
+                // Only the foreground app (the one holding an AppHandle) may
+                // wipe the persisted session. The background sync client has
+                // no AppHandle: a single rejected refresh there must never
+                // log the user out — the next time the app is opened
+                // `restore_session` re-checks and clears the store itself if
+                // the session really is dead. Wiping from the background
+                // process is how a stale/raced read turned into a silent
+                // logout.
+                if self.app_handle.is_some() {
+                    if let Some(dir) = data_dir.as_deref() {
+                        TokenSetPersistence::clear(dir);
+                    }
                 }
                 return Err(mapped);
             }

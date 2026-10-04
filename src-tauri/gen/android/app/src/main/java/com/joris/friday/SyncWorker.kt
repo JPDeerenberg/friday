@@ -26,15 +26,29 @@ class SyncWorker(appContext: Context, workerParams: WorkerParameters) :
     // multiple times (guarded inside Rust).
     private external fun initNdkContext(context: Context)
 
-    init {
-        try {
-            System.loadLibrary("friday_lib")
-            initNdkContext(applicationContext)
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to load friday_lib", e)
-        }
+    // IMPORTANT: this must NOT run from the constructor / an init block.
+    //
+    // WorkManager's in-process scheduler (GreedyScheduler) instantiates this worker
+    // in whichever process called WorkManager.enqueue() — that includes the *UI*
+    // process when it was started headless by SyncAlarmReceiver (exact alarm every
+    // sync interval), with no Activity and therefore no Tao yet. Initializing
+    // ndk-context there makes Tao's own initialize_android_context() call (when the
+    // user then opens the app, reusing that already-running process) hit
+    // `assert!(previous.is_none())` and abort the app. The second launch works
+    // because it gets a fresh process. doRemoteWork() only ever runs in the
+    // ":sync" process (RemoteWorkerService), where Tao never exists.
+    private fun ensureNativeReady() {
+        System.loadLibrary("friday_lib")
+        initNdkContext(applicationContext)
     }
+
     override suspend fun doRemoteWork(): Result {
+        try {
+            ensureNativeReady()
+        } catch (e: Throwable) {
+            Log.e(TAG, "Failed to load friday_lib / init ndk-context", e)
+            return Result.retry()
+        }
         // Tauri saves tokens.json to the PARENT of filesDir (app_data_dir)
         val dataDir = applicationContext.filesDir.parentFile?.absolutePath 
             ?: applicationContext.filesDir.absolutePath

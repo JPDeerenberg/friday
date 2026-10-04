@@ -12,7 +12,12 @@
  */
 
 import { openDB, type IDBPDatabase } from "idb";
-import { WebBackend, WebApiError, type MagisterMethod, type SessionTokens } from "./backend.ts";
+import {
+  WebBackend,
+  WebApiError,
+  type MagisterMethod,
+  type SessionTokens,
+} from "./backend.ts";
 import type { TierA } from "./web-tier-b.ts";
 
 const DB_NAME = "friday-session";
@@ -28,7 +33,8 @@ function getDb(): Promise<IDBPDatabase> {
   if (!dbPromise) {
     dbPromise = openDB(DB_NAME, 1, {
       upgrade(db) {
-        if (!db.objectStoreNames.contains(STORE_NAME)) db.createObjectStore(STORE_NAME);
+        if (!db.objectStoreNames.contains(STORE_NAME))
+          db.createObjectStore(STORE_NAME);
       },
     });
   }
@@ -67,8 +73,14 @@ export function photoDataUrl(b64: string | null | undefined): string | null {
 export async function loadWebSession(): Promise<SessionTokens | null> {
   try {
     const db = await getDb();
-    const tokens = (await db.get(STORE_NAME, SESSION_KEY)) as SessionTokens | undefined;
-    if (!tokens || typeof tokens.accessToken !== "string" || typeof tokens.refreshToken !== "string") return null;
+    const tokens = (await db.get(STORE_NAME, SESSION_KEY)) as
+      SessionTokens | undefined;
+    if (
+      !tokens ||
+      typeof tokens.accessToken !== "string" ||
+      typeof tokens.refreshToken !== "string"
+    )
+      return null;
     return tokens;
   } catch {
     return null;
@@ -103,14 +115,10 @@ export async function restoreWebSession(): Promise<RestoreStatus> {
   if (!tokens) return "logged_out";
   if (!isExpiredLocal(tokens)) return "restored";
   try {
-    const fresh = await webBackend().refresh(tokens);
-    await saveWebSession(fresh);
+    await mustRefresh(tokens);
     return "restored";
   } catch (e) {
-    if (e instanceof WebApiError && e.status === 401) {
-      await clearWebSession();
-      return "logged_out";
-    }
+    if (e instanceof WebApiError && e.status === 401) return "logged_out";
     return "unavailable";
   }
 }
@@ -120,7 +128,11 @@ export async function restoreWebSession(): Promise<RestoreStatus> {
  * single forced-refresh-and-retry on a stale-token 401 (mirrors
  * `get_with_shared` in client.rs), persistence of rotated tokens.
  */
-export async function webRequest<T>(method: MagisterMethod, path: string, body?: unknown): Promise<T> {
+export async function webRequest<T>(
+  method: MagisterMethod,
+  path: string,
+  body?: unknown,
+): Promise<T> {
   let tokens = await loadWebSession();
   if (!tokens) throw new WebApiError(401, "Niet ingelogd.");
   if (isExpiredLocal(tokens)) {
@@ -138,23 +150,75 @@ export async function webRequest<T>(method: MagisterMethod, path: string, body?:
   }
 }
 
-async function mustRefresh(tokens: SessionTokens): Promise<SessionTokens> {
-  try {
-    const fresh = await webBackend().refresh(tokens);
-    await saveWebSession(fresh);
-    return fresh;
-  } catch (e) {
-    if (e instanceof WebApiError && e.status === 401) {
-      await clearWebSession();
+// Magister refresh tokens are single-use: the first refresh_token grant wins and
+// rotates the token, every other grant that presents the old one gets
+// invalid_grant (-> 401 here). Several requests fire at once (dashboard fan-out,
+// resume, a second tab), so without coordination one expiry produced N refreshes,
+// N-1 of them "rejected", and the loser wiped the session -> random logouts.
+//
+//  - in-tab: all callers share ONE in-flight refresh promise;
+//  - cross-tab: the refresh runs under a Web Lock and re-reads IndexedDB first,
+//    so a tab that waited adopts the tokens another tab just rotated;
+//  - a 401 only clears the session if IndexedDB still holds the refresh token we
+//    used (i.e. nobody else rotated it; the grant is truly dead).
+let refreshInFlight: Promise<SessionTokens> | null = null;
+
+function sameSession(a: SessionTokens, b: SessionTokens): boolean {
+  return a.refreshToken === b.refreshToken;
+}
+
+async function withRefreshLock<T>(fn: () => Promise<T>): Promise<T> {
+  const locks =
+    typeof navigator !== "undefined"
+      ? (navigator as Navigator & { locks?: LockManager }).locks
+      : undefined;
+  if (!locks?.request) return fn();
+  return locks.request("friday-token-refresh", fn) as Promise<T>;
+}
+
+async function doRefresh(used: SessionTokens): Promise<SessionTokens> {
+  return withRefreshLock(async () => {
+    // Someone else (another tab / an earlier call) may have refreshed while we waited.
+    const stored = await loadWebSession();
+    // Logged out (e.g. in another tab) while we waited: do not resurrect the session.
+    if (!stored) throw new WebApiError(401, "Niet ingelogd.");
+    if (!sameSession(stored, used) && !isExpiredLocal(stored)) return stored;
+    const current = stored;
+    try {
+      const fresh = await webBackend().refresh(current);
+      await saveWebSession(fresh);
+      return fresh;
+    } catch (e) {
+      if (e instanceof WebApiError && e.status === 401) {
+        // Lost a race against a refresh that landed between our check and our grant?
+        const after = await loadWebSession();
+        if (after && !sameSession(after, current) && !isExpiredLocal(after))
+          return after;
+        await clearWebSession();
+      }
+      throw e;
     }
-    throw e;
+  });
+}
+
+function mustRefresh(tokens: SessionTokens): Promise<SessionTokens> {
+  if (!refreshInFlight) {
+    refreshInFlight = doRefresh(tokens).finally(() => {
+      refreshInFlight = null;
+    });
   }
+  return refreshInFlight;
 }
 
 /** TierA adapter over the stored session, for all Tier-B functions. */
 export function sessionTierA(): TierA {
   return {
-    magister<T>(_: SessionTokens, method: MagisterMethod, path: string, body?: unknown): Promise<T> {
+    magister<T>(
+      _: SessionTokens,
+      method: MagisterMethod,
+      path: string,
+      body?: unknown,
+    ): Promise<T> {
       return webRequest<T>(method, path, body);
     },
     magisterBytes(_: SessionTokens, path: string): Promise<Uint8Array | null> {
@@ -163,7 +227,9 @@ export function sessionTierA(): TierA {
   };
 }
 
-export async function webRequestBytes(path: string): Promise<Uint8Array | null> {
+export async function webRequestBytes(
+  path: string,
+): Promise<Uint8Array | null> {
   const tokens = await loadWebSession();
   if (!tokens) throw new WebApiError(401, "Niet ingelogd.");
   const fresh = isExpiredLocal(tokens) ? await mustRefresh(tokens) : tokens;

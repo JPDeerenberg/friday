@@ -80,9 +80,68 @@ pub fn ensure_store() -> Result<(), String> {
     Ok(())
 }
 
+/// File name of the default `android-native-keyring-store` vault
+/// (`StoreConfig::default().filename` — we create the store with an empty
+/// configuration in `ensure_store`).
+#[cfg(target_os = "android")]
+const ANDROID_VAULT_FILE: &str = "keyring-default";
+
+/// Make this process re-read the keyring's SharedPreferences file if another
+/// process changed it.
+///
+/// The app runs in two processes (UI + `:sync`) that share one rotating
+/// refresh token. Android caches a `SharedPreferences` file in memory per
+/// process and, for `MODE_PRIVATE`, never notices writes made by another
+/// process. Without this, one process keeps reading a refresh token the
+/// other process already rotated, gets `invalid_grant` from Magister and
+/// wipes the session — i.e. a random logout — and its own writes can also
+/// overwrite the other process's newer tokens with stale ones.
+///
+/// Requesting the *same* (cached) file once with `MODE_MULTI_PROCESS` makes
+/// the framework call `startReloadIfChangedUnexpectedly()`; later reads then
+/// block until the reload finished. Best-effort: any failure is ignored and
+/// leaves the old behaviour.
+#[cfg(target_os = "android")]
+fn reload_shared_prefs() {
+    use jni::objects::{JObject, JValue};
+    use jni::JavaVM;
+
+    const MODE_PRIVATE_MULTI_PROCESS: i32 = 0 | 4; // MODE_PRIVATE | MODE_MULTI_PROCESS
+
+    if !crate::jni::ndk_context_is_ready() {
+        return;
+    }
+    let _ = std::panic::catch_unwind(|| {
+        let ctx = ndk_context::android_context();
+        let Ok(vm) = (unsafe { JavaVM::from_raw(ctx.vm().cast()) }) else {
+            return;
+        };
+        let Ok(mut env) = vm.attach_current_thread() else {
+            return;
+        };
+        let context = unsafe { JObject::from_raw(ctx.context().cast()) };
+        let Ok(name) = env.new_string(ANDROID_VAULT_FILE) else {
+            return;
+        };
+        let _ = env.call_method(
+            &context,
+            "getSharedPreferences",
+            "(Ljava/lang/String;I)Landroid/content/SharedPreferences;",
+            &[JValue::from(&name), JValue::Int(MODE_PRIVATE_MULTI_PROCESS)],
+        );
+        if let Ok(true) = env.exception_check() {
+            let _ = env.exception_clear();
+        }
+    });
+}
+
 /// Create a keyring entry for the given username.
 fn entry(username: &str) -> Result<keyring_core::Entry, String> {
     ensure_store()?;
+    // Every secret operation (get/set/delete) starts here, so a cross-process
+    // change is always picked up before we read or modify the vault.
+    #[cfg(target_os = "android")]
+    reload_shared_prefs();
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         #[cfg(target_os = "android")]
         {
