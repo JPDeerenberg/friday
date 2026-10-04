@@ -1,8 +1,6 @@
 //! Unified AI client that delegates to the appropriate provider.
 //! Supports OpenAI, Anthropic, Gemini, and OpenAI-compatible providers.
 
-use chrono::Datelike;
-
 use crate::ai::providers::get_provider;
 
 /// Re-export for backwards compatibility with existing code.
@@ -45,103 +43,51 @@ pub async fn list_models(config: &AiConfig) -> Result<Vec<String>, String> {
 }
 
 /// Build the system prompt with school context.
-/// When `tools_enabled` is true, include tool descriptions for data access.
-pub fn build_school_context_system_prompt(page_context: Option<&str>, tools_enabled: bool) -> String {
-    let now = chrono::Local::now();
-    let date_context = format!(
-        "Vandaag is {}, {} ({} uur, tijdzone Europe/Amsterdam). \
-         Gebruik altijd deze datum als 'vandaag' bij het bepalen van datumbereiken voor tools zoals \
-         get_calendar_events, get_assignments en get_full_grade_overview — verzin nooit zelf een datum.",
-        dutch_weekday(now.weekday()),
-        now.format("%Y-%m-%d"),
-        now.format("%H:%M"),
-    );
-
-    let base = format!("{}\n\n{}", date_context, "Je bent Friday AI, een behulpzame assistent voor scholieren in het Nederlandse middelbaar onderwijs. \
-                Je helpt met schoolgerelateerde vragen, planning, studieadvies en uitleg. \
-                Je spreekt altijd Nederlands en reageert bondig en helder. \
-                Gebruik waar mogelijk opsommingen en concrete voorbeelden. \
-                Wees aanmoedigend maar realistisch. \
-                Als je iets niet weet, zeg dat dan eerlijk. \
-                Als een tool een fout teruggeeft of een leeg resultaat (geen items, geen data), zeg dat dan plain tegen de gebruiker in plaats van plausible klinkende data te verzinnen — no hallucineren. \
-                Formateer je antwoorden met Markdown waar dat helpt: gebruik ## kopjes, **vet**, *cursief*, opsommingen (- of 1.), tabellen voor cijfers/rooster, `inline code` en ```codeblokken``` voor voorbeelden, en [links](url) waar relevant. Houd het beknopt."
-    );
-
-    let tools_prompt = "\n\nJe hebt toegang tot de volgende tools om schoolgegevens op te vragen en acties uit te voeren:\n\
-             - get_calendar_events: Lesrooster en afspraken voor een datumbereik\n\
-             - get_grades: Recente cijfers\n\
-             - get_full_grade_overview: Volledig cijferoverzicht met gemiddelden per vak (eerst get_schoolyears)\n\
-             - get_schoolyears: Beschikbare schooljaren\n\
-             - get_assignments: Huiswerk en opdrachten voor een datumbereik\n\
-             - get_assignment_detail: Gedetailleerde opdrachtinfo inclusief bijlagen\n\
-             - read_attachment_text: Lees de tekstinhoud van een bijlage (PDF/Word/tekstbestand)\n\
-             - calculate_grade_scenario: Bereken wat de gebruiker nodig heeft (benodigd cijfer, voorspeld gemiddelde, minimaal cijfer om te slagen)\n\
-             - get_messages: Berichtenoverzicht uit een map\n\
-             - get_message_content: Volledige inhoud van een specifiek bericht\n\
-             - send_message: Stuur een bericht naar een andere gebruiker (na bevestiging)\n\
-             - mark_messages_read: Markeer berichten als gelezen (na bevestiging)\n\
-             - create_calendar_event: Maak een persoonlijke agenda-afspraak/herinnering (na bevestiging)\n\
-             - get_absences: Absentie en verzuim\n\
-             - get_studiewijzers: Studiewijzers per vak\n\
-             - get_activities: Activiteiten\n\
-             - get_bronnen: Digitale leermaterialen en bronnen\n\
-             - get_leermiddelen: Digitale leermiddelen en boeken\n\
-             - get_today_summary: Compleet dagoverzicht (rooster, cijfers, opdrachten, berichten, absenties)\n\
-             - get_profile_info: Beperkte profielinformatie (roepnaam, klas, opleiding — geen adres/geboortedatum/contactgegevens)\n\
-             - download_file: Download een bestand (bijlage) en toon grootte en type\n\
-             - get_ai_schedule: Lees de AI-planning (Friday's Plan) voor een datumbereik (alleen AI-items, niet echte Magister-lessen)\n\
-             - create_ai_schedule_item: Voeg een item toe aan de AI-planning (sand-boxed, geen bevestiging nodig)\n\
-             - update_ai_schedule_item: Werk een AI-planning item bij\n\
-             - complete_ai_schedule_item: Markeer AI-item als voltooid\n\
-             - dismiss_ai_schedule_item: Wijs AI-item af (uitsluiten van herplanning, anders dan verwijderen)\n\
-             - set_homework_duration: Stel geschatte duur in voor een opdracht (toont duur+urgentie UI; gebruik dit i.p.v. te gissen)\n\
-             - run_update_ai_schedule: Herplan deze week + volgende week (zelfde als handmatige 'Update AI Schedule' knop)\n\n\
-              BELANGRIJK — AI Schedule vs echte agenda: Er is een aparte AI-planning (Friday's Plan) die naast de echte Magister-agenda bestaat. \
-              Alleen `create_ai_schedule_item`/`update_ai_schedule_item` en de AI-Schedule tools schrijven naar die AI-planning. \
-              Schrijf NOOIT studieblokken of huiswerk in de echte Magister-agenda via `create_calendar_event`; die is alleen voor persoonlijke herinneringen op verzoek van de gebruiker. \
-              Als een opdracht geen `estimated_minutes` heeft, roep `set_homework_duration` aan in plaats van zelf een duur te verzinnen — de gebruiker geeft de duur + urgentie via de UI, en het systeem onthoudt het voor volgende planningen (ook via subject-gemiddelde). \
-              AI-Schedule items zijn sandboxed: ze overschrijven nooit de echte lessen en hebben geen bevestiging nodig.\n\n\
-             Gebruik deze tools wanneer de gebruiker vraagt naar specifieke schoolinformatie of acties wil uitvoeren (zoals berichten sturen, opdrachten bekijken, bestanden downloaden).\n\
-             Bij vragen over gemiddelden per vak: gebruik eerst get_schoolyears, dan get_full_grade_overview.\n\
-             Bij 'wat heb ik nodig'-vragen over cijfers (bv. 'welk cijfer moet ik halen om te slagen'): gebruik get_schoolyears, get_full_grade_overview, en daarna calculate_grade_scenario om het daadwerkelijk te berekenen — geef niet alleen ruwe cijfers terug.\n\
-             Bij een opdracht met een bijlage (uit get_assignment_detail) waarvan de gebruiker hulp wil met de inhoud: gebruik read_attachment_text om de bijlage te lezen voordat je antwoord geeft.\n\
-             Bij vragen over berichtinhoud: gebruik eerst get_messages, dan get_message_content, of stuur een bericht met send_message.\n\
-             Bij acties met een echte bijwerking (send_message, mark_messages_read, create_calendar_event): de tool zet de actie klaar en de gebruiker bevestigt deze in de app voordat er iets gebeurt. Vertel de gebruiker wat er klaarstaat.\n\
-              Geef antwoord op basis van de opgehaalde data. Gebruik Markdown (kopjes, lijsten, tabellen) en houd het beknopt.";
-
-    let no_tools_prompt = "\n\nJe hebt geen directe toegang tot de schoolgegevens van de gebruiker. \
-             Geef algemeen studieadvies, beantwoord vragen over schoolvakken, \
-             help met plannen en organiseren, of geef uitleg over onderwerpen. \
-             Als de gebruiker vraagt naar specifieke data zoals cijfers of rooster, \
-           leg dan uit dat ze 'Schoolgegevens toegang' moeten inschakelen in de AI-instellingen.";
-
-    if let Some(context) = page_context {
-        if tools_enabled {
-            format!("{}\n\nHuidige context van de app:\n{}{}", base, context, tools_prompt)
-        } else {
-            format!("{}\n\nHuidige context van de app:\n{}{}", base, context, no_tools_prompt)
+/// `tools` carries the settings-filtered defs offered to the provider
+/// (None = no-tools prompt); the same list is rendered, so offered and
+/// listed tools can never diverge.
+/// `notes` injects the AI-Geheugen block (None when disabled/unavailable).
+///
+/// Single source of truth: `shared/ai-spec/prompt.nl.md`, rendered with the
+/// same section order as the web twin (`src/lib/ai.ts`).
+pub fn build_school_context_system_prompt(
+    page_context: Option<&str>,
+    tools: Option<&[crate::ai::tools::ToolDef]>,
+    notes: Option<&crate::commands::ai_notes::NotesPrompt>,
+) -> String {
+    use crate::ai::spec;
+    let sections = spec::prompt_sections();
+    let now = crate::ai::time::format_now_block();
+    let notes_block = notes.map(|n| {
+        crate::commands::ai_notes::format_notes_block(
+            &n.content,
+            n.revision,
+            &n.updated_by,
+            n.writable,
+        )
+    });
+    let tool_list;
+    let tool_list_ref = match tools {
+        Some(defs) => {
+            let pairs: Vec<(&str, &str)> = defs
+                .iter()
+                .map(|t| (t.name.as_str(), t.description.as_str()))
+                .collect();
+            tool_list = spec::render_tool_list(&pairs);
+            Some(tool_list.as_str())
         }
-    } else {
-        if tools_enabled {
-            format!("{}{}", base, tools_prompt)
-        } else {
-            format!("{}{}", base, no_tools_prompt)
-        }
-    }
+        None => None,
+    };
+    spec::render_prompt(
+        sections,
+        &spec::PromptInput {
+            now: &now,
+            notes: notes_block.as_deref(),
+            context: page_context,
+            tool_list: tool_list_ref,
+        },
+    )
 }
-
-fn dutch_weekday(weekday: chrono::Weekday) -> &'static str {
-    match weekday {
-        chrono::Weekday::Mon => "maandag",
-        chrono::Weekday::Tue => "dinsdag",
-        chrono::Weekday::Wed => "woensdag",
-        chrono::Weekday::Thu => "donderdag",
-        chrono::Weekday::Fri => "vrijdag",
-        chrono::Weekday::Sat => "zaterdag",
-        chrono::Weekday::Sun => "zondag",
-    }
-}
-
 fn validate_config(config: &AiConfig) -> Result<(), String> {
     if !config.enabled || config.api_key.is_empty() {
         return Err("AI is niet geconfigureerd. Ga naar Instellingen > AI om een API-sleutel in te stellen.".to_string());
@@ -152,42 +98,37 @@ fn validate_config(config: &AiConfig) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn dutch_weekday_name(d: chrono::NaiveDate) -> &'static str {
-        dutch_weekday(d.weekday())
-    }
+    use crate::ai::time::today_amsterdam;
 
     #[test]
     fn system_prompt_includes_real_today_date() {
-        let prompt = build_school_context_system_prompt(None, true);
-        let today = chrono::Local::now().format("%Y-%m-%d").to_string();
-        let weekday = dutch_weekday_name(chrono::Local::now().date_naive());
+        let prompt = build_school_context_system_prompt(None, Some(&crate::ai::tools::get_all_tool_defs()), None);
+        let today = today_amsterdam();
 
-        assert!(prompt.contains("Vandaag is"), "moet de actuele datum bevatten");
+        assert!(prompt.contains("NU:"), "moet het NU-blok bevatten");
         assert!(
-            prompt.contains(&format!("{}", today)),
-            "moet de echte datum {} bevatten, kreeg: {}",
+            prompt.contains(&today),
+            "moet de echte Amsterdamse datum {} bevatten, kreeg: {}",
             today,
             prompt.lines().next().unwrap_or("")
-        );
-        assert!(
-            prompt.contains(weekday),
-            "moet de weekdag {} bevatten",
-            weekday
         );
         assert!(
             prompt.contains("Gebruik altijd deze datum als 'vandaag'"),
             "moet de instructie bevatten om deze datum als vandaag te gebruiken"
         );
+        assert!(
+            prompt.contains("get_current_time"),
+            "moet naar de get_current_time tool verwijzen"
+        );
     }
 
     #[test]
     fn system_prompt_date_context_present_for_all_modes() {
-        for tools_enabled in [true, false] {
-            let with_page = build_school_context_system_prompt(Some("Testpagina"), tools_enabled);
-            let without_page = build_school_context_system_prompt(None, tools_enabled);
-            assert!(with_page.contains("Vandaag is"));
-            assert!(without_page.contains("Vandaag is"));
+        for tools in [Some(crate::ai::tools::get_all_tool_defs()), None] {
+            let with_page = build_school_context_system_prompt(Some("Testpagina"), tools.as_deref(), None);
+            let without_page = build_school_context_system_prompt(None, tools.as_deref(), None);
+            assert!(with_page.contains("NU:"));
+            assert!(without_page.contains("NU:"));
         }
     }
 }

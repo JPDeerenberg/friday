@@ -1,0 +1,821 @@
+{
+  "version": 1,
+  "tools": [
+    {
+      "name": "get_calendar_events",
+      "description": "Haal agenda-items/lessen op voor een datumbereik. Standaard is het 3-weken-venster (vorige week t/m volgende week) — laat start/eind weg als dat volstaat. Vraag alleen een ruimer bereik als de gebruiker iets daarbuiten wil weten (bijvoorbeeld een toets over 5 weken, lessen van vorige maand). Maximaal 62 dagen per keer; grote resultaten zijn gepagineerd.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start": {
+            "type": "string",
+            "description": "Startdatum in yyyy-MM-dd formaat (default: maandag vorige week)"
+          },
+          "end": {
+            "type": "string",
+            "description": "Einddatum in yyyy-MM-dd formaat (default: zondag volgende week)"
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Aantal items over te slaan bij paginering (default 0)"
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximaal aantal items (default 60, max 200)"
+          }
+        },
+        "required": []
+      }
+    },
+    {
+      "name": "get_calendar_event_detail",
+      "description": "Haal de volledige details van één les/agenda-item op, inclusief de huiswerktekst. Gebruik dit als get_calendar_events huiswerk signaleert en de gebruiker hulp wil met de inhoud.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "ID van het agenda-item (uit get_calendar_events)"
+          },
+          "date": {
+            "type": "string",
+            "description": "Datum van de les in yyyy-MM-dd formaat (default: vandaag)"
+          }
+        },
+        "required": ["id"]
+      }
+    },
+    {
+      "name": "get_grades",
+      "description": "Haal recente cijfers op.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "top": {
+            "type": "integer",
+            "description": "Aantal cijfers om op te halen (max 20)",
+            "default": 10
+          }
+        },
+        "required": []
+      }
+    },
+    {
+      "name": "get_full_grade_overview",
+      "description": "Haal het volledige cijferoverzicht op met gemiddelden per vak. Gebruik dit als de gebruiker vraagt hoe hij/zij ervoor staat per vak, of om gemiddelden te bekijken. Eerst moet je get_schoolyears ophalen voor de juiste IDs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "schoolyear_id": {
+            "type": "integer",
+            "description": "ID van het schooljaar (uit get_schoolyears)"
+          },
+          "einde": {
+            "type": "string",
+            "description": "Peildatum in yyyy-MM-dd formaat (gebruik vandaag of einde schooljaar)"
+          }
+        },
+        "required": ["schoolyear_id", "einde"]
+      }
+    },
+    {
+      "name": "get_schoolyears",
+      "description": "Haal schooljaren op voor deze leerling. Nodig voor get_full_grade_overview.",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      }
+    },
+    {
+      "name": "get_assignments",
+      "description": "Haal huiswerk/opdrachten op voor een datumbereik.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start": {
+            "type": "string",
+            "description": "Startdatum in yyyy-MM-dd formaat"
+          },
+          "end": {
+            "type": "string",
+            "description": "Einddatum in yyyy-MM-dd formaat"
+          }
+        },
+        "required": ["start", "end"]
+      }
+    },
+    {
+      "name": "get_assignment_detail",
+      "description": "Haal de volledige details van een specifieke opdracht op, inclusief bijlagen (bestanden).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "assignment_id": {
+            "type": "integer",
+            "description": "ID van de opdracht"
+          }
+        },
+        "required": ["assignment_id"]
+      }
+    },
+    {
+      "name": "get_messages",
+      "description": "Haal berichten op uit een map (bijvoorbeeld 'Postvak IN', 'Verzonden items', 'Verwijderde items'). Zonder folder-parameter wordt de eerste map gebruikt (meestal Postvak IN).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "folder": {
+            "type": "string",
+            "description": "Map naam zoals getoond in Magister (bijv. 'Postvak IN'). Laat leeg voor de standaardmap."
+          },
+          "top": {
+            "type": "integer",
+            "description": "Aantal berichten om op te halen",
+            "default": 10
+          }
+        },
+        "required": []
+      }
+    },
+    {
+      "name": "get_message_content",
+      "description": "Haal de inhoud van een specifiek bericht op. Gebruik dit als de gebruiker wil weten wat er in een bericht staat.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "message_id": {
+            "type": "integer",
+            "description": "ID van het bericht om op te halen"
+          }
+        },
+        "required": ["message_id"]
+      }
+    },
+    {
+      "name": "send_message",
+      "description": "Stuur een bericht via Magister. Gebruik dit om een bericht te verzenden naar een medeleerling, docent of klas.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subject": {
+            "type": "string",
+            "description": "Onderwerp van het bericht"
+          },
+          "body": {
+            "type": "string",
+            "description": "Inhoud van het bericht"
+          },
+          "recipients": {
+            "type": "array",
+            "description": "Lijst van ontvangers, elk met id en type (leerling/docent/klas).",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "integer"
+                },
+                "type": {
+                  "type": "string",
+                  "enum": ["leerling", "docent", "klas"],
+                  "default": "leerling"
+                }
+              },
+              "required": ["id"]
+            }
+          }
+        },
+        "required": ["subject", "body", "recipients"]
+      }
+    },
+    {
+      "name": "mark_messages_read",
+      "description": "Markeer een of meerdere berichten als gelezen. Geef de bericht-ID's op.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "message_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Lijst van bericht-ID's om als gelezen te markeren."
+          }
+        },
+        "required": ["message_ids"]
+      }
+    },
+    {
+      "name": "get_absences",
+      "description": "Haal absentie/verzuim op voor een datumbereik.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start": {
+            "type": "string",
+            "description": "Startdatum in yyyy-MM-dd formaat"
+          },
+          "end": {
+            "type": "string",
+            "description": "Einddatum in yyyy-MM-dd formaat"
+          }
+        },
+        "required": ["start", "end"]
+      }
+    },
+    {
+      "name": "get_studiewijzers",
+      "description": "Haal studiewijzers op (studiehandleidingen per vak).",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      }
+    },
+    {
+      "name": "get_activities",
+      "description": "Haal buitenschoolse activiteiten op.",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      }
+    },
+    {
+      "name": "get_bronnen",
+      "description": "Haal digitale leermaterialen en bronnen op (bijvoorbeeld lesmateriaal links, websites).",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      }
+    },
+    {
+      "name": "get_leermiddelen",
+      "description": "Haal digitale leermiddelen op (lesmateriaal, digitale boeken).",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      }
+    },
+    {
+      "name": "get_profile_info",
+      "description": "Haal uitgebreide profielinformatie op: naam, klas, adres, opleidingsgegevens, mentor.",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      }
+    },
+    {
+      "name": "get_current_time",
+      "description": "Huidige datum en tijd in Nederland (Europe/Amsterdam) met weeknummer, morgen, volgende schooldag en het standaard context-venster. Roep dit aan als je twijfelt over 'vandaag'.",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      }
+    },
+    {
+      "name": "get_today_summary",
+      "description": "Krijg een compleet overzicht van vandaag: rooster, cijfers, opdrachten, berichten, alle data in één keer.",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      }
+    },
+    {
+      "name": "read_notes",
+      "description": "Lees het AI-geheugen (feiten over de gebruiker). Lees opnieuw na een schrijfactie om de nieuwe revisie te zien.",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      }
+    },
+    {
+      "name": "append_note",
+      "description": "Onthoud één feit: voegt een bullet toe onder een rubriek (wordt aangemaakt als hij ontbreekt). Goedkoopste en veiligste schrijfactie — gebruik dit als het kan.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "section": {
+            "type": "string",
+            "description": "Rubriek zoals in de notities (bv. 'Voorkeuren'). Leeg = onderaan."
+          },
+          "text": {
+            "type": "string",
+            "description": "Het feit in één korte zin"
+          }
+        },
+        "required": ["text"]
+      }
+    },
+    {
+      "name": "edit_note",
+      "description": "Werk één feit bij: exacte vervanging van oude naar nieuwe tekst. Moet precies één keer voorkomen, anders een fout.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "old_text": {
+            "type": "string",
+            "description": "Bestaande tekst, exact overgenomen"
+          },
+          "new_text": {
+            "type": "string",
+            "description": "Vervangende tekst"
+          }
+        },
+        "required": ["old_text", "new_text"]
+      }
+    },
+    {
+      "name": "replace_notes",
+      "description": "Volledige herschrijving van het AI-geheugen (bijvoorbeeld om samen te vatten bij de limiet). Geef expected_revision mee uit read_notes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "type": "string",
+            "description": "De volledige nieuwe inhoud (Markdown)"
+          },
+          "expected_revision": {
+            "type": "integer",
+            "description": "Revisie uit read_notes (optimistic concurrency)"
+          }
+        },
+        "required": ["content", "expected_revision"]
+      }
+    },
+    {
+      "name": "list_files",
+      "description": "Som bijlagen op waar de gebruiker bij kan (opdrachten, berichten, lessen). Standaard het 3-weken-venster. Roep dit aan als de gebruiker hulp wil met een opdracht, toets of bericht met bijlagen, en lees daarna zelf met read_attachment_text — vraag niet eerst om toestemming.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "scope": {
+            "type": "string",
+            "description": "Filter: all (default), assignment, message of lesson"
+          },
+          "subject": {
+            "type": "string",
+            "description": "Filter op vaknaam (deel van de naam is genoeg)"
+          },
+          "start": {
+            "type": "string",
+            "description": "Startdatum yyyy-MM-dd (default: 3-weken-venster)"
+          },
+          "end": {
+            "type": "string",
+            "description": "Einddatum yyyy-MM-dd (default: 3-weken-venster)"
+          }
+        },
+        "required": []
+      }
+    },
+    {
+      "name": "read_attachment_text",
+      "description": "Lees de tekstinhoud van een bijlage (PDF, Word .docx, tekstbestand; op desktop ook PowerPoint .pptx), per pagina van maximaal 8000 tekens. Gebruik file_id uit list_files (of een URL). Grote bestanden lees je in pagina's via offset/next_offset.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file_id": {
+            "type": "string",
+            "description": "ID uit list_files (voorkeur)"
+          },
+          "url": {
+            "type": "string",
+            "description": "URL van de bijlage (uit get_assignment_detail of get_message_content)"
+          },
+          "filename": {
+            "type": "string",
+            "description": "Bestandsnaam van de bijlage; helpt bij het bepalen van het bestandstype"
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Startpositie in tekens (default 0)"
+          },
+          "max_chars": {
+            "type": "integer",
+            "description": "Maximaal aantal tekens (default 8000, max 8000)"
+          }
+        },
+        "required": []
+      }
+    },
+    {
+      "name": "calculate_grade_scenario",
+      "description": "Bereken cijfer-scenario's voor een vak: benodigd cijfer voor de volgende toets om een streefcijfer te halen, voorspeld gemiddelde na een hypothetisch cijfer, minimum cijfer om te slagen, en het effect op je totale gemiddelde. Geef de huidige cijfers mee (grades: lijst van {value, weight}) óf een schoolyear_id + subject zodat de tool ze zelf ophaalt. Gebruik dit voor 'wat heb ik nodig'-vragen over cijfers.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "schoolyear_id": {
+            "type": "integer",
+            "description": "ID van het schooljaar (uit get_schoolyears). Nodig als je geen grades meegeeft."
+          },
+          "subject": {
+            "type": "string",
+            "description": "Naam of afkorting van het vak (bv. 'Wiskunde'). Nodig als je geen grades meegeeft."
+          },
+          "grades": {
+            "type": "array",
+            "description": "Optioneel: lijst van huidige cijfers, elk met value (cijfer) en weight (weging) — of cijfer/weging zoals get_full_grade_overview ze teruggeeft. Als dit gegeven is, worden schoolyear_id/subject genegeerd.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "value": {
+                  "type": "number",
+                  "description": "Het cijfer, bv. 7.5 (ook 'cijfer' geaccepteerd)"
+                },
+                "cijfer": {
+                  "type": "number",
+                  "description": "Het cijfer, bv. 7.5 (alias voor value)"
+                },
+                "weight": {
+                  "type": "number",
+                  "description": "Weging (default 1)"
+                },
+                "weging": {
+                  "type": "number",
+                  "description": "Weging (alias voor weight)"
+                }
+              },
+              "required": []
+            }
+          },
+          "peildatum": {
+            "type": "string",
+            "description": "Peildatum yyyy-MM-dd (default: vandaag)"
+          },
+          "target_average": {
+            "type": "number",
+            "description": "Streefcijfer (bv. 6.0) om te berekenen welk cijfer je voor de volgende toets nodig hebt."
+          },
+          "next_grade": {
+            "type": "number",
+            "description": "Hypothetisch cijfer voor de volgende toets, om het voorspelde gemiddelde te berekenen."
+          },
+          "next_grade_weight": {
+            "type": "number",
+            "description": "Weging van de volgende toets (default 1)"
+          },
+          "remaining_tests": {
+            "type": "integer",
+            "description": "Aantal nog komende toetsen, om een eindgemiddelde-projectie te berekenen."
+          },
+          "threshold": {
+            "type": "number",
+            "description": "Voldoende-grens (default 5.5) voor het minimum-cijfer-om-te-slagen."
+          },
+          "simulation_grades": {
+            "type": "array",
+            "description": "Optioneel: extra cijfers om mee te simuleren (zoals in de app-rekenmachine).",
+            "items": {
+              "type": "object",
+              "properties": {
+                "value": {
+                  "type": "number"
+                },
+                "weight": {
+                  "type": "number",
+                  "default": 1
+                }
+              },
+              "required": ["value"]
+            }
+          },
+          "include_simulation": {
+            "type": "boolean",
+            "description": "Of simulatiecijfers meetellen in voorspellingen (default true)"
+          },
+          "decimal_points": {
+            "type": "integer",
+            "description": "Aantal decimalen (default 2)"
+          }
+        },
+        "required": []
+      }
+    },
+    {
+      "name": "create_calendar_event",
+      "description": "Maak een persoonlijke agenda-afspraak/herinnering aan (bijvoorbeeld een studiemoment of deadline-reminder). Deze actie wordt pas uitgevoerd nadat de gebruiker deze bevestigt.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start": {
+            "type": "string",
+            "description": "Startdatum/tijd in ISO-formaat (yyyy-MM-ddTHH:mm:ss)"
+          },
+          "einde": {
+            "type": "string",
+            "description": "Einddatum/tijd in ISO-formaat (yyyy-MM-ddTHH:mm:ss)"
+          },
+          "omschrijving": {
+            "type": "string",
+            "description": "Titel/korte omschrijving van de afspraak"
+          },
+          "duurt_hele_dag": {
+            "type": "boolean",
+            "description": "Hele dag (default false)",
+            "default": false
+          },
+          "lokatie": {
+            "type": "string",
+            "description": "Locatie (optioneel)"
+          },
+          "inhoud": {
+            "type": "string",
+            "description": "Volledige omschrijving (optioneel)"
+          }
+        },
+        "required": ["start", "einde", "omschrijving"]
+      }
+    },
+    {
+      "name": "download_file",
+      "description": "Download een bestand van een opgegeven URL (uit de Magister API). Geeft de bestandsgrootte en het MIME-type terug. Gebruik read_attachment_text als je de inhoud van een PDF/Word/tekstbestand wilt lezen.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "Volledige URL of relatief pad naar het bestand (zoals opgehaald uit assignment attachments of message attachments)."
+          }
+        },
+        "required": ["url"]
+      }
+    },
+    {
+      "name": "get_ai_schedule",
+      "description": "Lees de huidige AI-planning (Friday's Plan) voor een datumbereik. Bevat alleen AI-items (huiswerk-blokken, study, slaap, vrije tijd), niet de echte Magister-lessen. Standaard is het 3-weken-venster; grote resultaten zijn gepagineerd.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start": {
+            "type": "string",
+            "description": "Startdatum/tijd ISO 8601 (yyyy-MM-dd of yyyy-MM-ddTHH:mm:ss). Default: maandag vorige week"
+          },
+          "end": {
+            "type": "string",
+            "description": "Einddatum/tijd ISO 8601. Default: zondag volgende week"
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Aantal items over te slaan bij paginering (default 0)"
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximaal aantal items (default 60, max 200)"
+          }
+        },
+        "required": []
+      }
+    },
+    {
+      "name": "create_ai_schedule_item",
+      "description": "Voeg een item toe aan de AI-planning (huiswerk, studieblok, pauze, eigen item). Alleen voor AI-planning, nooit voor de echte Magister-agenda.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Titel van het item"
+          },
+          "description": {
+            "type": "string",
+            "description": "Omschrijving / wat er moet gebeuren"
+          },
+          "item_type": {
+            "type": "string",
+            "enum": [
+              "assignment_work",
+              "study_block",
+              "homework_review",
+              "custom",
+              "break",
+              "free_time",
+              "sleep"
+            ],
+            "description": "Type item"
+          },
+          "start": {
+            "type": "string",
+            "description": "Start ISO 8601 (Europe/Amsterdam)"
+          },
+          "end": {
+            "type": "string",
+            "description": "Einde ISO 8601"
+          },
+          "urgency": {
+            "type": "integer",
+            "description": "Urgentie 1-5",
+            "minimum": 1,
+            "maximum": 5
+          },
+          "related_assignment_id": {
+            "type": "integer",
+            "description": "Koppeling naar Magister opdracht ID (indien van toepassing)"
+          },
+          "related_subject": {
+            "type": "string",
+            "description": "Vaknaam (indien van toepassing)"
+          },
+          "estimated_minutes": {
+            "type": "integer",
+            "description": "Geschatte duur in minuten"
+          }
+        },
+        "required": ["title", "item_type", "start", "end"]
+      }
+    },
+    {
+      "name": "update_ai_schedule_item",
+      "description": "Werk een bestaand AI-planning item bij (verplaatsen, urgentie/duratie wijzigen).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "ID van het item"
+          },
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "item_type": {
+            "type": "string",
+            "enum": [
+              "assignment_work",
+              "study_block",
+              "homework_review",
+              "custom",
+              "break",
+              "free_time",
+              "sleep"
+            ]
+          },
+          "start": {
+            "type": "string"
+          },
+          "end": {
+            "type": "string"
+          },
+          "urgency": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5
+          },
+          "estimated_minutes": {
+            "type": "integer"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["planned", "in_progress", "completed", "dismissed"]
+          }
+        },
+        "required": ["id"]
+      }
+    },
+    {
+      "name": "complete_ai_schedule_item",
+      "description": "Markeer een AI-planning item als voltooid.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "ID van het item"
+          }
+        },
+        "required": ["id"]
+      }
+    },
+    {
+      "name": "dismiss_ai_schedule_item",
+      "description": "Negeer/wijs een AI-planning item af (uitsluiten van volgende herplanning). Anders dan verwijderen: dismissed items blijven bestaan maar worden uitgesloten van replans.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "ID van het item"
+          }
+        },
+        "required": ["id"]
+      }
+    },
+    {
+      "name": "set_homework_duration",
+      "description": "Stel de geschatte duur in voor een huiswerkopdracht. Gebruik dit wanneer een opdracht geen estimated_minutes heeft — toont een UI voor duur+urgentie en onthoudt het voor volgende planningen. Nooit zelf een duur gissen als deze ontbreekt.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "assignment_id": {
+            "type": "integer",
+            "description": "ID van de Magister opdracht"
+          },
+          "estimated_minutes": {
+            "type": "integer",
+            "description": "Geschatte duur in minuten (1-600)"
+          },
+          "urgency": {
+            "type": "integer",
+            "description": "Urgentie 1-5",
+            "minimum": 1,
+            "maximum": 5
+          },
+          "subject": {
+            "type": "string",
+            "description": "Vaknaam voor subject-average prefill hint"
+          }
+        },
+        "required": ["assignment_id", "estimated_minutes"]
+      }
+    },
+    {
+      "name": "run_update_ai_schedule",
+      "description": "Trigger 'Update AI Schedule' — herplan deze week + volgende week op basis van echte lessen, open opdrachten en bestaande planning. Zelfde als de handmatige knop.",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      }
+    },
+    {
+      "name": "delete_ai_schedule_item",
+      "description": "Verwijder een AI-planning item definitief. Anders dan dismiss: het item is weg en telt nergens meer mee.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "ID van het item"
+          }
+        },
+        "required": ["id"]
+      }
+    },
+    {
+      "name": "move_ai_schedule_item",
+      "description": "Verplaats een AI-planning item naar een nieuw starttijdstip (de duur blijft gelijk). Controleert overlap en stelt vrije plekken voor bij conflict.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "ID van het item"
+          },
+          "new_start": {
+            "type": "string",
+            "description": "Nieuw starttijdstip ISO 8601 (Europe/Amsterdam)"
+          }
+        },
+        "required": ["id", "new_start"]
+      }
+    },
+    {
+      "name": "get_plan_settings",
+      "description": "Lees de AI-planning instellingen (slaaptijden, blokkades, reistijd-buffer) zodat je ze kunt uitleggen en respecteren bij het plannen.",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      }
+    },
+    {
+      "name": "get_free_slots",
+      "description": "Zoek vrije plekken om huiswerk of studieblokken te plannen (lessen, slaap en blokkades al afgetrokken). Gebruik dit in plaats van te gissen waar ruimte is.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string",
+            "description": "Datum in yyyy-MM-dd formaat"
+          },
+          "end": {
+            "type": "string",
+            "description": "Optionele einddatum yyyy-MM-dd (default: alleen date)"
+          },
+          "min_minutes": {
+            "type": "integer",
+            "description": "Minimale duur in minuten (default 0)"
+          }
+        },
+        "required": ["date"]
+      }
+    },
+    {
+      "name": "undo_last_ai_plan_change",
+      "description": "Maak de laatste AI-planwijziging ongedaan (aanmaken, wijzigen, verplaatsen, voltooien, afwijzen of verwijderen).",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      }
+    }
+  ]
+}

@@ -203,8 +203,22 @@ async fn logout() -> impl IntoResponse {
 }
 
 /// BYO-key AI chat forward. The key travels per-request in memory only —
-/// never logged (not even the request body), never stored.
+// never logged (not even the request body), never stored.
 async fn ai_chat(State(state): State<AppState>, Json(body): Json<ai::ChatRequest>) -> impl IntoResponse {
+    if body.stream {
+        return match ai::chat_stream(&state.http, body).await {
+            Ok(sse) => sse.into_response(),
+            Err((status, msg)) => {
+                let cref = new_ref();
+                eprintln!("[{cref}] ai chat stream failed (HTTP {status}): {msg}");
+                error_json(
+                    StatusCode::from_u16(status).unwrap_or(StatusCode::BAD_GATEWAY),
+                    &msg,
+                    &cref,
+                )
+            }
+        };
+    }
     match ai::chat(&state.http, body).await {
         Ok(out) => (StatusCode::OK, Json(serde_json::to_value(&out).unwrap())).into_response(),
         Err((status, msg)) => {

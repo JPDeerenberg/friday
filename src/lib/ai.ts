@@ -1,18 +1,55 @@
 import { invoke } from "@tauri-apps/api/core";
 import { WebApiError } from "./backend.ts";
 import { loadWebSession, sessionTierA, webBackend } from "./web-session.ts";
-import { loadWebAiConfig, saveWebAiConfig, toPublicConfig } from "./web-ai-store.ts";
 import {
+  loadWebAiConfig,
+  saveWebAiConfig,
+  toPublicConfig,
+} from "./web-ai-store.ts";
+import {
+  MAX_PLAN_WRITES_PER_TURN,
+  NOTES_TOOLS,
+  NOTES_WRITE_TOOLS,
+  PLAN_WRITE_TOOLS,
   WEB_TOOL_DEFS,
   confirmWebPendingAction,
   executeWebTool,
 } from "./web-ai-tools.ts";
+import { loadSettings } from "./stores.ts";
+import { formatNowBlock } from "./ai-time.ts";
+import { formatNotesBlock, getNotes, type NotesPrompt } from "./ai-notes.ts";
+import {
+  getPromptSections,
+  getToolsSpec,
+  renderPrompt,
+  renderToolList,
+} from "./ai-spec.ts";
+import { TurnBudget } from "./ai-budget.ts";
+import {
+  runToolLoop,
+  type LoopActivity,
+  type LoopTurnTrace,
+} from "./ai-loop.ts";
+import {
+  clearAiDiagnostics as clearLocalDiag,
+  getAiDiagnostics as getLocalDiag,
+  recordAiDiag,
+  type AiDiagEntry,
+} from "./ai-diagnostics.ts";
+import { classifyAiError } from "./ai-errors.ts";
+import type { AiErrorInfo } from "./ai-errors.ts";
 
 function isWeb(): boolean {
   return typeof window !== "undefined" && !(window as any).__TAURI__;
 }
 
-export type AiProviderType = "openai" | "anthropic" | "gemini" | "deepseek" | "mistral" | "openai_compatible";
+export type AiProviderType =
+  | "openai"
+  | "anthropic"
+  | "gemini"
+  | "deepseek"
+  | "mistral"
+  | "openai_compatible";
 
 export interface AiConfig {
   api_key: string;
@@ -23,6 +60,10 @@ export interface AiConfig {
   use_data_access: boolean;
   /** True when an API key is stored (the key itself is never sent to the frontend). */
   has_api_key: boolean;
+  /** Whether the AI may edit AI-Geheugen notes (default on, switch in Settings). */
+  ai_notes_ai_can_edit: boolean;
+  /** Whether notes are injected into new chats (default on, switch in Settings). */
+  ai_notes_use_in_chats: boolean;
 }
 
 export interface AiMessage {
@@ -36,6 +77,12 @@ export interface AiMessage {
     arguments: any;
     status: "Pending" | "Completed" | "Failed";
   }>;
+  /** Set on failed turns (item 9): rendered as an error bubble with retry. */
+  error?: AiErrorInfo;
+  /** Set when the user stopped generation mid-turn (item 7). */
+  stopped?: boolean;
+  /** Compact tool trace of the turn that produced this message (Phase 5). */
+  trace?: LoopTurnTrace[];
 }
 
 /** A side-effecting action the AI staged that still awaits user confirmation. */
@@ -53,10 +100,22 @@ export interface PendingActionInfo {
   omschrijving?: string;
 }
 
+/** Live callbacks for a turn: streamed text deltas + liveness line. */
+export interface AiChatHooks {
+  onTextDelta?: (delta: string) => void;
+  onActivity?: (activity: LoopActivity) => void;
+}
+
 /** Result of a tools-enabled AI chat. */
 export interface AiChatWithToolsResult {
   content: string;
   pending_actions: PendingActionInfo[];
+  /** True when the user stopped generation mid-turn (partial content kept). */
+  stopped: boolean;
+  /** True when an AI plan mutation succeeded this turn (undo chip). */
+  plan_changed: boolean;
+  /** Compact per-turn tool trace for persistence (Phase 5 item 4). */
+  trace: LoopTurnTrace[];
 }
 
 export const DEFAULT_AI_CONFIG: AiConfig = {
@@ -67,12 +126,19 @@ export const DEFAULT_AI_CONFIG: AiConfig = {
   provider: "openai",
   use_data_access: true,
   has_api_key: false,
+  ai_notes_ai_can_edit: true,
+  ai_notes_use_in_chats: true,
 };
 
 /** Provider display names and default models */
 export const AI_PROVIDERS: Record<
   AiProviderType,
-  { label: string; defaultModel: string; defaultBaseUrl: string; description: string }
+  {
+    label: string;
+    defaultModel: string;
+    defaultBaseUrl: string;
+    description: string;
+  }
 > = {
   openai: {
     label: "OpenAI",
@@ -143,6 +209,8 @@ export async function setAiConfig(
   enabled: boolean,
   provider?: string,
   useDataAccess?: boolean,
+  notesAiCanEdit?: boolean,
+  notesUseInChats?: boolean,
 ): Promise<void> {
   if (isWeb()) {
     // Empty key keeps the stored one (Settings shows an empty field even
@@ -154,6 +222,8 @@ export async function setAiConfig(
       enabled,
       provider: (provider as AiConfig["provider"]) || "openai",
       useDataAccess: useDataAccess ?? true,
+      notesAiCanEdit: notesAiCanEdit ?? true,
+      notesUseInChats: notesUseInChats ?? true,
     });
     return;
   }
@@ -164,6 +234,8 @@ export async function setAiConfig(
     enabled,
     provider: provider || "openai",
     useDataAccess: useDataAccess ?? true,
+    ai_notes_ai_can_edit: notesAiCanEdit ?? true,
+    ai_notes_use_in_chats: notesUseInChats ?? true,
   });
 }
 
@@ -200,6 +272,69 @@ export async function validateAiKey(): Promise<boolean> {
 }
 
 /**
+ * Resolve the AI-Geheugen prompt block for a chat. Never throws: without
+ * memory the chat simply proceeds.
+ */
+async function notesPromptFor(
+  useInChats: boolean | undefined,
+  canEdit: boolean | undefined,
+): Promise<{
+  prompt: NotesPrompt | null;
+  writable: boolean;
+  enabled: boolean;
+}> {
+  const enabled = useInChats !== false;
+  const writable = enabled && canEdit !== false;
+  if (!enabled) return { prompt: null, writable: false, enabled: false };
+  try {
+    const snap = await getNotes();
+    return {
+      prompt: {
+        content: snap.content,
+        revision: snap.revision,
+        updatedBy: snap.updated_by,
+        writable,
+      },
+      writable,
+      enabled,
+    };
+  } catch {
+    return { prompt: null, writable, enabled };
+  }
+}
+
+/**
+ * Subscribe to the desktop backend's `ai-activity` events for the duration
+ * of `fn`, forwarding them to the turn hooks (same shape as the web loop's
+ * onActivity/onTextDelta). Desktop-only; resolves `fn()` directly when the
+ * caller passed no hooks.
+ */
+async function withDesktopActivity<T>(
+  hooks: AiChatHooks | undefined,
+  fn: () => Promise<T>,
+): Promise<T> {
+  if (!hooks || (!hooks.onTextDelta && !hooks.onActivity)) return fn();
+  const { listen } = await import("@tauri-apps/api/event");
+  const unlisten = await listen<{
+    kind: string;
+    tool?: string;
+    delta?: string;
+  }>("ai-activity", (e) => {
+    const p = e.payload;
+    if (p.kind === "text" && p.delta) hooks.onTextDelta?.(p.delta);
+    else if (p.kind === "answer") hooks.onActivity?.({ kind: "answer" });
+    else if (p.kind === "tool")
+      hooks.onActivity?.({ kind: "tool", tool: p.tool });
+    else if (p.kind === "idle") hooks.onActivity?.({ kind: "idle" });
+  });
+  try {
+    return await fn();
+  } finally {
+    unlisten();
+  }
+}
+
+/**
  * Send a chat message to the AI and get a response.
  * @param messages Array of chat messages
  * @param pageContext Optional context about the current page
@@ -208,25 +343,66 @@ export async function validateAiKey(): Promise<boolean> {
 export async function aiChat(
   messages: AiMessage[],
   pageContext?: string,
+  signal?: AbortSignal,
+  hooks?: AiChatHooks,
 ): Promise<string> {
   if (isWeb()) {
     const cfg = await requireWebAi();
-    const out = await webBackend().aiProxy<{ content: string; toolCalls: unknown[] }>("chat", {
-      provider: cfg.provider,
-      baseUrl: cfg.baseUrl,
-      model: cfg.model,
-      apiKey: cfg.apiKey,
-      messages: [{ role: "system", content: buildWebSystemPrompt(pageContext, false) }, ...messages],
-      tools: [],
-    });
-    return out.content;
+    const { prompt: notes } = await notesPromptFor(
+      cfg.notesUseInChats,
+      cfg.notesAiCanEdit,
+    );
+    const diagStart = Date.now();
+    try {
+      const out = await webBackend().aiProxyStreamChat(
+        {
+          provider: cfg.provider,
+          baseUrl: cfg.baseUrl,
+          model: cfg.model,
+          apiKey: cfg.apiKey,
+          messages: [
+            {
+              role: "system",
+              content: buildWebSystemPrompt(pageContext, false, notes),
+            },
+            ...messages,
+          ],
+          tools: [],
+        },
+        {
+          signal,
+          onText: (delta) => hooks?.onTextDelta?.(delta),
+        },
+      );
+      recordAiDiag({
+        provider: cfg.provider,
+        model: cfg.model,
+        op: "chat",
+        status: "ok",
+        durationMs: Date.now() - diagStart,
+      });
+      return out.content;
+    } catch (e) {
+      const kind = classifyAiError(e).kind;
+      recordAiDiag({
+        provider: cfg.provider,
+        model: cfg.model,
+        op: "chat",
+        status: kind === "aborted" ? "aborted" : "error",
+        durationMs: Date.now() - diagStart,
+        errorClass: kind,
+      });
+      throw e;
+    }
   }
   let result: string;
   try {
-    result = await invoke("ai_chat", {
-      messagesJson: JSON.stringify(messages),
-      pageContext: pageContext || null,
-    });
+    result = await withDesktopActivity(hooks, () =>
+      invoke("ai_chat", {
+        messagesJson: JSON.stringify(messages),
+        pageContext: pageContext || null,
+      }),
+    );
   } catch (e) {
     throw new Error(e as string);
   }
@@ -245,21 +421,71 @@ export async function aiChatWithTools(
   messages: AiMessage[],
   pageContext?: string,
   personId?: number,
+  signal?: AbortSignal,
+  hooks?: AiChatHooks,
 ): Promise<AiChatWithToolsResult> {
   if (isWeb()) {
-    return webChatWithToolsLoop(messages, pageContext, personId ?? 0);
+    return webChatWithToolsLoop(
+      messages,
+      pageContext,
+      personId ?? 0,
+      signal,
+      hooks,
+    );
   }
   let result: AiChatWithToolsResult;
   try {
-    result = await invoke("ai_chat_with_tools", {
-      messagesJson: JSON.stringify(messages),
-      pageContext: pageContext || null,
-      personId: personId || 0,
-    });
+    result = await withDesktopActivity(
+      hooks,
+      () =>
+        invoke("ai_chat_with_tools", {
+          messagesJson: JSON.stringify(messages),
+          pageContext: pageContext || null,
+          personId: personId || 0,
+          // Frontend AI-Planning settings so the AI replan respects them.
+          planSettings: loadSettings().aiSchedule ?? null,
+        }) as Promise<AiChatWithToolsResult>,
+    );
   } catch (e) {
     throw new Error(e as string);
   }
   return result;
+}
+
+/**
+ * Ask a running desktop tool loop to stop at the next checkpoint (plan
+ * item 7). Best-effort and idempotent; no-op on web (AbortController
+ * handles cancellation there).
+ */
+export async function cancelAiChat(): Promise<void> {
+  if (isWeb()) return;
+  try {
+    await invoke("cancel_ai_chat");
+  } catch {
+    // The loop may already be done — stopping is best-effort.
+  }
+}
+
+/** Buffered AI diagnostics, newest first (Settings > AI > Diagnose). */
+export async function getAiDiagnostics(): Promise<AiDiagEntry[]> {
+  if (isWeb()) return getLocalDiag();
+  try {
+    return (await invoke("get_ai_diagnostics")) as AiDiagEntry[];
+  } catch {
+    return [];
+  }
+}
+
+export async function clearAiDiagnostics(): Promise<void> {
+  if (isWeb()) {
+    clearLocalDiag();
+    return;
+  }
+  try {
+    await invoke("clear_ai_diagnostics");
+  } catch {
+    // Best-effort.
+  }
 }
 
 /**
@@ -308,7 +534,10 @@ export async function aiPageInsight(
           ? `Pagina: Cijfers\nData: ${dataJson}\nVraag: ${query}`
           : `Pagina: ${page}\nData: ${dataJson}\nVraag: ${query}`;
     const cfg = await requireWebAi();
-    const out = await webBackend().aiProxy<{ content: string; toolCalls: unknown[] }>("chat", {
+    const out = await webBackend().aiProxy<{
+      content: string;
+      toolCalls: unknown[];
+    }>("chat", {
       provider: cfg.provider,
       baseUrl: cfg.baseUrl,
       model: cfg.model,
@@ -404,61 +633,47 @@ async function requireWebAi() {
   const cfg = await loadWebAiConfig();
   if (!cfg.enabled || !cfg.apiKey.trim()) {
     // AIAssistant maps "niet geconfigureerd" to its Settings hint — keep it.
-    throw new Error("AI is niet geconfigureerd: vul een API-sleutel in bij Instellingen > AI Assistent.");
+    throw new Error(
+      "AI is niet geconfigureerd: vul een API-sleutel in bij Instellingen > AI Assistent.",
+    );
   }
-  if (!cfg.model.trim()) throw new Error("AI is niet geconfigureerd: kies een model.");
+  if (!cfg.model.trim())
+    throw new Error("AI is niet geconfigureerd: kies een model.");
   return cfg;
 }
 
-function dutchWeekday(date: Date): string {
-  const s = new Intl.DateTimeFormat("nl-NL", { weekday: "long" }).format(date);
-  return s.charAt(0).toUpperCase() + s.slice(1);
-}
-
-function localYMD(date: Date): string {
-  const m = `${date.getMonth() + 1}`.padStart(2, "0");
-  const d = `${date.getDate()}`.padStart(2, "0");
-  return `${date.getFullYear()}-${m}-${d}`;
-}
-
-function localHM(date: Date): string {
-  return `${`${date.getHours()}`.padStart(2, "0")}:${`${date.getMinutes()}`.padStart(2, "0")}`;
-}
-
 /**
- * Port of `build_school_context_system_prompt` (ai_client.rs), minus the
- * AI-Schedule tool family (that feature isn't on web yet — the model must
- * not be instructed to call tools that don't exist here).
+ * Web twin of `build_school_context_system_prompt` (ai_client.rs).
+ *
+ * Single source of truth: `shared/ai-spec/prompt.nl.md`, rendered with the
+ * same section order as desktop. `toolDefs` carries the settings-filtered
+ * defs offered to the provider (defaults to the full spec); listed tools
+ * always match offered tools.
  */
-export function buildWebSystemPrompt(pageContext: string | undefined, toolsEnabled: boolean): string {
-  const now = new Date();
-  const dateContext =
-    `Vandaag is ${dutchWeekday(now)}, ${localYMD(now)} (${localHM(now)} uur, tijdzone Europe/Amsterdam). ` +
-    `Gebruik altijd deze datum als 'vandaag' bij het bepalen van datumbereiken voor tools zoals ` +
-    `get_calendar_events, get_assignments en get_full_grade_overview — verzin nooit zelf een datum.`;
-  let base =
-    `${dateContext}\n\nJe bent Friday AI, een behulpzame assistent voor scholieren in het Nederlandse middelbaar onderwijs. ` +
-    `Je helpt met schoolgerelateerde vragen, planning, studieadvies en uitleg. ` +
-    `Je spreekt altijd Nederlands en reageert bondig en helder. ` +
-    `Gebruik waar mogelijk opsommingen en concrete voorbeelden. ` +
-    `Wees aanmoedigend maar realistisch. ` +
-    `Als je iets niet weet, zeg dat dan eerlijk. ` +
-    `Als een tool een fout teruggeeft of een leeg resultaat (geen items, geen data), zeg dat dan plain tegen de gebruiker in plaats van plausible klinkende data te verzinnen — no hallucineren. ` +
-    `Formateer je antwoorden met Markdown waar dat helpt: gebruik ## kopjes, **vet**, *cursief*, opsommingen (- of 1.), tabellen voor cijfers/rooster, ` +
-    `inline code en codeblokken voor voorbeelden, en [links](url) waar relevant. Houd het beknopt.`;
-  if (pageContext) base += `\n\nContext van de huidige pagina:\n${pageContext}`;
-  if (!toolsEnabled) return base;
-
-  const toolLines = WEB_TOOL_DEFS.map((t) => `- ${t.name}: ${(t.description as string).split(".")[0]}`).join("\n");
-  base +=
-    `\n\nJe hebt toegang tot de volgende tools om schoolgegevens op te vragen en acties uit te voeren:\n${toolLines}\n\n` +
-    `Gebruik deze tools wanneer de gebruiker vraagt naar specifieke schoolinformatie of acties wil uitvoeren (zoals berichten sturen, opdrachten bekijken, bestanden downloaden).\n` +
-    `Bij vragen over gemiddelden per vak: gebruik eerst get_schoolyears, dan get_full_grade_overview.\n` +
-    `Bij 'wat heb ik nodig'-vragen over cijfers (bv. 'welk cijfer moet ik halen om te slagen'): gebruik get_schoolyears, get_full_grade_overview, en daarna calculate_grade_scenario om het daadwerkelijk te berekenen — geef niet alleen ruwe cijfers terug.\n` +
-    `Bij een opdracht met een bijlage (uit get_assignment_detail) waarvan de gebruiker hulp wil met de inhoud: gebruik read_attachment_text om de bijlage te lezen voordat je antwoord geeft. Alleen platte tekstbijlagen kunnen worden gelezen.\n` +
-    `Bij vragen over berichtinhoud: gebruik eerst get_messages, dan get_message_content, of stuur een bericht met send_message.\n` +
-    `Bij acties met een echte bijwerking (send_message, mark_messages_read, create_calendar_event): de tool zet de actie klaar en de gebruiker bevestigt deze in de app voordat er iets gebeurt. Vertel de gebruiker wat er klaarstaat.\n`;
-  return base;
+export function buildWebSystemPrompt(
+  pageContext: string | undefined,
+  toolsEnabled: boolean,
+  notes?: NotesPrompt | null,
+  toolDefs?: Array<{ name: string; description: string }>,
+): string {
+  // NOW block is rebuilt on every call so "vandaag" is never stale.
+  const sections = getPromptSections();
+  const list = toolsEnabled
+    ? renderToolList(toolDefs ?? getToolsSpec().tools)
+    : null;
+  return renderPrompt(sections, {
+    now: formatNowBlock(),
+    notes: notes
+      ? formatNotesBlock(
+          notes.content,
+          notes.revision,
+          notes.updatedBy,
+          notes.writable,
+        )
+      : null,
+    context: pageContext || null,
+    toolList: list,
+  });
 }
 
 /**
@@ -471,6 +686,8 @@ async function webChatWithToolsLoop(
   messages: AiMessage[],
   pageContext: string | undefined,
   personId: number,
+  signal?: AbortSignal,
+  hooks?: AiChatHooks,
 ): Promise<AiChatWithToolsResult> {
   const cfg = await requireWebAi();
   const tokens = await loadWebSession();
@@ -482,46 +699,128 @@ async function webChatWithToolsLoop(
     model: cfg.model,
     apiKey: cfg.apiKey,
   };
-  const tools = WEB_TOOL_DEFS.map((t) => ({ name: t.name, description: t.description as string, parameters: t.parameters }));
+  const notes = await notesPromptFor(cfg.notesUseInChats, cfg.notesAiCanEdit);
+  const tools = WEB_TOOL_DEFS.filter(
+    (t) => notes.enabled || !NOTES_TOOLS.includes(t.name),
+  )
+    .filter((t) => notes.writable || !NOTES_WRITE_TOOLS.includes(t.name))
+    .map((t) => ({
+      name: t.name,
+      description: t.description as string,
+      parameters: t.parameters,
+    }));
+  // Phase 3 budget: all successful tool payloads of this turn counted together.
+  const budget = new TurnBudget();
+  // Bulk cap + undo chip (plan item 5).
+  let planWrites = 0;
+  let planChanged = false;
+  // Diagnostics (item 12): per-turn metadata only.
+  const diagStart = Date.now();
+  const diagTools: string[] = [];
 
-  const current: AiMessage[] = [{ role: "system", content: buildWebSystemPrompt(pageContext, true) }, ...messages];
-  let finalContent = "";
-  const staged: PendingActionInfo[] = [];
-  const maxRounds = 5;
-
-  for (let round = 0; round < maxRounds; round++) {
-    const res = await be.aiProxy<{ content: string; toolCalls: Array<{ id: string; name: string; arguments: unknown }> }>(
-      "chat",
-      { ...proxyBase, messages: current, tools },
-    );
-    if (res.content) finalContent = res.content;
-    if (!res.toolCalls || res.toolCalls.length === 0) break;
-
-    current.push({
-      role: "assistant",
-      content: res.content,
-      tool_calls: res.toolCalls.map((tc) => ({ ...tc, status: "Pending" as const })),
-    });
-
-    for (const tc of res.toolCalls) {
-      let resultText: string;
-      try {
-        const r = await executeWebTool({ be: sessionTierA(), tokens, personId }, tc.name, tc.arguments);
-        resultText = r.success ? JSON.stringify(r.data) : `Fout bij ophalen van data: ${r.error ?? "Onbekende fout"}`;
-        const data = r.data as Record<string, unknown> | null;
-        if (r.success && data && data["status"] === "pending_user_confirmation") {
-          staged.push(data as unknown as PendingActionInfo);
+  const out = await runToolLoop({
+    systemPrompt: buildWebSystemPrompt(
+      pageContext,
+      true,
+      notes.prompt,
+      tools.map((t) => ({
+        name: t.name,
+        description: t.description as string,
+      })),
+    ),
+    initialMessages: messages.map((m) => ({
+      role: m.role,
+      content: m.content,
+    })),
+    chat: async (msgs, opts) => {
+      const res = await be.aiProxyStreamChat(
+        { ...proxyBase, messages: msgs, tools: opts.toolsEnabled ? tools : [] },
+        {
+          signal: opts.signal,
+          onText: (delta) => opts.onTextDelta?.(delta),
+        },
+      );
+      return { content: res.content ?? "", toolCalls: res.toolCalls ?? [] };
+    },
+    executeTool: async (name, args) => {
+      if (!diagTools.includes(name)) diagTools.push(name);
+      // Bulk cap: max 10 AI plan item writes per turn, counted on attempts.
+      if (PLAN_WRITE_TOOLS.includes(name)) {
+        if (planWrites >= MAX_PLAN_WRITES_PER_TURN) {
+          const error =
+            `Limiet planwijzigingen bereikt (max ${MAX_PLAN_WRITES_PER_TURN} per beurt). ` +
+            "Vat samen wat je hebt gedaan en vraag de gebruiker welke wijzigingen eerst moeten.";
+          return { ok: false, data: { error, retryable: false }, error };
         }
-      } catch (e) {
-        resultText = `Fout bij ophalen van data: ${e instanceof Error ? e.message : String(e)}`;
+        planWrites += 1;
       }
-      current.push({ role: "tool", content: resultText, tool_call_id: tc.id, name: tc.name });
-    }
+      const r = await executeWebTool(
+        { be: sessionTierA(), tokens, personId },
+        name,
+        args,
+      );
+      const data = r.data as Record<string, unknown> | null;
+      const staged =
+        r.success && data && data["status"] === "pending_user_confirmation"
+          ? (data as unknown as PendingActionInfo)
+          : undefined;
+      if (
+        r.success &&
+        (PLAN_WRITE_TOOLS.includes(name) || name === "run_update_ai_schedule")
+      ) {
+        planChanged = true;
+      }
+      return {
+        ok: r.success,
+        data: r.data,
+        error: r.error ?? undefined,
+        staged,
+      };
+    },
+    isWriteTool: (name) =>
+      name === "send_message" ||
+      name === "mark_messages_read" ||
+      name === "create_calendar_event" ||
+      NOTES_WRITE_TOOLS.includes(name) ||
+      PLAN_WRITE_TOOLS.includes(name) ||
+      name === "run_update_ai_schedule" ||
+      name === "undo_last_ai_plan_change",
+    onBudgetAccount: (data) => budget.account(data),
+    onActivity: (activity) => hooks?.onActivity?.(activity),
+    onTextDelta: (delta) => hooks?.onTextDelta?.(delta),
+    signal,
+  }).then(
+    (out) => {
+      recordAiDiag({
+        provider: cfg.provider,
+        model: cfg.model,
+        op: "tools",
+        status: out.stopped ? "stopped" : "ok",
+        durationMs: Date.now() - diagStart,
+        toolNames: diagTools,
+      });
+      return out;
+    },
+    (e) => {
+      const kind = classifyAiError(e).kind;
+      recordAiDiag({
+        provider: cfg.provider,
+        model: cfg.model,
+        op: "tools",
+        status: kind === "aborted" ? "aborted" : "error",
+        durationMs: Date.now() - diagStart,
+        errorClass: kind,
+        toolNames: diagTools,
+      });
+      throw e;
+    },
+  );
 
-    if (round === maxRounds - 1 && !finalContent) {
-      finalContent = "Ik heb de beschikbare data opgehaald. Meer details nodig? Stel gerust een vervolgvraag!";
-    }
-  }
-
-  return { content: finalContent, pending_actions: staged };
+  return {
+    content: out.content,
+    pending_actions: out.staged as PendingActionInfo[],
+    stopped: out.stopped,
+    plan_changed: planChanged,
+    trace: out.trace,
+  };
 }

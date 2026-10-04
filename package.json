@@ -1,13 +1,13 @@
 {
   "name": "friday",
-  "version": "2.9.10",
+  "version": "2.10.0",
   "description": "",
   "type": "module",
   "scripts": {
     "dev": "vite dev",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node src/lib/stores.test.ts && node --import ./src/lib/test-hooks-register.ts src/lib/web-tier-b.test.ts && node --import ./src/lib/test-hooks-register.ts src/lib/web-ai-tools.test.ts && node --import ./src/lib/test-hooks-register.ts src/lib/ai.test.ts && node --import ./src/lib/test-hooks-register.ts src/lib/web-planner.test.ts && node --import ./src/lib/test-hooks-register.ts src/lib/web-stores.test.ts && node --import ./src/lib/test-hooks-register.ts src/lib/cache.test.ts",
+    "test": "node src/lib/stores.test.ts && node --import ./src/lib/test-hooks-register.ts src/lib/web-tier-b.test.ts && node --import ./src/lib/test-hooks-register.ts src/lib/web-ai-tools.test.ts && node --import ./src/lib/test-hooks-register.ts src/lib/ai.test.ts && node --import ./src/lib/test-hooks-register.ts src/lib/ai-time.test.ts && node --import ./src/lib/test-hooks-register.ts src/lib/ai-budget.test.ts && node --import ./src/lib/test-hooks-register.ts src/lib/ai-errors.test.ts && node --import ./src/lib/test-hooks-register.ts src/lib/ai-loop.test.ts && node --import ./src/lib/test-hooks-register.ts src/lib/ai-golden.test.ts && node --import ./src/lib/test-hooks-register.ts src/lib/ai-notes.test.ts && node --import ./src/lib/test-hooks-register.ts src/lib/ai-files.test.ts && node --import ./src/lib/test-hooks-register.ts src/lib/ai-diagnostics.test.ts && node --import ./src/lib/test-hooks-register.ts src/lib/ai-stream.test.ts && node --import ./src/lib/test-hooks-register.ts src/lib/ai-parity.test.ts && node --import ./src/lib/test-hooks-register.ts src/lib/ai-chats.test.ts && node --import ./src/lib/test-hooks-register.ts src/lib/web-planner.test.ts && node --import ./src/lib/test-hooks-register.ts src/lib/web-stores.test.ts && node --import ./src/lib/test-hooks-register.ts src/lib/cache.test.ts",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
     "tauri": "tauri"
@@ -28,7 +28,9 @@
     "@tiptap/starter-kit": "^3.31.4",
     "dompurify": "^3.4.16",
     "idb": "^8.0.3",
+    "mammoth": "^1.13.0",
     "marked": "^18.0.14",
+    "pdfjs-dist": "^6.3.289",
     "svelte-tiptap": "^3.0.1"
   },
   "devDependencies": {

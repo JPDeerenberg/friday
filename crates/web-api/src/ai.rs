@@ -7,17 +7,20 @@
 //! as the desktop loop.
 
 use serde::{Deserialize, Serialize};
+use std::pin::Pin;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AiMessageIn {
     pub role: String,
     pub content: String,
-    #[serde(default)]
+    // The web loop speaks the same snake_case as the desktop AiMessage;
+    // accept both spellings at this boundary.
+    #[serde(default, alias = "tool_call_id")]
     pub tool_call_id: Option<String>,
     #[serde(default)]
     pub name: Option<String>,
-    #[serde(default)]
+    #[serde(default, alias = "tool_calls")]
     pub tool_calls: Option<Vec<ToolCallIn>>,
 }
 
@@ -26,6 +29,7 @@ pub struct AiMessageIn {
 pub struct ToolCallIn {
     pub id: String,
     pub name: String,
+    #[serde(alias = "args")]
     pub arguments: serde_json::Value,
 }
 
@@ -48,6 +52,11 @@ pub struct ChatRequest {
     pub messages: Vec<AiMessageIn>,
     #[serde(default)]
     pub tools: Vec<ToolDefIn>,
+    /// Ask for server-sent events (`text` deltas + final `done`) instead of
+    /// one JSON body. OpenAI-family streams natively; other providers fall
+    /// back to a single-shot response wrapped in the same events.
+    #[serde(default)]
+    pub stream: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -583,9 +592,353 @@ pub async fn list_models(http: &reqwest::Client, mut req: ValidateRequest) -> Re
     Ok(models)
 }
 
+// ─── Streaming (SSE pass-through for the OpenAI family) ────────────────────
+// Unified browser protocol: `text` events carry deltas, a final `done` event
+// carries the assembled `{content, toolCalls}`. Anything else falls back to
+// the single-shot path wrapped in the same events, so the frontend only ever
+// speaks one protocol.
+
+/// Split complete SSE frames (`\n\n`-separated) off the front of `buf`.
+/// Returns the `data:` payloads; the remainder stays buffered for the next
+/// chunk (provider chunks can split mid-line).
+pub fn split_sse_frames(buf: &mut String) -> Vec<String> {
+    let mut out = Vec::new();
+    while let Some(pos) = buf.find("\n\n") {
+        let frame: String = buf.drain(..pos + 2).collect();
+        let mut data: Vec<&str> = Vec::new();
+        for line in frame.lines() {
+            if let Some(payload) = line.strip_prefix("data:") {
+                data.push(payload.trim_start());
+            }
+            // `event:`/`id:`/`:comment` lines carry no payload for us.
+        }
+        if !data.is_empty() {
+            out.push(data.join("\n"));
+        }
+    }
+    out
+}
+
+/// One tool call being assembled from stream deltas, keyed by `index`.
+#[derive(Default)]
+struct PendingToolCall {
+    id: String,
+    name: String,
+    arguments: String,
+}
+
+/// Feed one provider SSE `data:` payload into the assembly. Returns the text
+/// delta to forward (if any). `[DONE]` and unparseable frames yield nothing.
+pub fn apply_openai_delta(
+    payload: &str,
+    content: &mut String,
+    calls: &mut std::collections::BTreeMap<u32, PendingToolCall>,
+) -> Option<String> {
+    if payload.trim() == "[DONE]" {
+        return None;
+    }
+    let v: serde_json::Value = serde_json::from_str(payload).ok()?;
+    let delta = v
+        .get("choices")?
+        .as_array()?
+        .first()?
+        .get("delta")?;
+    let mut text = String::new();
+    if let Some(t) = delta.get("content").and_then(|c| c.as_str()) {
+        if !t.is_empty() {
+            content.push_str(t);
+            text.push_str(t);
+        }
+    }
+    if let Some(tcs) = delta.get("tool_calls").and_then(|t| t.as_array()) {
+        for (pos, tc) in tcs.iter().enumerate() {
+            let idx = tc
+                .get("index")
+                .and_then(|i| i.as_u64())
+                .unwrap_or(pos as u64) as u32;
+            let entry = calls.entry(idx).or_default();
+            if let Some(id) = tc.get("id").and_then(|v| v.as_str()) {
+                if !id.is_empty() && entry.id.is_empty() {
+                    entry.id = id.to_string();
+                }
+            }
+            if let Some(name) = tc
+                .get("function")
+                .and_then(|f| f.get("name"))
+                .and_then(|v| v.as_str())
+            {
+                if !name.is_empty() && entry.name.is_empty() {
+                    entry.name = name.to_string();
+                }
+            }
+            if let Some(args) = tc
+                .get("function")
+                .and_then(|f| f.get("arguments"))
+                .and_then(|v| v.as_str())
+            {
+                entry.arguments.push_str(args);
+            }
+        }
+    }
+    if text.is_empty() {
+        None
+    } else {
+        Some(text)
+    }
+}
+
+fn assemble_tool_calls(calls: std::collections::BTreeMap<u32, PendingToolCall>) -> Vec<ToolCallOut> {
+    calls
+        .into_iter()
+        .map(|(_, c)| ToolCallOut {
+            id: if c.id.is_empty() {
+                "call_unknown".to_string()
+            } else {
+                c.id
+            },
+            name: c.name,
+            arguments: serde_json::from_str(&c.arguments).unwrap_or(serde_json::Value::Null),
+        })
+        .collect()
+}
+
+fn sse_data(event: &str, json: &str) -> axum::response::sse::Event {
+    axum::response::sse::Event::default()
+        .event(event)
+        .data(json)
+}
+
+/// Stream one chat turn to the browser. OpenAI-family providers stream
+/// natively; Anthropic/Gemini fall back to a single-shot call wrapped in
+/// the same events. Upstream HTTP errors surface as JSON errors before any
+/// event, exactly like the non-streaming path.
+pub async fn chat_stream(
+    http: &reqwest::Client,
+    mut req: ChatRequest,
+) -> Result<
+    axum::response::sse::Sse<
+        axum::response::sse::KeepAliveStream<
+            Pin<
+                Box<
+                    dyn futures_core::Stream<
+                            Item = Result<
+                                axum::response::sse::Event,
+                                std::convert::Infallible,
+                            >,
+                        > + Send,
+                >,
+            >,
+        >,
+    >,
+    (u16, String),
+> {
+    req.api_key = req.api_key.trim().to_string();
+    req.model = req.model.trim().to_string();
+    req.base_url = req.base_url.trim().to_string();
+    if req.api_key.is_empty() {
+        return Err((400, "Geen API-sleutel ingesteld.".to_string()));
+    }
+    if req.model.is_empty() {
+        return Err((400, "Geen model gekozen.".to_string()));
+    }
+
+    if !is_openai_family(&req.provider) {
+        // No native SSE path here: run single-shot, wrap in events.
+        return match chat(http, req).await {
+            Ok(out) => {
+                let text = serde_json::to_string(&serde_json::json!({ "delta": out.content }))
+                    .unwrap_or_default();
+                let done = serde_json::to_string(&serde_json::json!({
+                    "content": out.content, "toolCalls": out.tool_calls
+                }))
+                .unwrap_or_default();
+                let stream = async_stream::stream! {
+                    yield Ok(sse_data("text", &text));
+                    yield Ok(sse_data("done", &done));
+                };
+                Ok(axum::response::sse::Sse::new(
+                    Box::pin(stream)
+                        as Pin<
+                            Box<
+                                dyn futures_core::Stream<
+                                        Item = Result<
+                                            axum::response::sse::Event,
+                                            std::convert::Infallible,
+                                        >,
+                                    > + Send,
+                            >,
+                        >,
+                )
+                .keep_alive(axum::response::sse::KeepAlive::default()))
+            }
+            Err(e) => Err(e),
+        };
+    }
+
+    let base = check_base_url(&req.provider, &req.base_url).map_err(|m| (400, m))?;
+    let openai_tools: Vec<serde_json::Value> = req
+        .tools
+        .iter()
+        .map(|t| {
+            serde_json::json!({
+                "type": "function",
+                "function": { "name": t.name, "description": t.description, "parameters": t.parameters }
+            })
+        })
+        .collect();
+    let mut body = serde_json::json!({
+        "model": req.model,
+        "messages": openai_messages(&req.messages),
+        "temperature": 0.7,
+        "max_tokens": 4096,
+        "stream": true,
+    });
+    if !openai_tools.is_empty() {
+        body["tools"] = serde_json::Value::Array(openai_tools);
+        body["tool_choice"] = serde_json::Value::String("auto".to_string());
+    }
+    let url = format!("{}/chat/completions", base.trim_end_matches('/'));
+    let mut resp = http
+        .post(&url)
+        .header("Authorization", format!("Bearer {}", req.api_key))
+        .header("Content-Type", "application/json")
+        .header("Accept", "text/event-stream")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|_| (502, "AI-verbinding mislukt.".to_string()))?;
+    let status = resp.status().as_u16();
+    if status < 200 || status >= 300 {
+        let raw = resp.text().await.unwrap_or_default();
+        eprintln!("ai proxy: {} -> HTTP {}", req.provider, status);
+        return Err((status, provider_error(&req.provider, status, &raw)));
+    }
+
+    let stream = async_stream::stream! {
+        let mut buf = String::new();
+        let mut content = String::new();
+        let mut calls: std::collections::BTreeMap<u32, PendingToolCall> = std::collections::BTreeMap::new();
+        loop {
+            match resp.chunk().await {
+                Err(_) => {
+                    let msg = serde_json::to_string(
+                        &serde_json::json!({ "message": "AI-verbinding verbroken." }),
+                    )
+                    .unwrap_or_default();
+                    yield Ok(sse_data("error", &msg));
+                    break;
+                }
+                Ok(None) => break,
+                Ok(Some(bytes)) => {
+                    buf.push_str(&String::from_utf8_lossy(&bytes).replace("\r\n", "\n"));
+                }
+            }
+            for payload in split_sse_frames(&mut buf) {
+                if let Some(delta) = apply_openai_delta(&payload, &mut content, &mut calls) {
+                    let msg = serde_json::to_string(&serde_json::json!({ "delta": delta }))
+                        .unwrap_or_default();
+                    yield Ok(sse_data("text", &msg));
+                }
+            }
+        }
+        let tool_calls = assemble_tool_calls(calls);
+        let done = serde_json::to_string(&serde_json::json!({
+            "content": content,
+            "toolCalls": tool_calls,
+        }))
+        .unwrap_or_default();
+        yield Ok(sse_data("done", &done));
+    };
+    Ok(
+        axum::response::sse::Sse::new(
+            Box::pin(stream)
+                as Pin<
+                    Box<
+                        dyn futures_core::Stream<
+                                Item = Result<axum::response::sse::Event, std::convert::Infallible>,
+                            > + Send,
+                    >,
+                >,
+        )
+        .keep_alive(axum::response::sse::KeepAlive::default()),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn history_accepts_snake_case_tool_keys() {
+        // The web loop replays assistant tool calls the same way the
+        // desktop AiMessage serializes (snake_case); the camelCase proxy
+        // contract must accept both spellings or strict providers
+        // (Mistral) reject the turn.
+        let body: ChatRequest = serde_json::from_value(serde_json::json!({
+            "provider": "mistral",
+            "model": "mistral-small-latest",
+            "apiKey": "x",
+            "messages": [
+                {"role": "user", "content": "hoe laat is het?"},
+                {"role": "assistant", "content": "",
+                 "tool_calls": [{"id": "c1", "name": "get_current_time", "args": {}}]},
+                {"role": "tool", "content": "{...}", "tool_call_id": "c1",
+                 "name": "get_current_time"}
+            ],
+            "stream": true
+        }))
+        .expect("history must deserialize");
+        let assistant = &body.messages[1];
+        let tcs = assistant.tool_calls.as_ref().expect("tool_calls kept");
+        assert_eq!(tcs.len(), 1);
+        assert_eq!(tcs[0].id, "c1");
+        let tool = &body.messages[2];
+        assert_eq!(tool.tool_call_id.as_deref(), Some("c1"));
+        // And the replayed calls reach the provider payload intact.
+        let out = openai_messages(&body.messages);
+        assert!(out[1].get("tool_calls").is_some());
+        assert_eq!(out[2].get("tool_call_id").unwrap(), "c1");
+    }
+
+    #[test]
+    fn sse_frames_split_on_blank_lines_and_keep_remainder() {
+        let mut buf = "data: {\"a\":1}\n\ndata: {\"b\":2".to_string();
+        let frames = split_sse_frames(&mut buf);
+        assert_eq!(frames, vec!["{\"a\":1}"]);
+        assert_eq!(buf, "data: {\"b\":2");
+        buf.push_str("}\n\n");
+        let frames = split_sse_frames(&mut buf);
+        assert_eq!(frames, vec!["{\"b\":2}"]);
+        assert!(buf.is_empty());
+    }
+
+    #[test]
+    fn sse_frames_ignore_comments_and_join_data_lines() {
+        let mut buf = ": ping\n\ndata: line1\ndata: line2\n\n".to_string();
+        let frames = split_sse_frames(&mut buf);
+        assert_eq!(frames, vec!["line1\nline2"]);
+    }
+
+    #[test]
+    fn delta_assembly_concatenates_text_and_tool_args() {
+        let mut content = String::new();
+        let mut calls = std::collections::BTreeMap::new();
+        let d1 = r#"{"choices":[{"delta":{"content":"Hallo","tool_calls":[{"index":0,"id":"call_1","function":{"name":"get_grades","arguments":"{\"to"}}]}}]}"#;
+        let d2 = r#"{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"p\":5}"}}]}}]}"#;
+        assert_eq!(
+            apply_openai_delta(d1, &mut content, &mut calls),
+            Some("Hallo".to_string())
+        );
+        assert_eq!(apply_openai_delta(d2, &mut content, &mut calls), None);
+        assert_eq!(content, "Hallo");
+        assert_eq!(apply_openai_delta("[DONE]", &mut content, &mut calls), None);
+        assert_eq!(apply_openai_delta("not json", &mut content, &mut calls), None);
+        let assembled = assemble_tool_calls(calls);
+        assert_eq!(assembled.len(), 1);
+        assert_eq!(assembled[0].id, "call_1");
+        assert_eq!(assembled[0].name, "get_grades");
+        assert_eq!(assembled[0].arguments, serde_json::json!({"top": 5}));
+    }
 
     #[test]
     fn openai_tool_message_roundtrip() {

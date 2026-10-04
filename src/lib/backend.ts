@@ -36,11 +36,19 @@ export class WebApiError extends Error {
   readonly status: number;
   /** Server correlation ID — matches a line in the Render logs. */
   ref?: string;
-  constructor(status: number, message: string, ref?: string) {
+  /** Honoured `Retry-After` (ms), when the server sent one. */
+  retryAfterMs?: number;
+  constructor(
+    status: number,
+    message: string,
+    ref?: string,
+    retryAfterMs?: number,
+  ) {
     super(message);
     this.name = "WebApiError";
     this.status = status;
     this.ref = ref;
+    this.retryAfterMs = retryAfterMs;
   }
   /** Display string with the ref appended when present. */
   withRef(): string {
@@ -49,7 +57,11 @@ export class WebApiError extends Error {
 }
 
 function errorRef(data: unknown): string | undefined {
-  if (data && typeof data === "object" && typeof (data as Record<string, unknown>)["ref"] === "string") {
+  if (
+    data &&
+    typeof data === "object" &&
+    typeof (data as Record<string, unknown>)["ref"] === "string"
+  ) {
     return (data as Record<string, unknown>)["ref"] as string;
   }
   return undefined;
@@ -58,16 +70,83 @@ function errorRef(data: unknown): string | undefined {
 /** Throw a WebApiError preferring the server's Dutch message + ref. */
 async function throwApiError(res: Response, fallback: string): Promise<never> {
   const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
-  const message = typeof data["error"] === "string" ? (data["error"] as string) : fallback;
-  throw new WebApiError(res.status, message, errorRef(data));
+  const message =
+    typeof data["error"] === "string" ? (data["error"] as string) : fallback;
+  throw new WebApiError(res.status, message, errorRef(data), retryAfterMs(res));
+}
+
+/** Parse `Retry-After` (seconds or HTTP-date) into ms, if present. */
+function retryAfterMs(res: Response): number | undefined {
+  const raw = res.headers.get("retry-after");
+  if (!raw) return undefined;
+  const secs = Number(raw);
+  if (Number.isFinite(secs) && secs >= 0) return secs * 1000;
+  const at = Date.parse(raw);
+  if (Number.isFinite(at)) return Math.max(0, at - Date.now());
+  return undefined;
+}
+
+export interface SseFrame {
+  event: string;
+  /** JSON-parsed payload, or the raw string when it isn't JSON. */
+  data: unknown;
+}
+
+/**
+ * Pull complete SSE frames off the front of `buffer` (mirrors the proxy's
+ * `split_sse_frames`). Comment-only frames are dropped; the remainder stays
+ * buffered for the next chunk. Never throws.
+ */
+export function extractSseEvents(buffer: string): {
+  events: SseFrame[];
+  rest: string;
+} {
+  const events: SseFrame[] = [];
+  let rest = buffer.replace(/\r\n/g, "\n");
+  for (;;) {
+    const idx = rest.indexOf("\n\n");
+    if (idx < 0) break;
+    const frame = rest.slice(0, idx);
+    rest = rest.slice(idx + 2);
+    let event = "message";
+    const dataLines: string[] = [];
+    for (const line of frame.split("\n")) {
+      if (line.startsWith(":")) continue;
+      const colon = line.indexOf(":");
+      if (colon < 0) continue;
+      const field = line.slice(0, colon).trim();
+      const value = line.slice(colon + 1).replace(/^ /, "");
+      if (field === "event") event = value.trim() || "message";
+      else if (field === "data") dataLines.push(value);
+    }
+    if (dataLines.length === 0) continue;
+    const raw = dataLines.join("\n");
+    let data: unknown = raw;
+    try {
+      data = JSON.parse(raw);
+    } catch {
+      // Keep the raw string.
+    }
+    events.push({ event, data });
+  }
+  return { events, rest };
 }
 
 export interface Backend {
   readonly kind: "tauri" | "web";
   /** Password-form login (school + username + password). No browser redirect. */
-  login(school: string, username: string, password: string): Promise<PasswordLoginResult>;
+  login(
+    school: string,
+    username: string,
+    password: string,
+  ): Promise<PasswordLoginResult>;
   /** Tier-A passthrough: one authenticated Magister call. */
-  magister<T>(tokens: SessionTokens, method: MagisterMethod, path: string, body?: unknown): Promise<T>;
+  magister<T>(
+    tokens: SessionTokens,
+    method: MagisterMethod,
+    path: string,
+    body?: unknown,
+  ): Promise<T>;
   /** Refresh an expiring session. Returns fresh tokens. */
   refresh(tokens: SessionTokens): Promise<SessionTokens>;
   logout(tokens: SessionTokens): Promise<void>;
@@ -77,13 +156,24 @@ export interface Backend {
 export class TauriBackend implements Backend {
   readonly kind = "tauri" as const;
 
-  async login(_school: string, _username: string, _password: string): Promise<PasswordLoginResult> {
+  async login(
+    _school: string,
+    _username: string,
+    _password: string,
+  ): Promise<PasswordLoginResult> {
     // Desktop keeps the OAuth system-browser flow (startLoginFlow +
     // deep-link callback in +layout.svelte). Password login is web-only.
-    throw new Error("Password login is only available in the web build; use Magister login in this app.");
+    throw new Error(
+      "Password login is only available in the web build; use Magister login in this app.",
+    );
   }
 
-  async magister<T>(_tokens: SessionTokens, _method: MagisterMethod, _path: string, _body?: unknown): Promise<T> {
+  async magister<T>(
+    _tokens: SessionTokens,
+    _method: MagisterMethod,
+    _path: string,
+    _body?: unknown,
+  ): Promise<T> {
     // Tier-A calls on desktop stay as the existing per-command invoke()
     // wrappers in api.ts (they add Tier-B shaping in Rust today).
     throw new Error("Use the existing api.ts command wrappers on desktop.");
@@ -92,7 +182,8 @@ export class TauriBackend implements Backend {
   async refresh(tokens: SessionTokens): Promise<SessionTokens> {
     const api = await import("./api");
     const status = await api.restoreSession();
-    if (status !== "restored") throw new Error(`Session refresh failed: ${status}`);
+    if (status !== "restored")
+      throw new Error(`Session refresh failed: ${status}`);
     return tokens;
   }
 
@@ -103,7 +194,9 @@ export class TauriBackend implements Backend {
 }
 
 function apiBase(): string {
-  const env = (import.meta as unknown as { env?: Record<string, string | undefined> }).env;
+  const env = (
+    import.meta as unknown as { env?: Record<string, string | undefined> }
+  ).env;
   return env?.["VITE_API_URL"] ?? "/api";
 }
 
@@ -116,7 +209,11 @@ export class WebBackend implements Backend {
     this.base = (base ?? apiBase()).replace(/\/$/, "");
   }
 
-  async login(school: string, username: string, password: string): Promise<PasswordLoginResult> {
+  async login(
+    school: string,
+    username: string,
+    password: string,
+  ): Promise<PasswordLoginResult> {
     let res: Response;
     try {
       res = await fetch(`${this.base}/auth/login`, {
@@ -129,8 +226,15 @@ export class WebBackend implements Backend {
     }
     if (!res.ok) {
       if (res.status === 429) {
-        const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
-        throw new WebApiError(429, "Te vaak geprobeerd, wacht een minuut.", errorRef(data));
+        const data = (await res.json().catch(() => ({}))) as Record<
+          string,
+          unknown
+        >;
+        throw new WebApiError(
+          429,
+          "Te vaak geprobeerd, wacht een minuut.",
+          errorRef(data),
+        );
       }
       await throwApiError(res, `Inloggen mislukt (HTTP ${res.status})`);
     }
@@ -138,15 +242,22 @@ export class WebBackend implements Backend {
   }
 
   /** Raw-bytes GET (photos, files). 404 → null (no photo set). */
-  async magisterBytes(tokens: SessionTokens, path: string): Promise<Uint8Array | null> {
-    const res = await fetch(`${this.base}/magister/${path.replace(/^\//, "")}`, {
-      headers: {
-        Authorization: `Bearer ${tokens.accessToken}`,
-        "X-Magister-Endpoint": tokens.apiEndpoint,
+  async magisterBytes(
+    tokens: SessionTokens,
+    path: string,
+  ): Promise<Uint8Array | null> {
+    const res = await fetch(
+      `${this.base}/magister/${path.replace(/^\//, "")}`,
+      {
+        headers: {
+          Authorization: `Bearer ${tokens.accessToken}`,
+          "X-Magister-Endpoint": tokens.apiEndpoint,
+        },
       },
-    });
+    );
     if (res.status === 404) return null;
-    if (!res.ok) await throwApiError(res, `Verzoek mislukt (HTTP ${res.status})`);
+    if (!res.ok)
+      await throwApiError(res, `Verzoek mislukt (HTTP ${res.status})`);
     return new Uint8Array(await res.arrayBuffer());
   }
 
@@ -154,37 +265,165 @@ export class WebBackend implements Backend {
    * BYO-key AI forward (`chat` | `validate` | `models`). The API key travels
    * per-request in memory only — the server never logs, stores, or caches it.
    */
-  async aiProxy<T>(op: "chat" | "validate" | "models", body: unknown): Promise<T> {
+  async aiProxy<T>(
+    op: "chat" | "validate" | "models",
+    body: unknown,
+    opts?: { signal?: AbortSignal },
+  ): Promise<T> {
     let res: Response;
     try {
       res = await fetch(`${this.base}/ai/${op}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
+        signal: opts?.signal,
       });
-    } catch {
+    } catch (e) {
+      // Abort must stay an abort (classifyAiError maps it to "stopped"),
+      // never a faux offline error.
+      if (
+        opts?.signal?.aborted ||
+        (e instanceof Error && e.name === "AbortError")
+      ) {
+        throw new DOMException("Aborted", "AbortError");
+      }
       throw new WebApiError(0, "Geen verbinding met de server.");
     }
-    if (!res.ok) await throwApiError(res, `AI-verzoek mislukt (HTTP ${res.status})`);
-    return ((await res.json().catch(() => ({}))) as T);
+    if (!res.ok)
+      await throwApiError(res, `AI-verzoek mislukt (HTTP ${res.status})`);
+    return (await res.json().catch(() => ({}))) as T;
   }
 
-  async magister<T>(tokens: SessionTokens, method: MagisterMethod, path: string, body?: unknown): Promise<T> {
-    const res = await fetch(`${this.base}/magister/${path.replace(/^\//, "")}`, {
-      method,
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-        Authorization: `Bearer ${tokens.accessToken}`,
-        "X-Magister-Endpoint": tokens.apiEndpoint,
-      },
-      body: body === undefined ? undefined : JSON.stringify(body),
-    });
-    if (res.status === 429) {
-      const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
-      throw new WebApiError(429, "Te veel verzoeken, probeer het later opnieuw", errorRef(data));
+  /**
+   * Streaming AI forward: same `chat` op with `stream: true`. The proxy
+   * emits unified SSE (`text` deltas + final `done`); anything else
+   * (older server, fallback path) arrives as plain JSON and is handled
+   * the same way. Aborts stay aborts.
+   */
+  async aiProxyStreamChat(
+    body: unknown,
+    opts: { signal?: AbortSignal; onText: (delta: string) => void },
+  ): Promise<{
+    content: string;
+    toolCalls: Array<{ id: string; name: string; arguments: unknown }>;
+  }> {
+    let res: Response;
+    try {
+      res = await fetch(`${this.base}/ai/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...(body as Record<string, unknown>),
+          stream: true,
+        }),
+        signal: opts?.signal,
+      });
+    } catch (e) {
+      if (
+        opts?.signal?.aborted ||
+        (e instanceof Error && e.name === "AbortError")
+      ) {
+        throw new DOMException("Aborted", "AbortError");
+      }
+      throw new WebApiError(0, "Geen verbinding met de server.");
     }
-    if (!res.ok) await throwApiError(res, `Magister-verzoek mislukt (HTTP ${res.status})`);
+    if (!res.ok)
+      await throwApiError(res, `AI-verzoek mislukt (HTTP ${res.status})`);
+    const contentType = res.headers.get("content-type") ?? "";
+    if (!contentType.includes("text/event-stream") || !res.body) {
+      // Fallback: full JSON body (older proxy or provider fallback path).
+      const data = (await res.json().catch(() => ({}))) as {
+        content?: string;
+        toolCalls?: Array<{ id: string; name: string; arguments: unknown }>;
+      };
+      const content = data.content ?? "";
+      if (content) opts.onText(content);
+      return { content, toolCalls: data.toolCalls ?? [] };
+    }
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let content = "";
+    for (;;) {
+      const { done, value } = await reader.read().catch((e: unknown) => {
+        if (
+          opts?.signal?.aborted ||
+          (e instanceof Error && e.name === "AbortError")
+        ) {
+          throw new DOMException("Aborted", "AbortError");
+        }
+        throw new WebApiError(0, "AI-verbinding verbroken.");
+      });
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const { events, rest } = extractSseEvents(buffer);
+      buffer = rest;
+      for (const ev of events) {
+        const payload = (ev.data ?? {}) as Record<string, unknown>;
+        if (ev.event === "text") {
+          const delta = payload["delta"];
+          if (typeof delta === "string" && delta) {
+            content += delta;
+            opts.onText(delta);
+          }
+        } else if (ev.event === "done") {
+          const data = payload["content"];
+          const calls = payload["toolCalls"];
+          reader.cancel().catch(() => {});
+          return {
+            content: typeof data === "string" ? data : content,
+            toolCalls: Array.isArray(calls)
+              ? (calls as Array<{
+                  id: string;
+                  name: string;
+                  arguments: unknown;
+                }>)
+              : [],
+          };
+        } else if (ev.event === "error") {
+          throw new Error(
+            typeof payload["message"] === "string" && payload["message"]
+              ? (payload["message"] as string)
+              : "AI-verzoek mislukt.",
+          );
+        }
+      }
+    }
+    return { content, toolCalls: [] };
+  }
+
+  async magister<T>(
+    tokens: SessionTokens,
+    method: MagisterMethod,
+    path: string,
+    body?: unknown,
+  ): Promise<T> {
+    const res = await fetch(
+      `${this.base}/magister/${path.replace(/^\//, "")}`,
+      {
+        method,
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          Authorization: `Bearer ${tokens.accessToken}`,
+          "X-Magister-Endpoint": tokens.apiEndpoint,
+        },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      },
+    );
+    if (res.status === 429) {
+      const data = (await res.json().catch(() => ({}))) as Record<
+        string,
+        unknown
+      >;
+      throw new WebApiError(
+        429,
+        "Te veel verzoeken, probeer het later opnieuw",
+        errorRef(data),
+      );
+    }
+    if (!res.ok)
+      await throwApiError(res, `Magister-verzoek mislukt (HTTP ${res.status})`);
     return (await res.json()) as T;
   }
 
@@ -194,12 +433,16 @@ export class WebBackend implements Backend {
       res = await fetch(`${this.base}/auth/refresh`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ refreshToken: tokens.refreshToken, apiEndpoint: tokens.apiEndpoint }),
+        body: JSON.stringify({
+          refreshToken: tokens.refreshToken,
+          apiEndpoint: tokens.apiEndpoint,
+        }),
       });
     } catch {
       throw new WebApiError(0, "Geen verbinding met de server.");
     }
-    if (!res.ok) await throwApiError(res, `Verversen mislukt (HTTP ${res.status})`);
+    if (!res.ok)
+      await throwApiError(res, `Verversen mislukt (HTTP ${res.status})`);
     const fresh = (await res.json()) as SessionTokens;
     // The server never learns personId on refresh; keep the browser's own.
     if (fresh.personId == null) fresh.personId = tokens.personId;
@@ -222,7 +465,10 @@ export class WebBackend implements Backend {
 
 /** Feature-detect the Tauri runtime (same check +layout.svelte already uses). */
 export function currentBackend(): Backend {
-  if (typeof window !== "undefined" && (window as unknown as { __TAURI__?: unknown }).__TAURI__) {
+  if (
+    typeof window !== "undefined" &&
+    (window as unknown as { __TAURI__?: unknown }).__TAURI__
+  ) {
     return new TauriBackend();
   }
   return new WebBackend();

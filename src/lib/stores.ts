@@ -22,7 +22,9 @@ export const resumedAt = writable<number>(Date.now());
 // (offline at cold boot) from a genuine logout. When `unavailable`, the
 // login screen is NOT shown; the app keeps an offline indicator and
 // retries on the next resume.
-export const restoreStatus = writable<"restored" | "logged_out" | "unavailable" | null>(null);
+export const restoreStatus = writable<
+  "restored" | "logged_out" | "unavailable" | null
+>(null);
 
 // Sync status
 export const lastSyncTime = writable<Date | null>(null);
@@ -76,6 +78,9 @@ export const DEFAULT_SETTINGS = {
   showBreakSeparator: false,
   breakThresholdMinutes: 20,
   downloadDir: "",
+  // AI chat history (Phase 5): local only, never sent anywhere.
+  saveAiChats: true,
+  aiChatsRetentionDays: 90 as number | null, // 30 | 90 | null (forever)
   // AI Schedule
   aiSchedule: {
     enabled: true,
@@ -99,18 +104,26 @@ export function loadSettings() {
   if (savedSettings) {
     try {
       const parsed = JSON.parse(savedSettings);
-      const merged: typeof DEFAULT_SETTINGS = { ...DEFAULT_SETTINGS, ...parsed };
+      const merged: typeof DEFAULT_SETTINGS = {
+        ...DEFAULT_SETTINGS,
+        ...parsed,
+      };
       // Deep merge nested aiSchedule so partial stored objects don't lose defaults
       if (parsed.aiSchedule) {
-        merged.aiSchedule = { ...DEFAULT_SETTINGS.aiSchedule, ...parsed.aiSchedule };
+        merged.aiSchedule = {
+          ...DEFAULT_SETTINGS.aiSchedule,
+          ...parsed.aiSchedule,
+        };
         if (!Array.isArray(merged.aiSchedule.blockedTimes)) {
           merged.aiSchedule.blockedTimes = [];
         }
         if (typeof merged.aiSchedule.afterSchoolBufferMin !== "number") {
-          merged.aiSchedule.afterSchoolBufferMin = DEFAULT_SETTINGS.aiSchedule.afterSchoolBufferMin;
+          merged.aiSchedule.afterSchoolBufferMin =
+            DEFAULT_SETTINGS.aiSchedule.afterSchoolBufferMin;
         }
         if (typeof merged.aiSchedule.planInSchoolGaps !== "boolean") {
-          merged.aiSchedule.planInSchoolGaps = DEFAULT_SETTINGS.aiSchedule.planInSchoolGaps;
+          merged.aiSchedule.planInSchoolGaps =
+            DEFAULT_SETTINGS.aiSchedule.planInSchoolGaps;
         }
       }
       return merged;
@@ -157,7 +170,9 @@ if (typeof window !== "undefined") {
     const notifPrefs = pickNotificationSettings(val);
     const changed =
       lastSyncedNotifPrefs === null ||
-      NOTIFICATION_SETTING_KEYS.some((key) => notifPrefs[key] !== lastSyncedNotifPrefs![key]);
+      NOTIFICATION_SETTING_KEYS.some(
+        (key) => notifPrefs[key] !== lastSyncedNotifPrefs![key],
+      );
     if (changed) {
       lastSyncedNotifPrefs = notifPrefs;
       syncPreferencesToAndroid(val);

@@ -1,6 +1,6 @@
 [package]
 name = "friday"
-version = "2.9.10"
+version = "2.10.0"
 description = "A Tauri App"
 authors = ["you"]
 edition = "2021"
@@ -37,10 +37,12 @@ log = "0.4"
 tauri-plugin-log = "2"
 tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+# preserve_order keeps JSON object insertion order (BTreeMap would sort keys),
+# so the AI budgeter's `_truncated` marker serialises as the last key.
+serde_json = { version = "1", features = ["preserve_order"] }
 # OS-level secure storage for secrets (Magister tokens, AI API key).
 keyring-core = "1.0"
-reqwest = { version = "0.13", features = ["json", "rustls"], default-features = false }
+reqwest = { version = "0.13", features = ["json", "rustls", "stream"], default-features = false }
 # Used directly by src/tls.rs to build a bundled-root TLS config (see that
 # file for why): both are already pulled in transitively by reqwest's
 # "rustls" feature, this just makes the version explicit since we now
@@ -52,6 +54,9 @@ sha2 = "0.11"
 base64 = "0.23"
 rand = "0.10"
 chrono = { version = "0.4", features = ["serde"] }
+# IANA time-zone database so AI "today" resolves in Europe/Amsterdam
+# (ai::time, Phase 1 of fixes/friday-ai-upgrade-plan.md) instead of UTC.
+chrono-tz = "0.10"
 # Trimmed from "full" — audited actual tokio:: usage in src/ (sync::Mutex, jni.rs's
 # Runtime::new() for the JNI entry point, #[tokio::test], and tokio::time::sleep for
 # the Part B 5A rate-limit retry backoff in client.rs). Note: Tauri and reqwest likely

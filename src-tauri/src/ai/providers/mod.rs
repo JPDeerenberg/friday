@@ -76,6 +76,16 @@ pub struct AiConfig {
     /// round-tripping the raw secret. `api_key` itself is returned empty.
     #[serde(default)]
     pub has_api_key: bool,
+    /// Whether the AI may edit AI-Geheugen notes (default on, with a switch).
+    #[serde(default = "default_true")]
+    pub ai_notes_ai_can_edit: bool,
+    /// Whether notes are injected into new chats (default on, with a switch).
+    #[serde(default = "default_true")]
+    pub ai_notes_use_in_chats: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 impl Default for AiConfig {
@@ -88,6 +98,8 @@ impl Default for AiConfig {
             provider: AiProviderType::OpenAI,
             use_data_access: true,
             has_api_key: false,
+            ai_notes_ai_can_edit: true,
+            ai_notes_use_in_chats: true,
         }
     }
 }
@@ -142,6 +154,12 @@ pub struct AiChatResult {
     pub tool_calls: Vec<ToolCall>,
 }
 
+/// A streamed chat event for incremental UI render.
+#[derive(Debug, Clone)]
+pub enum StreamEvent {
+    TextDelta(String),
+}
+
 /// Trait that all AI providers must implement.
 #[async_trait::async_trait]
 pub trait AiProvider: Send + Sync {
@@ -152,6 +170,31 @@ pub trait AiProvider: Send + Sync {
         messages: &[AiMessage],
         tools: &[ToolDef],
     ) -> Result<AiChatResult, String>;
+
+    /// Streaming chat: emits text deltas as they arrive, then returns the
+    /// assembled result (same shape as [`chat`](Self::chat)). `should_stop`
+    /// is polled per chunk so Stop stays responsive; on stop the partial
+    /// content returns with no tool calls (the loop ends the turn instead
+    /// of executing half-received calls). The default implementation runs
+    /// the non-streaming call and emits the whole content once (Anthropic,
+    /// Gemini).
+    async fn chat_stream(
+        &self,
+        config: &AiConfig,
+        messages: &[AiMessage],
+        tools: &[ToolDef],
+        should_stop: &(dyn Fn() -> bool + Send + Sync),
+        on_event: &mut (dyn FnMut(StreamEvent) + Send),
+    ) -> Result<AiChatResult, String> {
+        if should_stop() {
+            return Err("Aborted".to_string());
+        }
+        let out = self.chat(config, messages, tools).await?;
+        if !out.content.is_empty() {
+            on_event(StreamEvent::TextDelta(out.content.clone()));
+        }
+        Ok(out)
+    }
 
     /// Validate the API key.
     async fn validate_key(&self, config: &AiConfig) -> Result<bool, String>;

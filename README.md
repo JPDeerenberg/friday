@@ -16,7 +16,7 @@ Friday is an unofficial, open-source Magister client for students: agenda, cijfe
 - **Berichten** — inbox, folders, rich-text composing and attachments
 - **Opdrachten** — homework/tests, deadlines, submitted status
 - **Afwezigheid, activiteiten, bronnen, leermiddelen, studiewijzers** — the rest of Magister, in the same UI
-- **AI assistant + Friday's Plan** — chat over your school data (read-only tools + confirm-before-write) and automatic study planning from your agenda and deadlines (opt-in, needs an API key)
+- **AI assistant + Friday's Plan** — chat over your school data (read-only tools + confirm-before-write) and automatic study planning from your agenda and deadlines (opt-in, needs an API key). Remembers facts in AI Geheugen, keeps chat history, reads attachments itself and streams answers live
 - **Exports** — agenda/grades export (incl. Android share to Downloads)
 - **Android extras** — background sync with grade/homework notifications and automatic Do-Not-Disturb around lessons
 - **Offline-friendly** — short-lived cache with stale-while-revalidate, so reopening the app feels instant
@@ -32,7 +32,6 @@ The link above runs entirely as a static site + a tiny stateless API:
 3. Optional: _Share → Add to Home Screen_ for a fullscreen PWA experience.
 
 How your data is handled there: the frontend talks to `https://friday-api-n772.onrender.com/api` (Render free tier). The server keeps **no database and no sessions** — it only forwards your requests to Magister. Your tokens live in **your browser's IndexedDB**, your password is used for the one login call and then discarded.
-
 
 ---
 
@@ -53,11 +52,11 @@ docker compose up -d --build
 - Requirements: a VPS with ports 80/443 open and a DNS A-record pointing at it.
 - Update later with `docker compose pull && docker compose up -d --build`.
 
-| Variable | Required | What it does |
-|---|---|---|
-| `DOMAIN` | yes | Bare domain (no scheme); Caddy provisions/renews HTTPS for it |
-| `ALLOWED_ORIGINS` | no | Comma-separated origins allowed to call the API. Unset = permissive, which is safe because auth is per-request Bearer headers, never cookies |
-| `RUST_LOG` | no | Log verbosity for `web-api` (default `info`) |
+| Variable          | Required | What it does                                                                                                                                 |
+| ----------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DOMAIN`          | yes      | Bare domain (no scheme); Caddy provisions/renews HTTPS for it                                                                                |
+| `ALLOWED_ORIGINS` | no       | Comma-separated origins allowed to call the API. Unset = permissive, which is safe because auth is per-request Bearer headers, never cookies |
+| `RUST_LOG`        | no       | Log verbosity for `web-api` (default `info`)                                                                                                 |
 
 ### Option B — free tier (GitHub Pages + Render, $0)
 
@@ -121,10 +120,10 @@ Desktop / Android ──invoke──▶ src-tauri (Tauri v2 commands) ──▶ 
 
 ### How login works
 
-| App | Flow |
-|---|---|
+| App               | Flow                                                                                                                               |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
 | Desktop / Android | OAuth in the system browser, `m6loapp://` deep-link callback; tokens in the OS keyring (`secure_store`), metadata in `tokens.json` |
-| Web | School + username + password form → one `/api/auth/login` call; tokens in browser IndexedDB; the server stores nothing |
+| Web               | School + username + password form → one `/api/auth/login` call; tokens in browser IndexedDB; the server stores nothing             |
 
 Refresh tokens rotate (single-use). The Rust client deduplicates concurrent refreshes (Dashboard fans out ~6 requests on resume) and serializes foreground-app vs Android `SyncWorker` refreshes through a 30s cross-process file lock — otherwise the loser gets a genuine `invalid_grant` and is logged out.
 

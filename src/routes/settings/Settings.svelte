@@ -1,57 +1,102 @@
 <script lang="ts">
-  import { userSettings } from '$lib/stores';
-  import { currentPage } from '$lib/stores';
-  import { triggerTestNotification, notifyNewMessage, notifyNewGrade, notifyDeadline, notifyCalendarChange,
-            triggerSync, getDebugInfo, getSyncStateDebug, clearSyncState, setSyncInterval, getSyncInterval, getNightSleepConfig, setNightSleepConfig, getDisableAllNotifications, setDisableAllNotifications, getDndAccessStatus, triggerDndTest,
-           exportAllData, exportDebugLog, clearDebugLogs, isWebBuild } from '$lib/api';
-  import { getAiConfig, setAiConfig, validateAiKey, listAiModels, type AiConfig, type AiProviderType, AI_PROVIDERS } from '$lib/ai';
-  import { sectionIcon } from '$lib/icons';
-  import { updateStatus, refreshUpdateStatus, getCurrentVersion } from '$lib/updates';
-  import { openUrl } from '@tauri-apps/plugin-opener';
-  import ColorSwatchPicker from '$lib/components/ColorSwatchPicker.svelte';
-  import Switch from '$lib/components/Switch.svelte';
-  import Button from '$lib/components/Button.svelte';
-  import Chip from '$lib/components/Chip.svelte';
-  import IconButton from '$lib/components/IconButton.svelte';
-  import { fade, fly, slide } from 'svelte/transition';
-  import { onMount } from 'svelte';
-  import { open } from '@tauri-apps/plugin-dialog';
+  import { userSettings } from "$lib/stores";
+  import { currentPage } from "$lib/stores";
+  import {
+    triggerTestNotification,
+    notifyNewMessage,
+    notifyNewGrade,
+    notifyDeadline,
+    notifyCalendarChange,
+    triggerSync,
+    getDebugInfo,
+    getSyncStateDebug,
+    clearSyncState,
+    setSyncInterval,
+    getSyncInterval,
+    getNightSleepConfig,
+    setNightSleepConfig,
+    getDisableAllNotifications,
+    setDisableAllNotifications,
+    getDndAccessStatus,
+    triggerDndTest,
+    exportAllData,
+    exportDebugLog,
+    clearDebugLogs,
+    isWebBuild,
+  } from "$lib/api";
+  import {
+    getAiConfig,
+    setAiConfig,
+    validateAiKey,
+    listAiModels,
+    getAiDiagnostics,
+    clearAiDiagnostics,
+    type AiConfig,
+    type AiProviderType,
+    AI_PROVIDERS,
+  } from "$lib/ai";
+  import { diagnosticsText, type AiDiagEntry } from "$lib/ai-diagnostics";
+  import {
+    NOTES_MAX_CHARS,
+    clearNotes,
+    getNotes,
+    getNotesHistory,
+    restoreNotesRevision,
+    saveNotes,
+    type NotesRevision,
+  } from "$lib/ai-notes";
+  import { clearAllConversations } from "$lib/ai-chats";
+  import { sectionIcon } from "$lib/icons";
+  import {
+    updateStatus,
+    refreshUpdateStatus,
+    getCurrentVersion,
+  } from "$lib/updates";
+  import { openUrl } from "@tauri-apps/plugin-opener";
+  import ColorSwatchPicker from "$lib/components/ColorSwatchPicker.svelte";
+  import Switch from "$lib/components/Switch.svelte";
+  import Button from "$lib/components/Button.svelte";
+  import Chip from "$lib/components/Chip.svelte";
+  import IconButton from "$lib/components/IconButton.svelte";
+  import { fade, fly, slide } from "svelte/transition";
+  import { onMount, onDestroy } from "svelte";
+  import { open } from "@tauri-apps/plugin-dialog";
 
   let isMobile = $state(false);
   let testingNotification = $state<string | null>(null);
-  let activeSection = $state(isWebBuild() ? 'agenda' : 'ai');
-  let activeSectionTitle = $state('AI Assistent');
+  let activeSection = $state(isWebBuild() ? "agenda" : "ai");
+  let activeSectionTitle = $state("AI Assistent");
   // Layout: viewport-based (matches the app's `md` breakpoint), used for sidebar vs master–detail.
   let isDesktopLayout = $state(true);
   // Mobile master–detail: 'list' shows the section list, 'detail' shows a section page
-  let mobilePanel = $state<'list' | 'detail'>('list');
+  let mobilePanel = $state<"list" | "detail">("list");
 
   // Section navigation items (sidebar on desktop, list on mobile)
   // Web build additionally hides native-only sections (hideOnWeb).
   const isWeb = isWebBuild();
   const navItems = $derived.by(() => {
     const items = sections
-      .filter(s => !s.hideIfDesktop || isMobile)
-      .filter(s => !s.hideOnWeb || !isWeb)
-      .map(s => ({ id: s.id, title: s.title }));
-    items.push({ id: 'about', title: 'Over de app' });
+      .filter((s) => !s.hideIfDesktop || isMobile)
+      .filter((s) => !s.hideOnWeb || !isWeb)
+      .map((s) => ({ id: s.id, title: s.title }));
+    items.push({ id: "about", title: "Over de app" });
     return items;
   });
 
   function selectSection(id: string) {
     activeSection = id;
-    const match = navItems.find(n => n.id === id);
+    const match = navItems.find((n) => n.id === id);
     if (match) activeSectionTitle = match.title;
     if (!isDesktopLayout) {
-      mobilePanel = 'detail';
+      mobilePanel = "detail";
     } else {
       // Scroll the content area back to top for a clean section switch
-      document.querySelector('.settings-scroll')?.scrollTo({ top: 0 });
+      document.querySelector(".settings-scroll")?.scrollTo({ top: 0 });
     }
   }
 
   function goToSectionList() {
-    mobilePanel = 'list';
+    mobilePanel = "list";
   }
 
   // --- Debug panel state ---
@@ -69,7 +114,9 @@
   let disableSyncAtNightEnd = $state(7);
   let disableAllNotifications = $state(false);
   let dndAccessGranted = $state<boolean | null>(null);
-  let logs = $state<{ time: string; level: 'info' | 'warn' | 'error'; msg: string }[]>([]);
+  let logs = $state<
+    { time: string; level: "info" | "warn" | "error"; msg: string }[]
+  >([]);
   let exportBusy = $state(false);
   let exportResult = $state<string | null>(null);
   let logExportBusy = $state(false);
@@ -79,11 +126,11 @@
   let pickingDir = $state(false);
 
   // --- AI config state ---
-  let aiApiKey = $state('');
-  let aiBaseUrl = $state('https://api.openai.com/v1');
-  let aiModel = $state('gpt-4o-mini');
+  let aiApiKey = $state("");
+  let aiBaseUrl = $state("https://api.openai.com/v1");
+  let aiModel = $state("gpt-4o-mini");
   let aiEnabled = $state(false);
-  let aiProvider = $state<AiProviderType>('openai');
+  let aiProvider = $state<AiProviderType>("openai");
   let aiUseDataAccess = $state(true); // Whether to use tool calling with Magister data
   let aiTesting = $state(false);
   let aiTestResult = $state<string | null>(null);
@@ -93,153 +140,231 @@
   let aiShowKey = $state(false);
   /** True when an API key is stored on-device (the key itself is never sent to the frontend). */
   let aiHasKey = $state(false);
+  let aiNotesAiCanEdit = $state(true);
+  let aiNotesUseInChats = $state(true);
+
+  // --- AI Geheugen (notes) state ---
+  let notesText = $state("");
+  let notesLoadedText = $state("");
+  let notesRevision = $state(0);
+  let notesUpdatedAt = $state("");
+  let notesUpdatedBy = $state("user");
+  let notesLoading = $state(false);
+  let notesSaving = $state(false);
+  let notesError = $state<string | null>(null);
+  /** AI changed the notes while the user was editing — banner, text kept. */
+  let notesConflict = $state(false);
+  let notesShowHistory = $state(false);
+  let notesHistory = $state<NotesRevision[]>([]);
+  let notesHistoryLoading = $state(false);
+  let chatsCleared = $state(false);
+
+  // --- AI Diagnose (diagnostics ring buffer) state ---
+  let diagEntries = $state<AiDiagEntry[]>([]);
+  let diagLoading = $state(false);
+  let diagCopied = $state(false);
 
   // --- AI Schedule settings state ---
-  let blockedDay = $state('monday');
-  let blockedStart = $state('16:00');
-  let blockedEnd = $state('18:00');
+  let blockedDay = $state("monday");
+  let blockedStart = $state("16:00");
+  let blockedEnd = $state("18:00");
 
   // --- GitHub repo info ---
-  let repoStats = $state<{ stars: number; forks: number; openIssues: number } | null>(null);
+  let repoStats = $state<{
+    stars: number;
+    forks: number;
+    openIssues: number;
+  } | null>(null);
   let repoStatsError = $state<string | null>(null);
 
   // --- App version (dynamic, from Tauri) ---
-  let appVersion = $state('');
+  let appVersion = $state("");
 
   async function openReleasePage(url: string) {
     try {
       await openUrl(url);
     } catch (e) {
-      console.error('Release openen mislukt:', e);
+      console.error("Release openen mislukt:", e);
     }
   }
 
-  function addLog(level: 'info' | 'warn' | 'error', msg: string) {
-    const time = new Date().toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  function addLog(level: "info" | "warn" | "error", msg: string) {
+    const time = new Date().toLocaleTimeString("nl-NL", {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
     logs = [{ time, level, msg }, ...logs].slice(0, 50);
   }
 
-
-
   onMount(() => {
-    isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    isMobile =
+      /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
+        navigator.userAgent,
+      );
 
     // Viewport-based layout detection (matches the app's `md` Tailwind breakpoint = 768px)
-    const mq = window.matchMedia('(min-width: 768px)');
+    const mq = window.matchMedia("(min-width: 768px)");
     isDesktopLayout = mq.matches;
-    const onMqChange = (e: MediaQueryListEvent) => { isDesktopLayout = e.matches; };
-    mq.addEventListener('change', onMqChange);
-    window.addEventListener('resize', onMqChange as any);
+    const onMqChange = (e: MediaQueryListEvent) => {
+      isDesktopLayout = e.matches;
+    };
+    mq.addEventListener("change", onMqChange);
+    window.addEventListener("resize", onMqChange as any);
 
     // Load sync interval from native
-    getSyncInterval().then((interval) => {
+    getSyncInterval()
+      .then((interval) => {
         if (interval && interval > 0) {
-            intervalSeconds = interval;
+          intervalSeconds = interval;
         }
-    }).catch(e => {
+      })
+      .catch((e) => {
         console.error("Failed to load sync interval", e);
-    });
+      });
 
-    getNightSleepConfig().then((config) => {
+    getNightSleepConfig()
+      .then((config) => {
         if (config) {
-            disableSyncAtNight = config.enabled;
-            disableSyncAtNightStart = config.startHour;
-            disableSyncAtNightEnd = config.endHour;
+          disableSyncAtNight = config.enabled;
+          disableSyncAtNightStart = config.startHour;
+          disableSyncAtNightEnd = config.endHour;
         }
-    }).catch(e => {
+      })
+      .catch((e) => {
         console.error("Failed to load night sleep config", e);
-    });
+      });
 
-    getDisableAllNotifications().then((disabled) => {
+    getDisableAllNotifications()
+      .then((disabled) => {
         disableAllNotifications = disabled;
-    }).catch(e => {
+      })
+      .catch((e) => {
         console.error("Failed to load disable all notifications config", e);
-    });
+      });
 
-    getDndAccessStatus().then((granted) => {
+    getDndAccessStatus()
+      .then((granted) => {
         dndAccessGranted = granted;
-    }).catch(e => {
+      })
+      .catch((e) => {
         console.error("Failed to load DND access status", e);
-    });
+      });
 
-    document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'visible') {
-        getDndAccessStatus().then((granted) => { dndAccessGranted = granted; }).catch(() => {});
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") {
+        getDndAccessStatus()
+          .then((granted) => {
+            dndAccessGranted = granted;
+          })
+          .catch(() => {});
       }
     });
 
     // Fetch GitHub repo stats
-    fetch('https://api.github.com/repos/JPDeerenberg/friday')
-      .then(r => {
+    fetch("https://api.github.com/repos/JPDeerenberg/friday")
+      .then((r) => {
         if (!r.ok) throw new Error(`Status ${r.status}`);
         return r.json();
       })
-      .then(data => {
-        repoStats = { stars: data.stargazers_count, forks: data.forks_count, openIssues: data.open_issues_count };
+      .then((data) => {
+        repoStats = {
+          stars: data.stargazers_count,
+          forks: data.forks_count,
+          openIssues: data.open_issues_count,
+        };
       })
-      .catch(e => {
+      .catch((e) => {
         repoStatsError = `Kon repo info niet laden: ${e.message || e}`;
       });
 
     // Load running app version (dynamic — replaces the old hardcoded footer)
-    getCurrentVersion().then((v) => { appVersion = v; }).catch(() => {});
+    getCurrentVersion()
+      .then((v) => {
+        appVersion = v;
+      })
+      .catch(() => {});
 
     // Load AI config
-    getAiConfig().then((config: AiConfig) => {
-      aiApiKey = config.api_key;
-      aiHasKey = config.has_api_key;
-      aiBaseUrl = config.base_url;
-      aiModel = config.model;
-      aiEnabled = config.enabled;
-      aiProvider = config.provider || 'openai';
-      aiUseDataAccess = config.use_data_access ?? true;
-      aiLoaded = true;
-    }).catch(e => {
-      console.error("Failed to load AI config", e);
-      aiLoaded = true;
-    });
+    getAiConfig()
+      .then((config: AiConfig) => {
+        aiApiKey = config.api_key;
+        aiHasKey = config.has_api_key;
+        aiBaseUrl = config.base_url;
+        aiModel = config.model;
+        aiEnabled = config.enabled;
+        aiProvider = config.provider || "openai";
+        aiUseDataAccess = config.use_data_access ?? true;
+        aiNotesAiCanEdit = config.ai_notes_ai_can_edit ?? true;
+        aiNotesUseInChats = config.ai_notes_use_in_chats ?? true;
+        aiLoaded = true;
+      })
+      .catch((e) => {
+        console.error("Failed to load AI config", e);
+        aiLoaded = true;
+      });
   });
 
   function goBack() {
-    currentPage.set('dashboard');
+    currentPage.set("dashboard");
   }
 
   function updateToggle(id: string, value: boolean) {
-    userSettings.update(s => ({ ...s, [id]: value }));
+    userSettings.update((s) => ({ ...s, [id]: value }));
   }
 
   function updateNumber(id: string, value: string) {
     const num = parseFloat(value);
     if (!isNaN(num)) {
-      userSettings.update(s => ({ ...s, [id]: num }));
+      userSettings.update((s) => ({ ...s, [id]: num }));
     }
   }
 
-  async function testNotificationType(type: string, title: string, message: string) {
+  async function testNotificationType(
+    type: string,
+    title: string,
+    message: string,
+  ) {
     testingNotification = type;
     try {
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 100));
       switch (type) {
-        case 'message': await notifyNewMessage(title, message, 'Test Sender'); break;
-        case 'grade':   await notifyNewGrade(title, message, '12345'); break;
-        case 'deadline': await notifyDeadline(title, message, '67890'); break;
-        case 'calendar': await notifyCalendarChange(title, message, 'event_123'); break;
-        default: await triggerTestNotification();
+        case "message":
+          await notifyNewMessage(title, message, "Test Sender");
+          break;
+        case "grade":
+          await notifyNewGrade(title, message, "12345");
+          break;
+        case "deadline":
+          await notifyDeadline(title, message, "67890");
+          break;
+        case "calendar":
+          await notifyCalendarChange(title, message, "event_123");
+          break;
+        default:
+          await triggerTestNotification();
       }
     } catch (e) {
-      alert('Fout bij het versturen: ' + e);
+      alert("Fout bij het versturen: " + e);
     } finally {
       testingNotification = null;
     }
   }
 
   function isTestBusy(id: string) {
-    const type = id === 'testBasic' ? 'test' : id.startsWith('test') ? id.slice(4).toLowerCase() : null;
+    const type =
+      id === "testBasic"
+        ? "test"
+        : id.startsWith("test")
+          ? id.slice(4).toLowerCase()
+          : null;
     return type !== null && testingNotification === type;
   }
 
   function getCompactAction(section: any, settingId: string) {
-    return section.settings.find((setting: any) => setting.compactFor === settingId);
+    return section.settings.find(
+      (setting: any) => setting.compactFor === settingId,
+    );
   }
 
   async function openDndSettings() {
@@ -247,34 +372,37 @@
       if (dndAccessGranted === true) {
         await triggerDndTest();
       } else {
-        const { invoke } = await import('@tauri-apps/api/core');
-        await invoke('open_notification_policy_settings');
+        const { invoke } = await import("@tauri-apps/api/core");
+        await invoke("open_notification_policy_settings");
       }
     } catch (e) {
-      alert('Kan instellingen niet openen: ' + e);
+      alert("Kan instellingen niet openen: " + e);
     }
   }
 
   function dndActionLabel() {
-    return dndAccessGranted === true ? 'Test DND' : 'DND Toegang';
+    return dndAccessGranted === true ? "Test DND" : "DND Toegang";
   }
 
   function dndActionDescription() {
     return dndAccessGranted === true
-      ? 'Zet Niet Storen vijf seconden aan en daarna weer uit.'
-      : 'Open Android instellingen voor Niet Storen toegang.';
+      ? "Zet Niet Storen vijf seconden aan en daarna weer uit."
+      : "Open Android instellingen voor Niet Storen toegang.";
   }
 
   // --- Debug actions ---
   async function loadDebugInfo() {
     debugLoading = true;
-    addLog('info', 'Fetching debug info...');
+    addLog("info", "Fetching debug info...");
     try {
       const raw = await getDebugInfo();
       debugInfo = JSON.parse(raw);
-      addLog('info', `Debug info loaded. Token: ${debugInfo?.tokenFile?.exists ? '✅' : '❌'}`);
+      addLog(
+        "info",
+        `Debug info loaded. Token: ${debugInfo?.tokenFile?.exists ? "✅" : "❌"}`,
+      );
     } catch (e) {
-      addLog('error', `Failed to load debug info: ${e}`);
+      addLog("error", `Failed to load debug info: ${e}`);
       debugInfo = null;
     } finally {
       debugLoading = false;
@@ -282,52 +410,55 @@
   }
 
   async function loadSyncState() {
-    addLog('info', 'Fetching sync_state.json...');
+    addLog("info", "Fetching sync_state.json...");
     try {
       const result = await getSyncStateDebug();
       syncStateRaw = result;
       syncStateVisible = true;
-      if (result.startsWith('STATE_FILE_NOT_FOUND')) {
-        const paths = result.split('\n').slice(2).join(', ');
-        addLog('warn', `State file not found. Checked: ${paths}`);
+      if (result.startsWith("STATE_FILE_NOT_FOUND")) {
+        const paths = result.split("\n").slice(2).join(", ");
+        addLog("warn", `State file not found. Checked: ${paths}`);
       } else {
-        const pathLine = result.split('\n')[0] ?? '';
-        addLog('info', `State file gevonden — ${pathLine} (${result.length} chars)`);
+        const pathLine = result.split("\n")[0] ?? "";
+        addLog(
+          "info",
+          `State file gevonden — ${pathLine} (${result.length} chars)`,
+        );
       }
     } catch (e) {
-      addLog('error', `Failed to read state: ${e}`);
+      addLog("error", `Failed to read state: ${e}`);
       syncStateRaw = `Error: ${e}`;
       syncStateVisible = true;
     }
   }
 
   async function doClearState() {
-    addLog('warn', 'Clearing sync state...');
+    addLog("warn", "Clearing sync state...");
     try {
       clearStateResult = await clearSyncState();
-      addLog('info', `State cleared: ${clearStateResult}`);
+      addLog("info", `State cleared: ${clearStateResult}`);
       syncStateRaw = null;
       syncStateVisible = false;
-      await new Promise(r => setTimeout(r, 800));
+      await new Promise((r) => setTimeout(r, 800));
       await loadDebugInfo();
     } catch (e) {
       clearStateResult = `Error: ${e}`;
-      addLog('error', `Clear state failed: ${e}`);
+      addLog("error", `Clear state failed: ${e}`);
     }
   }
 
   async function doForceSync() {
     forceSyncBusy = true;
-    addLog('info', 'Triggering force sync...');
+    addLog("info", "Triggering force sync...");
     try {
       await triggerSync();
-      addLog('info', 'Force sync triggered ✅ — wachten op resultaat...');
-      await new Promise(r => setTimeout(r, 5000));
-      addLog('info', 'Auto-refresh na sync...');
+      addLog("info", "Force sync triggered ✅ — wachten op resultaat...");
+      await new Promise((r) => setTimeout(r, 5000));
+      addLog("info", "Auto-refresh na sync...");
       await loadDebugInfo();
       await loadSyncState();
     } catch (e) {
-      addLog('error', `Force sync failed: ${e}`);
+      addLog("error", `Force sync failed: ${e}`);
     } finally {
       forceSyncBusy = false;
     }
@@ -335,59 +466,72 @@
 
   async function applyInterval() {
     const clamped = Math.max(900, intervalSeconds); // WorkManager 15-min floor
-    addLog('info', `Setting interval to ${clamped}s (${Math.round(clamped/60)} min)...`);
+    addLog(
+      "info",
+      `Setting interval to ${clamped}s (${Math.round(clamped / 60)} min)...`,
+    );
     try {
       intervalResult = await setSyncInterval(clamped);
-      addLog('info', `Interval set: ${intervalResult}`);
+      addLog("info", `Interval set: ${intervalResult}`);
     } catch (e) {
       intervalResult = `Error: ${e}`;
-      addLog('error', `Set interval failed: ${e}`);
+      addLog("error", `Set interval failed: ${e}`);
     }
   }
 
   async function applyNightSleep() {
-    addLog('info', `Setting night sleep to ${disableSyncAtNight} (${disableSyncAtNightStart}-${disableSyncAtNightEnd})...`);
+    addLog(
+      "info",
+      `Setting night sleep to ${disableSyncAtNight} (${disableSyncAtNightStart}-${disableSyncAtNightEnd})...`,
+    );
     try {
-      const result = await setNightSleepConfig(disableSyncAtNight, disableSyncAtNightStart, disableSyncAtNightEnd);
-      addLog('info', `Night sleep set: ${result}`);
+      const result = await setNightSleepConfig(
+        disableSyncAtNight,
+        disableSyncAtNightStart,
+        disableSyncAtNightEnd,
+      );
+      addLog("info", `Night sleep set: ${result}`);
     } catch (e) {
-      addLog('error', `Set night sleep failed: ${e}`);
+      addLog("error", `Set night sleep failed: ${e}`);
     }
   }
 
   async function applyDisableAllNotifications() {
-    addLog('info', `Setting disable all notifications to ${disableAllNotifications}...`);
+    addLog(
+      "info",
+      `Setting disable all notifications to ${disableAllNotifications}...`,
+    );
     try {
       const result = await setDisableAllNotifications(disableAllNotifications);
-      addLog('info', `Disable notifications set: ${result}`);
+      addLog("info", `Disable notifications set: ${result}`);
     } catch (e) {
-      addLog('error', `Set disable notifications failed: ${e}`);
+      addLog("error", `Set disable notifications failed: ${e}`);
     }
   }
 
   async function doExport() {
     exportBusy = true;
     exportResult = null;
-    addLog('info', 'Exporteren gestart...');
+    addLog("info", "Exporteren gestart...");
     try {
       const result = await exportAllData();
       if (result.success) {
         if (isMobile) {
-          const zipFile = result.files[0] ?? 'friday-export.zip';
+          const zipFile = result.files[0] ?? "friday-export.zip";
           exportResult = `✅ 1 zip-bestand gedeeld: ${zipFile}`;
-          addLog('info', `Export voltooid: ${zipFile} gedeeld`);
+          addLog("info", `Export voltooid: ${zipFile} gedeeld`);
         } else {
-          const fileList = result.files.join(', ');
+          const fileList = result.files.join(", ");
           exportResult = `✅ ${result.files.length} bestanden geëxporteerd: ${fileList}`;
-          addLog('info', `Export voltooid: ${result.files.length} bestanden`);
+          addLog("info", `Export voltooid: ${result.files.length} bestanden`);
         }
       } else {
-        exportResult = `❌ Fout: ${result.error ?? 'Onbekende fout'}`;
-        addLog('error', `Export mislukt: ${result.error}`);
+        exportResult = `❌ Fout: ${result.error ?? "Onbekende fout"}`;
+        addLog("error", `Export mislukt: ${result.error}`);
       }
     } catch (e) {
       exportResult = `❌ Fout: ${e}`;
-      addLog('error', `Export mislukt: ${e}`);
+      addLog("error", `Export mislukt: ${e}`);
     } finally {
       exportBusy = false;
     }
@@ -396,46 +540,50 @@
   async function doExportLog() {
     logExportBusy = true;
     logExportResult = null;
-    addLog('info', 'Logbestand exporteren gestart...');
+    addLog("info", "Logbestand exporteren gestart...");
     try {
       const result = await exportDebugLog();
       if (result.success) {
         logExportResult = isMobile
           ? `✅ Logbestand gedeeld: ${result.file_name}`
           : `✅ Logbestand geëxporteerd: ${result.file_name}`;
-        addLog('info', `Log-export voltooid: ${result.file_name}`);
+        addLog("info", `Log-export voltooid: ${result.file_name}`);
       } else if (result.error) {
         logExportResult = `❌ Fout: ${result.error}`;
-        addLog('error', `Log-export mislukt: ${result.error}`);
+        addLog("error", `Log-export mislukt: ${result.error}`);
       }
       // else: user cancelled the folder picker on desktop — no message needed
     } catch (e) {
       logExportResult = `❌ Fout: ${e}`;
-      addLog('error', `Log-export mislukt: ${e}`);
+      addLog("error", `Log-export mislukt: ${e}`);
     } finally {
       logExportBusy = false;
     }
   }
 
   async function doClearLogs() {
-    if (!confirm('Weet je zeker dat je alle logbestanden wilt wissen? Oude logs zijn daarna niet meer terug te halen.')) {
+    if (
+      !confirm(
+        "Weet je zeker dat je alle logbestanden wilt wissen? Oude logs zijn daarna niet meer terug te halen.",
+      )
+    ) {
       return;
     }
     logClearBusy = true;
     logClearResult = null;
-    addLog('info', 'Logbestanden wissen gestart...');
+    addLog("info", "Logbestanden wissen gestart...");
     try {
       const result = await clearDebugLogs();
       if (result.success) {
         logClearResult = `✅ ${result.cleared} logbestand(en) gewist — nieuwe logs beginnen schoon.`;
-        addLog('info', `Logs gewist: ${result.cleared} bestand(en)`);
+        addLog("info", `Logs gewist: ${result.cleared} bestand(en)`);
       } else if (result.error) {
         logClearResult = `❌ Fout: ${result.error}`;
-        addLog('error', `Log-wissen mislukt: ${result.error}`);
+        addLog("error", `Log-wissen mislukt: ${result.error}`);
       }
     } catch (e) {
       logClearResult = `❌ Fout: ${e}`;
-      addLog('error', `Log-wissen mislukt: ${e}`);
+      addLog("error", `Log-wissen mislukt: ${e}`);
     } finally {
       logClearBusy = false;
     }
@@ -447,20 +595,20 @@
       const selected = await open({
         directory: true,
         multiple: false,
-        title: 'Kies downloadmap',
+        title: "Kies downloadmap",
       });
-      if (selected && typeof selected === 'string') {
-        userSettings.update(s => ({ ...s, downloadDir: selected }));
+      if (selected && typeof selected === "string") {
+        userSettings.update((s) => ({ ...s, downloadDir: selected }));
       }
     } catch (e) {
-      console.error('Map kiezen mislukt:', e);
+      console.error("Map kiezen mislukt:", e);
     } finally {
       pickingDir = false;
     }
   }
 
   function clearDownloadDir() {
-    userSettings.update(s => ({ ...s, downloadDir: '' }));
+    userSettings.update((s) => ({ ...s, downloadDir: "" }));
   }
 
   function toggleDebug() {
@@ -471,7 +619,16 @@
   async function saveAiConfig() {
     aiSaving = true;
     try {
-      await setAiConfig(aiApiKey, aiBaseUrl, aiModel, aiEnabled, aiProvider, aiUseDataAccess);
+      await setAiConfig(
+        aiApiKey,
+        aiBaseUrl,
+        aiModel,
+        aiEnabled,
+        aiProvider,
+        aiUseDataAccess,
+        aiNotesAiCanEdit,
+        aiNotesUseInChats,
+      );
       aiTestResult = null;
     } catch (e) {
       aiTestResult = `❌ Opslaan mislukt: ${e}`;
@@ -486,13 +643,23 @@
     aiTestResult = null;
     try {
       // Save first, then test
-      await setAiConfig(aiApiKey, aiBaseUrl, aiModel, true, aiProvider, aiUseDataAccess);
+      await setAiConfig(
+        aiApiKey,
+        aiBaseUrl,
+        aiModel,
+        true,
+        aiProvider,
+        aiUseDataAccess,
+        aiNotesAiCanEdit,
+        aiNotesUseInChats,
+      );
       const valid = await validateAiKey();
       if (valid) {
-        aiTestResult = '✅ Verbinding succesvol! AI is klaar voor gebruik.';
+        aiTestResult = "✅ Verbinding succesvol! AI is klaar voor gebruik.";
         aiTestSuccess = true;
       } else {
-        aiTestResult = '❌ Verbinding mislukt. Controleer je API-sleutel en URL.';
+        aiTestResult =
+          "❌ Verbinding mislukt. Controleer je API-sleutel en URL.";
         aiTestSuccess = false;
       }
     } catch (e) {
@@ -504,125 +671,531 @@
   }
 
   const aiBaseUrlPresets = [
-    { value: 'https://api.openai.com/v1', label: 'OpenAI' },
-    { value: 'http://localhost:11434/v1', label: 'Ollama (lokaal)' },
-    { value: 'http://localhost:1234/v1', label: 'LM Studio (lokaal)' },
+    { value: "https://api.openai.com/v1", label: "OpenAI" },
+    { value: "http://localhost:11434/v1", label: "Ollama (lokaal)" },
+    { value: "http://localhost:1234/v1", label: "LM Studio (lokaal)" },
   ];
+
+  // --- AI Geheugen (notes) ---
+  function applyNotesSnapshot(snap: {
+    content: string;
+    revision: number;
+    updated_at: string;
+    updated_by: string;
+  }) {
+    notesText = snap.content;
+    notesLoadedText = snap.content;
+    notesRevision = snap.revision;
+    notesUpdatedAt = snap.updated_at;
+    notesUpdatedBy = snap.updated_by;
+    notesConflict = false;
+    notesError = null;
+  }
+
+  async function loadNotes() {
+    notesLoading = true;
+    try {
+      applyNotesSnapshot(await getNotes());
+    } catch (e) {
+      notesError = `Notities laden mislukt: ${e}`;
+    } finally {
+      notesLoading = false;
+    }
+  }
+
+  function notesDirty(): boolean {
+    return notesText !== notesLoadedText;
+  }
+
+  function notesCount(): number {
+    return Array.from(notesText).length;
+  }
+
+  function notesLastUpdated(): string {
+    if (!notesUpdatedAt) return "—";
+    const d = new Date(notesUpdatedAt);
+    if (Number.isNaN(d.getTime())) return "—";
+    return d.toLocaleString("nl-NL", {
+      day: "numeric",
+      month: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  }
+
+  async function saveNotesUi() {
+    notesSaving = true;
+    try {
+      applyNotesSnapshot(await saveNotes(notesText, notesRevision));
+    } catch (e) {
+      const msg = String(e);
+      if (/conflict/i.test(msg)) {
+        // Keep the user's text in the box — nothing is lost.
+        notesConflict = true;
+        notesError = null;
+      } else {
+        notesError = `Opslaan mislukt: ${e}`;
+      }
+    } finally {
+      notesSaving = false;
+    }
+  }
+
+  async function toggleNotesHistory() {
+    notesShowHistory = !notesShowHistory;
+    if (notesShowHistory && notesHistory.length === 0) {
+      notesHistoryLoading = true;
+      try {
+        notesHistory = await getNotesHistory();
+      } catch (e) {
+        notesError = `Geschiedenis laden mislukt: ${e}`;
+      } finally {
+        notesHistoryLoading = false;
+      }
+    }
+  }
+
+  async function restoreNotesUi(revision: number) {
+    notesSaving = true;
+    try {
+      applyNotesSnapshot(await restoreNotesRevision(revision));
+      notesHistory = await getNotesHistory();
+    } catch (e) {
+      notesError = `Herstellen mislukt: ${e}`;
+    } finally {
+      notesSaving = false;
+    }
+  }
+
+  async function clearNotesUi() {
+    if (
+      !confirm(
+        "Weet je zeker dat je alle notities wilt wissen? Dit kan niet ongedaan worden gemaakt.",
+      )
+    ) {
+      return;
+    }
+    notesSaving = true;
+    try {
+      applyNotesSnapshot(await clearNotes());
+      notesHistory = await getNotesHistory();
+    } catch (e) {
+      notesError = `Wissen mislukt: ${e}`;
+    } finally {
+      notesSaving = false;
+    }
+  }
+
+  async function clearChatsUi() {
+    if (
+      !confirm(
+        "Weet je zeker dat je alle bewaarde gesprekken wilt wissen? Dit kan niet ongedaan worden gemaakt.",
+      )
+    ) {
+      return;
+    }
+    try {
+      await clearAllConversations();
+      chatsCleared = true;
+      setTimeout(() => (chatsCleared = false), 3000);
+    } catch {
+      // Clearing is best-effort here; logout always clears.
+    }
+  }
+
+  async function loadDiag() {
+    diagLoading = true;
+    try {
+      diagEntries = await getAiDiagnostics();
+    } catch {
+      diagEntries = [];
+    } finally {
+      diagLoading = false;
+    }
+  }
+
+  async function copyDiag() {
+    try {
+      await navigator.clipboard.writeText(diagnosticsText());
+      diagCopied = true;
+      setTimeout(() => (diagCopied = false), 2000);
+    } catch {
+      // Clipboard unavailable — entries stay visible below.
+    }
+  }
+
+  async function clearDiagUi() {
+    try {
+      await clearAiDiagnostics();
+      diagEntries = [];
+    } catch {
+      // Best-effort.
+    }
+  }
+
+  /** Live update while Settings is open (plan 4.6). */
+  function onNotesChangedExternally() {
+    if (notesDirty() || document.activeElement?.id === "aiNotesText") {
+      // Never clobber unsaved edits — banner instead.
+      notesConflict = true;
+      return;
+    }
+    void loadNotes();
+    if (notesShowHistory) {
+      getNotesHistory()
+        .then((h) => (notesHistory = h))
+        .catch(() => {});
+    }
+  }
+
+  let notesUnlisten: (() => void) | null = null;
+
+  onMount(() => {
+    void loadNotes();
+    if (isWeb) {
+      const handler = () => onNotesChangedExternally();
+      window.addEventListener("friday:ai-notes-changed", handler);
+      notesUnlisten = () =>
+        window.removeEventListener("friday:ai-notes-changed", handler);
+    } else {
+      import("@tauri-apps/api/event")
+        .then(({ listen }) =>
+          listen("ai-notes-changed", () => onNotesChangedExternally()),
+        )
+        .then((unlisten) => {
+          notesUnlisten = unlisten;
+        })
+        .catch(() => {});
+    }
+  });
+
+  onDestroy(() => {
+    notesUnlisten?.();
+    notesUnlisten = null;
+  });
 
   const sections: any[] = [
     {
-      id: 'ai',
-      title: 'AI Assistent',
-      description: 'Configureer AI voor studiedvies, cijferanalyse, samenvattingen en meer.',
+      id: "ai",
+      title: "AI Assistent",
+      description:
+        "Configureer AI voor studiedvies, cijferanalyse, samenvattingen en meer.",
       isAi: true,
       // Web uses your own provider key (BYO), proxied per-request and never
       // stored server-side — same Settings form works on both builds.
     },
     {
-      id: 'aiSchedule',
-      title: 'AI Planning',
-      description: 'Beheer slaaptijden en blokkades voor de AI-planning (Friday\'s Plan).',
+      id: "aiSchedule",
+      title: "AI Planning",
+      description:
+        "Beheer slaaptijden en blokkades voor de AI-planning (Friday's Plan).",
       isAiSchedule: true,
     },
     {
-      id: 'agenda',
-      title: 'Agenda',
+      id: "agenda",
+      title: "Agenda",
       settings: [
-        { id: 'showWeekend', label: 'Toon Weekend', description: 'Laat zaterdag en zondag zien in de agenda.', type: 'toggle' },
-        { id: 'weekView', label: 'Weekweergave', description: 'Toon een weekoverzicht. Op kleine schermen als lijst per dag, op grotere schermen met tijdlijn.', type: 'select', options: [
-          { value: 'auto', label: 'Automatisch (desktop)' },
-          { value: 'on', label: 'Altijd aan' },
-          { value: 'off', label: 'Altijd uit' }
-        ]},
-        { id: 'hideCancelled', label: 'Uitgevallen lessen verbergen', description: 'Verberg lessen die als uitgevallen zijn gemarkeerd.', type: 'toggle' },
-        { id: 'combineLessons', label: 'Lessen combineren', description: 'Combineer opeenvolgende lessen van hetzelfde vak.', type: 'toggle' },
-        { id: 'showBreakSeparator', label: 'Pauze Indicatie', description: 'Toon pauzes tussen lessen met hun duur.', type: 'toggle' },
-        { id: 'breakThresholdMinutes', label: 'Pauze Drempel (min)', description: 'Aantal minuten pauze voordat lessen worden gesplitst op de homepagina.', type: 'number', min: 1, max: 120, step: 1 },
-      ]
-    },
-    {
-      id: 'cijfers',
-      title: 'Cijfers',
-      settings: [
-        { id: 'roundedGraphs', label: 'Afgeronde Grafieken', description: 'Maak de lijnen in de grafieken gladder.', type: 'toggle' },
-        { id: 'highlightFailing', label: 'Onvoldoendes Markeren', description: 'Geef onvoldoendes een rode kleur.', type: 'toggle' },
-        { id: 'decimalPoints', label: 'Decimalen', description: 'Aantal decimalen voor gemiddelden.', type: 'number', min: 0, max: 2 },
-        { id: 'insufficientThreshold', label: 'Onvoldoende Grens', description: 'Cijfer waaronder iets als onvoldoende wordt gezien.', type: 'number', step: 0.1, min: 1, max: 10 },
-      ]
-    },
-    {
-      id: 'thema',
-      title: 'Thema',
-      settings: [
-        { id: 'themeColor', label: 'Primaire Kleur', description: 'Kies de hoofdkleur van de app.', type: 'theme-picker' },
-        { id: 'backgroundMode', label: 'Achtergrond', description: 'Kies hoe donker de achtergrond moet zijn.', type: 'select', options: [
-          { value: 'normal', label: 'Normaal (Getint)' },
-          { value: 'amoled', label: 'AMOLED (Zwart)' }
-        ]},
-      ]
-    },
-    {
-      id: 'meldingen',
-      title: 'Meldingen',
-      settings: [
-        { id: 'notifyMessages', label: 'Berichten', description: 'Melding bij nieuwe berichten.', type: 'toggle', notificationType: 'message' },
-        { id: 'testMessage', label: 'Bericht Notificatie', description: 'Test bericht notificatie.', type: 'action', compactFor: 'notifyMessages', action: () => testNotificationType('message', 'Nieuw Bericht', 'Je hebt een nieuw bericht van Test Sender') },
-        { id: 'notifyGrades', label: 'Nieuwe Cijfers', description: 'Melding bij nieuwe cijfers.', type: 'toggle', notificationType: 'grade' },
-        { id: 'testGrade', label: 'Cijfer Notificatie', description: 'Test cijfer notificatie.', type: 'action', compactFor: 'notifyGrades', action: () => testNotificationType('grade', 'Nieuw Cijfer', 'Er is een nieuw cijfer toegevoegd') },
-        { id: 'notifyDeadlines', label: 'Deadlines', description: 'Melding bij opdrachten en deadlines.', type: 'toggle', notificationType: 'deadline' },
-        { id: 'testDeadline', label: 'Deadline Notificatie', description: 'Test deadline notificatie.', type: 'action', compactFor: 'notifyDeadlines', action: () => testNotificationType('deadline', 'Deadline Aankomst', 'Een opdracht deadline nadert') },
-        { id: 'notifyCalendar', label: 'Agenda Wijzigingen', description: 'Melding bij agenda wijzigingen.', type: 'toggle', notificationType: 'calendar' },
-        { id: 'testCalendar', label: 'Agenda Notificatie', description: 'Test agenda notificatie.', type: 'action', compactFor: 'notifyCalendar', action: () => testNotificationType('calendar', 'Agenda Gewijzigd', 'Er is een wijziging in je agenda') },
-        { id: 'notifyAutoDnd', label: 'Autom. Niet Storen', description: 'Zet DND aan tijdens lessen (Android DND toegang nodig).', type: 'toggle', hideOnWeb: true },
-        { id: 'testBasic', label: 'Basis Test', description: 'Standaard test notificatie.', type: 'action', action: () => testNotificationType('test', 'Test Notificatie', 'Dit is een test van het Friday meldingen systeem!') },
-        { id: 'openDndSettings', label: 'DND Toegang', description: 'Open Android instellingen voor Niet Storen toegang.', type: 'action', action: () => openDndSettings(), hideOnWeb: true },
+        {
+          id: "showWeekend",
+          label: "Toon Weekend",
+          description: "Laat zaterdag en zondag zien in de agenda.",
+          type: "toggle",
+        },
+        {
+          id: "weekView",
+          label: "Weekweergave",
+          description:
+            "Toon een weekoverzicht. Op kleine schermen als lijst per dag, op grotere schermen met tijdlijn.",
+          type: "select",
+          options: [
+            { value: "auto", label: "Automatisch (desktop)" },
+            { value: "on", label: "Altijd aan" },
+            { value: "off", label: "Altijd uit" },
+          ],
+        },
+        {
+          id: "hideCancelled",
+          label: "Uitgevallen lessen verbergen",
+          description: "Verberg lessen die als uitgevallen zijn gemarkeerd.",
+          type: "toggle",
+        },
+        {
+          id: "combineLessons",
+          label: "Lessen combineren",
+          description: "Combineer opeenvolgende lessen van hetzelfde vak.",
+          type: "toggle",
+        },
+        {
+          id: "showBreakSeparator",
+          label: "Pauze Indicatie",
+          description: "Toon pauzes tussen lessen met hun duur.",
+          type: "toggle",
+        },
+        {
+          id: "breakThresholdMinutes",
+          label: "Pauze Drempel (min)",
+          description:
+            "Aantal minuten pauze voordat lessen worden gesplitst op de homepagina.",
+          type: "number",
+          min: 1,
+          max: 120,
+          step: 1,
+        },
       ],
-      hideIfDesktop: true
     },
     {
-      id: 'data',
-      title: 'Data & Downloads',
+      id: "cijfers",
+      title: "Cijfers",
       settings: [
-        { id: 'exportAll', label: 'Alles Exporteren', description: 'Exporteer al je data (lessen, cijfers, opdrachten, etc.) naar JSON-bestanden.', type: 'action', action: () => doExport() },
-        { id: 'exportLog', label: 'Logbestand Exporteren', description: 'Exporteer het interne logbestand — handig om een probleem te melden, ook als het al even geleden is gebeurd.', type: 'action', action: () => doExportLog() },
-        { id: 'clearLogs', label: 'Logbestanden Wissen', description: 'Wis alle opgeslagen logs, zodat je na een update met een schone lei begint en oude regels nieuwe niet vervuilen.', type: 'action', action: () => doClearLogs() },
-        { id: 'downloadDir', label: 'Downloadmap', description: 'Kies waar gedownloade bestanden worden opgeslagen. Leeg = systeemstandaard.', type: 'download-dir', hideOnWeb: true },
-      ]
+        {
+          id: "roundedGraphs",
+          label: "Afgeronde Grafieken",
+          description: "Maak de lijnen in de grafieken gladder.",
+          type: "toggle",
+        },
+        {
+          id: "highlightFailing",
+          label: "Onvoldoendes Markeren",
+          description: "Geef onvoldoendes een rode kleur.",
+          type: "toggle",
+        },
+        {
+          id: "decimalPoints",
+          label: "Decimalen",
+          description: "Aantal decimalen voor gemiddelden.",
+          type: "number",
+          min: 0,
+          max: 2,
+        },
+        {
+          id: "insufficientThreshold",
+          label: "Onvoldoende Grens",
+          description: "Cijfer waaronder iets als onvoldoende wordt gezien.",
+          type: "number",
+          step: 0.1,
+          min: 1,
+          max: 10,
+        },
+      ],
+    },
+    {
+      id: "thema",
+      title: "Thema",
+      settings: [
+        {
+          id: "themeColor",
+          label: "Primaire Kleur",
+          description: "Kies de hoofdkleur van de app.",
+          type: "theme-picker",
+        },
+        {
+          id: "backgroundMode",
+          label: "Achtergrond",
+          description: "Kies hoe donker de achtergrond moet zijn.",
+          type: "select",
+          options: [
+            { value: "normal", label: "Normaal (Getint)" },
+            { value: "amoled", label: "AMOLED (Zwart)" },
+          ],
+        },
+      ],
+    },
+    {
+      id: "meldingen",
+      title: "Meldingen",
+      settings: [
+        {
+          id: "notifyMessages",
+          label: "Berichten",
+          description: "Melding bij nieuwe berichten.",
+          type: "toggle",
+          notificationType: "message",
+        },
+        {
+          id: "testMessage",
+          label: "Bericht Notificatie",
+          description: "Test bericht notificatie.",
+          type: "action",
+          compactFor: "notifyMessages",
+          action: () =>
+            testNotificationType(
+              "message",
+              "Nieuw Bericht",
+              "Je hebt een nieuw bericht van Test Sender",
+            ),
+        },
+        {
+          id: "notifyGrades",
+          label: "Nieuwe Cijfers",
+          description: "Melding bij nieuwe cijfers.",
+          type: "toggle",
+          notificationType: "grade",
+        },
+        {
+          id: "testGrade",
+          label: "Cijfer Notificatie",
+          description: "Test cijfer notificatie.",
+          type: "action",
+          compactFor: "notifyGrades",
+          action: () =>
+            testNotificationType(
+              "grade",
+              "Nieuw Cijfer",
+              "Er is een nieuw cijfer toegevoegd",
+            ),
+        },
+        {
+          id: "notifyDeadlines",
+          label: "Deadlines",
+          description: "Melding bij opdrachten en deadlines.",
+          type: "toggle",
+          notificationType: "deadline",
+        },
+        {
+          id: "testDeadline",
+          label: "Deadline Notificatie",
+          description: "Test deadline notificatie.",
+          type: "action",
+          compactFor: "notifyDeadlines",
+          action: () =>
+            testNotificationType(
+              "deadline",
+              "Deadline Aankomst",
+              "Een opdracht deadline nadert",
+            ),
+        },
+        {
+          id: "notifyCalendar",
+          label: "Agenda Wijzigingen",
+          description: "Melding bij agenda wijzigingen.",
+          type: "toggle",
+          notificationType: "calendar",
+        },
+        {
+          id: "testCalendar",
+          label: "Agenda Notificatie",
+          description: "Test agenda notificatie.",
+          type: "action",
+          compactFor: "notifyCalendar",
+          action: () =>
+            testNotificationType(
+              "calendar",
+              "Agenda Gewijzigd",
+              "Er is een wijziging in je agenda",
+            ),
+        },
+        {
+          id: "notifyAutoDnd",
+          label: "Autom. Niet Storen",
+          description:
+            "Zet DND aan tijdens lessen (Android DND toegang nodig).",
+          type: "toggle",
+          hideOnWeb: true,
+        },
+        {
+          id: "testBasic",
+          label: "Basis Test",
+          description: "Standaard test notificatie.",
+          type: "action",
+          action: () =>
+            testNotificationType(
+              "test",
+              "Test Notificatie",
+              "Dit is een test van het Friday meldingen systeem!",
+            ),
+        },
+        {
+          id: "openDndSettings",
+          label: "DND Toegang",
+          description: "Open Android instellingen voor Niet Storen toegang.",
+          type: "action",
+          action: () => openDndSettings(),
+          hideOnWeb: true,
+        },
+      ],
+      hideIfDesktop: true,
+    },
+    {
+      id: "data",
+      title: "Data & Downloads",
+      settings: [
+        {
+          id: "exportAll",
+          label: "Alles Exporteren",
+          description:
+            "Exporteer al je data (lessen, cijfers, opdrachten, etc.) naar JSON-bestanden.",
+          type: "action",
+          action: () => doExport(),
+        },
+        {
+          id: "exportLog",
+          label: "Logbestand Exporteren",
+          description:
+            "Exporteer het interne logbestand — handig om een probleem te melden, ook als het al even geleden is gebeurd.",
+          type: "action",
+          action: () => doExportLog(),
+        },
+        {
+          id: "clearLogs",
+          label: "Logbestanden Wissen",
+          description:
+            "Wis alle opgeslagen logs, zodat je na een update met een schone lei begint en oude regels nieuwe niet vervuilen.",
+          type: "action",
+          action: () => doClearLogs(),
+        },
+        {
+          id: "downloadDir",
+          label: "Downloadmap",
+          description:
+            "Kies waar gedownloade bestanden worden opgeslagen. Leeg = systeemstandaard.",
+          type: "download-dir",
+          hideOnWeb: true,
+        },
+      ],
     },
   ];
 
   const themeColors = [
-    { id: 'violet', bg: 'bg-[#a855f7]', label: 'Violet' },
-    { id: 'pink', bg: 'bg-[#ec4899]', label: 'Roze' },
-    { id: 'red', bg: 'bg-[#ef4444]', label: 'Rood' },
-    { id: 'orange', bg: 'bg-[#fb923c]', label: 'Oranje' },
-    { id: 'yellow', bg: 'bg-[#eab308]', label: 'Geel' },
-    { id: 'green', bg: 'bg-[#22c55e]', label: 'Groen' },
-    { id: 'cyan', bg: 'bg-[#06b6d4]', label: 'Cyaan' },
-    { id: 'blue', bg: 'bg-[#3b82f6]', label: 'Blauw' },
+    { id: "violet", bg: "bg-[#a855f7]", label: "Violet" },
+    { id: "pink", bg: "bg-[#ec4899]", label: "Roze" },
+    { id: "red", bg: "bg-[#ef4444]", label: "Rood" },
+    { id: "orange", bg: "bg-[#fb923c]", label: "Oranje" },
+    { id: "yellow", bg: "bg-[#eab308]", label: "Geel" },
+    { id: "green", bg: "bg-[#22c55e]", label: "Groen" },
+    { id: "cyan", bg: "bg-[#06b6d4]", label: "Cyaan" },
+    { id: "blue", bg: "bg-[#3b82f6]", label: "Blauw" },
   ];
 
   function updateSetting(id: string, value: any) {
-    userSettings.update(s => ({ ...s, [id]: value }));
+    userSettings.update((s) => ({ ...s, [id]: value }));
   }
 
   function updateAiSchedule(partial: Partial<typeof $userSettings.aiSchedule>) {
-    userSettings.update(s => ({ ...s, aiSchedule: { ...s.aiSchedule, ...partial } }));
+    userSettings.update((s) => ({
+      ...s,
+      aiSchedule: { ...s.aiSchedule, ...partial },
+    }));
   }
 
   function addBlockedTime() {
     if (!blockedDay || !blockedStart || !blockedEnd) return;
     const nt = { day: blockedDay, start: blockedStart, end: blockedEnd };
-    userSettings.update(s => ({
+    userSettings.update((s) => ({
       ...s,
-      aiSchedule: { ...s.aiSchedule, blockedTimes: [...s.aiSchedule.blockedTimes, nt] }
+      aiSchedule: {
+        ...s.aiSchedule,
+        blockedTimes: [...s.aiSchedule.blockedTimes, nt],
+      },
     }));
   }
 
   function removeBlockedTime(idx: number) {
-    userSettings.update(s => ({
+    userSettings.update((s) => ({
       ...s,
-      aiSchedule: { ...s.aiSchedule, blockedTimes: s.aiSchedule.blockedTimes.filter((_, i) => i !== idx) }
+      aiSchedule: {
+        ...s.aiSchedule,
+        blockedTimes: s.aiSchedule.blockedTimes.filter((_, i) => i !== idx),
+      },
     }));
   }
 
@@ -635,22 +1208,37 @@
 
 <div class="flex flex-col h-full bg-surface-950">
   <!-- Header -->
-  <header class="shrink-0 z-20 border-b border-surface-800/50 bg-surface-950/95 backdrop-blur px-4 py-3">
+  <header
+    class="shrink-0 z-20 border-b border-surface-800/50 bg-surface-950/95 backdrop-blur px-4 py-3"
+  >
     <div class="flex items-center gap-3">
       <IconButton
-        onclick={() => (!isDesktopLayout && mobilePanel === 'detail') ? goToSectionList() : goBack()}
+        onclick={() =>
+          !isDesktopLayout && mobilePanel === "detail"
+            ? goToSectionList()
+            : goBack()}
         class="-ml-2"
         aria-label="Terug"
       >
-        <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+        <svg
+          class="w-6 h-6"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2.5"
+          stroke-linecap="round"
+          stroke-linejoin="round"><path d="m15 18-6-6 6-6" /></svg
+        >
       </IconButton>
       <h1 class="text-title-large text-gray-100 truncate">
-        {!isDesktopLayout && mobilePanel === 'detail' ? activeSectionTitle : 'Instellingen'}
+        {!isDesktopLayout && mobilePanel === "detail"
+          ? activeSectionTitle
+          : "Instellingen"}
       </h1>
     </div>
   </header>
 
-  {#if !isDesktopLayout && mobilePanel === 'list'}
+  {#if !isDesktopLayout && mobilePanel === "list"}
     <!-- Mobile: section list (master) -->
     <nav class="flex-1 overflow-y-auto p-3 space-y-1">
       {#each navItems as item}
@@ -658,831 +1246,1761 @@
           onclick={() => selectSection(item.id)}
           class="w-full flex items-center gap-3 px-3 py-3.5 rounded-m3-md transition-all text-left border border-transparent hover:bg-surface-800/60 active:scale-[0.99]"
         >
-          <span class="text-primary-400 flex items-center justify-center w-8 h-8 rounded-m3-sm bg-primary-500/10 shrink-0">
+          <span
+            class="text-primary-400 flex items-center justify-center w-8 h-8 rounded-m3-sm bg-primary-500/10 shrink-0"
+          >
             {@html sectionIcon(item.id)}
           </span>
-          <span class="flex-1 text-title-small text-gray-100">{item.title}</span>
-          {#if item.id === 'about' && $updateStatus.status === 'available'}
-            <span class="w-2 h-2 rounded-full bg-primary-500 shrink-0" title="Update beschikbaar"></span>
+          <span class="flex-1 text-title-small text-gray-100">{item.title}</span
+          >
+          {#if item.id === "about" && $updateStatus.status === "available"}
+            <span
+              class="w-2 h-2 rounded-full bg-primary-500 shrink-0"
+              title="Update beschikbaar"
+            ></span>
           {/if}
-          <svg class="w-4 h-4 text-gray-600 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+          <svg
+            class="w-4 h-4 text-gray-600 shrink-0"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2.5"
+            stroke-linecap="round"
+            stroke-linejoin="round"><path d="m9 18 6-6-6-6" /></svg
+          >
         </button>
       {/each}
     </nav>
   {:else}
     <div class="flex flex-1 min-h-0">
-    <!-- Desktop: section navigation sidebar -->
-    <aside class="hidden md:flex flex-col w-56 shrink-0 border-r border-surface-800/50 bg-surface-900/40 h-full">
-      <nav class="flex-1 py-4 px-2 space-y-1 overflow-y-auto no-scrollbar">
-        {#each navItems as item}
-          <button
-            onclick={() => selectSection(item.id)}
-            class="w-full flex items-center gap-3 px-3 py-2.5 rounded-m3-sm text-label-large transition-all text-left {activeSection === item.id ? 'bg-primary-container text-on-primary-container' : 'text-gray-400 hover:bg-surface-800 hover:text-gray-200'}"
-          >
-            {@html sectionIcon(item.id)}
-            <span class="truncate">{item.title}</span>
-            {#if item.id === 'about' && $updateStatus.status === 'available'}
-              <span class="w-2 h-2 rounded-full bg-primary-500 shrink-0 ml-auto" title="Update beschikbaar"></span>
-            {/if}
-          </button>
-        {/each}
-      </nav>
-    </aside>
+      <!-- Desktop: section navigation sidebar -->
+      <aside
+        class="hidden md:flex flex-col w-56 shrink-0 border-r border-surface-800/50 bg-surface-900/40 h-full"
+      >
+        <nav class="flex-1 py-4 px-2 space-y-1 overflow-y-auto no-scrollbar">
+          {#each navItems as item}
+            <button
+              onclick={() => selectSection(item.id)}
+              class="w-full flex items-center gap-3 px-3 py-2.5 rounded-m3-sm text-label-large transition-all text-left {activeSection ===
+              item.id
+                ? 'bg-primary-container text-on-primary-container'
+                : 'text-gray-400 hover:bg-surface-800 hover:text-gray-200'}"
+            >
+              {@html sectionIcon(item.id)}
+              <span class="truncate">{item.title}</span>
+              {#if item.id === "about" && $updateStatus.status === "available"}
+                <span
+                  class="w-2 h-2 rounded-full bg-primary-500 shrink-0 ml-auto"
+                  title="Update beschikbaar"
+                ></span>
+              {/if}
+            </button>
+          {/each}
+        </nav>
+      </aside>
 
-    <main class="settings-scroll flex-1 overflow-y-auto">
-      <div class="max-w-3xl mx-auto w-full p-6 space-y-10 pb-20">
-        <!-- Desktop: active section title -->
-        <div class="hidden md:flex items-center justify-between">
-          <div>
-            <h1 class="text-title-large text-gray-100">{activeSectionTitle}</h1>
-            <p class="text-label-medium text-gray-500 mt-1">{sections.find(s => s.id === activeSection)?.description || 'Diagnoseer synchronisatie, notificaties en systeemstatus.'}</p>
+      <main class="settings-scroll flex-1 overflow-y-auto">
+        <div class="max-w-3xl mx-auto w-full p-6 space-y-10 pb-20">
+          <!-- Desktop: active section title -->
+          <div class="hidden md:flex items-center justify-between">
+            <div>
+              <h1 class="text-title-large text-gray-100">
+                {activeSectionTitle}
+              </h1>
+              <p class="text-label-medium text-gray-500 mt-1">
+                {sections.find((s) => s.id === activeSection)?.description ||
+                  "Diagnoseer synchronisatie, notificaties en systeemstatus."}
+              </p>
+            </div>
           </div>
-        </div>
 
-    {#each sections as section, i}
-      {#if (!section.hideIfDesktop || isMobile) && (!section.hideOnWeb || !isWeb) && section.id === activeSection}
-        <section id="settings-{section.id}" in:fly={{ y: 20, delay: 0 }} class="space-y-4">
-
-        {#if section.isAi}
-          <!-- AI Configuration Card -->
-          {#if aiLoaded}
-            <div class="glass p-6 rounded-m3-md border-primary-500/20 space-y-5 transition-all hover:bg-surface-800/40">
-              <p class="text-body-medium text-gray-500 leading-relaxed">Configureer AI voor studiedvies, cijferanalyse, samenvattingen en meer.</p>
-
-              <!-- Enable toggle -->
-              <div class="flex items-center justify-between">
-                <div>
-                  <p class="text-title-small text-gray-100">AI Assistent inschakelen</p>
-                  <p class="text-label-medium text-gray-500 mt-1">Zet AI aan voor alle pagina's</p>
-                </div>
-                <Switch
-                  checked={aiEnabled}
-                  onCheckedChange={(v) => { aiEnabled = v; saveAiConfig(); }}
-                  ariaLabel="AI Assistent inschakelen"
-                />
-              </div>
-
-              <div class="w-full h-px bg-white/5"></div>
-
-              <!-- API Key -->
-              <div class="space-y-2">
-                <label for="aiApiKey" class="text-label-medium text-gray-500">API Sleutel</label>
-                <div class="flex gap-2">
-                  <input
-                    id="aiApiKey"
-                    type={aiShowKey ? 'text' : 'password'}
-                    bind:value={aiApiKey}
-                    placeholder={aiHasKey ? '•••••••• (opgeslagen)' : 'sk-...'}
-                    class="flex-1 bg-surface-800/80 border border-white/10 rounded-m3-xs px-4 py-3 text-body-medium text-white placeholder-gray-600 focus:outline-none focus:border-primary-500/50 transition-all font-mono"
-                  />
-                  <Button
-                    variant="text"
-                    onclick={() => aiShowKey = !aiShowKey}
-                    disabled={!aiApiKey}
-                    class="px-4 shrink-0"
-                  >
-                    {aiShowKey ? 'Verberg' : 'Toon'}
-                  </Button>
-                </div>
-                {#if aiHasKey && !aiApiKey}
-                  <p class="text-label-small text-gray-500">
-                    Er is al een sleutel opgeslagen. Laat dit veld leeg om de huidige te behouden, of voer een nieuwe sleutel in om deze te vervangen.
-                  </p>
-                {/if}
-              </div>
-
-              <!-- Base URL -->
-              <div class="space-y-2">
-                <label for="aiBaseUrl" class="text-label-medium text-gray-500">API Basis URL</label>
-                <input
-                  id="aiBaseUrl"
-                  type="text"
-                  bind:value={aiBaseUrl}
-                  class="w-full bg-surface-800/80 border border-white/10 rounded-m3-xs px-4 py-3 text-body-medium text-white placeholder-gray-600 focus:outline-none focus:border-primary-500/50 transition-all font-mono"
-                />
-                <div class="flex flex-wrap gap-2 mt-2">
-                  {#each aiBaseUrlPresets as preset}
-                    <Chip
-                      variant="filter"
-                      selected={aiBaseUrl === preset.value}
-                      onclick={() => aiBaseUrl = preset.value}
+          {#each sections as section, i}
+            {#if (!section.hideIfDesktop || isMobile) && (!section.hideOnWeb || !isWeb) && section.id === activeSection}
+              <section
+                id="settings-{section.id}"
+                in:fly={{ y: 20, delay: 0 }}
+                class="space-y-4"
+              >
+                {#if section.isAi}
+                  <!-- AI Configuration Card -->
+                  {#if aiLoaded}
+                    <div
+                      class="glass p-6 rounded-m3-md border-primary-500/20 space-y-5 transition-all hover:bg-surface-800/40"
                     >
-                      {preset.label}
-                    </Chip>
-                  {/each}
-                </div>
-              </div>
+                      <p class="text-body-medium text-gray-500 leading-relaxed">
+                        Configureer AI voor studiedvies, cijferanalyse,
+                        samenvattingen en meer.
+                      </p>
 
-              <!-- Provider -->
-              <div class="space-y-2">
-                <span class="text-label-medium text-gray-500">AI Provider</span>
-                <div class="grid grid-cols-2 gap-2">
-                  {#each Object.entries(AI_PROVIDERS) as [key, info]}
-                    <Chip
-                      variant="filter"
-                      selected={aiProvider === key}
-                      onclick={() => {
-                        aiProvider = key as AiProviderType;
-                        aiBaseUrl = info.defaultBaseUrl;
-                        aiModel = info.defaultModel;
-                      }}
-                      class="h-auto! flex-col items-start gap-0 py-3 px-4 w-full"
-                    >
-                      <span class="block text-label-medium">{info.label}</span>
-                      <span class="block text-label-small opacity-70 mt-0.5">{info.description}</span>
-                    </Chip>
-                  {/each}
-                </div>
-              </div>
+                      <!-- Enable toggle -->
+                      <div class="flex items-center justify-between">
+                        <div>
+                          <p class="text-title-small text-gray-100">
+                            AI Assistent inschakelen
+                          </p>
+                          <p class="text-label-medium text-gray-500 mt-1">
+                            Zet AI aan voor alle pagina's
+                          </p>
+                        </div>
+                        <Switch
+                          checked={aiEnabled}
+                          onCheckedChange={(v) => {
+                            aiEnabled = v;
+                            saveAiConfig();
+                          }}
+                          ariaLabel="AI Assistent inschakelen"
+                        />
+                      </div>
 
-              <!-- Model -->
-              <div class="space-y-2">
-                <label for="aiModel" class="text-label-medium text-gray-500">Model</label>
-                <input
-                  id="aiModel"
-                  type="text"
-                  bind:value={aiModel}
-                  placeholder="gpt-4o-mini"
-                  class="w-full bg-surface-800/80 border border-white/10 rounded-m3-xs px-4 py-3 text-body-medium text-white placeholder-gray-600 focus:outline-none focus:border-primary-500/50 transition-all"
-                />
-              </div>
+                      <div class="w-full h-px bg-white/5"></div>
 
-              <div class="w-full h-px bg-white/5"></div>
+                      <!-- API Key -->
+                      <div class="space-y-2">
+                        <label
+                          for="aiApiKey"
+                          class="text-label-medium text-gray-500"
+                          >API Sleutel</label
+                        >
+                        <div class="flex gap-2">
+                          <input
+                            id="aiApiKey"
+                            type={aiShowKey ? "text" : "password"}
+                            bind:value={aiApiKey}
+                            placeholder={aiHasKey
+                              ? "•••••••• (opgeslagen)"
+                              : "sk-..."}
+                            class="flex-1 bg-surface-800/80 border border-white/10 rounded-m3-xs px-4 py-3 text-body-medium text-white placeholder-gray-600 focus:outline-none focus:border-primary-500/50 transition-all font-mono"
+                          />
+                          <Button
+                            variant="text"
+                            onclick={() => (aiShowKey = !aiShowKey)}
+                            disabled={!aiApiKey}
+                            class="px-4 shrink-0"
+                          >
+                            {aiShowKey ? "Verberg" : "Toon"}
+                          </Button>
+                        </div>
+                        {#if aiHasKey && !aiApiKey}
+                          <p class="text-label-small text-gray-500">
+                            Er is al een sleutel opgeslagen. Laat dit veld leeg
+                            om de huidige te behouden, of voer een nieuwe
+                            sleutel in om deze te vervangen.
+                          </p>
+                        {/if}
+                      </div>
 
-              <!-- Data Access Toggle -->
-              <div class="flex items-center justify-between">
-                <div>
-                  <p class="text-title-small text-gray-100">Toegang tot schoolgegevens</p>
-                  <p class="text-label-medium text-gray-500 mt-1 leading-relaxed">
-                    Laat AI je rooster, cijfers, opdrachten en berichten uitlezen via tool calling
-                  </p>
-                </div>
-                <Switch
-                  checked={aiUseDataAccess}
-                  onCheckedChange={(v) => aiUseDataAccess = v}
-                  ariaLabel="Toegang tot schoolgegevens"
-                />
-              </div>
+                      <!-- Base URL -->
+                      <div class="space-y-2">
+                        <label
+                          for="aiBaseUrl"
+                          class="text-label-medium text-gray-500"
+                          >API Basis URL</label
+                        >
+                        <input
+                          id="aiBaseUrl"
+                          type="text"
+                          bind:value={aiBaseUrl}
+                          class="w-full bg-surface-800/80 border border-white/10 rounded-m3-xs px-4 py-3 text-body-medium text-white placeholder-gray-600 focus:outline-none focus:border-primary-500/50 transition-all font-mono"
+                        />
+                        <div class="flex flex-wrap gap-2 mt-2">
+                          {#each aiBaseUrlPresets as preset}
+                            <Chip
+                              variant="filter"
+                              selected={aiBaseUrl === preset.value}
+                              onclick={() => (aiBaseUrl = preset.value)}
+                            >
+                              {preset.label}
+                            </Chip>
+                          {/each}
+                        </div>
+                      </div>
 
-              {#if aiUseDataAccess}
-                <div class="rounded-m3-md px-4 py-3 bg-primary-500/5 border border-primary-500/10 text-body-medium text-gray-400 leading-relaxed">
-                  <span class="text-label-medium text-primary-400">✓ Data-toegang ingeschakeld</span><br>
-                  De AI kan nu o.a.:
-                  <ul class="mt-1 space-y-1 list-disc list-inside">
-                    <li>Je lesrooster ophalen voor vandaag of morgen</li>
-                    <li>Recente cijfers en gemiddelden bekijken</li>
-                    <li>Huiswerk en opdrachten opzoeken</li>
-                    <li>Berichten en absentie checken</li>
-                    <li>Een compleet dagoverzicht geven</li>
-                  </ul>
-                </div>
-              {:else}
-                <div class="rounded-m3-md px-4 py-3 bg-amber-500/5 border border-amber-500/10 text-body-medium text-gray-400 leading-relaxed">
-                  <span class="text-label-medium text-amber-400">⚠ Data-toegang uitgeschakeld</span><br>
-                  De AI kan alleen algemene vragen beantwoorden zonder je schoolgegevens te zien.
-                </div>
-              {/if}
+                      <!-- Provider -->
+                      <div class="space-y-2">
+                        <span class="text-label-medium text-gray-500"
+                          >AI Provider</span
+                        >
+                        <div class="grid grid-cols-2 gap-2">
+                          {#each Object.entries(AI_PROVIDERS) as [key, info]}
+                            <Chip
+                              variant="filter"
+                              selected={aiProvider === key}
+                              onclick={() => {
+                                aiProvider = key as AiProviderType;
+                                aiBaseUrl = info.defaultBaseUrl;
+                                aiModel = info.defaultModel;
+                              }}
+                              class="h-auto! flex-col items-start gap-0 py-3 px-4 w-full"
+                            >
+                              <span class="block text-label-medium"
+                                >{info.label}</span
+                              >
+                              <span
+                                class="block text-label-small opacity-70 mt-0.5"
+                                >{info.description}</span
+                              >
+                            </Chip>
+                          {/each}
+                        </div>
+                      </div>
 
-              <!-- Actions -->
-              <div class="flex gap-3 pt-2">
-                <Button
-                  variant="filled"
-                  onclick={saveAiConfig}
-                  disabled={aiSaving}
-                  class="flex-1"
-                >
-                  {aiSaving ? '⏳ Opslaan...' : 'Opslaan'}
-                </Button>
-                <Button
-                  variant="tonal"
-                  onclick={testAiConnection}
-                  disabled={aiTesting || (!aiApiKey && !aiHasKey)}
-                  class="flex-1 bg-emerald-500/10! text-emerald-400! border border-emerald-500/20! hover:bg-emerald-500/20!"
-                >
-                  {aiTesting ? '⏳ Testen...' : 'Test verbinding'}
-                </Button>
-              </div>
+                      <!-- Model -->
+                      <div class="space-y-2">
+                        <label
+                          for="aiModel"
+                          class="text-label-medium text-gray-500">Model</label
+                        >
+                        <input
+                          id="aiModel"
+                          type="text"
+                          bind:value={aiModel}
+                          placeholder="gpt-4o-mini"
+                          class="w-full bg-surface-800/80 border border-white/10 rounded-m3-xs px-4 py-3 text-body-medium text-white placeholder-gray-600 focus:outline-none focus:border-primary-500/50 transition-all"
+                        />
+                      </div>
 
-              {#if aiTestResult}
-                <div class="rounded-m3-md px-5 py-3 text-body-small {aiTestSuccess ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400' : 'bg-red-500/10 border border-red-500/20 text-red-400'}">
-                  {aiTestResult}
-                </div>
-              {/if}
-            </div>
-          {:else}
-            <div class="glass p-8 rounded-m3-md border-white/5 flex items-center justify-center">
-              <div class="w-6 h-6 border-2 border-primary-500 border-t-transparent rounded-full animate-spin"></div>
-            </div>
-          {/if}
-          {:else if section.isAiSchedule}
-          <div class="glass p-6 rounded-m3-md border-primary-500/20 space-y-6">
-            <p class="text-body-medium text-gray-500 leading-relaxed">Configureer je AI-planning: wanneer je slaapt en wanneer je niet beschikbaar bent (sport, werk). De planner houdt hier altijd rekening mee.</p>
+                      <div class="w-full h-px bg-white/5"></div>
 
-            <!-- Enabled toggle -->
-            <div class="flex items-center justify-between">
-              <div>
-                <p class="text-title-small text-gray-100">AI Planning inschakelen</p>
-                <p class="text-label-medium text-gray-500 mt-1">Toon en gebruik Friday's Plan</p>
-              </div>
-              <Switch
-                checked={$userSettings.aiSchedule.enabled}
-                onCheckedChange={(v) => updateAiSchedule({ enabled: v })}
-                ariaLabel="AI Planning inschakelen"
-              />
-            </div>
+                      <!-- Data Access Toggle -->
+                      <div class="flex items-center justify-between">
+                        <div>
+                          <p class="text-title-small text-gray-100">
+                            Toegang tot schoolgegevens
+                          </p>
+                          <p
+                            class="text-label-medium text-gray-500 mt-1 leading-relaxed"
+                          >
+                            Laat AI je rooster, cijfers, opdrachten en berichten
+                            uitlezen via tool calling
+                          </p>
+                        </div>
+                        <Switch
+                          checked={aiUseDataAccess}
+                          onCheckedChange={(v) => (aiUseDataAccess = v)}
+                          ariaLabel="Toegang tot schoolgegevens"
+                        />
+                      </div>
 
-            <div class="w-full h-px bg-white/5"></div>
+                      {#if aiUseDataAccess}
+                        <div
+                          class="rounded-m3-md px-4 py-3 bg-primary-500/5 border border-primary-500/10 text-body-medium text-gray-400 leading-relaxed"
+                        >
+                          <span class="text-label-medium text-primary-400"
+                            >✓ Data-toegang ingeschakeld</span
+                          ><br />
+                          De AI kan nu o.a.:
+                          <ul class="mt-1 space-y-1 list-disc list-inside">
+                            <li>
+                              Je lesrooster ophalen voor vandaag of morgen
+                            </li>
+                            <li>Recente cijfers en gemiddelden bekijken</li>
+                            <li>Huiswerk en opdrachten opzoeken</li>
+                            <li>Berichten en absentie checken</li>
+                            <li>Een compleet dagoverzicht geven</li>
+                            <li>Je AI Geheugen lezen en (als aan) bijwerken</li>
+                          </ul>
+                        </div>
+                      {:else}
+                        <div
+                          class="rounded-m3-md px-4 py-3 bg-amber-500/5 border border-amber-500/10 text-body-medium text-gray-400 leading-relaxed"
+                        >
+                          <span class="text-label-medium text-amber-400"
+                            >⚠ Data-toegang uitgeschakeld</span
+                          ><br />
+                          De AI kan alleen algemene vragen beantwoorden zonder je
+                          schoolgegevens te zien.
+                        </div>
+                      {/if}
 
-            <!-- Bedtime / Wake -->
-            <div class="grid grid-cols-2 gap-4">
-              <div class="space-y-2">
-                <label for="aiScheduleBedtime" class="text-label-medium text-gray-500">Bedtijd</label>
-                <input
-                  id="aiScheduleBedtime"
-                  type="time"
-                  value={$userSettings.aiSchedule.bedtime}
-                  onchange={(e) => updateAiSchedule({ bedtime: e.currentTarget.value })}
-                  class="w-full bg-surface-800/80 border border-white/10 rounded-m3-xs px-4 py-3 text-body-medium text-white focus:outline-none focus:border-primary-500/50"
-                />
-                <p class="text-label-small text-gray-600">Wanneer je gaat slapen. Niets wordt hier gepland.</p>
-              </div>
-              <div class="space-y-2">
-                <label for="aiScheduleWake" class="text-label-medium text-gray-500">Wektijd</label>
-                <input
-                  id="aiScheduleWake"
-                  type="time"
-                  value={$userSettings.aiSchedule.wakeTime}
-                  onchange={(e) => updateAiSchedule({ wakeTime: e.currentTarget.value })}
-                  class="w-full bg-surface-800/80 border border-white/10 rounded-m3-xs px-4 py-3 text-body-medium text-white focus:outline-none focus:border-primary-500/50"
-                />
-                <p class="text-label-small text-gray-600">Wanneer je opstaat.</p>
-              </div>
-            </div>
+                      <!-- Actions -->
+                      <div class="flex gap-3 pt-2">
+                        <Button
+                          variant="filled"
+                          onclick={saveAiConfig}
+                          disabled={aiSaving}
+                          class="flex-1"
+                        >
+                          {aiSaving ? "⏳ Opslaan..." : "Opslaan"}
+                        </Button>
+                        <Button
+                          variant="tonal"
+                          onclick={testAiConnection}
+                          disabled={aiTesting || (!aiApiKey && !aiHasKey)}
+                          class="flex-1 bg-emerald-500/10! text-emerald-400! border border-emerald-500/20! hover:bg-emerald-500/20!"
+                        >
+                          {aiTesting ? "⏳ Testen..." : "Test verbinding"}
+                        </Button>
+                      </div>
 
-            <div class="w-full h-px bg-white/5"></div>
-
-            <!-- After-school buffer: travel home + eating -->
-            <div class="space-y-3">
-              <div class="flex items-center justify-between gap-4">
-                <div>
-                  <p class="text-title-small text-gray-100">Na school: thuiskomen + eten</p>
-                  <p class="text-label-medium text-gray-500 mt-1">Minuten na de laatste les voordat huiswerk ingepland mag worden (fietsen/lopen/auto + eten). Zo plant de AI nooit direct na school of terwijl je nog op school zit.</p>
-                </div>
-                <input
-                  type="number"
-                  min="0"
-                  max="300"
-                  step="5"
-                  value={$userSettings.aiSchedule.afterSchoolBufferMin}
-                  onchange={(e) => {
-                    const v = parseInt(e.currentTarget.value, 10);
-                    if (!isNaN(v)) updateAiSchedule({ afterSchoolBufferMin: Math.max(0, Math.min(300, v)) });
-                  }}
-                  class="w-20 shrink-0 bg-surface-800/80 border border-white/10 rounded-m3-xs px-3 py-2.5 text-body-medium text-white text-center focus:outline-none focus:border-primary-500/50"
-                />
-              </div>
-              <div class="flex items-center justify-between gap-4">
-                <div>
-                  <p class="text-title-small text-gray-100">Ook plannen in tussenuren</p>
-                  <p class="text-label-medium text-gray-500 mt-1">Uit: de hele schooldag telt als bezet (alleen thuis plannen). Aan: gaten tussen lessen mogen ook gebruikt worden.</p>
-                </div>
-                <Switch
-                  checked={$userSettings.aiSchedule.planInSchoolGaps}
-                  onCheckedChange={(v) => updateAiSchedule({ planInSchoolGaps: v })}
-                  ariaLabel="Ook plannen in tussenuren"
-                />
-              </div>
-            </div>
-
-            <div class="w-full h-px bg-white/5"></div>
-
-            <!-- Blocked times -->
-            <div class="space-y-3">
-              <div>
-                <p class="text-title-small text-gray-100">Geblokkeerde tijden</p>
-                <p class="text-label-medium text-gray-500 mt-1">Terugkerende blokkades (bijv. sport, bijles). De planner vermijdt deze.</p>
-              </div>
-
-              {#if $userSettings.aiSchedule.blockedTimes.length === 0}
-                <p class="text-body-small text-gray-600 italic">Geen blokkades — alles buiten slaap en lessen is beschikbaar.</p>
-              {:else}
-                <div class="space-y-2">
-                  {#each $userSettings.aiSchedule.blockedTimes as bt, i}
-                    <div class="flex items-center gap-2 p-3 rounded-m3-sm bg-surface-800/60 border border-white/5">
-                      <span class="flex-1 text-body-small text-gray-300 font-mono">{bt.day} {bt.start}–{bt.end}</span>
-                      <Button variant="text" onclick={() => removeBlockedTime(i)} class="text-red-400! px-2">Verwijder</Button>
+                      {#if aiTestResult}
+                        <div
+                          class="rounded-m3-md px-5 py-3 text-body-small {aiTestSuccess
+                            ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400'
+                            : 'bg-red-500/10 border border-red-500/20 text-red-400'}"
+                        >
+                          {aiTestResult}
+                        </div>
+                      {/if}
                     </div>
-                  {/each}
-                </div>
-              {/if}
 
-              <div class="grid grid-cols-3 gap-2 items-end">
-                <div class="space-y-1">
-                  <label for="blockedDay" class="text-label-small text-gray-500">Dag</label>
-                  <select id="blockedDay" bind:value={blockedDay} class="w-full bg-surface-800 border border-white/10 rounded-m3-xs px-3 py-2.5 text-body-small text-white">
-                    <option value="monday">Maandag</option>
-                    <option value="tuesday">Dinsdag</option>
-                    <option value="wednesday">Woensdag</option>
-                    <option value="thursday">Donderdag</option>
-                    <option value="friday">Vrijdag</option>
-                    <option value="saturday">Zaterdag</option>
-                    <option value="sunday">Zondag</option>
-                    <option value="weekday">Werkdagen (ma-vr)</option>
-                    <option value="weekend">Weekend (za-zo)</option>
-                    <option value="daily">Dagelijks</option>
-                  </select>
-                </div>
-                <div class="space-y-1">
-                  <label for="blockedStart" class="text-label-small text-gray-500">Van</label>
-                  <input id="blockedStart" type="time" bind:value={blockedStart} class="w-full bg-surface-800 border border-white/10 rounded-m3-xs px-3 py-2.5 text-body-small text-white" />
-                </div>
-                <div class="space-y-1">
-                  <label for="blockedEnd" class="text-label-small text-gray-500">Tot</label>
-                  <input id="blockedEnd" type="time" bind:value={blockedEnd} class="w-full bg-surface-800 border border-white/10 rounded-m3-xs px-3 py-2.5 text-body-small text-white" />
-                </div>
-              </div>
-              <Button variant="tonal" onclick={addBlockedTime} class="w-full">Blokkade toevoegen</Button>
-            </div>
-          </div>
-          {:else}
-        <div class="space-y-2">
-          {#each section.settings as setting (setting.id)}
-            {#if (!setting.hideOnWeb || !isWeb) && (setting.type !== 'action' || !setting.compactFor)}
-            <div class="glass p-5 rounded-m3-md border-white/5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-6 transition-all hover:bg-surface-800/40">
-              <div class="flex-1">
-                <p class="text-title-small text-gray-100">{setting.id === 'openDndSettings' ? dndActionLabel() : setting.label}</p>
-                <p class="text-label-medium text-gray-500 mt-1 leading-relaxed">{setting.id === 'openDndSettings' ? dndActionDescription() : setting.description}</p>
-              </div>
-
-              {#if setting.type === 'toggle'}
-                 <div class="flex items-center gap-2 shrink-0">
-                    <Switch
-                      checked={($userSettings as any)[setting.id]}
-                      onCheckedChange={(v) => updateToggle(setting.id, v)}
-                     ariaLabel={setting.label}
-                   />
-                   {#if section.id === 'meldingen'}
-                     {@const compactAction = getCompactAction(section, setting.id)}
-                     {#if compactAction}
-                       <Button
-                         variant="tonal"
-                         onclick={() => compactAction.action()}
-                         disabled={isTestBusy(compactAction.id)}
-                         aria-label={compactAction.label}
-                         title={compactAction.description}
-                         class="h-8! px-3! text-label-small!"
-                       >
-                         {isTestBusy(compactAction.id) ? '...' : 'Test'}
-                       </Button>
-                     {/if}
-                   {/if}
-                 </div>
-               {:else if setting.type === 'number'}
-                <input
-                  type="number"
-                  value={($userSettings as any)[setting.id]}
-                  oninput={(e) => updateNumber(setting.id, e.currentTarget.value)}
-                  min={setting.min}
-                  max={setting.max}
-                  step={setting.step ?? 1}
-                  class="w-20 px-3 py-2 rounded-m3-xs bg-surface-950 border border-surface-700 text-title-small text-gray-100 text-center focus:outline-none focus:border-primary-500 shadow-inner"
-                />
-              {:else if setting.type === 'theme-picker'}
-                <ColorSwatchPicker
-                  colors={themeColors}
-                  value={($userSettings as any)[setting.id]}
-                  onSelect={(id) => updateSetting(setting.id, id)}
-                />
-              {:else if setting.type === 'select'}
-                <select
-                  value={($userSettings as any)[setting.id]}
-                  onchange={(e) => updateSetting(setting.id, e.currentTarget.value)}
-                  class="bg-surface-800 border-none text-gray-200 text-label-medium rounded-m3-sm px-4 py-2.5 outline-none cursor-pointer hover:bg-surface-700 transition-colors shadow-sm"
-                >
-                  {#each setting.options as option}
-                    <option value={option.value}>{option.label}</option>
-                  {/each}
-                </select>
-              {:else if setting.type === 'action'}
-                <Button
-                  variant="tonal"
-                  onclick={() => setting.action()}
-                  disabled={setting.id === 'exportAll' ? exportBusy : setting.id === 'exportLog' ? logExportBusy : setting.id === 'clearLogs' ? logClearBusy : isTestBusy(setting.id)}
-                  class="px-5"
-                >
-                  {#if setting.id === 'exportAll'}
-                    {#if exportBusy}
-                      <span class="animate-pulse">⏳ Bezig met exporteren...</span>
-                    {:else}
-                      Exporteren
-                    {/if}
-                  {:else if setting.id === 'exportLog'}
-                    {#if logExportBusy}
-                      <span class="animate-pulse">⏳ Bezig met exporteren...</span>
-                    {:else}
-                      Exporteren
-                    {/if}
-                  {:else if setting.id === 'clearLogs'}
-                    {#if logClearBusy}
-                      <span class="animate-pulse">⏳ Bezig met wissen...</span>
-                    {:else}
-                      Wissen
-                    {/if}
-                  {:else if isTestBusy(setting.id)}
-                    <span class="animate-pulse">⏳ Wachten...</span>
-                  {:else if setting.id === 'openDndSettings'}
-                    {dndActionLabel()}
-                  {:else}
-                    Testen
-                  {/if}
-                </Button>
-                {#if setting.id === 'exportAll' && exportResult}
-                  <p class="text-label-small text-gray-400 font-mono mt-2 text-right max-w-[200px] leading-relaxed">{exportResult}</p>
-                {/if}
-                {#if setting.id === 'exportLog' && logExportResult}
-                  <p class="text-label-small text-gray-400 font-mono mt-2 text-right max-w-[200px] leading-relaxed">{logExportResult}</p>
-                {/if}
-                {#if setting.id === 'clearLogs' && logClearResult}
-                  <p class="text-label-small text-gray-400 font-mono mt-2 text-right max-w-[200px] leading-relaxed">{logClearResult}</p>
-                {/if}
-              {:else if setting.type === 'download-dir'}
-                <div class="flex items-center gap-2">
-                  {#if $userSettings.downloadDir}
-                    <Button
-                      variant="text"
-                      onclick={clearDownloadDir}
-                      class="text-red-400! hover:text-red-300! px-3"
+                    <!-- AI Geheugen (notes the AI can read and edit) -->
+                    <div
+                      class="glass mt-4 space-y-5 rounded-m3-md border-primary-500/20 p-6 transition-all hover:bg-surface-800/40"
                     >
-                      Herstel
-                    </Button>
+                      <div>
+                        <p class="text-title-small text-gray-100">
+                          AI Geheugen
+                        </p>
+                        <p
+                          class="text-label-medium mt-1 leading-relaxed text-gray-500"
+                        >
+                          Eén document met feiten over jou dat in elke nieuwe
+                          chat wordt meegestuurd. Jij kunt het hier bewerken, de
+                          AI met zijn tools. Laatst bijgewerkt door
+                          {notesUpdatedBy === "ai"
+                            ? "AI"
+                            : "jou"}{notesUpdatedAt
+                            ? ` op ${notesLastUpdated()}`
+                            : ""}.
+                        </p>
+                      </div>
+
+                      <div class="h-px w-full bg-white/5"></div>
+
+                      <div class="flex items-center justify-between">
+                        <div>
+                          <p class="text-title-small text-gray-100">
+                            AI mag notities bewerken
+                          </p>
+                          <p
+                            class="text-label-medium mt-1 leading-relaxed text-gray-500"
+                          >
+                            Uit = de AI kan alleen lezen (schrijftools worden
+                            niet aangeboden)
+                          </p>
+                        </div>
+                        <Switch
+                          checked={aiNotesAiCanEdit}
+                          onCheckedChange={(v) => {
+                            aiNotesAiCanEdit = v;
+                            saveAiConfig();
+                          }}
+                          ariaLabel="AI mag notities bewerken"
+                        />
+                      </div>
+
+                      <div class="flex items-center justify-between">
+                        <div>
+                          <p class="text-title-small text-gray-100">
+                            Notities gebruiken in nieuwe chats
+                          </p>
+                          <p
+                            class="text-label-medium mt-1 leading-relaxed text-gray-500"
+                          >
+                            Uit = geen geheugenblok in de systeemprompt en geen
+                            notitietools
+                          </p>
+                        </div>
+                        <Switch
+                          checked={aiNotesUseInChats}
+                          onCheckedChange={(v) => {
+                            aiNotesUseInChats = v;
+                            saveAiConfig();
+                          }}
+                          ariaLabel="Notities gebruiken in nieuwe chats"
+                        />
+                      </div>
+
+                      <div class="h-px w-full bg-white/5"></div>
+
+                      <!-- Chat privacy (Phase 5 item 3) -->
+                      <div class="flex items-center justify-between">
+                        <div>
+                          <p class="text-title-small text-gray-100">
+                            Gesprekken bewaren
+                          </p>
+                          <p
+                            class="text-label-medium mt-1 leading-relaxed text-gray-500"
+                          >
+                            Bewaar chats op dit apparaat (altijd lokaal, nooit
+                            naar de server)
+                          </p>
+                        </div>
+                        <Switch
+                          checked={$userSettings.saveAiChats}
+                          onCheckedChange={(v) =>
+                            updateToggle("saveAiChats", v)}
+                          ariaLabel="Gesprekken bewaren"
+                        />
+                      </div>
+
+                      {#if $userSettings.saveAiChats}
+                        <div class="flex items-center justify-between gap-4">
+                          <div>
+                            <p class="text-title-small text-gray-100">
+                              Bewaartermijn
+                            </p>
+                            <p
+                              class="text-label-medium mt-1 leading-relaxed text-gray-500"
+                            >
+                              Oudere gesprekken worden automatisch gewist
+                            </p>
+                          </div>
+                          <select
+                            value={$userSettings.aiChatsRetentionDays ?? ""}
+                            onchange={(e) => {
+                              const v = e.currentTarget.value;
+                              userSettings.update((s) => ({
+                                ...s,
+                                aiChatsRetentionDays:
+                                  v === "" ? null : Number(v),
+                              }));
+                            }}
+                            class="shrink-0 bg-surface-800/80 border border-white/10 rounded-m3-xs px-3 py-2 text-body-medium text-white focus:outline-none focus:border-primary-500/50"
+                            aria-label="Bewaartermijn gesprekken"
+                          >
+                            <option value={30}>30 dagen</option>
+                            <option value={90}>90 dagen</option>
+                            <option value="">Altijd bewaren</option>
+                          </select>
+                        </div>
+
+                        <div>
+                          <Button
+                            variant="text"
+                            onclick={clearChatsUi}
+                            class="text-red-400!"
+                          >
+                            Wis alle gesprekken
+                          </Button>
+                          {#if chatsCleared}
+                            <p class="text-label-medium text-emerald-400 mt-1">
+                              Alle gesprekken gewist.
+                            </p>
+                          {/if}
+                        </div>
+                      {/if}
+
+                      <div class="h-px w-full bg-white/5"></div>
+
+                      {#if notesConflict}
+                        <div
+                          class="rounded-m3-md border border-amber-500/20 bg-amber-500/5 px-4 py-3 text-body-medium leading-relaxed text-gray-300"
+                        >
+                          <span class="text-label-medium text-amber-400"
+                            >⚠ De AI heeft de notities net aangepast, herlaad</span
+                          ><br />
+                          Jouw tekst staat er nog — er is niets verloren gegaan.
+                          <div class="mt-2">
+                            <Button variant="tonal" onclick={loadNotes}
+                              >Opnieuw laden</Button
+                            >
+                          </div>
+                        </div>
+                      {/if}
+
+                      {#if notesError}
+                        <div
+                          class="rounded-m3-md border border-red-500/20 bg-red-500/10 px-5 py-3 text-body-small text-red-400"
+                        >
+                          {notesError}
+                        </div>
+                      {/if}
+
+                      <div class="space-y-2">
+                        <div class="flex items-baseline justify-between">
+                          <label
+                            for="aiNotesText"
+                            class="text-label-medium text-gray-500"
+                            >Notities (Markdown)</label
+                          >
+                          <span
+                            class="text-label-small {notesCount() >
+                            NOTES_MAX_CHARS - 500
+                              ? 'text-red-400'
+                              : 'text-gray-600'}"
+                          >
+                            {notesCount()} / {NOTES_MAX_CHARS}
+                          </span>
+                        </div>
+                        <textarea
+                          id="aiNotesText"
+                          bind:value={notesText}
+                          rows={10}
+                          disabled={notesLoading}
+                          class="w-full bg-surface-800/80 border border-white/10 rounded-m3-xs px-4 py-3 text-body-medium text-white placeholder-gray-600 focus:outline-none focus:border-primary-500/50 transition-all disabled:opacity-50"
+                          placeholder={"## Over mij\n\n## Voorkeuren\n"}
+                        ></textarea>
+                        {#if notesDirty()}
+                          <p class="text-label-small text-amber-400">
+                            Je hebt niet-opgeslagen wijzigingen.
+                          </p>
+                        {/if}
+                      </div>
+
+                      <div class="flex flex-wrap gap-2">
+                        <Button
+                          variant="filled"
+                          onclick={saveNotesUi}
+                          disabled={notesSaving || notesLoading}
+                          class="flex-1"
+                        >
+                          {notesSaving ? "⏳ Opslaan..." : "Opslaan"}
+                        </Button>
+                        <Button
+                          variant="tonal"
+                          onclick={loadNotes}
+                          disabled={notesSaving || notesLoading}
+                        >
+                          Ongedaan maken
+                        </Button>
+                        <Button
+                          variant="tonal"
+                          onclick={toggleNotesHistory}
+                          disabled={notesLoading}
+                        >
+                          {notesShowHistory
+                            ? "Verberg geschiedenis"
+                            : "Geschiedenis"}
+                        </Button>
+                        <Button
+                          variant="text"
+                          onclick={clearNotesUi}
+                          disabled={notesSaving || notesLoading}
+                          class="text-red-400!"
+                        >
+                          Alles wissen
+                        </Button>
+                      </div>
+
+                      {#if notesShowHistory}
+                        <div class="space-y-2">
+                          {#if notesHistoryLoading}
+                            <p class="text-label-medium text-gray-500">
+                              Geschiedenis laden...
+                            </p>
+                          {:else if notesHistory.length === 0}
+                            <p class="text-label-medium text-gray-500">
+                              Nog geen eerdere revisies.
+                            </p>
+                          {:else}
+                            {#each [...notesHistory].reverse() as entry (entry.revision)}
+                              <div
+                                class="flex items-center justify-between gap-2 rounded-m3-xs border border-white/5 bg-surface-800/60 px-3 py-2"
+                              >
+                                <div class="min-w-0">
+                                  <p class="text-label-medium text-gray-200">
+                                    Revisie {entry.revision} — door {entry.updated_by ===
+                                    "ai"
+                                      ? "AI"
+                                      : "jou"}
+                                  </p>
+                                  <p
+                                    class="truncate text-label-small text-gray-500"
+                                  >
+                                    {(
+                                      entry.content
+                                        .split("\n")
+                                        .find((l) => l.trim()) ?? ""
+                                    ).slice(0, 80)}
+                                  </p>
+                                </div>
+                                <Button
+                                  variant="text"
+                                  onclick={() => restoreNotesUi(entry.revision)}
+                                  disabled={notesSaving}
+                                  class="shrink-0"
+                                >
+                                  Herstel
+                                </Button>
+                              </div>
+                            {/each}
+                          {/if}
+                        </div>
+                      {/if}
+                    </div>
+
+                    <!-- Diagnose (Phase 6 item 12) -->
+                    <div
+                      class="glass mt-4 space-y-4 rounded-m3-md border-primary-500/20 p-6 transition-all hover:bg-surface-800/40"
+                    >
+                      <div>
+                        <p class="text-title-small text-gray-100">Diagnose</p>
+                        <p
+                          class="text-label-medium mt-1 leading-relaxed text-gray-500"
+                        >
+                          Laatste {diagEntries.length} AI-verzoeken — alleen metadata
+                          (tijd, provider, status, duur, tools), nooit inhoud of sleutels.
+                        </p>
+                      </div>
+
+                      <div class="flex flex-wrap gap-2">
+                        <Button
+                          variant="tonal"
+                          onclick={loadDiag}
+                          disabled={diagLoading}
+                        >
+                          {diagLoading ? "Laden..." : "Vernieuwen"}
+                        </Button>
+                        <Button
+                          variant="tonal"
+                          onclick={copyDiag}
+                          disabled={diagEntries.length === 0}
+                        >
+                          {diagCopied ? "Gekopieerd!" : "Kopieer"}
+                        </Button>
+                        <Button
+                          variant="text"
+                          onclick={clearDiagUi}
+                          disabled={diagEntries.length === 0}
+                          class="text-red-400!"
+                        >
+                          Wissen
+                        </Button>
+                      </div>
+
+                      {#if diagEntries.length === 0}
+                        <p class="text-label-medium text-gray-500">
+                          Nog geen verzoeken gemeten. Open de AI-assistent, stel
+                          een vraag en vernieuw.
+                        </p>
+                      {:else}
+                        <div
+                          class="max-h-64 space-y-1.5 overflow-y-auto no-scrollbar"
+                        >
+                          {#each diagEntries as entry (entry.ts)}
+                            <div
+                              class="rounded-m3-xs border border-white/5 bg-surface-800/60 px-3 py-2"
+                            >
+                              <p class="text-label-medium text-gray-200">
+                                <span
+                                  class="font-bold {entry.status === 'ok'
+                                    ? 'text-emerald-400'
+                                    : entry.status === 'error'
+                                      ? 'text-red-400'
+                                      : 'text-amber-400'}">{entry.status}</span
+                                >
+                                <span class="text-gray-500">
+                                  {entry.provider}/{entry.model} · {entry.op} ·
+                                  {entry.durationMs}ms
+                                </span>
+                              </p>
+                              <p class="text-label-small text-gray-500">
+                                {new Date(entry.ts).toLocaleString("nl-NL", {
+                                  day: "numeric",
+                                  month: "short",
+                                  hour: "2-digit",
+                                  minute: "2-digit",
+                                  second: "2-digit",
+                                })}
+                                {#if entry.errorClass}
+                                  <span> · fout: {entry.errorClass}</span>
+                                {/if}
+                                {#if entry.toolNames && entry.toolNames.length > 0}
+                                  <span>
+                                    · tools: {entry.toolNames.join(", ")}</span
+                                  >
+                                {/if}
+                              </p>
+                            </div>
+                          {/each}
+                        </div>
+                      {/if}
+                    </div>
+                  {:else}
+                    <div
+                      class="glass p-8 rounded-m3-md border-white/5 flex items-center justify-center"
+                    >
+                      <div
+                        class="w-6 h-6 border-2 border-primary-500 border-t-transparent rounded-full animate-spin"
+                      ></div>
+                    </div>
                   {/if}
-                  <Button
-                    variant="tonal"
-                    onclick={pickDownloadDir}
-                    disabled={pickingDir}
-                    class="px-5"
+                {:else if section.isAiSchedule}
+                  <div
+                    class="glass p-6 rounded-m3-md border-primary-500/20 space-y-6"
                   >
-                    {pickingDir ? '⏳ ...' : 'Map Kiezen'}
-                  </Button>
-                </div>
-                {#if $userSettings.downloadDir}
-                  <p class="text-label-small text-gray-500 font-mono mt-2 text-right max-w-[200px] truncate leading-relaxed" title={$userSettings.downloadDir}>
-                    {$userSettings.downloadDir}
-                  </p>
+                    <p class="text-body-medium text-gray-500 leading-relaxed">
+                      Configureer je AI-planning: wanneer je slaapt en wanneer
+                      je niet beschikbaar bent (sport, werk). De planner houdt
+                      hier altijd rekening mee.
+                    </p>
+
+                    <!-- Enabled toggle -->
+                    <div class="flex items-center justify-between">
+                      <div>
+                        <p class="text-title-small text-gray-100">
+                          AI Planning inschakelen
+                        </p>
+                        <p class="text-label-medium text-gray-500 mt-1">
+                          Toon en gebruik Friday's Plan
+                        </p>
+                      </div>
+                      <Switch
+                        checked={$userSettings.aiSchedule.enabled}
+                        onCheckedChange={(v) =>
+                          updateAiSchedule({ enabled: v })}
+                        ariaLabel="AI Planning inschakelen"
+                      />
+                    </div>
+
+                    <div class="w-full h-px bg-white/5"></div>
+
+                    <!-- Bedtime / Wake -->
+                    <div class="grid grid-cols-2 gap-4">
+                      <div class="space-y-2">
+                        <label
+                          for="aiScheduleBedtime"
+                          class="text-label-medium text-gray-500">Bedtijd</label
+                        >
+                        <input
+                          id="aiScheduleBedtime"
+                          type="time"
+                          value={$userSettings.aiSchedule.bedtime}
+                          onchange={(e) =>
+                            updateAiSchedule({
+                              bedtime: e.currentTarget.value,
+                            })}
+                          class="w-full bg-surface-800/80 border border-white/10 rounded-m3-xs px-4 py-3 text-body-medium text-white focus:outline-none focus:border-primary-500/50"
+                        />
+                        <p class="text-label-small text-gray-600">
+                          Wanneer je gaat slapen. Niets wordt hier gepland.
+                        </p>
+                      </div>
+                      <div class="space-y-2">
+                        <label
+                          for="aiScheduleWake"
+                          class="text-label-medium text-gray-500">Wektijd</label
+                        >
+                        <input
+                          id="aiScheduleWake"
+                          type="time"
+                          value={$userSettings.aiSchedule.wakeTime}
+                          onchange={(e) =>
+                            updateAiSchedule({
+                              wakeTime: e.currentTarget.value,
+                            })}
+                          class="w-full bg-surface-800/80 border border-white/10 rounded-m3-xs px-4 py-3 text-body-medium text-white focus:outline-none focus:border-primary-500/50"
+                        />
+                        <p class="text-label-small text-gray-600">
+                          Wanneer je opstaat.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div class="w-full h-px bg-white/5"></div>
+
+                    <!-- After-school buffer: travel home + eating -->
+                    <div class="space-y-3">
+                      <div class="flex items-center justify-between gap-4">
+                        <div>
+                          <p class="text-title-small text-gray-100">
+                            Na school: thuiskomen + eten
+                          </p>
+                          <p class="text-label-medium text-gray-500 mt-1">
+                            Minuten na de laatste les voordat huiswerk ingepland
+                            mag worden (fietsen/lopen/auto + eten). Zo plant de
+                            AI nooit direct na school of terwijl je nog op
+                            school zit.
+                          </p>
+                        </div>
+                        <input
+                          type="number"
+                          min="0"
+                          max="300"
+                          step="5"
+                          value={$userSettings.aiSchedule.afterSchoolBufferMin}
+                          onchange={(e) => {
+                            const v = parseInt(e.currentTarget.value, 10);
+                            if (!isNaN(v))
+                              updateAiSchedule({
+                                afterSchoolBufferMin: Math.max(
+                                  0,
+                                  Math.min(300, v),
+                                ),
+                              });
+                          }}
+                          class="w-20 shrink-0 bg-surface-800/80 border border-white/10 rounded-m3-xs px-3 py-2.5 text-body-medium text-white text-center focus:outline-none focus:border-primary-500/50"
+                        />
+                      </div>
+                      <div class="flex items-center justify-between gap-4">
+                        <div>
+                          <p class="text-title-small text-gray-100">
+                            Ook plannen in tussenuren
+                          </p>
+                          <p class="text-label-medium text-gray-500 mt-1">
+                            Uit: de hele schooldag telt als bezet (alleen thuis
+                            plannen). Aan: gaten tussen lessen mogen ook
+                            gebruikt worden.
+                          </p>
+                        </div>
+                        <Switch
+                          checked={$userSettings.aiSchedule.planInSchoolGaps}
+                          onCheckedChange={(v) =>
+                            updateAiSchedule({ planInSchoolGaps: v })}
+                          ariaLabel="Ook plannen in tussenuren"
+                        />
+                      </div>
+                    </div>
+
+                    <div class="w-full h-px bg-white/5"></div>
+
+                    <!-- Blocked times -->
+                    <div class="space-y-3">
+                      <div>
+                        <p class="text-title-small text-gray-100">
+                          Geblokkeerde tijden
+                        </p>
+                        <p class="text-label-medium text-gray-500 mt-1">
+                          Terugkerende blokkades (bijv. sport, bijles). De
+                          planner vermijdt deze.
+                        </p>
+                      </div>
+
+                      {#if $userSettings.aiSchedule.blockedTimes.length === 0}
+                        <p class="text-body-small text-gray-600 italic">
+                          Geen blokkades — alles buiten slaap en lessen is
+                          beschikbaar.
+                        </p>
+                      {:else}
+                        <div class="space-y-2">
+                          {#each $userSettings.aiSchedule.blockedTimes as bt, i}
+                            <div
+                              class="flex items-center gap-2 p-3 rounded-m3-sm bg-surface-800/60 border border-white/5"
+                            >
+                              <span
+                                class="flex-1 text-body-small text-gray-300 font-mono"
+                                >{bt.day} {bt.start}–{bt.end}</span
+                              >
+                              <Button
+                                variant="text"
+                                onclick={() => removeBlockedTime(i)}
+                                class="text-red-400! px-2">Verwijder</Button
+                              >
+                            </div>
+                          {/each}
+                        </div>
+                      {/if}
+
+                      <div class="grid grid-cols-3 gap-2 items-end">
+                        <div class="space-y-1">
+                          <label
+                            for="blockedDay"
+                            class="text-label-small text-gray-500">Dag</label
+                          >
+                          <select
+                            id="blockedDay"
+                            bind:value={blockedDay}
+                            class="w-full bg-surface-800 border border-white/10 rounded-m3-xs px-3 py-2.5 text-body-small text-white"
+                          >
+                            <option value="monday">Maandag</option>
+                            <option value="tuesday">Dinsdag</option>
+                            <option value="wednesday">Woensdag</option>
+                            <option value="thursday">Donderdag</option>
+                            <option value="friday">Vrijdag</option>
+                            <option value="saturday">Zaterdag</option>
+                            <option value="sunday">Zondag</option>
+                            <option value="weekday">Werkdagen (ma-vr)</option>
+                            <option value="weekend">Weekend (za-zo)</option>
+                            <option value="daily">Dagelijks</option>
+                          </select>
+                        </div>
+                        <div class="space-y-1">
+                          <label
+                            for="blockedStart"
+                            class="text-label-small text-gray-500">Van</label
+                          >
+                          <input
+                            id="blockedStart"
+                            type="time"
+                            bind:value={blockedStart}
+                            class="w-full bg-surface-800 border border-white/10 rounded-m3-xs px-3 py-2.5 text-body-small text-white"
+                          />
+                        </div>
+                        <div class="space-y-1">
+                          <label
+                            for="blockedEnd"
+                            class="text-label-small text-gray-500">Tot</label
+                          >
+                          <input
+                            id="blockedEnd"
+                            type="time"
+                            bind:value={blockedEnd}
+                            class="w-full bg-surface-800 border border-white/10 rounded-m3-xs px-3 py-2.5 text-body-small text-white"
+                          />
+                        </div>
+                      </div>
+                      <Button
+                        variant="tonal"
+                        onclick={addBlockedTime}
+                        class="w-full">Blokkade toevoegen</Button
+                      >
+                    </div>
+                  </div>
                 {:else}
-                  <p class="text-label-small text-gray-600 mt-2 text-right">Systeemstandaard</p>
+                  <div class="space-y-2">
+                    {#each section.settings as setting (setting.id)}
+                      {#if (!setting.hideOnWeb || !isWeb) && (setting.type !== "action" || !setting.compactFor)}
+                        <div
+                          class="glass p-5 rounded-m3-md border-white/5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-6 transition-all hover:bg-surface-800/40"
+                        >
+                          <div class="flex-1">
+                            <p class="text-title-small text-gray-100">
+                              {setting.id === "openDndSettings"
+                                ? dndActionLabel()
+                                : setting.label}
+                            </p>
+                            <p
+                              class="text-label-medium text-gray-500 mt-1 leading-relaxed"
+                            >
+                              {setting.id === "openDndSettings"
+                                ? dndActionDescription()
+                                : setting.description}
+                            </p>
+                          </div>
+
+                          {#if setting.type === "toggle"}
+                            <div class="flex items-center gap-2 shrink-0">
+                              <Switch
+                                checked={($userSettings as any)[setting.id]}
+                                onCheckedChange={(v) =>
+                                  updateToggle(setting.id, v)}
+                                ariaLabel={setting.label}
+                              />
+                              {#if section.id === "meldingen"}
+                                {@const compactAction = getCompactAction(
+                                  section,
+                                  setting.id,
+                                )}
+                                {#if compactAction}
+                                  <Button
+                                    variant="tonal"
+                                    onclick={() => compactAction.action()}
+                                    disabled={isTestBusy(compactAction.id)}
+                                    aria-label={compactAction.label}
+                                    title={compactAction.description}
+                                    class="h-8! px-3! text-label-small!"
+                                  >
+                                    {isTestBusy(compactAction.id)
+                                      ? "..."
+                                      : "Test"}
+                                  </Button>
+                                {/if}
+                              {/if}
+                            </div>
+                          {:else if setting.type === "number"}
+                            <input
+                              type="number"
+                              value={($userSettings as any)[setting.id]}
+                              oninput={(e) =>
+                                updateNumber(setting.id, e.currentTarget.value)}
+                              min={setting.min}
+                              max={setting.max}
+                              step={setting.step ?? 1}
+                              class="w-20 px-3 py-2 rounded-m3-xs bg-surface-950 border border-surface-700 text-title-small text-gray-100 text-center focus:outline-none focus:border-primary-500 shadow-inner"
+                            />
+                          {:else if setting.type === "theme-picker"}
+                            <ColorSwatchPicker
+                              colors={themeColors}
+                              value={($userSettings as any)[setting.id]}
+                              onSelect={(id) => updateSetting(setting.id, id)}
+                            />
+                          {:else if setting.type === "select"}
+                            <select
+                              value={($userSettings as any)[setting.id]}
+                              onchange={(e) =>
+                                updateSetting(
+                                  setting.id,
+                                  e.currentTarget.value,
+                                )}
+                              class="bg-surface-800 border-none text-gray-200 text-label-medium rounded-m3-sm px-4 py-2.5 outline-none cursor-pointer hover:bg-surface-700 transition-colors shadow-sm"
+                            >
+                              {#each setting.options as option}
+                                <option value={option.value}
+                                  >{option.label}</option
+                                >
+                              {/each}
+                            </select>
+                          {:else if setting.type === "action"}
+                            <Button
+                              variant="tonal"
+                              onclick={() => setting.action()}
+                              disabled={setting.id === "exportAll"
+                                ? exportBusy
+                                : setting.id === "exportLog"
+                                  ? logExportBusy
+                                  : setting.id === "clearLogs"
+                                    ? logClearBusy
+                                    : isTestBusy(setting.id)}
+                              class="px-5"
+                            >
+                              {#if setting.id === "exportAll"}
+                                {#if exportBusy}
+                                  <span class="animate-pulse"
+                                    >⏳ Bezig met exporteren...</span
+                                  >
+                                {:else}
+                                  Exporteren
+                                {/if}
+                              {:else if setting.id === "exportLog"}
+                                {#if logExportBusy}
+                                  <span class="animate-pulse"
+                                    >⏳ Bezig met exporteren...</span
+                                  >
+                                {:else}
+                                  Exporteren
+                                {/if}
+                              {:else if setting.id === "clearLogs"}
+                                {#if logClearBusy}
+                                  <span class="animate-pulse"
+                                    >⏳ Bezig met wissen...</span
+                                  >
+                                {:else}
+                                  Wissen
+                                {/if}
+                              {:else if isTestBusy(setting.id)}
+                                <span class="animate-pulse">⏳ Wachten...</span>
+                              {:else if setting.id === "openDndSettings"}
+                                {dndActionLabel()}
+                              {:else}
+                                Testen
+                              {/if}
+                            </Button>
+                            {#if setting.id === "exportAll" && exportResult}
+                              <p
+                                class="text-label-small text-gray-400 font-mono mt-2 text-right max-w-[200px] leading-relaxed"
+                              >
+                                {exportResult}
+                              </p>
+                            {/if}
+                            {#if setting.id === "exportLog" && logExportResult}
+                              <p
+                                class="text-label-small text-gray-400 font-mono mt-2 text-right max-w-[200px] leading-relaxed"
+                              >
+                                {logExportResult}
+                              </p>
+                            {/if}
+                            {#if setting.id === "clearLogs" && logClearResult}
+                              <p
+                                class="text-label-small text-gray-400 font-mono mt-2 text-right max-w-[200px] leading-relaxed"
+                              >
+                                {logClearResult}
+                              </p>
+                            {/if}
+                          {:else if setting.type === "download-dir"}
+                            <div class="flex items-center gap-2">
+                              {#if $userSettings.downloadDir}
+                                <Button
+                                  variant="text"
+                                  onclick={clearDownloadDir}
+                                  class="text-red-400! hover:text-red-300! px-3"
+                                >
+                                  Herstel
+                                </Button>
+                              {/if}
+                              <Button
+                                variant="tonal"
+                                onclick={pickDownloadDir}
+                                disabled={pickingDir}
+                                class="px-5"
+                              >
+                                {pickingDir ? "⏳ ..." : "Map Kiezen"}
+                              </Button>
+                            </div>
+                            {#if $userSettings.downloadDir}
+                              <p
+                                class="text-label-small text-gray-500 font-mono mt-2 text-right max-w-[200px] truncate leading-relaxed"
+                                title={$userSettings.downloadDir}
+                              >
+                                {$userSettings.downloadDir}
+                              </p>
+                            {:else}
+                              <p
+                                class="text-label-small text-gray-600 mt-2 text-right"
+                              >
+                                Systeemstandaard
+                              </p>
+                            {/if}
+                          {/if}
+                        </div>
+                        {#if setting.id === "notifyAutoDnd" && $userSettings.notifyAutoDnd && dndAccessGranted === false}
+                          <div
+                            class="glass p-4 rounded-m3-md border border-amber-500/20 bg-amber-500/5 flex items-center justify-between gap-4 -mt-1"
+                          >
+                            <p
+                              class="text-label-medium text-amber-400 leading-relaxed"
+                            >
+                              Niet Storen-toegang is nog niet verleend.
+                              Automatisch Niet Storen werkt hierdoor niet.
+                            </p>
+                            <Button
+                              variant="tonal"
+                              onclick={openDndSettings}
+                              class="shrink-0 bg-amber-500/15! text-amber-400! hover:bg-amber-500/25! border border-amber-500/20! px-4"
+                            >
+                              Toegang verlenen
+                            </Button>
+                          </div>
+                        {/if}
+                      {/if}
+                    {/each}
+                  </div>
                 {/if}
-              {/if}
-            </div>
-            {#if setting.id === 'notifyAutoDnd' && $userSettings.notifyAutoDnd && dndAccessGranted === false}
-              <div class="glass p-4 rounded-m3-md border border-amber-500/20 bg-amber-500/5 flex items-center justify-between gap-4 -mt-1">
-                <p class="text-label-medium text-amber-400 leading-relaxed">
-                  Niet Storen-toegang is nog niet verleend. Automatisch Niet Storen werkt hierdoor niet.
-                </p>
-                <Button
-                  variant="tonal"
-                  onclick={openDndSettings}
-                  class="shrink-0 bg-amber-500/15! text-amber-400! hover:bg-amber-500/25! border border-amber-500/20! px-4"
-                >
-                  Toegang verlenen
-                </Button>
-              </div>
-            {/if}
+              </section>
             {/if}
           {/each}
-        </div>
-      {/if}
-      </section>
-      {/if}
-    {/each}
 
-    <!-- ===== ADVANCED SECTION ===== -->
-    {#snippet debugPanel()}
-    <section id="settings-debug" in:fly={{ y: 20, delay: 0 }}>
-      <button
-        onclick={toggleDebug}
-        aria-expanded={debugOpen}
-        aria-controls="settings-debug-content"
-        class="w-full flex items-center justify-between px-2 mb-4 group"
-      >
-        <h2 class="text-label-medium text-gray-600 group-hover:text-amber-500 transition-colors flex items-center gap-2">
-          <svg class="w-3 h-3 md:hidden text-amber-500/70" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
-          <span>Geavanceerd</span>
-        </h2>
-        <div class="flex items-center gap-2">
-          <span class="text-label-small text-gray-700">
-            {debugOpen ? 'Verbergen' : 'Tonen'}
-          </span>
-          <svg
-            class="w-4 h-4 text-gray-600 transition-transform duration-200 {debugOpen ? 'rotate-180' : ''}"
-            viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
-          ><path d="m6 9 6 6 6-6"/></svg>
-        </div>
-      </button>
-
-      {#if debugOpen}
-        <div id="settings-debug-content" transition:slide={{ duration: 250 }} class="space-y-4">
-
-          <!-- System info cards -->
-          {#if debugInfo}
-            <div class="debug-card rounded-m3-md p-5 space-y-4 shadow-xl">
-              <p class="debug-label">Systeeminformatie</p>
-              <div class="grid grid-cols-2 gap-3">
-                <div class="info-tile">
-                  <span class="info-tile-icon text-amber-500">
-                    <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L22 22"/></svg>
-                  </span>
-                  <div class="min-w-0">
-                    <p class="info-tile-title">Token</p>
-                    <p class="info-tile-value">{debugInfo.tokenFile?.exists ? `Geldig (${debugInfo.tokenFile.sizeBytes}B)` : 'Missend'}</p>
-                  </div>
-                </div>
-                <div class="info-tile">
-                  <span class="info-tile-icon text-primary-400">
-                    <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
-                  </span>
-                  <div class="min-w-0">
-                    <p class="info-tile-title">Sync State</p>
-                    <p class="info-tile-value truncate">{debugInfo.stateFile?.summary || 'Geen bestand'}</p>
-                  </div>
-                </div>
-                <div class="info-tile col-span-2">
-                  <span class="info-tile-icon text-gray-500">
-                    <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-                  </span>
-                  <div class="min-w-0">
-                    <p class="info-tile-title">Data Path</p>
-                    <p class="info-tile-value font-mono text-label-small break-all opacity-80">{debugInfo.dataDir ?? '?'}</p>
-                  </div>
-                </div>
-              </div>
-              <Button variant="outlined" onclick={loadDebugInfo} disabled={debugLoading} class="w-full">
-                <svg class="w-3.5 h-3.5 {debugLoading ? 'animate-spin' : ''}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
-                {debugLoading ? 'Laden...' : 'Gegevens verversen'}
-              </Button>
-            </div>
-          {:else}
-            <div class="debug-card rounded-m3-md p-8 flex flex-col items-center justify-center gap-4 text-center">
-               <svg class="w-10 h-10 text-gray-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
-               <p class="text-label-medium text-gray-600 max-w-[150px]">Geen debug info geladen</p>
-               <Button variant="tonal" onclick={loadDebugInfo} class="px-8 bg-amber-500/15! text-amber-400! border border-amber-500/20!">Info ophalen</Button>
-            </div>
-          {/if}
-
-          <!-- Sync interval -->
-          <div class="debug-card rounded-m3-md p-6 space-y-4">
-            <div class="flex items-center justify-between">
-              <p class="debug-label">Sync frequentie</p>
-              <div class="px-3 py-1 bg-amber-500/15 rounded-m3-sm border border-amber-500/20">
-                <span class="text-label-medium text-amber-500 tabular-nums">{intervalLabel(intervalSeconds)}</span>
-              </div>
-            </div>
-            <input
-              type="range"
-              min="900" max="3600" step="300"
-              bind:value={intervalSeconds}
-              class="w-full h-2 bg-surface-800 rounded-full appearance-none cursor-pointer accent-amber-500 shadow-inner"
-            />
-            <p class="text-label-small text-gray-600 text-center -mt-1">Android staat een minimum van 15 minuten toe voor achtergrondsynchronisatie.</p>
-            <div class="flex gap-2">
-              {#each [900, 1800, 3600] as preset}
-                <Chip
-                  variant="filter"
-                  selected={intervalSeconds === preset}
-                  onclick={() => { intervalSeconds = preset; }}
-                  class="flex-1 justify-center w-full"
+          <!-- ===== ADVANCED SECTION ===== -->
+          {#snippet debugPanel()}
+            <section id="settings-debug" in:fly={{ y: 20, delay: 0 }}>
+              <button
+                onclick={toggleDebug}
+                aria-expanded={debugOpen}
+                aria-controls="settings-debug-content"
+                class="w-full flex items-center justify-between px-2 mb-4 group"
+              >
+                <h2
+                  class="text-label-medium text-gray-600 group-hover:text-amber-500 transition-colors flex items-center gap-2"
                 >
-                  {intervalLabel(preset)}
-                </Chip>
-              {/each}
-            </div>
-            <Button variant="tonal" onclick={applyInterval} class="w-full bg-amber-500/15! text-amber-400! border border-amber-500/20! shadow-lg shadow-amber-500/20 py-3.5">
-              Interval Toepassen
-            </Button>
-            {#if intervalResult}
-              <p class="text-label-small text-amber-400 font-mono text-center bg-amber-500/5 py-2 rounded-m3-sm">{intervalResult}</p>
-            {/if}
-          </div>
-
-          <!-- Night Sleep & Notifications -->
-          <div class="debug-card rounded-m3-md p-6 space-y-6">
-            <div class="space-y-4">
-                <div class="flex items-center justify-between">
-                  <p class="debug-label">Nachtrust</p>
-                  <Switch
-                    checked={disableSyncAtNight}
-                    onCheckedChange={(v) => { disableSyncAtNight = v; applyNightSleep(); }}
-                    ariaLabel="Nachtrust"
-                  />
+                  <svg
+                    class="w-3 h-3 md:hidden text-amber-500/70"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="3"
+                    ><path
+                      d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"
+                    /><circle cx="12" cy="12" r="3" /></svg
+                  >
+                  <span>Geavanceerd</span>
+                </h2>
+                <div class="flex items-center gap-2">
+                  <span class="text-label-small text-gray-700">
+                    {debugOpen ? "Verbergen" : "Tonen"}
+                  </span>
+                  <svg
+                    class="w-4 h-4 text-gray-600 transition-transform duration-200 {debugOpen
+                      ? 'rotate-180'
+                      : ''}"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2.5"><path d="m6 9 6 6 6-6" /></svg
+                  >
                 </div>
-                {#if disableSyncAtNight}
-                  <div class="flex gap-4 items-center" transition:slide>
-                      <div class="flex-1 space-y-2">
-                          <label for="disableSyncStart" class="text-label-medium text-gray-500">Start Uur</label>
-                          <input id="disableSyncStart" type="number" min="0" max="23" bind:value={disableSyncAtNightStart} onchange={applyNightSleep} class="w-full bg-surface-800 text-gray-300 rounded-m3-xs p-2 text-center text-title-small border border-white/5" />
+              </button>
+
+              {#if debugOpen}
+                <div
+                  id="settings-debug-content"
+                  transition:slide={{ duration: 250 }}
+                  class="space-y-4"
+                >
+                  <!-- System info cards -->
+                  {#if debugInfo}
+                    <div
+                      class="debug-card rounded-m3-md p-5 space-y-4 shadow-xl"
+                    >
+                      <p class="debug-label">Systeeminformatie</p>
+                      <div class="grid grid-cols-2 gap-3">
+                        <div class="info-tile">
+                          <span class="info-tile-icon text-amber-500">
+                            <svg
+                              class="w-5 h-5"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              stroke-width="2.5"
+                              ><path
+                                d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L22 22"
+                              /></svg
+                            >
+                          </span>
+                          <div class="min-w-0">
+                            <p class="info-tile-title">Token</p>
+                            <p class="info-tile-value">
+                              {debugInfo.tokenFile?.exists
+                                ? `Geldig (${debugInfo.tokenFile.sizeBytes}B)`
+                                : "Missend"}
+                            </p>
+                          </div>
+                        </div>
+                        <div class="info-tile">
+                          <span class="info-tile-icon text-primary-400">
+                            <svg
+                              class="w-5 h-5"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              stroke-width="2.5"
+                              ><path d="M9 11l3 3L22 4" /><path
+                                d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"
+                              /></svg
+                            >
+                          </span>
+                          <div class="min-w-0">
+                            <p class="info-tile-title">Sync State</p>
+                            <p class="info-tile-value truncate">
+                              {debugInfo.stateFile?.summary || "Geen bestand"}
+                            </p>
+                          </div>
+                        </div>
+                        <div class="info-tile col-span-2">
+                          <span class="info-tile-icon text-gray-500">
+                            <svg
+                              class="w-5 h-5"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              stroke-width="2.5"
+                              ><path
+                                d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"
+                              /></svg
+                            >
+                          </span>
+                          <div class="min-w-0">
+                            <p class="info-tile-title">Data Path</p>
+                            <p
+                              class="info-tile-value font-mono text-label-small break-all opacity-80"
+                            >
+                              {debugInfo.dataDir ?? "?"}
+                            </p>
+                          </div>
+                        </div>
                       </div>
-                      <div class="flex-1 space-y-2">
-                          <label for="disableSyncEnd" class="text-label-medium text-gray-500">Eind Uur</label>
-                          <input id="disableSyncEnd" type="number" min="0" max="23" bind:value={disableSyncAtNightEnd} onchange={applyNightSleep} class="w-full bg-surface-800 text-gray-300 rounded-m3-xs p-2 text-center text-title-small border border-white/5" />
+                      <Button
+                        variant="outlined"
+                        onclick={loadDebugInfo}
+                        disabled={debugLoading}
+                        class="w-full"
+                      >
+                        <svg
+                          class="w-3.5 h-3.5 {debugLoading
+                            ? 'animate-spin'
+                            : ''}"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="3"
+                          ><path
+                            d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"
+                          /><path d="M21 3v5h-5" /></svg
+                        >
+                        {debugLoading ? "Laden..." : "Gegevens verversen"}
+                      </Button>
+                    </div>
+                  {:else}
+                    <div
+                      class="debug-card rounded-m3-md p-8 flex flex-col items-center justify-center gap-4 text-center"
+                    >
+                      <svg
+                        class="w-10 h-10 text-gray-700"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.5"
+                        ><circle cx="12" cy="12" r="10" /><path
+                          d="M12 16v-4"
+                        /><path d="M12 8h.01" /></svg
+                      >
+                      <p class="text-label-medium text-gray-600 max-w-[150px]">
+                        Geen debug info geladen
+                      </p>
+                      <Button
+                        variant="tonal"
+                        onclick={loadDebugInfo}
+                        class="px-8 bg-amber-500/15! text-amber-400! border border-amber-500/20!"
+                        >Info ophalen</Button
+                      >
+                    </div>
+                  {/if}
+
+                  <!-- Sync interval -->
+                  <div class="debug-card rounded-m3-md p-6 space-y-4">
+                    <div class="flex items-center justify-between">
+                      <p class="debug-label">Sync frequentie</p>
+                      <div
+                        class="px-3 py-1 bg-amber-500/15 rounded-m3-sm border border-amber-500/20"
+                      >
+                        <span
+                          class="text-label-medium text-amber-500 tabular-nums"
+                          >{intervalLabel(intervalSeconds)}</span
+                        >
                       </div>
+                    </div>
+                    <input
+                      type="range"
+                      min="900"
+                      max="3600"
+                      step="300"
+                      bind:value={intervalSeconds}
+                      class="w-full h-2 bg-surface-800 rounded-full appearance-none cursor-pointer accent-amber-500 shadow-inner"
+                    />
+                    <p class="text-label-small text-gray-600 text-center -mt-1">
+                      Android staat een minimum van 15 minuten toe voor
+                      achtergrondsynchronisatie.
+                    </p>
+                    <div class="flex gap-2">
+                      {#each [900, 1800, 3600] as preset}
+                        <Chip
+                          variant="filter"
+                          selected={intervalSeconds === preset}
+                          onclick={() => {
+                            intervalSeconds = preset;
+                          }}
+                          class="flex-1 justify-center w-full"
+                        >
+                          {intervalLabel(preset)}
+                        </Chip>
+                      {/each}
+                    </div>
+                    <Button
+                      variant="tonal"
+                      onclick={applyInterval}
+                      class="w-full bg-amber-500/15! text-amber-400! border border-amber-500/20! shadow-lg shadow-amber-500/20 py-3.5"
+                    >
+                      Interval Toepassen
+                    </Button>
+                    {#if intervalResult}
+                      <p
+                        class="text-label-small text-amber-400 font-mono text-center bg-amber-500/5 py-2 rounded-m3-sm"
+                      >
+                        {intervalResult}
+                      </p>
+                    {/if}
                   </div>
-                {/if}
-            </div>
 
-            <div class="w-full h-[1px] bg-white/5"></div>
+                  <!-- Night Sleep & Notifications -->
+                  <div class="debug-card rounded-m3-md p-6 space-y-6">
+                    <div class="space-y-4">
+                      <div class="flex items-center justify-between">
+                        <p class="debug-label">Nachtrust</p>
+                        <Switch
+                          checked={disableSyncAtNight}
+                          onCheckedChange={(v) => {
+                            disableSyncAtNight = v;
+                            applyNightSleep();
+                          }}
+                          ariaLabel="Nachtrust"
+                        />
+                      </div>
+                      {#if disableSyncAtNight}
+                        <div class="flex gap-4 items-center" transition:slide>
+                          <div class="flex-1 space-y-2">
+                            <label
+                              for="disableSyncStart"
+                              class="text-label-medium text-gray-500"
+                              >Start Uur</label
+                            >
+                            <input
+                              id="disableSyncStart"
+                              type="number"
+                              min="0"
+                              max="23"
+                              bind:value={disableSyncAtNightStart}
+                              onchange={applyNightSleep}
+                              class="w-full bg-surface-800 text-gray-300 rounded-m3-xs p-2 text-center text-title-small border border-white/5"
+                            />
+                          </div>
+                          <div class="flex-1 space-y-2">
+                            <label
+                              for="disableSyncEnd"
+                              class="text-label-medium text-gray-500"
+                              >Eind Uur</label
+                            >
+                            <input
+                              id="disableSyncEnd"
+                              type="number"
+                              min="0"
+                              max="23"
+                              bind:value={disableSyncAtNightEnd}
+                              onchange={applyNightSleep}
+                              class="w-full bg-surface-800 text-gray-300 rounded-m3-xs p-2 text-center text-title-small border border-white/5"
+                            />
+                          </div>
+                        </div>
+                      {/if}
+                    </div>
 
-            <div class="flex items-center justify-between">
-                <div>
-                    <p class="debug-label">Notificaties Uitzetten</p>
-                    <p class="text-body-small text-red-400 mt-1 max-w-[200px]">Stopt alle achtergrond notificaties volledig</p>
+                    <div class="w-full h-[1px] bg-white/5"></div>
+
+                    <div class="flex items-center justify-between">
+                      <div>
+                        <p class="debug-label">Notificaties Uitzetten</p>
+                        <p
+                          class="text-body-small text-red-400 mt-1 max-w-[200px]"
+                        >
+                          Stopt alle achtergrond notificaties volledig
+                        </p>
+                      </div>
+                      <Switch
+                        checked={disableAllNotifications}
+                        onCheckedChange={(v) => {
+                          disableAllNotifications = v;
+                          applyDisableAllNotifications();
+                        }}
+                        ariaLabel="Notificaties uitzetten"
+                      />
+                    </div>
+                  </div>
+
+                  <!-- Actions row -->
+                  <div class="grid grid-cols-2 gap-3">
+                    <Button
+                      variant="tonal"
+                      onclick={doForceSync}
+                      disabled={forceSyncBusy}
+                      class="h-auto! flex-col p-6 gap-3 rounded-m3-md! hover:bg-surface-700/40 ring-1 ring-white/5"
+                    >
+                      <div
+                        class="w-12 h-12 rounded-m3-md bg-amber-500/10 text-amber-500 flex items-center justify-center shadow-inner"
+                      >
+                        <svg
+                          class="w-6 h-6 {forceSyncBusy ? 'animate-spin' : ''}"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="2.5"
+                          ><path
+                            d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"
+                          /><path d="M21 3v5h-5" /></svg
+                        >
+                      </div>
+                      <div class="text-center">
+                        <p class="text-label-medium text-gray-200">
+                          Force Sync
+                        </p>
+                        <p class="text-label-small text-gray-600 mt-1">
+                          Nu ophalen
+                        </p>
+                      </div>
+                    </Button>
+                    <Button
+                      variant="tonal"
+                      onclick={doClearState}
+                      class="h-auto! flex-col p-6 gap-3 rounded-m3-md! hover:bg-red-500/10 ring-1 ring-white/5"
+                    >
+                      <div
+                        class="w-12 h-12 rounded-m3-md bg-red-500/10 text-red-400 flex items-center justify-center shadow-inner"
+                      >
+                        <svg
+                          class="w-6 h-6"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="2.5"
+                          ><path d="M3 6h18" /><path
+                            d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"
+                          /><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" /><line
+                            x1="10"
+                            y1="11"
+                            x2="10"
+                            y2="17"
+                          /><line x1="14" y1="11" x2="14" y2="17" /></svg
+                        >
+                      </div>
+                      <div class="text-center">
+                        <p class="text-label-medium text-red-400">Baseline</p>
+                        <p class="text-label-small text-gray-600 mt-1">
+                          State wissen
+                        </p>
+                      </div>
+                    </Button>
+                  </div>
+
+                  <!-- Logs -->
+                  <div
+                    class="debug-card rounded-m3-md p-5 space-y-4 overflow-hidden relative"
+                  >
+                    <div
+                      class="flex items-center justify-between relative z-10"
+                    >
+                      <p class="debug-label">Systeemboodschappen</p>
+                      <Button
+                        variant="text"
+                        onclick={() => (logs = [])}
+                        class="text-gray-600! hover:text-red-400! px-3"
+                      >
+                        Opschonen
+                      </Button>
+                    </div>
+                    <div
+                      class="space-y-2 max-h-60 overflow-y-auto no-scrollbar relative z-10 pr-1"
+                    >
+                      {#each logs as log}
+                        <div
+                          class="flex gap-3 items-start p-2.5 rounded-m3-sm bg-surface-950/40 border border-white/5"
+                          transition:slide={{ duration: 150 }}
+                        >
+                          <span
+                            class="text-label-small text-gray-700 shrink-0 tabular-nums"
+                            >{log.time}</span
+                          >
+                          <div class="flex-1 min-w-0">
+                            <p
+                              class="text-label-small font-mono text-gray-400 break-words leading-relaxed"
+                            >
+                              <span
+                                class="{log.level === 'error'
+                                  ? 'text-red-500'
+                                  : log.level === 'warn'
+                                    ? 'text-amber-500'
+                                    : 'text-emerald-500'} text-label-medium mr-2"
+                              >
+                                {log.level.toUpperCase()}
+                              </span>
+                              {log.msg}
+                            </p>
+                          </div>
+                        </div>
+                      {:else}
+                        <div
+                          class="py-12 flex flex-col items-center justify-center opacity-30"
+                        >
+                          <svg
+                            class="w-10 h-10 mb-4"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1"
+                            ><path
+                              d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"
+                            /></svg
+                          >
+                          <p class="text-label-small">Geen activiteiten</p>
+                        </div>
+                      {/each}
+                    </div>
+                    <!-- Glow effect -->
+                    <div
+                      class="absolute -bottom-10 -right-10 w-40 h-40 bg-primary-500/5 blur-[60px] rounded-full"
+                    ></div>
+                  </div>
                 </div>
-                <Switch
-                    checked={disableAllNotifications}
-                    onCheckedChange={(v) => { disableAllNotifications = v; applyDisableAllNotifications(); }}
-                    ariaLabel="Notificaties uitzetten"
-                  />
-            </div>
-          </div>
+              {/if}
+            </section>
+          {/snippet}
 
-          <!-- Actions row -->
-          <div class="grid grid-cols-2 gap-3">
-            <Button
-              variant="tonal"
-              onclick={doForceSync}
-              disabled={forceSyncBusy}
-              class="h-auto! flex-col p-6 gap-3 rounded-m3-md! hover:bg-surface-700/40 ring-1 ring-white/5"
-            >
-              <div class="w-12 h-12 rounded-m3-md bg-amber-500/10 text-amber-500 flex items-center justify-center shadow-inner">
-                <svg class="w-6 h-6 {forceSyncBusy ? 'animate-spin' : ''}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
-              </div>
-              <div class="text-center">
-                <p class="text-label-medium text-gray-200">Force Sync</p>
-                <p class="text-label-small text-gray-600 mt-1">Nu ophalen</p>
-              </div>
-            </Button>
-            <Button
-              variant="tonal"
-              onclick={doClearState}
-              class="h-auto! flex-col p-6 gap-3 rounded-m3-md! hover:bg-red-500/10 ring-1 ring-white/5"
-            >
-              <div class="w-12 h-12 rounded-m3-md bg-red-500/10 text-red-400 flex items-center justify-center shadow-inner">
-                <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
-              </div>
-              <div class="text-center">
-                <p class="text-label-medium text-red-400">Baseline</p>
-                <p class="text-label-small text-gray-600 mt-1">State wissen</p>
-              </div>
-            </Button>
-          </div>
+          <!-- ===== GITHUB REPO INFO ===== -->
+          {#if activeSection === "about"}
+            <section id="settings-about" in:fly={{ y: 20 }} class="space-y-4">
+              <div
+                class="glass p-6 rounded-m3-md border-white/5 space-y-4 hover:bg-surface-800/40 transition-all"
+              >
+                <div class="flex items-center justify-between gap-4">
+                  <div>
+                    <h3 class="text-title-small text-gray-100">Updates</h3>
+                    <p class="text-label-small text-gray-600 mt-0.5">
+                      {#if appVersion}Huidige versie: {appVersion}{:else}Versie
+                        laden…{/if}
+                    </p>
+                  </div>
+                  <Button
+                    variant="tonal"
+                    onclick={() => refreshUpdateStatus()}
+                    disabled={$updateStatus.status === "checking"}
+                    class="shrink-0"
+                  >
+                    {$updateStatus.status === "checking"
+                      ? "⏳ Controleren…"
+                      : "Controleren"}
+                  </Button>
+                </div>
 
-          <!-- Logs -->
-          <div class="debug-card rounded-m3-md p-5 space-y-4 overflow-hidden relative">
-            <div class="flex items-center justify-between relative z-10">
-              <p class="debug-label">Systeemboodschappen</p>
-              <Button variant="text" onclick={() => logs = []} class="text-gray-600! hover:text-red-400! px-3">
-                Opschonen
-              </Button>
-            </div>
-            <div class="space-y-2 max-h-60 overflow-y-auto no-scrollbar relative z-10 pr-1">
-              {#each logs as log}
-                <div class="flex gap-3 items-start p-2.5 rounded-m3-sm bg-surface-950/40 border border-white/5" transition:slide={{ duration: 150 }}>
-                  <span class="text-label-small text-gray-700 shrink-0 tabular-nums">{log.time}</span>
-                  <div class="flex-1 min-w-0">
-                    <p class="text-label-small font-mono text-gray-400 break-words leading-relaxed">
-                      <span class="{log.level === 'error' ? 'text-red-500' : log.level === 'warn' ? 'text-amber-500' : 'text-emerald-500'} text-label-medium mr-2">
-                        {log.level.toUpperCase()}
-                      </span>
-                      {log.msg}
+                {#if $updateStatus.status === "available" && $updateStatus.result}
+                  <div
+                    class="p-4 rounded-m3-md bg-primary-500/10 border border-primary-500/20 space-y-2"
+                  >
+                    <p class="text-title-small text-gray-100">
+                      Update beschikbaar: {$updateStatus.result.tag}
+                    </p>
+                    {#if $updateStatus.result.publishedAt}
+                      <p class="text-label-small text-gray-500">
+                        Uitgebracht op {new Date(
+                          $updateStatus.result.publishedAt,
+                        ).toLocaleDateString("nl-NL", {
+                          day: "numeric",
+                          month: "long",
+                          year: "numeric",
+                        })}
+                      </p>
+                    {/if}
+                    {#if $updateStatus.result.notes}
+                      <details class="text-body-small text-gray-400">
+                        <summary
+                          class="cursor-pointer text-label-medium text-primary-400"
+                          >Release-opmerkingen</summary
+                        >
+                        <p class="mt-2 whitespace-pre-wrap leading-relaxed">
+                          {$updateStatus.result.notes.slice(0, 2000)}
+                        </p>
+                      </details>
+                    {/if}
+                    <Button
+                      variant="filled"
+                      onclick={() =>
+                        openReleasePage(
+                          $updateStatus.result?.htmlUrl ??
+                            "https://github.com/JPDeerenberg/friday/releases/latest",
+                        )}
+                      class="w-full"
+                    >
+                      Bekijk release
+                    </Button>
+                  </div>
+                {:else if $updateStatus.status === "up-to-date"}
+                  <p class="text-body-small text-emerald-400">
+                    ✅ Je hebt de nieuwste versie.
+                  </p>
+                {:else if $updateStatus.status === "error"}
+                  <p class="text-body-small text-red-400">
+                    {$updateStatus.error}
+                  </p>
+                {:else if $updateStatus.status === "idle"}
+                  <p class="text-body-small text-gray-600">
+                    Nog niet gecontroleerd — tik op Controleren.
+                  </p>
+                {/if}
+              </div>
+              <div
+                class="glass p-6 rounded-m3-md border-white/5 space-y-4 hover:bg-surface-800/40 transition-all"
+              >
+                <div class="flex items-center gap-3">
+                  <div
+                    class="w-10 h-10 rounded-m3-sm bg-surface-900 border border-surface-700/50 flex items-center justify-center text-gray-400 group-hover:rotate-6 transition-transform shadow-inner shrink-0"
+                  >
+                    <svg
+                      class="w-5 h-5"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      ><path
+                        d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.403 5.403 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65-.17.6-.22 1.23-.15 1.85v4"
+                      /><path d="M9 18c-4.51 2-5-2-7-2" /></svg
+                    >
+                  </div>
+                  <div>
+                    <h3 class="text-title-small text-gray-100">
+                      Friday — Open source
+                    </h3>
+                    <p class="text-label-small text-gray-600 mt-0.5">
+                      Bekijk de broncode op GitHub
                     </p>
                   </div>
                 </div>
-              {:else}
-                <div class="py-12 flex flex-col items-center justify-center opacity-30">
-                  <svg class="w-10 h-10 mb-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-                  <p class="text-label-small">Geen activiteiten</p>
-                </div>
-              {/each}
-            </div>
-            <!-- Glow effect -->
-            <div class="absolute -bottom-10 -right-10 w-40 h-40 bg-primary-500/5 blur-[60px] rounded-full"></div>
-          </div>
-        </div>
-      {/if}
-    </section>
-    {/snippet}
 
-    <!-- ===== GITHUB REPO INFO ===== -->
-    {#if activeSection === 'about'}
-    <section id="settings-about" in:fly={{ y: 20 }} class="space-y-4">
-      <div class="glass p-6 rounded-m3-md border-white/5 space-y-4 hover:bg-surface-800/40 transition-all">
-        <div class="flex items-center justify-between gap-4">
-          <div>
-            <h3 class="text-title-small text-gray-100">Updates</h3>
-            <p class="text-label-small text-gray-600 mt-0.5">
-              {#if appVersion}Huidige versie: {appVersion}{:else}Versie laden…{/if}
+                <a
+                  href="https://github.com/JPDeerenberg/friday"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="flex items-center justify-between p-4 rounded-m3-md bg-surface-900/60 border border-white/5 hover:bg-surface-800/80 hover:border-primary-500/30 transition-all group/repo active:scale-[0.98]"
+                >
+                  <div class="flex items-center gap-3 min-w-0">
+                    <div
+                      class="w-9 h-9 rounded-m3-sm bg-primary-500/15 flex items-center justify-center text-primary-400 shrink-0"
+                    >
+                      <svg
+                        class="w-5 h-5"
+                        viewBox="0 0 24 24"
+                        fill="currentColor"
+                        ><path
+                          d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"
+                        /></svg
+                      >
+                    </div>
+                    <div class="min-w-0">
+                      <p
+                        class="text-title-small text-gray-200 truncate group-hover/repo:text-primary-400 transition-colors"
+                      >
+                        JPDeerenberg/friday
+                      </p>
+                      <p class="text-label-small text-gray-600 mt-0.5">
+                        Magister Tauri app — Volg de ontwikkeling
+                      </p>
+                    </div>
+                  </div>
+                  <svg
+                    class="w-5 h-5 text-gray-600 group-hover/repo:text-primary-400 transition-colors shrink-0"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2.5"
+                    ><path
+                      d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"
+                    /><polyline points="15 3 21 3 21 9" /><line
+                      x1="10"
+                      y1="14"
+                      x2="21"
+                      y2="3"
+                    /></svg
+                  >
+                </a>
+
+                <!-- GitHub Stats via API -->
+                {#if repoStats}
+                  <div class="grid grid-cols-3 gap-3">
+                    <div
+                      class="bg-surface-900/50 rounded-m3-sm p-3 text-center border border-white/5"
+                    >
+                      <p class="text-title-large text-gray-200 tabular-nums">
+                        {repoStats.stars}
+                      </p>
+                      <p class="text-label-small text-gray-600 mt-0.5">
+                        Sterren
+                      </p>
+                    </div>
+                    <div
+                      class="bg-surface-900/50 rounded-m3-sm p-3 text-center border border-white/5"
+                    >
+                      <p class="text-title-large text-gray-200 tabular-nums">
+                        {repoStats.forks}
+                      </p>
+                      <p class="text-label-small text-gray-600 mt-0.5">Forks</p>
+                    </div>
+                    <div
+                      class="bg-surface-900/50 rounded-m3-sm p-3 text-center border border-white/5"
+                    >
+                      <p class="text-title-large text-gray-200 tabular-nums">
+                        {repoStats.openIssues}
+                      </p>
+                      <p class="text-label-small text-gray-600 mt-0.5">
+                        Issues
+                      </p>
+                    </div>
+                  </div>
+                {:else if repoStatsError}
+                  <p
+                    class="text-label-small text-red-400 text-center font-mono"
+                  >
+                    {repoStatsError}
+                  </p>
+                {:else}
+                  <div class="flex items-center justify-center gap-2 py-2">
+                    <div
+                      class="w-4 h-4 border-2 border-primary-500 border-t-transparent rounded-full animate-spin"
+                    ></div>
+                    <span class="text-label-small text-gray-600"
+                      >Repo info laden...</span
+                    >
+                  </div>
+                {/if}
+              </div>
+              {@render debugPanel()}
+            </section>
+          {/if}
+
+          <div class="pt-10 flex flex-col items-center gap-2">
+            <div class="w-10 h-[1px] bg-surface-800"></div>
+            <p class="text-label-small text-gray-600 text-center">
+              Versie {appVersion || "…"} • Friday App
             </p>
           </div>
-          <Button
-            variant="tonal"
-            onclick={() => refreshUpdateStatus()}
-            disabled={$updateStatus.status === 'checking'}
-            class="shrink-0"
-          >
-            {$updateStatus.status === 'checking' ? '⏳ Controleren…' : 'Controleren'}
-          </Button>
         </div>
-
-        {#if $updateStatus.status === 'available' && $updateStatus.result}
-          <div class="p-4 rounded-m3-md bg-primary-500/10 border border-primary-500/20 space-y-2">
-            <p class="text-title-small text-gray-100">Update beschikbaar: {$updateStatus.result.tag}</p>
-            {#if $updateStatus.result.publishedAt}
-              <p class="text-label-small text-gray-500">
-                Uitgebracht op {new Date($updateStatus.result.publishedAt).toLocaleDateString('nl-NL', { day: 'numeric', month: 'long', year: 'numeric' })}
-              </p>
-            {/if}
-            {#if $updateStatus.result.notes}
-              <details class="text-body-small text-gray-400">
-                <summary class="cursor-pointer text-label-medium text-primary-400">Release-opmerkingen</summary>
-                <p class="mt-2 whitespace-pre-wrap leading-relaxed">{$updateStatus.result.notes.slice(0, 2000)}</p>
-              </details>
-            {/if}
-            <Button variant="filled" onclick={() => openReleasePage($updateStatus.result?.htmlUrl ?? 'https://github.com/JPDeerenberg/friday/releases/latest')} class="w-full">
-              Bekijk release
-            </Button>
-          </div>
-        {:else if $updateStatus.status === 'up-to-date'}
-          <p class="text-body-small text-emerald-400">✅ Je hebt de nieuwste versie.</p>
-        {:else if $updateStatus.status === 'error'}
-          <p class="text-body-small text-red-400">{$updateStatus.error}</p>
-        {:else if $updateStatus.status === 'idle'}
-          <p class="text-body-small text-gray-600">Nog niet gecontroleerd — tik op Controleren.</p>
-        {/if}
-      </div>
-      <div class="glass p-6 rounded-m3-md border-white/5 space-y-4 hover:bg-surface-800/40 transition-all">
-        <div class="flex items-center gap-3">
-          <div class="w-10 h-10 rounded-m3-sm bg-surface-900 border border-surface-700/50 flex items-center justify-center text-gray-400 group-hover:rotate-6 transition-transform shadow-inner shrink-0">
-            <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.403 5.403 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65-.17.6-.22 1.23-.15 1.85v4"/><path d="M9 18c-4.51 2-5-2-7-2"/></svg>
-          </div>
-          <div>
-            <h3 class="text-title-small text-gray-100">Friday — Open source</h3>
-            <p class="text-label-small text-gray-600 mt-0.5">Bekijk de broncode op GitHub</p>
-          </div>
-        </div>
-
-        <a
-          href="https://github.com/JPDeerenberg/friday"
-          target="_blank"
-          rel="noopener noreferrer"
-          class="flex items-center justify-between p-4 rounded-m3-md bg-surface-900/60 border border-white/5 hover:bg-surface-800/80 hover:border-primary-500/30 transition-all group/repo active:scale-[0.98]"
-        >
-          <div class="flex items-center gap-3 min-w-0">
-            <div class="w-9 h-9 rounded-m3-sm bg-primary-500/15 flex items-center justify-center text-primary-400 shrink-0">
-              <svg class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
-            </div>
-            <div class="min-w-0">
-              <p class="text-title-small text-gray-200 truncate group-hover/repo:text-primary-400 transition-colors">JPDeerenberg/friday</p>
-              <p class="text-label-small text-gray-600 mt-0.5">Magister Tauri app — Volg de ontwikkeling</p>
-            </div>
-          </div>
-          <svg class="w-5 h-5 text-gray-600 group-hover/repo:text-primary-400 transition-colors shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-        </a>
-
-        <!-- GitHub Stats via API -->
-        {#if repoStats}
-          <div class="grid grid-cols-3 gap-3">
-            <div class="bg-surface-900/50 rounded-m3-sm p-3 text-center border border-white/5">
-              <p class="text-title-large text-gray-200 tabular-nums">{repoStats.stars}</p>
-              <p class="text-label-small text-gray-600 mt-0.5">Sterren</p>
-            </div>
-            <div class="bg-surface-900/50 rounded-m3-sm p-3 text-center border border-white/5">
-              <p class="text-title-large text-gray-200 tabular-nums">{repoStats.forks}</p>
-              <p class="text-label-small text-gray-600 mt-0.5">Forks</p>
-            </div>
-            <div class="bg-surface-900/50 rounded-m3-sm p-3 text-center border border-white/5">
-              <p class="text-title-large text-gray-200 tabular-nums">{repoStats.openIssues}</p>
-              <p class="text-label-small text-gray-600 mt-0.5">Issues</p>
-            </div>
-          </div>
-        {:else if repoStatsError}
-          <p class="text-label-small text-red-400 text-center font-mono">{repoStatsError}</p>
-        {:else}
-          <div class="flex items-center justify-center gap-2 py-2">
-            <div class="w-4 h-4 border-2 border-primary-500 border-t-transparent rounded-full animate-spin"></div>
-            <span class="text-label-small text-gray-600">Repo info laden...</span>
-          </div>
-         {/if}
-       </div>
-       {@render debugPanel()}
-     </section>
-    {/if}
-
-    <div class="pt-10 flex flex-col items-center gap-2">
-      <div class="w-10 h-[1px] bg-surface-800"></div>
-      <p class="text-label-small text-gray-600 text-center">Versie {appVersion || '…'} • Friday App</p>
+      </main>
     </div>
-      </div>
-    </main>
-  </div>
   {/if}
 </div>
 
@@ -1492,7 +3010,7 @@
     backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(20px);
     border: 1px solid oklch(1 0 0 / 0.05);
-    box-shadow: 0 10px 30px -10px rgba(0,0,0,0.4);
+    box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.4);
   }
 
   .debug-card {
@@ -1541,6 +3059,11 @@
     margin-top: 4px;
   }
 
-  .no-scrollbar::-webkit-scrollbar { display: none; }
-  .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
 </style>

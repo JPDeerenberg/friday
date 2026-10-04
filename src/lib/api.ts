@@ -1,6 +1,13 @@
 import { invoke } from "@tauri-apps/api/core";
 import { sanitizeHtml } from "$lib/sanitize";
-import { clearWebSession, loadWebSession, sessionTierA, webBackend, webRequest, webRequestBytes } from "./web-session.ts";
+import {
+  clearWebSession,
+  loadWebSession,
+  sessionTierA,
+  webBackend,
+  webRequest,
+  webRequestBytes,
+} from "./web-session.ts";
 import * as tierB from "./web-tier-b.ts";
 import type { SessionTokens } from "./backend.ts";
 import type {
@@ -108,7 +115,9 @@ export async function startLoginFlow(
   return invoke("start_login_flow", { tenant, username });
 }
 
-export async function handleAuthCallback(redirectUrl: string): Promise<Account> {
+export async function handleAuthCallback(
+  redirectUrl: string,
+): Promise<Account> {
   return invoke("handle_auth_callback", { redirectUrl });
 }
 
@@ -118,7 +127,8 @@ export async function isAuthenticated(): Promise<boolean> {
 }
 
 export async function getAccount(): Promise<Account> {
-  if (isWebBuild()) return (await webRequest("GET", "account?noCache=0")) as unknown as Account;
+  if (isWebBuild())
+    return (await webRequest("GET", "account?noCache=0")) as unknown as Account;
   return invoke("get_account");
 }
 
@@ -154,9 +164,18 @@ export async function logout(): Promise<void> {
       } catch (_) {}
     }
     await clearWebSession();
+    // Chats are per-account: never leak them into the next login.
+    try {
+      const { clearAllConversations } = await import("./ai-chats.ts");
+      await clearAllConversations();
+    } catch {}
     return;
   }
-  return invoke("logout");
+  await invoke("logout");
+  try {
+    const { clearAllConversations } = await import("./ai-chats.ts");
+    await clearAllConversations();
+  } catch {}
 }
 
 export type RestoreSessionStatus = "restored" | "logged_out" | "unavailable";
@@ -169,11 +188,13 @@ export async function restoreSession(): Promise<RestoreSessionStatus> {
   }
   if (typeof result === "string") {
     const s = result.toLowerCase().trim();
-    if (s === "restored" || s === "logged_out" || s === "unavailable") return s as RestoreSessionStatus;
+    if (s === "restored" || s === "logged_out" || s === "unavailable")
+      return s as RestoreSessionStatus;
     // Handle quoted JSON string edge case
     try {
       const parsed = JSON.parse(result);
-      if (typeof parsed === "string") return parsed.toLowerCase() as RestoreSessionStatus;
+      if (typeof parsed === "string")
+        return parsed.toLowerCase() as RestoreSessionStatus;
     } catch {}
     return s as RestoreSessionStatus;
   }
@@ -182,10 +203,12 @@ export async function restoreSession(): Promise<RestoreSessionStatus> {
     const key = Object.keys(result)[0];
     if (key) {
       const s = key.toLowerCase();
-      if (s === "restored" || s === "logged_out" || s === "unavailable") return s as RestoreSessionStatus;
+      if (s === "restored" || s === "logged_out" || s === "unavailable")
+        return s as RestoreSessionStatus;
     }
     // Already lowercased object with status field?
-    if (result.status) return String(result.status).toLowerCase() as RestoreSessionStatus;
+    if (result.status)
+      return String(result.status).toLowerCase() as RestoreSessionStatus;
   }
   console.warn("Unexpected restore_session result shape", result);
   return "unavailable";
@@ -193,7 +216,10 @@ export async function restoreSession(): Promise<RestoreSessionStatus> {
 
 export async function getProfileInfo(personId: number): Promise<ProfileInfo> {
   if (isWebBuild()) {
-    return (await webRequest("GET", `personen/${personId}/profiel`)) as unknown as ProfileInfo;
+    return (await webRequest(
+      "GET",
+      `personen/${personId}/profiel`,
+    )) as unknown as ProfileInfo;
   }
   return invoke("get_profile_info", { personId });
 }
@@ -202,7 +228,10 @@ export async function getProfileAddresses(
   personId: number,
 ): Promise<ProfileAddress[]> {
   if (isWebBuild()) {
-    const data = (await webRequest("GET", `personen/${personId}/adressen`)) as unknown as {
+    const data = (await webRequest(
+      "GET",
+      `personen/${personId}/adressen`,
+    )) as unknown as {
       Items?: ProfileAddress[];
       items?: ProfileAddress[];
     };
@@ -227,7 +256,14 @@ export async function getCalendarEvents(
   start: string,
   end: string,
 ): Promise<CalendarEvent[]> {
-  if (isWebBuild()) return tierB.webGetCalendarEvents(sessionTierA(), await wtokens(), personId, start, end);
+  if (isWebBuild())
+    return tierB.webGetCalendarEvents(
+      sessionTierA(),
+      await wtokens(),
+      personId,
+      start,
+      end,
+    );
   const events = await invoke("get_calendar_events", { personId, start, end });
   return (events as CalendarEvent[]).map(sanitizeCalendarEvent);
 }
@@ -237,7 +273,14 @@ export async function getAbsences(
   van: string,
   tot: string,
 ): Promise<Absence[]> {
-  if (isWebBuild()) return tierB.webGetAbsences(sessionTierA(), await wtokens(), personId, van, tot);
+  if (isWebBuild())
+    return tierB.webGetAbsences(
+      sessionTierA(),
+      await wtokens(),
+      personId,
+      van,
+      tot,
+    );
   return invoke("get_absences", { personId, van, tot });
 }
 
@@ -245,7 +288,13 @@ export async function getCalendarEvent(
   personId: number,
   eventId: number,
 ): Promise<CalendarEvent> {
-  if (isWebBuild()) return tierB.webGetCalendarEvent(sessionTierA(), await wtokens(), personId, eventId);
+  if (isWebBuild())
+    return tierB.webGetCalendarEvent(
+      sessionTierA(),
+      await wtokens(),
+      personId,
+      eventId,
+    );
   const event = (await invoke("get_calendar_event", {
     personId,
     eventId,
@@ -262,7 +311,11 @@ export async function downloadFile(
     // Browser: save via object URL + anchor click instead of a disk path.
     void downloadDir;
     try {
-      const blob = await tierB.webDownloadFile(sessionTierA(), await wtokens(), url);
+      const blob = await tierB.webDownloadFile(
+        sessionTierA(),
+        await wtokens(),
+        url,
+      );
       const objectUrl = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = objectUrl;
@@ -301,15 +354,20 @@ export async function createCalendarEvent(params: {
   eventType?: number;
 }): Promise<void> {
   if (isWebBuild()) {
-    return tierB.webCreateCalendarEvent(sessionTierA(), await wtokens(), params.personId, {
-      start: params.start,
-      einde: params.einde,
-      duurtHeleDag: params.duurtHeleDag,
-      omschrijving: params.omschrijving,
-      lokatie: params.lokatie,
-      inhoud: params.inhoud,
-      eventType: params.eventType,
-    });
+    return tierB.webCreateCalendarEvent(
+      sessionTierA(),
+      await wtokens(),
+      params.personId,
+      {
+        start: params.start,
+        einde: params.einde,
+        duurtHeleDag: params.duurtHeleDag,
+        omschrijving: params.omschrijving,
+        lokatie: params.lokatie,
+        inhoud: params.inhoud,
+        eventType: params.eventType,
+      },
+    );
   }
   return invoke("create_calendar_event", {
     personId: params.personId,
@@ -327,16 +385,29 @@ export async function updateCalendarEvent(
   selfUrl: string,
   eventJson: string,
 ): Promise<void> {
-  if (isWebBuild()) return tierB.webUpdateCalendarEvent(sessionTierA(), await wtokens(), selfUrl, eventJson);
+  if (isWebBuild())
+    return tierB.webUpdateCalendarEvent(
+      sessionTierA(),
+      await wtokens(),
+      selfUrl,
+      eventJson,
+    );
   return invoke("update_calendar_event", { selfUrl, eventJson });
 }
 
 export async function deleteCalendarEvent(selfUrl: string): Promise<void> {
-  if (isWebBuild()) return tierB.webDeleteCalendarEvent(sessionTierA(), await wtokens(), selfUrl);
+  if (isWebBuild())
+    return tierB.webDeleteCalendarEvent(
+      sessionTierA(),
+      await wtokens(),
+      selfUrl,
+    );
   return invoke("delete_calendar_event", { selfUrl });
 }
 
-export async function toggleCalendarEventDone(event: CalendarEvent): Promise<void> {
+export async function toggleCalendarEventDone(
+  event: CalendarEvent,
+): Promise<void> {
   const updatedEvent = { ...event, Afgerond: !event.Afgerond };
   // Ensure we have a selfUrl
   let url = event.self_url;
@@ -354,7 +425,14 @@ export async function getSchoolyears(
   start?: string,
   end?: string,
 ): Promise<Schoolyear[]> {
-  if (isWebBuild()) return tierB.webGetSchoolyears(sessionTierA(), await wtokens(), personId, start, end);
+  if (isWebBuild())
+    return tierB.webGetSchoolyears(
+      sessionTierA(),
+      await wtokens(),
+      personId,
+      start,
+      end,
+    );
   return invoke("get_schoolyears", { personId, start, end });
 }
 
@@ -363,7 +441,14 @@ export async function getGrades(
   schoolyearId: number,
   einde: string,
 ): Promise<Grade[]> {
-  if (isWebBuild()) return tierB.webGetGrades(sessionTierA(), await wtokens(), personId, schoolyearId, einde);
+  if (isWebBuild())
+    return tierB.webGetGrades(
+      sessionTierA(),
+      await wtokens(),
+      personId,
+      schoolyearId,
+      einde,
+    );
   return invoke("get_grades", { personId, schoolyearId, einde });
 }
 
@@ -373,7 +458,13 @@ export async function getGradeExtraInfo(
   kolomId: number,
 ): Promise<GradeExtraInfo> {
   if (isWebBuild())
-    return tierB.webGetGradeExtraInfo(sessionTierA(), await wtokens(), personId, schoolyearId, kolomId);
+    return tierB.webGetGradeExtraInfo(
+      sessionTierA(),
+      await wtokens(),
+      personId,
+      schoolyearId,
+      kolomId,
+    );
   return await invoke("get_grade_extra_info", {
     personId,
     schoolyearId,
@@ -392,7 +483,8 @@ export async function getBulkGradeExtraInfo(
     return tierB.webGetBulkGradeExtraInfo(
       be,
       tokens,
-      (id) => tierB.webGetGradeExtraInfo(be, tokens, personId, schoolyearId, id),
+      (id) =>
+        tierB.webGetGradeExtraInfo(be, tokens, personId, schoolyearId, id),
       kolomIds,
     );
   }
@@ -407,13 +499,20 @@ export async function getRecentGrades(
   personId: number,
   top?: number,
 ): Promise<Grade[]> {
-  if (isWebBuild()) return tierB.webGetRecentGrades(sessionTierA(), await wtokens(), personId, top);
+  if (isWebBuild())
+    return tierB.webGetRecentGrades(
+      sessionTierA(),
+      await wtokens(),
+      personId,
+      top,
+    );
   return await invoke("get_recent_grades", { personId, top });
 }
 
 // === Messages ===
 export async function getMessageFolders(): Promise<MessagesFolder[]> {
-  if (isWebBuild()) return tierB.webGetMessageFolders(sessionTierA(), await wtokens());
+  if (isWebBuild())
+    return tierB.webGetMessageFolders(sessionTierA(), await wtokens());
   return invoke("get_message_folders");
 }
 
@@ -423,7 +522,15 @@ export async function getMessages(
   skip?: number,
   query?: string,
 ): Promise<Message[]> {
-  if (isWebBuild()) return tierB.webGetMessages(sessionTierA(), await wtokens(), berichtenLink, top, skip, query);
+  if (isWebBuild())
+    return tierB.webGetMessages(
+      sessionTierA(),
+      await wtokens(),
+      berichtenLink,
+      top,
+      skip,
+      query,
+    );
   const messages = await invoke("get_messages", {
     berichtenLink,
     top,
@@ -434,7 +541,8 @@ export async function getMessages(
 }
 
 export async function getMessageDetail(selfLink: string): Promise<Message> {
-  if (isWebBuild()) return tierB.webGetMessageDetail(sessionTierA(), await wtokens(), selfLink);
+  if (isWebBuild())
+    return tierB.webGetMessageDetail(sessionTierA(), await wtokens(), selfLink);
   const msg = (await invoke("get_message_detail", { selfLink })) as Message;
   return sanitizeMessage(msg);
 }
@@ -451,7 +559,8 @@ export async function sendMessage(params: {
   relatedMessageId?: number;
   attachmentIds: number[];
 }): Promise<void> {
-  if (isWebBuild()) return tierB.webSendMessage(sessionTierA(), await wtokens(), params);
+  if (isWebBuild())
+    return tierB.webSendMessage(sessionTierA(), await wtokens(), params);
   return invoke("send_message", params);
 }
 
@@ -459,7 +568,13 @@ export async function markMessagesAsRead(
   messageIds: number[],
   read: boolean,
 ): Promise<void> {
-  if (isWebBuild()) return tierB.webMarkMessagesAsRead(sessionTierA(), await wtokens(), messageIds, read);
+  if (isWebBuild())
+    return tierB.webMarkMessagesAsRead(
+      sessionTierA(),
+      await wtokens(),
+      messageIds,
+      read,
+    );
   return invoke("mark_messages_as_read", { messageIds, read });
 }
 
@@ -468,7 +583,12 @@ export async function moveMessagesToFolder(
   folderId: number,
 ): Promise<void> {
   if (isWebBuild())
-    return tierB.webMoveMessagesToFolder(sessionTierA(), await wtokens(), messageIds, folderId);
+    return tierB.webMoveMessagesToFolder(
+      sessionTierA(),
+      await wtokens(),
+      messageIds,
+      folderId,
+    );
   return invoke("move_messages_to_folder", { messageIds, folderId });
 }
 
@@ -476,7 +596,13 @@ export async function deleteMessages(
   messageIds: number[],
   areConcepts: boolean,
 ): Promise<void> {
-  if (isWebBuild()) return tierB.webDeleteMessages(sessionTierA(), await wtokens(), messageIds, areConcepts);
+  if (isWebBuild())
+    return tierB.webDeleteMessages(
+      sessionTierA(),
+      await wtokens(),
+      messageIds,
+      areConcepts,
+    );
   return invoke("delete_messages", { messageIds, areConcepts });
 }
 
@@ -484,7 +610,13 @@ export async function searchContacts(
   query: string,
   maxResults?: number,
 ): Promise<Contact[]> {
-  if (isWebBuild()) return tierB.webSearchContacts(sessionTierA(), await wtokens(), query, maxResults);
+  if (isWebBuild())
+    return tierB.webSearchContacts(
+      sessionTierA(),
+      await wtokens(),
+      query,
+      maxResults,
+    );
   return invoke("search_contacts", { query, maxResults });
 }
 
@@ -494,7 +626,14 @@ export async function getAssignments(
   start: string,
   end: string,
 ): Promise<Assignment[]> {
-  if (isWebBuild()) return tierB.webGetAssignments(sessionTierA(), await wtokens(), personId, start, end);
+  if (isWebBuild())
+    return tierB.webGetAssignments(
+      sessionTierA(),
+      await wtokens(),
+      personId,
+      start,
+      end,
+    );
   const assignments = await invoke("get_assignments", {
     personId,
     start,
@@ -503,8 +642,15 @@ export async function getAssignments(
   return (assignments as Assignment[]).map(sanitizeAssignment);
 }
 
-export async function getAssignmentDetail(selfUrl: string): Promise<Assignment> {
-  if (isWebBuild()) return tierB.webGetAssignmentDetail(sessionTierA(), await wtokens(), selfUrl);
+export async function getAssignmentDetail(
+  selfUrl: string,
+): Promise<Assignment> {
+  if (isWebBuild())
+    return tierB.webGetAssignmentDetail(
+      sessionTierA(),
+      await wtokens(),
+      selfUrl,
+    );
   const assignment = (await invoke("get_assignment_detail", {
     selfUrl,
   })) as Assignment;
@@ -516,7 +662,14 @@ export async function handInAssignment(
   opdrachtId: number,
   versionJson: string,
 ): Promise<void> {
-  if (isWebBuild()) return tierB.webHandInAssignment(sessionTierA(), await wtokens(), selfUrl, opdrachtId, versionJson);
+  if (isWebBuild())
+    return tierB.webHandInAssignment(
+      sessionTierA(),
+      await wtokens(),
+      selfUrl,
+      opdrachtId,
+      versionJson,
+    );
   return invoke("hand_in_assignment", { selfUrl, opdrachtId, versionJson });
 }
 
@@ -524,29 +677,45 @@ export async function uploadAssignmentAttachment(
   file: File | string,
 ): Promise<[number, string]> {
   if (typeof file !== "string") {
-    if (!isWebBuild()) throw new Error("Bestandsobjecten worden alleen in de webversie ondersteund.");
-    return tierB.webUploadAssignmentAttachment(sessionTierA(), await wtokens(), file);
+    if (!isWebBuild())
+      throw new Error(
+        "Bestandsobjecten worden alleen in de webversie ondersteund.",
+      );
+    return tierB.webUploadAssignmentAttachment(
+      sessionTierA(),
+      await wtokens(),
+      file,
+    );
   }
   if (isWebBuild()) {
-    throw new Error("Bestanden uploaden via pad werkt in de webversie niet — kies een bestand.");
+    throw new Error(
+      "Bestanden uploaden via pad werkt in de webversie niet — kies een bestand.",
+    );
   }
   return invoke("upload_assignment_attachment", { filePath: file });
 }
 
 // === Leermiddelen ===
 export async function getLeermiddelen(personId: number): Promise<any[]> {
-  if (isWebBuild()) return tierB.webGetLeermiddelen(sessionTierA(), await wtokens(), personId);
+  if (isWebBuild())
+    return tierB.webGetLeermiddelen(sessionTierA(), await wtokens(), personId);
   return invoke("get_leermiddelen", { personId });
 }
 
 export async function getLeermiddelLaunchUrl(href: string): Promise<string> {
-  if (isWebBuild()) return tierB.webGetLeermiddelLaunchUrl(sessionTierA(), await wtokens(), href);
+  if (isWebBuild())
+    return tierB.webGetLeermiddelLaunchUrl(
+      sessionTierA(),
+      await wtokens(),
+      href,
+    );
   return invoke("get_leermiddel_launch_url", { href });
 }
 
 // === Activities ===
 export async function getActivities(personId: number): Promise<any[]> {
-  if (isWebBuild()) return tierB.webGetActivities(sessionTierA(), await wtokens(), personId);
+  if (isWebBuild())
+    return tierB.webGetActivities(sessionTierA(), await wtokens(), personId);
   const activities = await invoke("get_activities", { personId });
   return (activities as any[]).map(sanitizeActivity);
 }
@@ -556,7 +725,12 @@ export async function getActivityElements(
   activityId: number,
 ): Promise<any[]> {
   if (isWebBuild())
-    return tierB.webGetActivityElements(sessionTierA(), await wtokens(), personId, activityId);
+    return tierB.webGetActivityElements(
+      sessionTierA(),
+      await wtokens(),
+      personId,
+      activityId,
+    );
   const elements = await invoke("get_activity_elements", {
     personId,
     activityId,
@@ -566,18 +740,25 @@ export async function getActivityElements(
 
 // === Bronnen ===
 export async function getBronnen(path: string): Promise<any[]> {
-  if (isWebBuild()) return tierB.webGetBronnen(sessionTierA(), await wtokens(), path);
+  if (isWebBuild())
+    return tierB.webGetBronnen(sessionTierA(), await wtokens(), path);
   return invoke("get_bronnen", { path });
 }
 
 export async function getExternalBronSources(personId: number): Promise<any[]> {
-  if (isWebBuild()) return tierB.webGetExternalBronSources(sessionTierA(), await wtokens(), personId);
+  if (isWebBuild())
+    return tierB.webGetExternalBronSources(
+      sessionTierA(),
+      await wtokens(),
+      personId,
+    );
   return invoke("get_external_bron_sources", { personId });
 }
 
 // === Studiewijzers ===
 export async function getStudiewijzers(personId: number): Promise<any[]> {
-  if (isWebBuild()) return tierB.webGetStudiewijzers(sessionTierA(), await wtokens(), personId);
+  if (isWebBuild())
+    return tierB.webGetStudiewijzers(sessionTierA(), await wtokens(), personId);
   return invoke("get_studiewijzers", { personId });
 }
 
@@ -587,7 +768,13 @@ export async function getStudiewijzerDetail(
   isProject: boolean,
 ): Promise<any> {
   if (isWebBuild())
-    return tierB.webGetStudiewijzerDetail(sessionTierA(), await wtokens(), personId, id, isProject);
+    return tierB.webGetStudiewijzerDetail(
+      sessionTierA(),
+      await wtokens(),
+      personId,
+      id,
+      isProject,
+    );
   const detail = await invoke("get_studiewijzer_detail", {
     personId,
     id,
@@ -621,7 +808,12 @@ export async function getStudiewijzerOnderdeelDetail(
 }
 
 export async function triggerTestNotification(): Promise<void> {
-  if (isWebBuild()) return showNotification(NotificationType.Test, "Test", "Meldingen werken in deze browser.");
+  if (isWebBuild())
+    return showNotification(
+      NotificationType.Test,
+      "Test",
+      "Meldingen werken in deze browser.",
+    );
   return invoke("trigger_test_notification");
 }
 
@@ -646,7 +838,10 @@ export async function showNotification(
     void type;
     void extra;
     try {
-      if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+      if (
+        typeof Notification !== "undefined" &&
+        Notification.permission === "granted"
+      ) {
         new Notification(title, { body: message });
       }
     } catch (_) {}
@@ -718,7 +913,8 @@ export async function getDebugInfo(): Promise<string> {
 }
 
 export async function getSyncStateDebug(): Promise<string> {
-  if (isWebBuild()) return "Webversie — synchronisatie loopt via de browsercache.";
+  if (isWebBuild())
+    return "Webversie — synchronisatie loopt via de browsercache.";
   return invoke("get_sync_state_debug");
 }
 
@@ -834,7 +1030,10 @@ export async function exportAllData(): Promise<ExportResult> {
     return {
       success: true,
       files: [result.filename],
-      error: result.warnings.length > 0 ? `Waarschuwingen bij: ${result.warnings.join("; ")}` : null,
+      error:
+        result.warnings.length > 0
+          ? `Waarschuwingen bij: ${result.warnings.join("; ")}`
+          : null,
     };
   }
   return invoke("export_all_data");

@@ -12,8 +12,24 @@ use crate::models::ai_schedule::{AiScheduleItem, AiScheduleStatus, DurationSourc
 /// Managed state for AI schedule persistence.
 pub struct AiScheduleState {
     pub items: Arc<RwLock<Vec<AiScheduleItem>>>,
+    /// Last AI plan mutations for `undo_last_ai_plan_change` (max 20).
+    /// User-path commands don't record here — only the AI tool arms do.
+    pub undo: Arc<std::sync::Mutex<Vec<UndoEntry>>>,
     pub path: PathBuf,
 }
+
+/// One reversible AI plan mutation: `{ op, before, after }`.
+#[derive(Debug, Clone)]
+pub struct UndoEntry {
+    /// Tool name that made the change (e.g. "create_ai_schedule_item").
+    pub op: String,
+    pub item_id: String,
+    pub before: Option<AiScheduleItem>,
+    pub after: Option<AiScheduleItem>,
+}
+
+/// Max undo entries kept.
+pub const UNDO_LIMIT: usize = 20;
 
 impl AiScheduleState {
     pub fn new(app_data_dir: PathBuf) -> Self {
@@ -28,6 +44,7 @@ impl AiScheduleState {
         };
         Self {
             items: Arc::new(RwLock::new(items)),
+            undo: Arc::new(std::sync::Mutex::new(Vec::new())),
             path,
         }
     }
@@ -67,7 +84,7 @@ fn validate_item(item: &AiScheduleItem) -> Result<(), String> {
 /// Guardrail: no two plannable AI items may occupy the same time.
 /// FreeTime/Sleep are background fillers and are exempt (they get regenerated).
 /// Dismissed/Completed items are history and are exempt.
-fn find_overlap(existing: &[AiScheduleItem], start: &str, end: &str, ignore_id: Option<&str>) -> Option<String> {
+pub(crate) fn find_overlap(existing: &[AiScheduleItem], start: &str, end: &str, ignore_id: Option<&str>) -> Option<String> {
     use crate::models::ai_schedule::AiScheduleItemType;
     for it in existing {
         if let Some(ign) = ignore_id {
@@ -88,6 +105,49 @@ fn find_overlap(existing: &[AiScheduleItem], start: &str, end: &str, ignore_id: 
     None
 }
 
+
+/// Locked items for a window: Completed/Dismissed, InProgress, User source.
+/// Shared by the replan and the AI free-slot/guardrail paths.
+pub(crate) fn locked_items_in_window(
+    items: &[AiScheduleItem],
+    window_start: chrono::NaiveDate,
+    window_end: chrono::NaiveDate,
+) -> Vec<AiScheduleItem> {
+    items
+        .iter()
+        .filter(|item| {
+            // Check if item is in window
+            let s = crate::ai::schedule::iso_to_naive(&item.start);
+            let e = crate::ai::schedule::iso_to_naive(&item.end);
+            if s.is_none() || e.is_none() {
+                return false;
+            }
+            let s = s.unwrap().date();
+            let e_date = e.unwrap().date();
+            if e_date < window_start || s > window_end {
+                return false;
+            }
+            // Locked if: Completed, Dismissed, InProgress, or source User, or Custom that is manually created
+            // FreeTime and Sleep are never locked here (they will be regenerated)
+            if item.item_type == crate::models::ai_schedule::AiScheduleItemType::FreeTime
+                || item.item_type == crate::models::ai_schedule::AiScheduleItemType::Sleep
+            {
+                return false;
+            }
+            if item.status == AiScheduleStatus::Completed || item.status == AiScheduleStatus::Dismissed {
+                return true;
+            }
+            if item.status == AiScheduleStatus::InProgress {
+                return true;
+            }
+            if item.source == crate::models::ai_schedule::AiScheduleSource::User {
+                return true;
+            }
+            false
+        })
+        .cloned()
+        .collect()
+}
 #[tauri::command]
 pub async fn get_ai_schedule(
     state: State<'_, AiScheduleState>,
@@ -322,7 +382,7 @@ async fn fetch_magister_events(
     Ok(events_resp.items)
 }
 
-async fn fetch_magister_events_inner(
+pub(crate) async fn fetch_magister_events_inner(
     client: SharedClient,
     person_id: i64,
     start: &str,
@@ -411,40 +471,8 @@ pub async fn perform_update_inner(
 
     // Determine locked items: Completed/Dismissed, or User source, or InProgress
     // Only Planned AI items are freely rearrangeable; FreeTime is always rearrangeable.
-    let locked_items: Vec<AiScheduleItem> = existing_items
-        .iter()
-        .filter(|item| {
-            // Check if item is in window
-            let s = crate::ai::schedule::iso_to_naive(&item.start);
-            let e = crate::ai::schedule::iso_to_naive(&item.end);
-            if s.is_none() || e.is_none() {
-                return false;
-            }
-            let s = s.unwrap().date();
-            let e_date = e.unwrap().date();
-            if e_date < window_start || s > window_end {
-                return false;
-            }
-            // Locked if: Completed, Dismissed, InProgress, or source User, or Custom that is manually created
-            // FreeTime and Sleep are never locked here (they will be regenerated)
-            if item.item_type == crate::models::ai_schedule::AiScheduleItemType::FreeTime
-                || item.item_type == crate::models::ai_schedule::AiScheduleItemType::Sleep
-            {
-                return false;
-            }
-            if item.status == AiScheduleStatus::Completed || item.status == AiScheduleStatus::Dismissed {
-                return true;
-            }
-            if item.status == AiScheduleStatus::InProgress {
-                return true;
-            }
-            if item.source == crate::models::ai_schedule::AiScheduleSource::User {
-                return true;
-            }
-            false
-        })
-        .cloned()
-        .collect();
+    let locked_items: Vec<AiScheduleItem> =
+        locked_items_in_window(&existing_items, window_start, window_end);
 
     // Build duration_map from existing items: assignment_id -> (minutes, source)
     // Use UserEntered durations where available, else SubjectAverage or previous AiEstimated

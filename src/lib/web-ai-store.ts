@@ -20,6 +20,8 @@ export interface WebAiStoredConfig {
   model: string;
   enabled: boolean;
   useDataAccess: boolean;
+  notesAiCanEdit: boolean;
+  notesUseInChats: boolean;
   apiKey: string;
 }
 
@@ -29,7 +31,8 @@ function getDb(): Promise<IDBPDatabase> {
   if (!dbPromise) {
     dbPromise = openDB(DB_NAME, 1, {
       upgrade(db) {
-        if (!db.objectStoreNames.contains(STORE_NAME)) db.createObjectStore(STORE_NAME);
+        if (!db.objectStoreNames.contains(STORE_NAME))
+          db.createObjectStore(STORE_NAME);
       },
     });
   }
@@ -42,6 +45,8 @@ export const DEFAULT_WEB_AI: WebAiStoredConfig = {
   model: "gpt-4o-mini",
   enabled: false,
   useDataAccess: true,
+  notesAiCanEdit: true,
+  notesUseInChats: true,
   apiKey: "",
 };
 
@@ -50,7 +55,8 @@ export const DEFAULT_WEB_AI: WebAiStoredConfig = {
 export async function loadWebAiConfig(): Promise<WebAiStoredConfig> {
   try {
     const db = await getDb();
-    const stored = (await db.get(STORE_NAME, CONFIG_KEY)) as Partial<WebAiStoredConfig> | undefined;
+    const stored = (await db.get(STORE_NAME, CONFIG_KEY)) as
+      Partial<WebAiStoredConfig> | undefined;
     if (!stored) return { ...DEFAULT_WEB_AI };
     return { ...DEFAULT_WEB_AI, ...stored };
   } catch {
@@ -58,7 +64,9 @@ export async function loadWebAiConfig(): Promise<WebAiStoredConfig> {
   }
 }
 
-export async function saveWebAiConfig(partial: Partial<WebAiStoredConfig>): Promise<void> {
+export async function saveWebAiConfig(
+  partial: Partial<WebAiStoredConfig>,
+): Promise<void> {
   const current = await loadWebAiConfig();
   // Empty key field means "keep the stored one" (matches the Settings form,
   // which shows an empty field even when a key is stored).
@@ -92,5 +100,7 @@ export function toPublicConfig(stored: WebAiStoredConfig): AiConfig {
     provider: stored.provider,
     use_data_access: stored.useDataAccess,
     has_api_key: stored.apiKey.trim().length > 0,
+    ai_notes_ai_can_edit: stored.notesAiCanEdit ?? true,
+    ai_notes_use_in_chats: stored.notesUseInChats ?? true,
   };
 }

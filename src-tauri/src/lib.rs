@@ -65,8 +65,10 @@ pub fn run() {
             let ai_state = AiState::new(app_data_dir.clone());
             let ai_config = ai_state.config.clone();
             app.manage(ai_state);
-            let ai_schedule_state = commands::ai_schedule::AiScheduleState::new(app_data_dir);
+            let ai_schedule_state = commands::ai_schedule::AiScheduleState::new(app_data_dir.clone());
             app.manage(ai_schedule_state);
+            let ai_notes_state = commands::ai_notes::AiNotesState::new(app_data_dir);
+            app.manage(ai_notes_state);
 
             // Off the setup-hook critical path so it doesn't delay window creation.
             // Android's keyring store reads ndk-context, which Tao initializes
@@ -178,9 +180,18 @@ pub fn run() {
             commands::ai::validate_ai_key,
             commands::ai::ai_chat,
             commands::ai::ai_chat_with_tools,
+            commands::ai::cancel_ai_chat,
+            commands::ai::get_ai_diagnostics,
+            commands::ai::clear_ai_diagnostics,
             commands::ai::ai_page_insight,
             commands::ai::list_ai_models,
             commands::ai::confirm_pending_action,
+            // AI notes (AI Geheugen)
+            commands::ai_notes::get_ai_notes,
+            commands::ai_notes::get_ai_notes_history,
+            commands::ai_notes::set_ai_notes,
+            commands::ai_notes::restore_ai_notes_revision,
+            commands::ai_notes::clear_ai_notes,
             // AI Schedule
             commands::ai_schedule::get_ai_schedule,
             commands::ai_schedule::create_ai_schedule_item,

@@ -910,11 +910,13 @@ impl MagisterClient {
         ))
     }
 
-    /// Make an authenticated GET request and return both bytes and content type.
+    /// Make an authenticated GET request and return bytes, content type and
+    /// the final URL after redirects (callers enforce the same-host policy
+    /// on it — see attachment_reader::validate_final_url).
     pub async fn get_bytes_with_content_type(
         &mut self,
         path: &str,
-    ) -> Result<(Vec<u8>, String), ClientError> {
+    ) -> Result<(Vec<u8>, String, String), ClientError> {
         let token = self.ensure_valid_token().await?;
         let url = Self::build_url(&token.api_endpoint, path);
 
@@ -944,13 +946,14 @@ impl MagisterClient {
             return Err(ClientError::ApiError(status, text));
         }
 
+        let final_url = resp.url().to_string();
         let bytes = resp
             .bytes()
             .await
             .map_err(|e| ClientError::ParseFailed(e.to_string()))?
             .to_vec();
 
-        Ok((bytes, content_type))
+        Ok((bytes, content_type, final_url))
     }
 
     /// Make an authenticated POST request.

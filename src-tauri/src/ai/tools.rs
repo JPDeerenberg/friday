@@ -36,423 +36,158 @@ impl ToolDef {
     }
 }
 
+/// Phase 2 data budget: max agenda span per `get_calendar_events` call
+/// (clamped, never an error).
+pub const CALENDAR_MAX_SPAN_DAYS: i64 = 62;
+/// Default page size for range tools.
+pub const CALENDAR_DEFAULT_LIMIT: usize = 60;
+/// Hard cap per page.
+pub const CALENDAR_MAX_LIMIT: usize = 200;
+
+/// Resolved fetch range for `get_calendar_events`. Mirrors TS `CalendarRange`.
+pub struct CalendarRange {
+    pub start: String,
+    pub end: String,
+    pub effective_end: String,
+    pub clamped: bool,
+    pub window_start: String,
+    pub window_end: String,
+}
+
+/// Resolve a (possibly partial) model-supplied range to the effective fetch
+/// range. Omitted sides fall back to the 3-week default window; spans over 62
+/// days are clamped, never rejected. Mirrors TS `resolveCalendarRange`.
+pub fn resolve_calendar_range(start_arg: &str, end_arg: &str, today: &str) -> Result<CalendarRange, String> {
+    let win = crate::ai::time::context_window(today);
+    let start = if start_arg.is_empty() { win.start.clone() } else { start_arg.to_string() };
+    let end = if end_arg.is_empty() { win.end.clone() } else { end_arg.to_string() };
+    if !crate::ai::time::is_valid_date_str(&start) || !crate::ai::time::is_valid_date_str(&end) {
+        return Err(format!(
+            "Ongeldige datum (verwacht yyyy-MM-dd): '{}' t/m '{}'. Vraag get_current_time om 'vandaag'.",
+            start_arg, end_arg
+        ));
+    }
+    let span = crate::ai::time::diff_days_opt(&start, &end).unwrap_or(0);
+    if span < 0 {
+        return Err(format!("Einddatum {} ligt voor startdatum {}. Wissel ze om.", end, start));
+    }
+    let (effective_end, clamped) = if span > CALENDAR_MAX_SPAN_DAYS {
+        (crate::ai::time::add_days(&start, CALENDAR_MAX_SPAN_DAYS), true)
+    } else {
+        (end.clone(), false)
+    };
+    Ok(CalendarRange {
+        start,
+        end,
+        effective_end,
+        clamped,
+        window_start: win.start,
+        window_end: win.end,
+    })
+}
+
+/// Paginate a slice without consuming it. Returns (page, truncated, next_offset).
+pub fn paginate_slice(items: &[Value], offset: usize, limit: usize) -> (Vec<Value>, bool, Option<usize>) {
+    let limit = limit.clamp(1, CALENDAR_MAX_LIMIT);
+    let page: Vec<Value> = items.iter().skip(offset).take(limit).cloned().collect();
+    let truncated = offset + limit < items.len();
+    let next_offset = if truncated { Some(offset + limit) } else { None };
+    (page, truncated, next_offset)
+}
+
+pub fn int_arg(args: &Value, key: &str, fallback: i64) -> i64 {
+    args.get(key)
+        .and_then(|v| v.as_f64())
+        .map(|f| f.trunc() as i64)
+        .unwrap_or(fallback)
+}
+
+/// Cut to 120 chars on a char boundary (never splits UTF-8).
+fn cut_120(s: &str) -> String {
+    if s.chars().count() <= 120 {
+        return s.to_string();
+    }
+    let mut out: String = s.chars().take(120).collect();
+    out.push('…');
+    out
+}
+
+fn insert_if_present(map: &mut serde_json::Map<String, Value>, key: &str, v: Value) {
+    if v.is_null() {
+        return;
+    }
+    if let Some(s) = v.as_str() {
+        if s.is_empty() {
+            return;
+        }
+    }
+    map.insert(key.to_string(), v);
+}
+
+/// Slim one raw afspraak to the compact model shape. Nulls/empties are
+/// dropped; teacher names stay redacted; the long homework text (`Inhoud`)
+/// lives behind `get_calendar_event_detail`. Mirrors TS `slimCalendarEvent`.
+pub fn slim_calendar_item(item: &Value) -> Value {
+    let mut out = serde_json::Map::new();
+    insert_if_present(&mut out, "id", item.get("Id").cloned().unwrap_or(Value::Null));
+    let start = item.get("Start").and_then(|v| v.as_str()).unwrap_or("");
+    let einde = item.get("Einde").and_then(|v| v.as_str()).unwrap_or("");
+    if let Some(date) = start.get(0..10) {
+        if crate::ai::time::is_valid_date_str(date) {
+            out.insert("date".to_string(), Value::String(date.to_string()));
+        }
+    }
+    insert_if_present(&mut out, "start", Value::String(start.to_string()));
+    insert_if_present(&mut out, "end", Value::String(einde.to_string()));
+    let vak = item
+        .get("Vakken")
+        .and_then(|v| v.as_array())
+        .and_then(|a| a.first())
+        .and_then(|v| v.get("Naam"))
+        .cloned()
+        .unwrap_or(Value::Null);
+    insert_if_present(&mut out, "vak", vak);
+    if let Some(first) = item.get("Docenten").and_then(|v| v.as_array()).and_then(|a| a.first()) {
+        let naam = redact_docent(first).get("naam").cloned().unwrap_or(Value::Null);
+        insert_if_present(&mut out, "docent", naam);
+    }
+    let lokaal = item
+        .get("Lokalen")
+        .and_then(|v| v.as_array())
+        .and_then(|a| a.first())
+        .and_then(|v| v.get("Naam"))
+        .cloned()
+        .unwrap_or(Value::Null);
+    insert_if_present(&mut out, "lokaal", lokaal);
+    let omschrijving = item.get("Omschrijving").and_then(|v| v.as_str()).unwrap_or("");
+    if !omschrijving.trim().is_empty() {
+        out.insert("omschrijving".to_string(), Value::String(cut_120(omschrijving)));
+    }
+    let inhoud = item.get("Inhoud").and_then(|v| v.as_str()).unwrap_or("");
+    out.insert("huiswerk".to_string(), Value::Bool(!inhoud.trim().is_empty()));
+    insert_if_present(&mut out, "type", item.get("Type").cloned().unwrap_or(Value::Null));
+    insert_if_present(&mut out, "afgerond", item.get("Afgerond").cloned().unwrap_or(Value::Null));
+    Value::Object(out)
+}
+
+/// AI-Geheugen write tools (never offered when editing is disabled).
+pub const NOTES_WRITE_TOOLS: &[&str] = &["append_note", "edit_note", "replace_notes"];
+/// All AI-Geheugen tools (gated by the use-in-chats setting).
+pub const NOTES_TOOLS: &[&str] = &["read_notes", "append_note", "edit_note", "replace_notes"];
+
 /// All available tools the AI can use.
 pub fn get_all_tool_defs() -> Vec<ToolDef> {
-    vec![
-        ToolDef {
-            name: "get_calendar_events".to_string(),
-            description: "Haal agenda-items/lessen op voor een datumbereik (bijv. vandaag of deze week).".to_string(),
-            parameters: serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "start": {
-                        "type": "string",
-                        "description": "Startdatum in yyyy-MM-dd formaat"
-                    },
-                    "end": {
-                        "type": "string",
-                        "description": "Einddatum in yyyy-MM-dd formaat"
-                    }
-                },
-                "required": ["start", "end"]
-            }),
-        },
-        ToolDef {
-            name: "get_grades".to_string(),
-            description: "Haal recente cijfers op.".to_string(),
-            parameters: serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "top": {
-                        "type": "integer",
-                        "description": "Aantal cijfers om op te halen (max 20)",
-                        "default": 10
-                    }
-                },
-                "required": []
-            }),
-        },
-        ToolDef {
-            name: "get_full_grade_overview".to_string(),
-            description: "Haal het volledige cijferoverzicht op met gemiddelden per vak. Gebruik dit als de gebruiker vraagt hoe hij/zij ervoor staat per vak, of om gemiddelden te bekijken. Eerst moet je get_schoolyears ophalen voor de juiste IDs.".to_string(),
-            parameters: serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "schoolyear_id": {
-                        "type": "integer",
-                        "description": "ID van het schooljaar (uit get_schoolyears)"
-                    },
-                    "einde": {
-                        "type": "string",
-                        "description": "Peildatum in yyyy-MM-dd formaat (gebruik vandaag of einde schooljaar)"
-                    }
-                },
-                "required": ["schoolyear_id", "einde"]
-            }),
-        },
-        ToolDef {
-            name: "get_schoolyears".to_string(),
-            description: "Haal schooljaren op voor deze leerling. Nodig voor get_full_grade_overview.".to_string(),
-            parameters: serde_json::json!({
-                "type": "object",
-                "properties": {},
-                "required": []
-            }),
-        },
-        ToolDef {
-            name: "get_assignments".to_string(),
-            description: "Haal huiswerk/opdrachten op voor een datumbereik.".to_string(),
-            parameters: serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "start": {
-                        "type": "string",
-                        "description": "Startdatum in yyyy-MM-dd formaat"
-                    },
-                    "end": {
-                        "type": "string",
-                        "description": "Einddatum in yyyy-MM-dd formaat"
-                    }
-                },
-                "required": ["start", "end"]
-            }),
-        },
-        ToolDef {
-            name: "get_assignment_detail".to_string(),
-            description: "Haal de volledige details van een specifieke opdracht op, inclusief bijlagen (bestanden).".to_string(),
-            parameters: serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "assignment_id": { "type": "integer", "description": "ID van de opdracht" }
-                },
-                "required": ["assignment_id"]
-            }),
-        },
-        ToolDef {
-            name: "get_messages".to_string(),
-            description: "Haal berichten op uit een map (bijv. 'Postvak IN', 'Verzonden items', 'Verwijderde items'). Zonder folder-parameter wordt de eerste map gebruikt (meestal Postvak IN).".to_string(),
-            parameters: serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "folder": {
-                        "type": "string",
-                        "description": "Map naam zoals getoond in Magister (bijv. 'Postvak IN'). Laat leeg voor de standaardmap."
-                    },
-                    "top": {
-                        "type": "integer",
-                        "description": "Aantal berichten om op te halen",
-                        "default": 10
-                    }
-                },
-                "required": []
-            }),
-        },
-        ToolDef {
-            name: "get_message_content".to_string(),
-            description: "Haal de inhoud van een specifiek bericht op. Gebruik dit als de gebruiker wil weten wat er in een bericht staat.".to_string(),
-            parameters: serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "message_id": {
-                        "type": "integer",
-                        "description": "ID van het bericht om op te halen"
-                    }
-                },
-                "required": ["message_id"]
-            }),
-        },
-        ToolDef {
-            name: "send_message".to_string(),
-            description: "Stuur een bericht via Magister. Gebruik dit om een bericht te verzenden naar een medeleerling, docent of klas.".to_string(),
-            parameters: serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "subject": { "type": "string", "description": "Onderwerp van het bericht" },
-                    "body": { "type": "string", "description": "Inhoud van het bericht" },
-                    "recipients": {
-                        "type": "array",
-                        "description": "Lijst van ontvangers, elk met id en type (leerling/docent/klas).",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "id": { "type": "integer" },
-                                "type": { "type": "string", "enum": ["leerling", "docent", "klas"], "default": "leerling" }
-                            },
-                            "required": ["id"]
-                        }
-                    }
-                },
-                "required": ["subject", "body", "recipients"]
-            }),
-        },
-        ToolDef {
-            name: "mark_messages_read".to_string(),
-            description: "Markeer een of meerdere berichten als gelezen. Geef de bericht-ID's op.".to_string(),
-            parameters: serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "message_ids": {
-                        "type": "array",
-                        "items": { "type": "integer" },
-                        "description": "Lijst van bericht-ID's om als gelezen te markeren."
-                    }
-                },
-                "required": ["message_ids"]
-            }),
-        },
-        ToolDef {
-            name: "get_absences".to_string(),
-            description: "Haal absentie/verzuim op voor een datumbereik.".to_string(),
-            parameters: serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "start": {
-                        "type": "string",
-                        "description": "Startdatum in yyyy-MM-dd formaat"
-                    },
-                    "end": {
-                        "type": "string",
-                        "description": "Einddatum in yyyy-MM-dd formaat"
-                    }
-                },
-                "required": ["start", "end"]
-            }),
-        },
-        ToolDef {
-            name: "get_studiewijzers".to_string(),
-            description: "Haal studiewijzers op (studiehandleidingen per vak).".to_string(),
-            parameters: serde_json::json!({
-                "type": "object",
-                "properties": {},
-                "required": []
-            }),
-        },
-        ToolDef {
-            name: "get_activities".to_string(),
-            description: "Haal buitenschoolse activiteiten op.".to_string(),
-            parameters: serde_json::json!({
-                "type": "object",
-                "properties": {},
-                "required": []
-            }),
-        },
-        ToolDef {
-            name: "get_bronnen".to_string(),
-            description: "Haal digitale leermaterialen en bronnen op (bijv. lesmateriaal links, websites).".to_string(),
-            parameters: serde_json::json!({
-                "type": "object",
-                "properties": {},
-                "required": []
-            }),
-        },
-        ToolDef {
-            name: "get_leermiddelen".to_string(),
-            description: "Haal digitale leermiddelen op (lesmateriaal, digitale boeken).".to_string(),
-            parameters: serde_json::json!({
-                "type": "object",
-                "properties": {},
-                "required": []
-            }),
-        },
-        ToolDef {
-            name: "get_profile_info".to_string(),
-            description: "Haal uitgebreide profielinformatie op: naam, klas, adres, opleidingsgegevens, mentor.".to_string(),
-            parameters: serde_json::json!({
-                "type": "object",
-                "properties": {},
-                "required": []
-            }),
-        },
-        ToolDef {
-            name: "get_today_summary".to_string(),
-            description: "Krijg een compleet overzicht van vandaag: rooster, cijfers, opdrachten, berichten, alle data in één keer.".to_string(),
-            parameters: serde_json::json!({
-                "type": "object",
-                "properties": {},
-                "required": []
-            }),
-        },
-        ToolDef {
-            name: "read_attachment_text".to_string(),
-            description: "Lees de tekstinhoud van een bijlage (PDF, Word .docx of tekstbestand). Gebruik dit als een opdracht een bijlage heeft en de gebruiker hulp wil met de inhoud, of als je de inhoud van een document moet kennen om te kunnen antwoorden. Geeft de ruwe tekst terug; afbeeldingen/diagrammen worden niet beschreven (best-effort, alleen tekst).".to_string(),
-            parameters: serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "url": { "type": "string", "description": "URL van de bijlage (uit get_assignment_detail of get_message_content)" },
-                    "filename": { "type": "string", "description": "Bestandsnaam van de bijlage; helpt bij het bepalen van het bestandstype" }
-                },
-                "required": ["url"]
-            }),
-        },
-        ToolDef {
-            name: "calculate_grade_scenario".to_string(),
-            description: "Bereken cijfer-scenario's voor een vak: benodigd cijfer voor de volgende toets om een streefcijfer te halen, voorspeld gemiddelde na een hypothetisch cijfer, minimum cijfer om te slagen, en het effect op je totale gemiddelde. Geef de huidige cijfers mee (grades: lijst van {value, weight}) óf een schoolyear_id + subject zodat de tool ze zelf ophaalt. Gebruik dit voor 'wat heb ik nodig'-vragen over cijfers.".to_string(),
-            parameters: serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "schoolyear_id": { "type": "integer", "description": "ID van het schooljaar (uit get_schoolyears). Nodig als je geen grades meegeeft." },
-                    "subject": { "type": "string", "description": "Naam of afkorting van het vak (bv. 'Wiskunde'). Nodig als je geen grades meegeeft." },
-                    "grades": {
-                        "type": "array",
-                        "description": "Optioneel: lijst van huidige cijfers, elk met value (cijfer) en weight (weging) — of cijfer/weging zoals get_full_grade_overview ze teruggeeft. Als dit gegeven is, worden schoolyear_id/subject genegeerd.",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "value": { "type": "number", "description": "Het cijfer, bv. 7.5 (ook 'cijfer' geaccepteerd)" },
-                                "cijfer": { "type": "number", "description": "Het cijfer, bv. 7.5 (alias voor value)" },
-                                "weight": { "type": "number", "description": "Weging (default 1)" },
-                                "weging": { "type": "number", "description": "Weging (alias voor weight)" }
-                            },
-                            "required": []
-                        }
-                    },
-                    "peildatum": { "type": "string", "description": "Peildatum yyyy-MM-dd (default: vandaag)" },
-                    "target_average": { "type": "number", "description": "Streefcijfer (bv. 6.0) om te berekenen welk cijfer je voor de volgende toets nodig hebt." },
-                    "next_grade": { "type": "number", "description": "Hypothetisch cijfer voor de volgende toets, om het voorspelde gemiddelde te berekenen." },
-                    "next_grade_weight": { "type": "number", "description": "Weging van de volgende toets (default 1)" },
-                    "remaining_tests": { "type": "integer", "description": "Aantal nog komende toetsen, om een eindgemiddelde-projectie te berekenen." },
-                    "threshold": { "type": "number", "description": "Voldoende-grens (default 5.5) voor het minimum-cijfer-om-te-slagen." },
-                    "simulation_grades": {
-                        "type": "array",
-                        "description": "Optioneel: extra cijfers om mee te simuleren (zoals in de app-rekenmachine).",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "value": { "type": "number" },
-                                "weight": { "type": "number", "default": 1 }
-                            },
-                            "required": ["value"]
-                        }
-                    },
-                    "include_simulation": { "type": "boolean", "description": "Of simulatiecijfers meetellen in voorspellingen (default true)" },
-                    "decimal_points": { "type": "integer", "description": "Aantal decimalen (default 2)" }
-                },
-                "required": []
-            }),
-        },
-        ToolDef {
-            name: "create_calendar_event".to_string(),
-            description: "Maak een persoonlijke agenda-afspraak/herinnering aan (bijv. een studiemoment of deadline-reminder). Deze actie wordt pas uitgevoerd nadat de gebruiker deze bevestigt.".to_string(),
-            parameters: serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "start": { "type": "string", "description": "Startdatum/tijd in ISO-formaat (yyyy-MM-ddTHH:mm:ss)" },
-                    "einde": { "type": "string", "description": "Einddatum/tijd in ISO-formaat (yyyy-MM-ddTHH:mm:ss)" },
-                    "omschrijving": { "type": "string", "description": "Titel/korte omschrijving van de afspraak" },
-                    "duurt_hele_dag": { "type": "boolean", "description": "Hele dag (default false)", "default": false },
-                    "lokatie": { "type": "string", "description": "Locatie (optioneel)" },
-                    "inhoud": { "type": "string", "description": "Volledige omschrijving (optioneel)" }
-                },
-                "required": ["start", "einde", "omschrijving"]
-            }),
-        },
-        ToolDef {
-            name: "download_file".to_string(),
-            description: "Download een bestand van een opgegeven URL (uit de Magister API). Geeft de bestandsgrootte en het MIME-type terug. Gebruik read_attachment_text als je de inhoud van een PDF/Word/tekstbestand wilt lezen.".to_string(),
-            parameters: serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "url": { "type": "string", "description": "Volledige URL of relatief pad naar het bestand (zoals opgehaald uit assignment attachments of message attachments)." }
-                },
-                "required": ["url"]
-            }),
-        },
-        ToolDef {
-            name: "get_ai_schedule".to_string(),
-            description: "Lees de huidige AI-planning (Friday's Plan) voor een datumbereik. Bevat alleen AI-items (huiswerk-blokken, study, slaap, vrije tijd), niet de echte Magister-lessen.".to_string(),
-            parameters: serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "start": { "type": "string", "description": "Startdatum/tijd ISO 8601 (yyyy-MM-dd of yyyy-MM-ddTHH:mm:ss)" },
-                    "end": { "type": "string", "description": "Einddatum/tijd ISO 8601" }
-                },
-                "required": ["start", "end"]
-            }),
-        },
-        ToolDef {
-            name: "create_ai_schedule_item".to_string(),
-            description: "Voeg een item toe aan de AI-planning (huiswerk, studieblok, pauze, eigen item). Alleen voor AI-planning, nooit voor de echte Magister-agenda.".to_string(),
-            parameters: serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "title": { "type": "string", "description": "Titel van het item" },
-                    "description": { "type": "string", "description": "Omschrijving / wat er moet gebeuren" },
-                    "item_type": { "type": "string", "enum": ["assignment_work", "study_block", "homework_review", "custom", "break", "free_time", "sleep"], "description": "Type item" },
-                    "start": { "type": "string", "description": "Start ISO 8601 (Europe/Amsterdam)" },
-                    "end": { "type": "string", "description": "Einde ISO 8601" },
-                    "urgency": { "type": "integer", "description": "Urgentie 1-5", "minimum": 1, "maximum": 5 },
-                    "related_assignment_id": { "type": "integer", "description": "Koppeling naar Magister opdracht ID (indien van toepassing)" },
-                    "related_subject": { "type": "string", "description": "Vaknaam (indien van toepassing)" },
-                    "estimated_minutes": { "type": "integer", "description": "Geschatte duur in minuten" }
-                },
-                "required": ["title", "item_type", "start", "end"]
-            }),
-        },
-        ToolDef {
-            name: "update_ai_schedule_item".to_string(),
-            description: "Werk een bestaand AI-planning item bij (verplaatsen, urgentie/duratie wijzigen).".to_string(),
-            parameters: serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "id": { "type": "string", "description": "ID van het item" },
-                    "title": { "type": "string" },
-                    "description": { "type": "string" },
-                    "item_type": { "type": "string", "enum": ["assignment_work", "study_block", "homework_review", "custom", "break", "free_time", "sleep"] },
-                    "start": { "type": "string" },
-                    "end": { "type": "string" },
-                    "urgency": { "type": "integer", "minimum": 1, "maximum": 5 },
-                    "estimated_minutes": { "type": "integer" },
-                    "status": { "type": "string", "enum": ["planned", "in_progress", "completed", "dismissed"] }
-                },
-                "required": ["id"]
-            }),
-        },
-        ToolDef {
-            name: "complete_ai_schedule_item".to_string(),
-            description: "Markeer een AI-planning item als voltooid.".to_string(),
-            parameters: serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "id": { "type": "string", "description": "ID van het item" }
-                },
-                "required": ["id"]
-            }),
-        },
-        ToolDef {
-            name: "dismiss_ai_schedule_item".to_string(),
-            description: "Negeer/wijs een AI-planning item af (uitsluiten van volgende herplanning). Anders dan verwijderen: dismissed items blijven bestaan maar worden uitgesloten van replans.".to_string(),
-            parameters: serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "id": { "type": "string", "description": "ID van het item" }
-                },
-                "required": ["id"]
-            }),
-        },
-        ToolDef {
-            name: "set_homework_duration".to_string(),
-            description: "Stel de geschatte duur in voor een huiswerkopdracht. Gebruik dit wanneer een opdracht geen estimated_minutes heeft — toont een UI voor duur+urgentie en onthoudt het voor volgende planningen. Nooit zelf een duur gissen als deze ontbreekt.".to_string(),
-            parameters: serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "assignment_id": { "type": "integer", "description": "ID van de Magister opdracht" },
-                    "estimated_minutes": { "type": "integer", "description": "Geschatte duur in minuten (1-600)" },
-                    "urgency": { "type": "integer", "description": "Urgentie 1-5", "minimum": 1, "maximum": 5 },
-                    "subject": { "type": "string", "description": "Vaknaam voor subject-average prefill hint" }
-                },
-                "required": ["assignment_id", "estimated_minutes"]
-            }),
-        },
-        ToolDef {
-            name: "run_update_ai_schedule".to_string(),
-            description: "Trigger 'Update AI Schedule' — herplan deze week + volgende week op basis van echte lessen, open opdrachten en bestaande planning. Zelfde als de handmatige knop.".to_string(),
-            parameters: serde_json::json!({
-                "type": "object",
-                "properties": {},
-                "required": []
-            }),
-        },
-    ]
+    // Single source of truth: shared/ai-spec/tools.json (see crate::ai::spec).
+    // The desktop side cannot drift by construction; the web twin is pinned
+    // by src/lib/ai-parity.test.ts.
+    crate::ai::spec::tool_specs()
+        .iter()
+        .map(|t| ToolDef {
+            name: t.name.clone(),
+            description: t.description.clone(),
+            parameters: t.parameters.clone(),
+        })
+        .collect()
 }
 
 /// Result of executing a tool.
@@ -727,6 +462,188 @@ async fn resolve_scenario_grades(
     Ok((tp, tw, count, subject_name, all_subjects))
 }
 
+/// Endpoint of the current session (for same-host download validation).
+fn api_endpoint_of(client: &crate::client::MagisterClient) -> Result<String, String> {
+    client
+        .token_set
+        .as_ref()
+        .map(|t| t.api_endpoint.clone())
+        .ok_or_else(|| "Niet ingelogd.".to_string())
+}
+
+/// Resolve an indirection link and download with same-host-final enforcement
+/// and the 15MB cap. Returns (bytes, content_type, name).
+async fn download_attachment(
+    client: &mut crate::client::MagisterClient,
+    endpoint: &str,
+    url: &str,
+    filename: &str,
+) -> Result<(Vec<u8>, String, String), String> {
+    use crate::ai::attachment_reader as ar;
+    // Magister's download/Self links are indirection links — resolve to the
+    // real content URL first, without following redirects.
+    let path = url.trim_start_matches("/api/");
+    let resolved = client
+        .get_redirect_location(path)
+        .await
+        .map_err(|e| format!("Kon download-link niet resolven: {}", e))?;
+    let fetch_url = if resolved.trim().is_empty() {
+        url.to_string()
+    } else {
+        // The resolved target must stay on our host (SSRF guard).
+        ar::validate_attachment_url(&resolved, endpoint)?;
+        resolved
+    };
+    let (bytes, content_type, final_url) = client
+        .get_bytes_with_content_type(&fetch_url)
+        .await
+        .map_err(|e| e.to_string())?;
+    ar::validate_final_url(&final_url, endpoint)?;
+    if bytes.len() > ar::MAX_DOWNLOAD_BYTES {
+        return Err(format!(
+            "Bestand te groot ({:.1} MB, max 15 MB).",
+            bytes.len() as f64 / 1_048_576.0
+        ));
+    }
+    Ok((bytes, content_type, filename.to_string()))
+}
+
+/// Subject name from a raw Vak value (string or {Omschrijving,...}).
+fn subject_name(v: Option<&Value>) -> Option<String> {
+    match v {
+        Some(Value::String(s)) if !s.trim().is_empty() => Some(s.trim().to_string()),
+        Some(obj) if obj.is_object() => obj
+            .get("Omschrijving")
+            .or_else(|| obj.get("Afkorting"))
+            .or_else(|| obj.get("Naam"))
+            .and_then(|x| x.as_str())
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty()),
+        _ => None,
+    }
+}
+
+/// Default-folder message list link (same resolution as `get_messages`).
+async fn inbox_message_link(
+    client: &mut crate::client::MagisterClient,
+    _person_id: i64,
+) -> Result<String, String> {
+    let folders_data = client
+        .get("berichten/mappen/alle")
+        .await
+        .map_err(|e| e.to_string())?;
+    let folders = folders_data
+        .get("Items")
+        .or_else(|| folders_data.get("items"))
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+    let f = folders.first().ok_or_else(|| "Geen mappen gevonden.".to_string())?;
+    let link = f
+        .get("Links")
+        .and_then(|l| l.as_array())
+        .and_then(|arr| arr.first())
+        .and_then(|l| l.get("Href").or_else(|| l.get("href")))
+        .and_then(|h| h.as_str())
+        .or_else(|| {
+            f.get("links")
+                .and_then(|l| l.get("berichten"))
+                .and_then(|b| b.get("href"))
+                .and_then(|h| h.as_str())
+        })
+        .or_else(|| {
+            f.get("Links")
+                .and_then(|l| l.get("berichten"))
+                .and_then(|b| b.get("href"))
+                .and_then(|h| h.as_str())
+        })
+        .unwrap_or("");
+    let link = if link.is_empty() {
+        let fid = f
+            .get("Id")
+            .or_else(|| f.get("id"))
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
+        if fid != 0 {
+            format!("berichten/mappen/{}/berichten", fid)
+        } else {
+            return Err("Geen berichtenlink gevonden.".to_string());
+        }
+    } else {
+        link.trim_start_matches("/api/").to_string()
+    };
+    Ok(link)
+}
+
+/// One attachment enumerated by `list_files`.
+fn harvest_bijlage(
+    out: &mut Vec<Value>,
+    source: &str,
+    parent_id: String,
+    bijlage: &Value,
+    index: usize,
+    subject: Option<String>,
+    title: Option<String>,
+    due: Option<String>,
+    date: Option<String>,
+) {
+    use crate::ai::attachment_reader as ar;
+    let name = bijlage
+        .get("Naam")
+        .or_else(|| bijlage.get("naam"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("bijlage")
+        .to_string();
+    let url = bijlage
+        .get("Url")
+        .or_else(|| bijlage.get("url"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    if url.is_empty() {
+        return;
+    }
+    let attachment_id = bijlage
+        .get("Id")
+        .or_else(|| bijlage.get("id"))
+        .and_then(|v| v.as_i64())
+        .map(|i| i.to_string())
+        .unwrap_or_else(|| format!("idx{}", index));
+    let file_id = format!("{}:{}:{}", &source[..1], parent_id, attachment_id);
+    let extension = std::path::Path::new(&name.to_lowercase())
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_string();
+    let size_bytes = bijlage
+        .get("Grootte")
+        .or_else(|| bijlage.get("grootte"))
+        .or_else(|| bijlage.get("GrootteBytes"))
+        .and_then(|v| v.as_u64().or_else(|| v.as_i64().map(|i| i.max(0) as u64)));
+    ar::registry_put(
+        file_id.clone(),
+        ar::FileRef {
+            url: url.clone(),
+            name: name.clone(),
+            source: source.to_string(),
+        },
+    );
+    out.push(serde_json::json!({
+        "file_id": file_id,
+        "name": name,
+        "extension": extension,
+        "size_bytes": size_bytes,
+        "source": source,
+        "context": {
+            "subject": subject,
+            "title": title,
+            "due": due,
+            "date": date,
+        },
+        "readable": ar::is_readable_extension(&name, true),
+    }));
+}
+
 /// Execute an AI tool call and return the result.
 /// `client` must be locked before calling.
 /// Write tools (send_message, mark_messages_read, ...) do NOT perform their
@@ -742,53 +659,168 @@ pub async fn execute_tool(
 ) -> ToolResult {
     match tool_name {
         "get_calendar_events" => {
-            let start = args.get("start").and_then(|v| v.as_str()).unwrap_or("");
-            let end = args.get("end").and_then(|v| v.as_str()).unwrap_or("");
+            let start_arg = args.get("start").and_then(|v| v.as_str()).unwrap_or("");
+            let end_arg = args.get("end").and_then(|v| v.as_str()).unwrap_or("");
+            let start_arg = start_arg.get(0..10).unwrap_or(start_arg);
+            let end_arg = end_arg.get(0..10).unwrap_or(end_arg);
+            let offset = int_arg(args, "offset", 0).max(0) as usize;
+            let limit = int_arg(args, "limit", CALENDAR_DEFAULT_LIMIT as i64);
+            let limit = (limit.max(1).min(CALENDAR_MAX_LIMIT as i64)) as usize;
+            let range = match resolve_calendar_range(start_arg, end_arg, &crate::ai::time::today_amsterdam()) {
+                Ok(r) => r,
+                Err(e) => {
+                    return ToolResult {
+                        tool: tool_name.to_string(),
+                        success: false,
+                        data: Value::Null,
+                        error: Some(e),
+                    }
+                }
+            };
             match client
                 .get(&format!(
                     "personen/{}/afspraken?tot={}&van={}",
-                    person_id, end, start
+                    person_id, range.effective_end, range.start
                 ))
                 .await
             {
                 Ok(data) => {
                     let items = data.get("Items").cloned().unwrap_or(Value::Array(vec![]));
-                    let simplified: Vec<Value> = items
+                    let mut slimmed: Vec<Value> = items
                         .as_array()
-                        .map(|arr| {
-                            arr.iter()
-                                .map(|item| {
-                                    // Privacy: redact Docent name to code/last-name only
-                                    let redacted_docent = item
-                                        .get("Docenten")
-                                        .and_then(|v| v.as_array())
-                                        .and_then(|a| a.first())
-                                        .map(|d| redact_docent(d))
-                                        .and_then(|v| v.get("naam").cloned())
-                                        .unwrap_or(Value::Null);
-                                    serde_json::json!({
-                                        "id": item.get("Id"),
-                                        "start": item.get("Start"),
-                                        "einde": item.get("Einde"),
-                                        "vak": item.get("Vakken").and_then(|v| v.as_array()).and_then(|a| a.first()).and_then(|v| v.get("Naam")),
-                                        "docent": redacted_docent,
-                                        "lokaal": item.get("Lokalen").and_then(|v| v.as_array()).and_then(|a| a.first()).and_then(|v| v.get("Naam")),
-                                        "lesuur": item.get("LesuurVan"),
-                                        "omschrijving": item.get("Omschrijving"),
-                                        "inhoud": item.get("Inhoud"),
-                                        "afgerond": item.get("Afgerond"),
-                                        "type": item.get("Type"),
-                                        "status": item.get("Status"),
-                                    })
-                                })
-                                .collect()
-                        })
+                        .map(|arr| arr.iter().map(slim_calendar_item).collect())
                         .unwrap_or_default();
+                    slimmed.sort_by(|a, b| {
+                        let sa = a.get("start").and_then(|v| v.as_str()).unwrap_or("");
+                        let sb = b.get("start").and_then(|v| v.as_str()).unwrap_or("");
+                        sa.cmp(sb)
+                    });
+                    let total = slimmed.len();
+                    let (page, truncated, next_offset) = paginate_slice(&slimmed, offset, limit);
+                    let mut days: Vec<Value> = Vec::new();
+                    for item in &page {
+                        if let Some(d) = item.get("date").and_then(|v| v.as_str()) {
+                            let bump = days.last_mut().and_then(|l| {
+                                if l.get("date").and_then(|v| v.as_str()) == Some(d) {
+                                    Some(l)
+                                } else {
+                                    None
+                                }
+                            });
+                            match bump {
+                                Some(last) => {
+                                    let c = last.get("count").and_then(|v| v.as_u64()).unwrap_or(0);
+                                    last["count"] = Value::Number(c.saturating_add(1).into());
+                                }
+                                None => days.push(serde_json::json!({ "date": d, "count": 1 })),
+                            }
+                        }
+                    }
                     ToolResult {
                         tool: tool_name.to_string(),
                         success: true,
-                        data: serde_json::json!({ "items": simplified, "count": simplified.len() }),
+                        data: serde_json::json!({
+                            "items": page,
+                            "count": page.len(),
+                            "days": days,
+                            "meta": {
+                                "requested": { "start": range.start, "end": range.end },
+                                "effective": { "start": range.start, "end": range.effective_end },
+                                "clamped": range.clamped,
+                                "returned": page.len(),
+                                "total": total,
+                                "truncated": truncated,
+                                "next_offset": next_offset,
+                                "window_default": { "start": range.window_start, "end": range.window_end },
+                            }
+                        }),
                         error: None,
+                    }
+                }
+                Err(e) => ToolResult {
+                    tool: tool_name.to_string(),
+                    success: false,
+                    data: Value::Null,
+                    error: Some(e.to_string()),
+                },
+            }
+        }
+        "get_calendar_event_detail" => {
+            let id = args.get("id").and_then(|v| v.as_i64()).unwrap_or(0);
+            if id == 0 {
+                return ToolResult {
+                    tool: tool_name.to_string(),
+                    success: false,
+                    data: Value::Null,
+                    error: Some("Geen geldig agenda-item ID opgegeven.".to_string()),
+                };
+            }
+            let date_arg = args.get("date").and_then(|v| v.as_str()).unwrap_or("");
+            let date_arg = date_arg.get(0..10).unwrap_or(date_arg);
+            let date = if date_arg.is_empty() {
+                crate::ai::time::today_amsterdam()
+            } else {
+                date_arg.to_string()
+            };
+            if !crate::ai::time::is_valid_date_str(&date) {
+                return ToolResult {
+                    tool: tool_name.to_string(),
+                    success: false,
+                    data: Value::Null,
+                    error: Some(format!("Ongeldige datum '{}' (verwacht yyyy-MM-dd).", date)),
+                };
+            }
+            match client
+                .get(&format!("personen/{}/afspraken?tot={}&van={}", person_id, date, date))
+                .await
+            {
+                Ok(data) => {
+                    let found = data
+                        .get("Items")
+                        .and_then(|v| v.as_array())
+                        .and_then(|arr| {
+                            arr.iter().find(|item| item.get("Id").and_then(|v| v.as_i64()) == Some(id))
+                        })
+                        .cloned();
+                    match found {
+                        Some(item) => {
+                            let docenten = item
+                                .get("Docenten")
+                                .and_then(|v| v.as_array())
+                                .map(|arr| arr.iter().map(redact_docent).collect::<Vec<Value>>())
+                                .unwrap_or_default();
+                            let inhoud = item.get("Inhoud").and_then(|v| v.as_str()).unwrap_or("");
+                            ToolResult {
+                                tool: tool_name.to_string(),
+                                success: true,
+                                data: serde_json::json!({
+                                    "id": item.get("Id"),
+                                    "date": date,
+                                    "start": item.get("Start"),
+                                    "end": item.get("Einde"),
+                                    "vak": item.get("Vakken").and_then(|v| v.as_array()).and_then(|a| a.first()).and_then(|v| v.get("Naam")),
+                                    "docent": docenten,
+                                    "lokaal": item.get("Lokalen").and_then(|v| v.as_array()).and_then(|a| a.first()).and_then(|v| v.get("Naam")),
+                                    "lesuur": item.get("LesuurVan"),
+                                    "omschrijving": item.get("Omschrijving"),
+                                    "inhoud": if inhoud.is_empty() { Value::Null } else { Value::String(inhoud.to_string()) },
+                                    "huiswerk": !inhoud.trim().is_empty(),
+                                    "afgerond": item.get("Afgerond"),
+                                    "type": item.get("Type"),
+                                    "status": item.get("Status"),
+                                }),
+                                error: None,
+                            }
+                        }
+                        None => ToolResult {
+                            tool: tool_name.to_string(),
+                            success: false,
+                            data: Value::Null,
+                            error: Some(format!(
+                                "Agenda-item {} niet gevonden op {}. Roep get_calendar_events aan voor het juiste bereik en probeer opnieuw.",
+                                id, date
+                            )),
+                        },
                     }
                 }
                 Err(e) => ToolResult {
@@ -837,10 +869,12 @@ pub async fn execute_tool(
                                 .collect()
                         })
                         .unwrap_or_default();
+                    // Magister exposes no list total here; total == returned (bound by top).
+                    let total = simplified.len();
                     ToolResult {
                         tool: tool_name.to_string(),
                         success: true,
-                        data: serde_json::json!({ "items": simplified, "count": simplified.len() }),
+                        data: serde_json::json!({ "items": simplified, "count": total, "total": total }),
                         error: None,
                     }
                 }
@@ -855,7 +889,7 @@ pub async fn execute_tool(
         "get_full_grade_overview" => {
             let schoolyear_id = args.get("schoolyear_id").and_then(|v| v.as_i64()).unwrap_or(0);
             let einde = args.get("einde").and_then(|v| v.as_str()).unwrap_or("");
-            let peildatum = if einde.len() > 10 { &einde[0..10] } else { einde };
+            let peildatum = if einde.len() > 10 { einde.get(0..10).unwrap_or(einde) } else { einde };
 
             let path = format!(
                 "personen/{}/aanmeldingen/{}/cijfers/cijferoverzichtvooraanmelding?actievePerioden=false&alleenBerekendeKolommen=false&alleenPTAKolommen=false&peildatum={}",
@@ -911,7 +945,7 @@ pub async fn execute_tool(
             }
         }
         "get_schoolyears" => {
-            let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+            let today = crate::ai::time::today_amsterdam();
             match client
                 .get(&format!(
                     "leerlingen/{}/aanmeldingen?begin=2013-01-01&einde={}",
@@ -968,6 +1002,20 @@ pub async fn execute_tool(
                         .map(|arr| {
                             arr.iter()
                                 .map(|item| {
+                                    // Attachment names only (no contents): awareness without cost.
+                                    let bijlagen: Vec<Value> = item
+                                        .get("Bijlagen")
+                                        .and_then(|v| v.as_array())
+                                        .map(|a| {
+                                            a.iter()
+                                                .filter_map(|b| {
+                                                    b.get("Naam").and_then(|n| n.as_str()).map(|s| {
+                                                        Value::String(s.to_string())
+                                                    })
+                                                })
+                                                .collect()
+                                        })
+                                        .unwrap_or_default();
                                     serde_json::json!({
                                         "id": item.get("Id"),
                                         "titel": item.get("Titel"),
@@ -977,6 +1025,7 @@ pub async fn execute_tool(
                                         "afgesloten": item.get("Afgesloten"),
                                         "omschrijving": item.get("Omschrijving"),
                                         "type": item.get("Type"),
+                                        "bijlagen": bijlagen,
                                     })
                                 })
                                 .collect()
@@ -1107,7 +1156,8 @@ pub async fn execute_tool(
                                 ToolResult {
                                     tool: tool_name.to_string(),
                                     success: true,
-                                    data: serde_json::json!({ "items": simplified, "count": simplified.len(), "folder": folder_name }),
+                                    // The folder endpoint exposes no message total; total == returned.
+                                    data: serde_json::json!({ "items": simplified, "count": simplified.len(), "total": simplified.len(), "folder": folder_name }),
                                     error: None,
                                 }
                             }
@@ -1317,9 +1367,15 @@ pub async fn execute_tool(
                 error: None,
             }
         }
+        "get_current_time" => ToolResult {
+            tool: tool_name.to_string(),
+            success: true,
+            data: crate::ai::time::current_time_json(),
+            error: None,
+        },
         "get_today_summary" => {
-            let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
-            let next_week = (chrono::Utc::now() + chrono::Duration::days(7)).format("%Y-%m-%d").to_string();
+            let today = crate::ai::time::today_amsterdam();
+            let next_week = crate::ai::time::add_days(&today, 7);
 
             let mut summary = serde_json::Map::new();
 
@@ -1541,81 +1597,451 @@ pub async fn execute_tool(
             }
         }
 
-        "read_attachment_text" => {
-            let url = args.get("url").and_then(|v| v.as_str()).unwrap_or("");
-            let filename = args
-                .get("filename")
+        "list_files" => {
+            let scope = args.get("scope").and_then(|v| v.as_str()).unwrap_or("all").to_string();
+            let scope = match scope.as_str() {
+                "assignment" | "message" | "lesson" => scope,
+                _ => "all".to_string(),
+            };
+            let subject_filter = args
+                .get("subject")
                 .and_then(|v| v.as_str())
-                .unwrap_or("bijlage")
-                .to_string();
-
-            if url.is_empty() {
-                return ToolResult {
-                    tool: tool_name.to_string(),
-                    success: false,
-                    data: Value::Null,
-                    error: Some("Geen URL opgegeven.".to_string()),
-                };
-            }
-
-            // Magister's download/Self links are indirection links — resolve to the
-            // real content URL first (same two-call sequence as download_file).
-            let path = url.trim_start_matches("/api/");
-            let resolved = match client.get_redirect_location(path).await {
-                Ok(resolved) => resolved,
+                .map(|s| s.trim().to_lowercase())
+                .filter(|s| !s.is_empty());
+            let start_arg = args.get("start").and_then(|v| v.as_str()).unwrap_or("");
+            let end_arg = args.get("end").and_then(|v| v.as_str()).unwrap_or("");
+            let start_arg = start_arg.get(0..10).unwrap_or(start_arg);
+            let end_arg = end_arg.get(0..10).unwrap_or(end_arg);
+            let range = match resolve_calendar_range(start_arg, end_arg, &crate::ai::time::today_amsterdam()) {
+                Ok(r) => r,
                 Err(e) => {
                     return ToolResult {
                         tool: tool_name.to_string(),
                         success: false,
                         data: Value::Null,
-                        error: Some(format!("Kon download-link niet resolven: {}", e)),
-                    };
+                        error: Some(e),
+                    }
                 }
             };
+            let subject_matches = |subject: &Option<String>| -> bool {
+                match (&subject_filter, subject) {
+                    (None, _) => true,
+                    (Some(f), Some(s)) => s.to_lowercase().contains(f),
+                    (Some(_), None) => false,
+                }
+            };
+            let mut files: Vec<Value> = Vec::new();
 
-            match client.get_bytes_with_content_type(&resolved).await {
-                Ok((bytes, content_type)) => {
-                    match crate::ai::attachment_reader::extract_text(&bytes, &filename, &content_type) {
-                        Ok(raw) => {
-                            let truncated = raw.chars().count()
-                                > crate::ai::attachment_reader::MAX_TEXT_CHARS;
-                            let text: String = raw
-                                .chars()
-                                .take(crate::ai::attachment_reader::MAX_TEXT_CHARS)
-                                .collect();
-                            ToolResult {
-                                tool: tool_name.to_string(),
-                                success: true,
-                                data: serde_json::json!({
-                                    "filename": filename,
-                                    "content_type": content_type,
-                                    "size_bytes": bytes.len(),
-                                    "text": text,
-                                    "char_count": text.chars().count(),
-                                    "truncated": truncated,
-                                    "message": if truncated {
-                                        "De tekst is afgekapt tot 8000 tekens om ruimte te besparen."
-                                    } else {
-                                        "De volledige tekst van de bijlage staat hierboven."
-                                    }
-                                }),
-                                error: None,
+            // Assignments: raw list Bijlagen first, detail fallback per item.
+            if scope == "all" || scope == "assignment" {
+                if let Ok(data) = client
+                    .get(&format!(
+                        "personen/{}/opdrachten?van={}&tot={}",
+                        person_id, range.start, range.effective_end
+                    ))
+                    .await
+                {
+                    let items = data.get("Items").cloned().unwrap_or(Value::Array(vec![]));
+                    if let Some(arr) = items.as_array() {
+                        for item in arr {
+                            let aid = item.get("Id").and_then(|v| v.as_i64()).unwrap_or(0);
+                            if aid == 0 {
+                                continue;
+                            }
+                            let raw_bijlagen = item
+                                .get("Bijlagen")
+                                .and_then(|v| v.as_array())
+                                .cloned()
+                                .unwrap_or_default();
+                            // Detail fetch only when the list omits Bijlagen.
+                            let detail = if raw_bijlagen.is_empty() {
+                                client
+                                    .get(&format!("personen/{}/opdrachten/{}", person_id, aid))
+                                    .await
+                                    .ok()
+                            } else {
+                                None
+                            };
+                            let src = detail.as_ref().unwrap_or(item);
+                            let vak = subject_name(
+                                src.get("Vak").or_else(|| item.get("Vak")),
+                            );
+                            if !subject_matches(&vak) {
+                                continue;
+                            }
+                            let titel = src
+                                .get("Titel")
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string());
+                            let due = src
+                                .get("InleverenVoor")
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string());
+                            let bijlagen = src
+                                .get("Bijlagen")
+                                .and_then(|v| v.as_array())
+                                .cloned()
+                                .unwrap_or_default();
+                            for (idx, b) in bijlagen.iter().enumerate() {
+                                harvest_bijlage(
+                                    &mut files,
+                                    "assignment",
+                                    aid.to_string(),
+                                    b,
+                                    idx,
+                                    vak.clone(),
+                                    titel.clone(),
+                                    due.clone(),
+                                    None,
+                                );
                             }
                         }
-                        Err(e) => ToolResult {
+                    }
+                }
+            }
+
+            // Messages: default folder, top 10, content fetch for details.
+            if scope == "all" || scope == "message" {
+                if let Ok(link) = inbox_message_link(client, person_id).await {
+                    if let Ok(msgs) = client.get(&format!("{}/berichten?top=10", link.trim_start_matches('/'))).await {
+                        let items = msgs
+                            .get("Items")
+                            .or_else(|| msgs.get("items"))
+                            .and_then(|v| v.as_array())
+                            .cloned()
+                            .unwrap_or_default();
+                        for item in items.iter().take(10) {
+                            let mid = item.get("Id").or_else(|| item.get("id")).and_then(|v| v.as_i64()).unwrap_or(0);
+                            if mid == 0 {
+                                continue;
+                            }
+                            let raw_bijlagen = item
+                                .get("Bijlagen")
+                                .or_else(|| item.get("bijlagen"))
+                                .and_then(|v| v.as_array())
+                                .cloned()
+                                .unwrap_or_default();
+                            let detail = if raw_bijlagen.is_empty() {
+                                client.get(&format!("berichten/{}", mid)).await.ok()
+                            } else {
+                                None
+                            };
+                            let src = detail.as_ref().unwrap_or(item);
+                            let bijlagen = src
+                                .get("Bijlagen")
+                                .or_else(|| src.get("bijlagen"))
+                                .and_then(|v| v.as_array())
+                                .cloned()
+                                .unwrap_or_default();
+                            if bijlagen.is_empty() {
+                                continue;
+                            }
+                            // Messages carry no subject; a subject filter excludes them.
+                            if subject_filter.is_some() {
+                                continue;
+                            }
+                            let title = src
+                                .get("Onderwerp")
+                                .or_else(|| src.get("onderwerp"))
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string());
+                            let date = src
+                                .get("DatumVerzonden")
+                                .or_else(|| src.get("verzondenOp"))
+                                .or_else(|| src.get("VerzondenOp"))
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string());
+                            for (idx, b) in bijlagen.iter().enumerate() {
+                                harvest_bijlage(
+                                    &mut files,
+                                    "message",
+                                    mid.to_string(),
+                                    b,
+                                    idx,
+                                    None,
+                                    title.clone(),
+                                    None,
+                                    date.clone(),
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Lessons: raw agenda items carry their Bijlagen directly.
+            if scope == "all" || scope == "lesson" {
+                if let Ok(data) = client
+                    .get(&format!(
+                        "personen/{}/afspraken?tot={}&van={}",
+                        person_id, range.effective_end, range.start
+                    ))
+                    .await
+                {
+                    let items = data.get("Items").cloned().unwrap_or(Value::Array(vec![]));
+                    if let Some(arr) = items.as_array() {
+                        for item in arr {
+                            let bijlagen = item
+                                .get("Bijlagen")
+                                .or_else(|| item.get("bijlagen"))
+                                .and_then(|v| v.as_array())
+                                .cloned()
+                                .unwrap_or_default();
+                            if bijlagen.is_empty() {
+                                continue;
+                            }
+                            let eid = item.get("Id").and_then(|v| v.as_i64()).unwrap_or(0);
+                            let vak = item
+                                .get("Vakken")
+                                .and_then(|v| v.as_array())
+                                .and_then(|a| a.first())
+                                .and_then(|v| v.get("Naam"))
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string());
+                            if !subject_matches(&vak) {
+                                continue;
+                            }
+                            let title = item.get("Omschrijving").and_then(|v| v.as_str()).map(|s| s.to_string());
+                            let date = item
+                                .get("Start")
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.get(0..10).unwrap_or(s).to_string());
+                            for (idx, b) in bijlagen.iter().enumerate() {
+                                harvest_bijlage(
+                                    &mut files,
+                                    "lesson",
+                                    eid.to_string(),
+                                    b,
+                                    idx,
+                                    vak.clone(),
+                                    title.clone(),
+                                    None,
+                                    date.clone(),
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+
+            let total = files.len();
+            let truncated = total > 100;
+            if truncated {
+                files.truncate(100);
+            }
+            ToolResult {
+                tool: tool_name.to_string(),
+                success: true,
+                data: serde_json::json!({
+                    "files": files,
+                    "count": files.len(),
+                    "total": total,
+                    "truncated": truncated,
+                    "scope": scope,
+                    "window_default": { "start": range.window_start, "end": range.window_end },
+                }),
+                error: None,
+            }
+        }
+
+        "read_attachment_text" => {
+            use crate::ai::attachment_reader as ar;
+            let file_id = args.get("file_id").and_then(|v| v.as_str()).unwrap_or("");
+            let url = args.get("url").and_then(|v| v.as_str()).unwrap_or("");
+            let filename = args
+                .get("filename")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let offset = args.get("offset").and_then(|v| v.as_i64()).unwrap_or(0).max(0) as usize;
+            let max_chars = args
+                .get("max_chars")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(ar::DEFAULT_PAGE_CHARS as i64)
+                .clamp(1, ar::DEFAULT_PAGE_CHARS as i64) as usize;
+
+            let endpoint = match api_endpoint_of(client) {
+                Ok(e) => e,
+                Err(e) => {
+                    return ToolResult {
+                        tool: tool_name.to_string(),
+                        success: false,
+                        data: Value::Null,
+                        error: Some(e),
+                    }
+                }
+            };
+            let cache_key = if !file_id.is_empty() {
+                format!("id:{}", file_id)
+            } else {
+                format!("url:{}", url)
+            };
+
+            // Resolve to (url, name): registry id or validated model URL.
+            let (target_url, name) = if !file_id.is_empty() {
+                match ar::registry_get(file_id) {
+                    Some(r) => (r.url, r.name),
+                    None => {
+                        return ToolResult {
+                            tool: tool_name.to_string(),
+                            success: false,
+                            data: Value::Null,
+                            error: Some("Onbekend file_id. Roep eerst list_files aan.".to_string()),
+                        }
+                    }
+                }
+            } else {
+                if url.is_empty() {
+                    return ToolResult {
+                        tool: tool_name.to_string(),
+                        success: false,
+                        data: Value::Null,
+                        error: Some("Geen file_id of URL opgegeven.".to_string()),
+                    };
+                }
+                if let Err(e) = ar::validate_attachment_url(url, &endpoint) {
+                    return ToolResult {
+                        tool: tool_name.to_string(),
+                        success: false,
+                        data: Value::Null,
+                        error: Some(e),
+                    };
+                }
+                let name = if filename.is_empty() {
+                    url.split('?')
+                        .next()
+                        .unwrap_or(url)
+                        .rsplit('/')
+                        .next()
+                        .filter(|s| !s.is_empty())
+                        .unwrap_or("bijlage")
+                        .to_string()
+                } else {
+                    filename
+                };
+                (url.to_string(), name)
+            };
+
+            // Serve from cache when the same source was already extracted.
+            if let Some(cached) = ar::cache_get(&cache_key, &target_url) {
+                if offset > cached.total_chars {
+                    return ToolResult {
+                        tool: tool_name.to_string(),
+                        success: false,
+                        data: Value::Null,
+                        error: Some(format!(
+                            "Offset {} voorbij het einde ({} tekens).",
+                            offset, cached.total_chars
+                        )),
+                    };
+                }
+                let (page, next_offset, total) = ar::page_text(&cached.text, offset, max_chars);
+                return ToolResult {
+                    tool: tool_name.to_string(),
+                    success: true,
+                    data: serde_json::json!({
+                        "name": cached.name,
+                        "total_chars": total,
+                        "offset": offset.min(total),
+                        "next_offset": next_offset,
+                        "text": page,
+                        "truncated": cached.truncated,
+                        "cached": true,
+                    }),
+                    error: None,
+                };
+            }
+
+            // Pre-check by name: don't download what we can't read anyway.
+            if let Some(reason) = ar::unsupported_reason(&name, "", true) {
+                return ToolResult {
+                    tool: tool_name.to_string(),
+                    success: false,
+                    data: serde_json::json!({ "readable": false, "reason": reason }),
+                    error: Some(reason),
+                };
+            }
+
+            let (bytes, content_type, name) =
+                match download_attachment(client, &endpoint, &target_url, &name).await {
+                    Ok(v) => v,
+                    Err(e) => {
+                        return ToolResult {
                             tool: tool_name.to_string(),
                             success: false,
                             data: Value::Null,
                             error: Some(e),
-                        },
+                        }
+                    }
+                };
+
+            // Post-check with the real content type.
+            if let Some(reason) = ar::unsupported_reason(&name, &content_type, true) {
+                return ToolResult {
+                    tool: tool_name.to_string(),
+                    success: false,
+                    data: serde_json::json!({ "readable": false, "reason": reason }),
+                    error: Some(reason),
+                };
+            }
+
+            let raw = match ar::extract_text(&bytes, &name, &content_type) {
+                Ok(t) => t,
+                Err(e) => {
+                    return ToolResult {
+                        tool: tool_name.to_string(),
+                        success: false,
+                        data: Value::Null,
+                        error: Some(e),
                     }
                 }
-                Err(e) => ToolResult {
+            };
+            if ar::is_empty_text(&raw) {
+                let reason = "geen tekstlaag (gescand)".to_string();
+                return ToolResult {
+                    tool: tool_name.to_string(),
+                    success: false,
+                    data: serde_json::json!({ "readable": false, "reason": reason }),
+                    error: Some(reason),
+                };
+            }
+            let (capped, truncated) = ar::cap_extracted(raw);
+            let total = capped.chars().count();
+            if offset > total {
+                return ToolResult {
                     tool: tool_name.to_string(),
                     success: false,
                     data: Value::Null,
-                    error: Some(e.to_string()),
+                    error: Some(format!(
+                        "Offset {} voorbij het einde ({} tekens).",
+                        offset, total
+                    )),
+                };
+            }
+            ar::cache_put(
+                cache_key,
+                ar::CachedText {
+                    url: target_url,
+                    name: name.clone(),
+                    text: capped.clone(),
+                    total_chars: total,
+                    size_bytes: bytes.len(),
+                    truncated,
                 },
+            );
+            let (page, next_offset, _) = ar::page_text(&capped, offset, max_chars);
+            ToolResult {
+                tool: tool_name.to_string(),
+                success: true,
+                data: serde_json::json!({
+                    "name": name,
+                    "total_chars": total,
+                    "offset": offset,
+                    "next_offset": next_offset,
+                    "text": page,
+                    "truncated": truncated,
+                }),
+                error: None,
             }
         }
 
@@ -1632,7 +2058,7 @@ pub async fn execute_tool(
                 .max(0) as usize;
 
             let peildatum = args.get("peildatum").and_then(|v| v.as_str()).unwrap_or("");
-            let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+            let today = crate::ai::time::today_amsterdam();
             let peil = if peildatum.len() >= 10 { &peildatum[0..10] } else { &today };
 
             // 1. Resolve the subject's current grades: explicit `grades` array,
@@ -1848,6 +2274,7 @@ pub async fn execute_tool(
         }
 
         "download_file" => {
+            use crate::ai::attachment_reader as ar;
             let url = args.get("url").and_then(|v| v.as_str()).unwrap_or("");
 
             if url.is_empty() {
@@ -1859,8 +2286,28 @@ pub async fn execute_tool(
                 };
             }
 
+            let endpoint = match api_endpoint_of(client) {
+                Ok(e) => e,
+                Err(e) => {
+                    return ToolResult {
+                        tool: tool_name.to_string(),
+                        success: false,
+                        data: Value::Null,
+                        error: Some(e),
+                    }
+                }
+            };
+            if let Err(e) = ar::validate_attachment_url(url, &endpoint) {
+                return ToolResult {
+                    tool: tool_name.to_string(),
+                    success: false,
+                    data: Value::Null,
+                    error: Some(e),
+                };
+            }
+
             // Magister's download/Self links are indirection links — resolve to the
-            // real content URL first (same two-call sequence as download_file).
+            // real content URL first (same two-call sequence as before).
             let path = url.trim_start_matches("/api/");
             let resolved = match client.get_redirect_location(path).await {
                 Ok(resolved) => resolved,
@@ -1873,15 +2320,48 @@ pub async fn execute_tool(
                     };
                 }
             };
+            let fetch_url = if resolved.trim().is_empty() {
+                url.to_string()
+            } else {
+                if let Err(e) = ar::validate_attachment_url(&resolved, &endpoint) {
+                    return ToolResult {
+                        tool: tool_name.to_string(),
+                        success: false,
+                        data: Value::Null,
+                        error: Some(e),
+                    };
+                }
+                resolved
+            };
 
-            match client.get_bytes_with_content_type(&resolved).await {
-                Ok((bytes, content_type)) => {
+            match client.get_bytes_with_content_type(&fetch_url).await {
+                Ok((bytes, content_type, final_url)) => {
+                    if let Err(e) = ar::validate_final_url(&final_url, &endpoint) {
+                        return ToolResult {
+                            tool: tool_name.to_string(),
+                            success: false,
+                            data: Value::Null,
+                            error: Some(e),
+                        };
+                    }
+                    if bytes.len() > ar::MAX_DOWNLOAD_BYTES {
+                        return ToolResult {
+                            tool: tool_name.to_string(),
+                            success: false,
+                            data: Value::Null,
+                            error: Some(format!(
+                                "Bestand te groot ({:.1} MB, max 15 MB).",
+                                bytes.len() as f64 / 1_048_576.0
+                            )),
+                        };
+                    }
                     let size = bytes.len();
                     let data = serde_json::json!({
                         "url": url,
                         "size_bytes": size,
                         "size_mb": (size as f64) / 1_048_576.0,
                         "mime_type": content_type,
+                        "capped": false,
                         "message": "Het bestand is gedownload. De AI kan de inhoud niet lezen, maar je kunt het openen via de link."
                     });
                     ToolResult {
@@ -2013,7 +2493,7 @@ mod tests {
     use super::*;
     use crate::client::MagisterClient;
     use chrono::Utc;
-    use wiremock::matchers::{method, path};
+    use wiremock::matchers::{method, path, query_param};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     fn mock_token_set(endpoint: &str) -> crate::client::TokenSet {
@@ -2328,5 +2808,514 @@ mod tests {
         assert!(posted.get("Inhoud").is_none(), "blank Inhoud must be omitted, got {}", posted);
         assert!(posted.get("Lokatie").is_none(), "blank Lokatie must be omitted, got {}", posted);
     }
-}
 
+    // ─── Phase 2: windowing, pagination, budget ──────────────────────────
+
+    fn lesson(id: i64, start: &str) -> Value {
+        serde_json::json!({
+            "Id": id,
+            "Start": start,
+            "Einde": "2026-09-21T09:20:00",
+            "Type": 13,
+            "Status": 2,
+            "Vakken": [{"Naam": "Wiskunde"}],
+            "Docenten": [{"Id": 9, "Docentcode": "JNS", "Naam": "Jan Jansen"}],
+            "Lokalen": [{"Naam": "A101"}],
+            "LesuurVan": 1,
+            "Omschrijving": "Paragraaf 3.4",
+            "Inhoud": null,
+            "Afgerond": false,
+        })
+    }
+
+    #[test]
+    fn resolve_calendar_range_defaults_and_clamps() {
+        let win = crate::ai::time::context_window("2026-10-02");
+        let def = resolve_calendar_range("", "", "2026-10-02").expect("defaults resolve");
+        assert_eq!(def.start, win.start);
+        assert_eq!(def.effective_end, win.end);
+        assert!(!def.clamped);
+
+        let wide = resolve_calendar_range("2026-01-01", "2026-06-01", "2026-02-01").expect("wide resolves");
+        assert!(wide.clamped);
+        assert_eq!(wide.effective_end, "2026-03-04"); // Jan 1 + 62 days
+        assert_eq!(wide.start, "2026-01-01");
+
+        let exact = resolve_calendar_range("2026-01-01", "2026-03-04", "2026-02-01").expect("exact resolves");
+        assert!(!exact.clamped);
+
+        assert!(resolve_calendar_range("volgende week", "2026-09-27", "2026-09-21").is_err());
+        assert!(resolve_calendar_range("2026-09-27", "2026-09-21", "2026-09-21").is_err());
+    }
+
+    #[test]
+    fn paginate_slice_pages() {
+        let items: Vec<Value> = (1..=5).map(|i| serde_json::json!(i)).collect();
+        let (page, truncated, next) = paginate_slice(&items, 0, 2);
+        assert_eq!(page, vec![serde_json::json!(1), serde_json::json!(2)]);
+        assert!(truncated);
+        assert_eq!(next, Some(2));
+        let (last, truncated, next) = paginate_slice(&items, 4, 2);
+        assert_eq!(last.len(), 1);
+        assert!(!truncated);
+        assert_eq!(next, None);
+    }
+
+    #[test]
+    fn slim_calendar_item_shape() {
+        let mut raw = lesson(7, "2026-09-21T08:30:00");
+        raw["Omschrijving"] = Value::String("x".repeat(200));
+        raw["Inhoud"] = Value::String("Maak opgave 1 t/m 10".to_string());
+        let slim = slim_calendar_item(&raw);
+        assert_eq!(slim["omschrijving"].as_str().unwrap().chars().count(), 121); // 120 + …
+        assert_eq!(slim["huiswerk"], Value::Bool(true));
+        assert!(slim.get("inhoud").is_none(), "inhoud lives behind the detail tool");
+        assert_eq!(slim["docent"], Value::String("JNS".to_string()));
+        assert_eq!(slim["date"], Value::String("2026-09-21".to_string()));
+
+        let mut bare = lesson(8, "2026-09-21T08:30:00");
+        bare["Afgerond"] = Value::Null;
+        bare["Lokalen"] = Value::Array(vec![]);
+        let slim_bare = slim_calendar_item(&bare);
+        assert!(slim_bare.get("afgerond").is_none(), "nulls dropped");
+        assert!(slim_bare.get("lokaal").is_none(), "empty lokalen dropped");
+        assert_eq!(slim_bare["huiswerk"], Value::Bool(false));
+    }
+
+    #[test]
+    fn cut_120_is_char_boundary_safe() {
+        let emoji = "🎓".repeat(200);
+        let cut = cut_120(&emoji);
+        assert_eq!(cut.chars().count(), 121);
+        assert!(cut.is_ascii() == false);
+        assert_eq!(cut_120("kort"), "kort");
+    }
+
+    #[tokio::test]
+    async fn calendar_events_default_window_requests_window() {
+        let mock_server = MockServer::start().await;
+        let today = crate::ai::time::today_amsterdam();
+        let win = crate::ai::time::context_window(&today);
+
+        Mock::given(method("GET"))
+            .and(path("/personen/123/afspraken"))
+            .and(query_param("van", win.start.as_str()))
+            .and(query_param("tot", win.end.as_str()))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "Items": [lesson(1, "2026-09-21T08:30:00")]
+            })))
+            .mount(&mock_server)
+            .await;
+
+        let store: PendingActionStore = Mutex::new(HashMap::new());
+        let mut client = client_with_token(&mock_server.uri());
+        // Empty args: the mock only matches the default-window query, so a
+        // wrong range would 404 and fail the tool.
+        let result = execute_tool(&mut client, "get_calendar_events", &serde_json::json!({}), 123, &store).await;
+        assert!(result.success, "got error: {:?}", result.error);
+        assert_eq!(result.data["items"][0]["docent"], "JNS");
+        assert!(result.data["items"][0].get("inhoud").is_none());
+        assert_eq!(result.data["meta"]["clamped"], false);
+        assert_eq!(result.data["meta"]["total"], 1);
+        assert_eq!(result.data["meta"]["window_default"]["start"], win.start.as_str());
+    }
+
+    #[tokio::test]
+    async fn calendar_events_clamp_and_paginate_round_trip() {
+        let mock_server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/personen/123/afspraken"))
+            .and(query_param("van", "2026-01-01"))
+            .and(query_param("tot", "2026-03-04"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "Items": [
+                    lesson(1, "2026-01-06T08:30:00"),
+                    lesson(2, "2026-01-05T08:30:00"),
+                    lesson(3, "2026-01-07T08:30:00"),
+                    lesson(4, "2026-01-05T10:30:00"),
+                    lesson(5, "2026-01-06T10:30:00"),
+                ]
+            })))
+            .mount(&mock_server)
+            .await;
+
+        let store: PendingActionStore = Mutex::new(HashMap::new());
+        let mut client = client_with_token(&mock_server.uri());
+        let mut seen: Vec<i64> = vec![];
+        let mut offset: Option<i64> = Some(0);
+        while let Some(off) = offset {
+            let args = serde_json::json!({
+                "start": "2026-01-01", "end": "2026-06-01", "offset": off, "limit": 2
+            });
+            let result = execute_tool(&mut client, "get_calendar_events", &args, 123, &store).await;
+            assert!(result.success, "got error: {:?}", result.error);
+            assert_eq!(result.data["meta"]["clamped"], true);
+            assert_eq!(result.data["meta"]["effective"]["end"], "2026-03-04");
+            for item in result.data["items"].as_array().unwrap() {
+                seen.push(item["id"].as_i64().unwrap());
+            }
+            offset = result.data["meta"]["next_offset"].as_i64();
+        }
+        // Sorted by start despite storage order.
+        assert_eq!(seen, vec![2, 4, 1, 5, 3]);
+    }
+
+    #[tokio::test]
+    async fn calendar_event_detail_found_and_missing() {
+        let mock_server = MockServer::start().await;
+        let mut with_text = lesson(42, "2026-09-21T08:30:00");
+        with_text["Inhoud"] = Value::String("Lees bladzijde 10 t/m 15".to_string());
+        Mock::given(method("GET"))
+            .and(path("/personen/123/afspraken"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "Items": [with_text, lesson(43, "2026-09-21T10:30:00")]
+            })))
+            .mount(&mock_server)
+            .await;
+
+        let store: PendingActionStore = Mutex::new(HashMap::new());
+        let mut client = client_with_token(&mock_server.uri());
+        let result = execute_tool(
+            &mut client,
+            "get_calendar_event_detail",
+            &serde_json::json!({ "id": 42, "date": "2026-09-21" }),
+            123,
+            &store,
+        )
+        .await;
+        assert!(result.success, "got error: {:?}", result.error);
+        assert_eq!(result.data["id"], 42);
+        assert_eq!(result.data["inhoud"], "Lees bladzijde 10 t/m 15");
+        assert_eq!(result.data["huiswerk"], Value::Bool(true));
+        // Teacher names stay redacted in the detail view too.
+        assert_eq!(result.data["docent"][0]["naam"], "JNS");
+
+        let missing = execute_tool(
+            &mut client,
+            "get_calendar_event_detail",
+            &serde_json::json!({ "id": 999, "date": "2026-09-21" }),
+            123,
+            &store,
+        )
+        .await;
+        assert!(!missing.success);
+        assert!(missing.error.unwrap().contains("niet gevonden op 2026-09-21"));
+    }
+
+    #[tokio::test]
+    async fn calendar_page_stays_bounded() {
+        let mock_server = MockServer::start().await;
+        let lessons: Vec<Value> = (0..100)
+            .map(|i| {
+                let day = 21 + (i % 21);
+                let mut l = lesson(1000 + i, &format!("2026-09-{:02}T08:30:00", day.min(30)));
+                l["Omschrijving"] = Value::String(
+                    "Paragraaf 3.4 opgaven 12 t/m 28 maken en leren voor het schriftelijk van volgende week".to_string(),
+                );
+                l["Inhoud"] = Value::String("Huiswerktekst die nooit in de lijst mag belanden. ".repeat(25));
+                l
+            })
+            .collect();
+        Mock::given(method("GET"))
+            .and(path("/personen/123/afspraken"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({ "Items": lessons })))
+            .mount(&mock_server)
+            .await;
+
+        let store: PendingActionStore = Mutex::new(HashMap::new());
+        let mut client = client_with_token(&mock_server.uri());
+        let result = execute_tool(&mut client, "get_calendar_events", &serde_json::json!({}), 123, &store).await;
+        assert!(result.success, "got error: {:?}", result.error);
+        assert_eq!(result.data["items"].as_array().unwrap().len(), 60);
+        assert_eq!(result.data["meta"]["total"], 100);
+        assert_eq!(result.data["meta"]["next_offset"], 60);
+        let bytes = serde_json::to_string(&result.data).unwrap().len();
+        assert!(bytes < 20000, "bounded page, got {} bytes", bytes);
+    }
+
+    #[tokio::test]
+    async fn grades_and_messages_report_total() {
+        let mock_server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/personen/123/cijfers/laatste"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({ "Items": [{"Id": 1}] })))
+            .mount(&mock_server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/berichten/mappen/alle"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "Items": [{"Id": 1, "Naam": "Postvak IN", "Links": [{"Href": "berichten/mappen/1/berichten"}]}]
+            })))
+            .mount(&mock_server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/berichten/mappen/1/berichten/berichten"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({ "Items": [{"Id": 2}] })))
+            .mount(&mock_server)
+            .await;
+
+        let store: PendingActionStore = Mutex::new(HashMap::new());
+        let mut client = client_with_token(&mock_server.uri());
+        let grades = execute_tool(&mut client, "get_grades", &serde_json::json!({"top": 5}), 123, &store).await;
+        assert!(grades.success);
+        assert_eq!(grades.data["total"], 1);
+        let msgs = execute_tool(&mut client, "get_messages", &serde_json::json!({}), 123, &store).await;
+        assert!(msgs.success, "got error: {:?}", msgs.error);
+        assert_eq!(msgs.data["total"], 1);
+    }
+
+
+    async fn mount_download_pair(server: &MockServer, indirection: &str, content_path: &str, body: &str) {
+        let content_url = format!("{}{}", server.uri(), content_path);
+        Mock::given(method("GET"))
+            .and(path(indirection))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "location": content_url,
+            })))
+            .mount(server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path(content_path))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_string(body)
+                    .insert_header("Content-Type", "text/plain"),
+            )
+            .mount(server)
+            .await;
+    }
+
+    #[tokio::test]
+    async fn list_files_enumerates_three_sources_and_registers() {
+        let mock_server = MockServer::start().await;
+
+        // Assignments with raw Bijlagen (no detail fetch needed).
+        Mock::given(method("GET"))
+            .and(path("/personen/123/opdrachten"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "Items": [{
+                    "Id": 7, "Titel": "Verslag", "Vak": "Nederlands",
+                    "InleverenVoor": "2026-10-01",
+                    "Bijlagen": [{ "Id": 9, "Naam": "opdracht.docx", "Url": "bijlagen/9", "Grootte": 1234 }],
+                }]
+            })))
+            .mount(&mock_server)
+            .await;
+        // Messages: folder + top list with raw Bijlagen.
+        Mock::given(method("GET"))
+            .and(path("/berichten/mappen/alle"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "Items": [{ "Id": 1, "Naam": "Postvak IN", "Links": [{ "Href": "berichten/mappen/1/berichten" }] }]
+            })))
+            .mount(&mock_server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/berichten/mappen/1/berichten/berichten"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "Items": [{
+                    "Id": 11, "Onderwerp": "Huiswerk", "DatumVerzonden": "2026-09-20T10:00:00",
+                    "Bijlagen": [{ "Id": 12, "Naam": "info.pdf", "Url": "bijlagen/12" }],
+                }]
+            })))
+            .mount(&mock_server)
+            .await;
+        // Lessons with raw Bijlagen.
+        Mock::given(method("GET"))
+            .and(path("/personen/123/afspraken"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "Items": [{
+                    "Id": 21, "Start": "2026-09-21T08:30:00",
+                    "Vakken": [{ "Naam": "Wiskunde" }], "Omschrijving": "Wis",
+                    "Bijlagen": [{ "Id": 22, "Naam": "blad.txt", "Url": "bijlagen/22" }],
+                }]
+            })))
+            .mount(&mock_server)
+            .await;
+
+        let store: PendingActionStore = Mutex::new(HashMap::new());
+        let mut client = client_with_token(&mock_server.uri());
+        let result = execute_tool(&mut client, "list_files", &serde_json::json!({}), 123, &store).await;
+        assert!(result.success, "got error: {:?}", result.error);
+        let files = result.data["files"].as_array().unwrap();
+        assert_eq!(files.len(), 3);
+        assert_eq!(files[0]["file_id"], "a:7:9");
+        assert_eq!(files[0]["source"], "assignment");
+        assert_eq!(files[0]["context"]["subject"], "Nederlands");
+        assert_eq!(files[0]["context"]["due"], "2026-10-01");
+        assert_eq!(files[1]["file_id"], "m:11:12");
+        assert_eq!(files[2]["file_id"], "l:21:22");
+        assert_eq!(files[2]["context"]["date"], "2026-09-21");
+        for f in files {
+            assert_eq!(f["readable"], true);
+        }
+        // Registry round-trip: the listed id resolves.
+        assert!(crate::ai::attachment_reader::registry_get("a:7:9").is_some());
+
+        // Scope + subject filters.
+        let scoped = execute_tool(
+            &mut client,
+            "list_files",
+            &serde_json::json!({ "scope": "message" }),
+            123,
+            &store,
+        )
+        .await;
+        assert_eq!(scoped.data["files"].as_array().unwrap().len(), 1);
+        let filtered = execute_tool(
+            &mut client,
+            "list_files",
+            &serde_json::json!({ "subject": "wis" }),
+            123,
+            &store,
+        )
+        .await;
+        let ff = filtered.data["files"].as_array().unwrap();
+        assert_eq!(ff.len(), 1);
+        assert_eq!(ff[0]["source"], "lesson");
+    }
+
+    #[tokio::test]
+    async fn read_by_file_id_pages_and_caches() {
+        let mock_server = MockServer::start().await;
+        let body = "0123456789".repeat(2000); // 20000 chars
+        mount_download_pair(&mock_server, "/tbijlagen/99", "/tcontents/99", &body).await;
+
+        let store: PendingActionStore = Mutex::new(HashMap::new());
+        let mut client = client_with_token(&mock_server.uri());
+        // Register manually (as list_files would).
+        crate::ai::attachment_reader::registry_put(
+            "t:99:1".to_string(),
+            crate::ai::attachment_reader::FileRef {
+                url: "tbijlagen/99".to_string(),
+                name: "tblad.txt".to_string(),
+                source: "lesson".to_string(),
+            },
+        );
+        let first = execute_tool(
+            &mut client,
+            "read_attachment_text",
+            &serde_json::json!({ "file_id": "t:99:1", "offset": 5000, "max_chars": 100 }),
+            123,
+            &store,
+        )
+        .await;
+        assert!(first.success, "got error: {:?}", first.error);
+        assert_eq!(first.data["total_chars"], 20000);
+        assert_eq!(first.data["offset"], 5000);
+        assert_eq!(first.data["next_offset"], 5100);
+        assert_eq!(first.data["text"].as_str().unwrap().chars().count(), 100);
+        assert_eq!(first.data.get("cached"), None);
+        // Second read serves from cache (same shape + cached flag).
+        let second = execute_tool(
+            &mut client,
+            "read_attachment_text",
+            &serde_json::json!({ "file_id": "t:99:1", "offset": 0, "max_chars": 10 }),
+            123,
+            &store,
+        )
+        .await;
+        assert!(second.success);
+        assert_eq!(second.data["cached"], true);
+        assert_eq!(second.data["total_chars"], 20000);
+        // Unknown id + past-end offset fail cleanly.
+        let unknown = execute_tool(
+            &mut client,
+            "read_attachment_text",
+            &serde_json::json!({ "file_id": "x:0:0" }),
+            123,
+            &store,
+        )
+        .await;
+        assert!(!unknown.success);
+        let over = execute_tool(
+            &mut client,
+            "read_attachment_text",
+            &serde_json::json!({ "file_id": "t:99:1", "offset": 99999 }),
+            123,
+            &store,
+        )
+        .await;
+        assert!(!over.success);
+    }
+
+    #[tokio::test]
+    async fn foreign_and_tricky_urls_rejected() {
+        let mock_server = MockServer::start().await;
+        let store: PendingActionStore = Mutex::new(HashMap::new());
+        let mut client = client_with_token(&mock_server.uri());
+        for url in [
+            "https://evil.example.com/bijlage.pdf".to_string(),
+            format!("{}@evil.com/x", mock_server.uri()),
+            "file:///etc/passwd".to_string(),
+        ] {
+            let r = execute_tool(
+                &mut client,
+                "read_attachment_text",
+                &serde_json::json!({ "url": url, "filename": "x.pdf" }),
+                123,
+                &store,
+            )
+            .await;
+            assert!(!r.success, "should reject {}", url);
+        }
+        // Same for download_file.
+        let d = execute_tool(
+            &mut client,
+            "download_file",
+            &serde_json::json!({ "url": "https://evil.example.com/f.pdf" }),
+            123,
+            &store,
+        )
+        .await;
+        assert!(!d.success);
+    }
+
+    #[tokio::test]
+    async fn download_rejects_oversize() {
+        let mock_server = MockServer::start().await;
+        let big = "b".repeat(16 * 1024 * 1024);
+        mount_download_pair(&mock_server, "/bijlagen/big", "/contents/big", &big).await;
+        // Note: space in path to keep it distinct; wiremock matches exactly.
+        let store: PendingActionStore = Mutex::new(HashMap::new());
+        let mut client = client_with_token(&mock_server.uri());
+        let r = execute_tool(
+            &mut client,
+            "download_file",
+            &serde_json::json!({ "url": "bijlagen/big" }),
+            123,
+            &store,
+        )
+        .await;
+        assert!(!r.success);
+        assert!(r.error.unwrap().contains("15 MB"));
+    }
+
+    #[tokio::test]
+    async fn unsupported_file_reports_readable_false() {
+        let mock_server = MockServer::start().await;
+        mount_download_pair(&mock_server, "/bijlagen/7", "/contents/7", "fake-png-bytes").await;
+        let store: PendingActionStore = Mutex::new(HashMap::new());
+        let mut client = client_with_token(&mock_server.uri());
+        // Bypass registry with a direct png URL (same host passes validation).
+        let url = format!("{}/bijlagen/7", mock_server.uri());
+        // Mock the indirection for the absolute URL path as well.
+        Mock::given(method("GET"))
+            .and(path("/bijlagen/7"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "location": format!("{}/contents/7", mock_server.uri()),
+            })))
+            .mount(&mock_server)
+            .await;
+        let r = execute_tool(
+            &mut client,
+            "read_attachment_text",
+            &serde_json::json!({ "url": url, "filename": "foto.png" }),
+            123,
+            &store,
+        )
+        .await;
+        assert!(!r.success);
+        assert_eq!(r.data["readable"], false);
+        assert!(r.data["reason"].as_str().unwrap().contains("afbeeldingen"));
+    }
+}
