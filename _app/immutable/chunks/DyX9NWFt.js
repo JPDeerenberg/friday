@@ -1,0 +1,1 @@
+import{It as e}from"./Bfbq_iNH.js";async function t(t,n){await e(`plugin:opener|open_url`,{url:t,with:n})}export{t};
