@@ -53,7 +53,9 @@ pub fn run() {
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_opener::init());
 
-    #[cfg(debug_assertions)]
+    // Dev-only automation bridge (agent tooling). Enabled with
+    // `tauri dev -- --features devtools`; never linked into releases.
+    #[cfg(feature = "devtools")]
     {
         builder = builder.plugin(tauri_plugin_mcp_bridge::init());
     }

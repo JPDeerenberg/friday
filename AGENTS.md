@@ -13,6 +13,7 @@ pnpm check                      # svelte-kit sync + svelte-check (type-check)
 pnpm exec prettier --check .    # frontend format check (prettier + prettier-plugin-svelte)
 pnpm test                       # all 6 frontend test files (node built-in test runner)
 pnpm tauri dev                  # full desktop app (frontend + Rust backend)
+pnpm tauri dev -- --features devtools  # same + MCP automation bridge (agent `tauri_*` tools need this; release builds never include it)
 pnpm tauri build                # desktop production binary
 pnpm tauri android build --apk  # Android APK (needs Android SDK + JDK 17)
 

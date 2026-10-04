@@ -5,6 +5,10 @@ allowBuilds:
 packages:
   - "."
 
+# NOTE: the cookie override is duplicated in package.json ("pnpm.overrides").
+# pnpm 9 (CI) only honors package.json overrides for the frozen-lockfile check,
+# pnpm >=10 only honors this workspace file — both must list it or one side
+# fails with ERR_PNPM_LOCKFILE_CONFIG_MISMATCH. Keep the two in sync.
 # GHSA: cookie <0.7.0 accepts out-of-bounds chars in name/path/domain.
 # @sveltejs/kit 2.x (latest 2.70.3) still pins cookie ^0.6.0; force 0.7.2
 # (same parse/serialize API; 1.x/2.x are breaking so stay on 0.7.x).

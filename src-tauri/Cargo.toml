@@ -1,6 +1,6 @@
 [package]
 name = "friday"
-version = "2.10.2"
+version = "2.10.3"
 description = "A Tauri App"
 authors = ["you"]
 edition = "2021"
@@ -71,7 +71,12 @@ futures = "0.3"
 mime_guess = "2.0.5"
 tauri-plugin-dialog = "2"
 tauri-plugin-deep-link = "2"
-tauri-plugin-mcp-bridge = "0.13"
+# Optional dev-only automation bridge (agent tooling talks to `tauri dev` over
+# its WebSocket). Enabled via `--features devtools`; release builds must not
+# link it — 0.13 doesn't compile against the release Windows/Android graphs.
+# (Note: `[target.'cfg(debug_assertions)'.dependencies]` does NOT work — Cargo
+# ignores debug_assertions for dep selection, hence the explicit feature.)
+tauri-plugin-mcp-bridge = { version = "0.13", optional = true }
 jni = "0.21.1"
 dirs = "6"
 async-trait = "0.1"
@@ -89,6 +94,12 @@ fs4 = "0.13"
 # Desktop (Linux/Windows/macOS): OS keychain via keyring's `v1` feature.
 [target.'cfg(not(target_os = "android"))'.dependencies]
 keyring = { version = "4.1", features = ["v1"] }
+
+# `devtools` pulls in the optional MCP automation bridge for `tauri dev`
+# (`pnpm tauri dev -- --features devtools`). Release builds (CI + local
+# `tauri build`) use default features = no bridge.
+[features]
+devtools = ["tauri-plugin-mcp-bridge"]
 
 [profile.dev]
 debug = "line-tables-only"

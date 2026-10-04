@@ -23,6 +23,7 @@ on:
       - "static/**"
       - "package.json"
       - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
       - "svelte.config.js"
       - "vite.config.js"
       - "tsconfig.json"
