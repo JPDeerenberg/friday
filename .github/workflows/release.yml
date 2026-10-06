@@ -115,6 +115,7 @@ jobs:
       # it here so installers/APKs are named and versioned after the release we
       # just tagged.
       - name: Sync app version into tauri.conf.json
+        shell: bash
         run: |
           node - <<'NODE'
           const fs = require('fs');
