@@ -1,0 +1,1 @@
+import{Rt as e}from"./Cf_f1qw5.js";async function t(t,n){await e(`plugin:opener|open_url`,{url:t,with:n})}export{t};
