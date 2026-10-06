@@ -110,6 +110,22 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install
 
+      # The Tauri bundler takes the app version from tauri.conf.json, not from
+      # package.json (that field is deliberately left stale in the repo). Sync
+      # it here so installers/APKs are named and versioned after the release we
+      # just tagged.
+      - name: Sync app version into tauri.conf.json
+        run: |
+          node - <<'NODE'
+          const fs = require('fs');
+          const version = require('./package.json').version;
+          const path = 'src-tauri/tauri.conf.json';
+          const conf = JSON.parse(fs.readFileSync(path, 'utf8'));
+          conf.version = version;
+          fs.writeFileSync(path, JSON.stringify(conf, null, 2) + '\n');
+          console.log(`Synced ${path} version -> ${version}`);
+          NODE
+
       - name: Build and Release (Desktop)
         if: ${{ !matrix.settings.is-android }}
         uses: tauri-apps/tauri-action@v0
@@ -175,13 +191,13 @@ jobs:
           export DEBIAN_FRONTEND=noninteractive
           sudo apt-get update
           sudo -E apt-get install -y apksigner unzip
-          
+
           # Install modern F-Droid server via Python
           pipx install fdroidserver
-          
+
           # Ensure the repo directory exists
           mkdir -p gh-pages/fdroid/repo
-          
+
           # Copy signed APK(s) into the F-Droid repo safely
           if [ -z "${{ steps.rename_apk.outputs.apk_file }}" ]; then
             echo "ERROR: rename_apk output 'apk_file' is empty. Build failed or path changed."
@@ -198,17 +214,17 @@ jobs:
             echo "Copying signed APK: $f"
             cp "$f" gh-pages/fdroid/repo/
           done
-          
+
           cd gh-pages/fdroid
-          
+
           # Copy fastlane metadata for F-Droid
           mkdir -p metadata/com.joris.friday
           cp -r ../../src-tauri/gen/android/fastlane/metadata/android/* metadata/com.joris.friday/
 
-          
+
           # Decode your existing Android keystore
           echo "$KEYSTORE_BASE64" | base64 --decode > repo.jks
-          
+
           # Generate F-Droid config dynamically
           cat <<EOF > config.yml
           sdk_path: "$ANDROID_HOME"
@@ -232,7 +248,7 @@ jobs:
               exit 1
             fi
           done
-          
+
           # Fix corrupted CurrentVersionCode in metadata (e.g. Integer.MAX_VALUE)
           # so fdroid update recalculates it from the actual APKs.
           python3 - <<'PY'
