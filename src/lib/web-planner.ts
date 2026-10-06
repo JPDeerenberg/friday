@@ -43,6 +43,7 @@ export interface TestInput {
   event_id: number;
   vak: string | null;
   omschrijving: string | null;
+  aantekening: string | null;
   start: number; // wall ms
   info_type: number;
 }
@@ -63,6 +64,7 @@ export interface PlanLesson {
   afgerond: boolean;
   omschrijving: string | null;
   inhoud: string | null;
+  aantekening: string | null;
   vakken: Array<{ naam: string | null }> | null;
 }
 
@@ -451,6 +453,7 @@ export function extractUpcomingTests(
       event_id: ev.id,
       vak,
       omschrijving: ev.omschrijving ?? ev.inhoud ?? null,
+      aantekening: ev.aantekening ?? null,
       start,
       info_type: ev.info_type,
     });
@@ -731,7 +734,10 @@ export function generatePlan(input: GeneratePlanInput): PlanItem[] {
         id: `study-test-${test.event_id}-${emitIdx}`,
         title,
         description:
-          `Reden: ${label} ${vak} op ${fmtDayTime(test.start)} (${whenTxt}). Voorbereiding — geen specifieke opdracht, wel herhalen/oefenen. Urgentie ${urgency}/5.`,
+          `Reden: ${label} ${vak} op ${fmtDayTime(test.start)} (${whenTxt}). Voorbereiding — geen specifieke opdracht, wel herhalen/oefenen. Urgentie ${urgency}/5.` +
+          (test.aantekening?.trim()
+            ? ` Opmerking bij de toets: ${test.aantekening.trim()}`
+            : ""),
         item_type: "study_block",
         start: fmtISO(start),
         end: fmtISO(end),

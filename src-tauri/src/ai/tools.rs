@@ -167,6 +167,14 @@ pub fn slim_calendar_item(item: &Value) -> Value {
     out.insert("huiswerk".to_string(), Value::Bool(!inhoud.trim().is_empty()));
     insert_if_present(&mut out, "type", item.get("Type").cloned().unwrap_or(Value::Null));
     insert_if_present(&mut out, "afgerond", item.get("Afgerond").cloned().unwrap_or(Value::Null));
+    // InfoType 2-5 = upcoming tests/exams (Proefwerk, Tentamen, schriftelijk/
+    // mondeling overhoring); surfaced for planning.
+    let is_test = matches!(
+        item.get("InfoType").and_then(|v| v.as_i64()),
+        Some(2) | Some(3) | Some(4) | Some(5)
+    );
+    out.insert("is_test".to_string(), Value::Bool(is_test));
+    insert_if_present(&mut out, "aantekening", item.get("Aantekening").cloned().unwrap_or(Value::Null));
     Value::Object(out)
 }
 

@@ -42,6 +42,7 @@ function lesson(start: string, einde: string, extra: Partial<PlanLesson> = {}): 
     afgerond: false,
     omschrijving: "Les",
     inhoud: null,
+    aantekening: null,
     vakken: [{ naam: "Wiskunde" }],
     ...extra,
   };
@@ -203,6 +204,41 @@ test("extractUpcomingTests filters by InfoType and window", () => {
   ];
   const out = extractUpcomingTests(lessons, Math.floor(D(2026, 9, 8) / 86_400_000), Math.floor(D(2026, 9, 14) / 86_400_000));
   assert.deepStrictEqual(out.map((t) => t.event_id), [5]);
+});
+
+test("upcoming test carries aantekening into the study description", () => {
+  const lessons = [
+    lesson("2026-09-10T09:00:00", "2026-09-10T10:00:00", {
+      info_type: 2,
+      id: 5,
+      aantekening: "alleen hoofdstuk 4",
+    }),
+  ];
+  const extracted = extractUpcomingTests(
+    lessons,
+    Math.floor(D(2026, 9, 8) / 86_400_000),
+    Math.floor(D(2026, 9, 14) / 86_400_000),
+  );
+  assert.strictEqual(extracted.length, 1);
+  assert.strictEqual(extracted[0].aantekening, "alleen hoofdstuk 4");
+  const plan = generatePlan({
+    windowStartDay: Math.floor(D(2026, 9, 8) / 86_400_000),
+    windowEndDay: Math.floor(D(2026, 9, 14) / 86_400_000),
+    todayDay: Math.floor(D(2026, 9, 8) / 86_400_000),
+    nowIso: "2026-09-08T08:00:00",
+    lessons,
+    lockedItems: [],
+    assignments: [],
+    existingItems: [],
+    settings: DEFAULT_PLAN_SETTINGS,
+    durationMap: new Map(),
+  });
+  const study = plan.find((i) => i.id === "study-test-5-0");
+  assert.ok(study, "study block planned for the test");
+  assert.ok(
+    (study.description ?? "").includes("alleen hoofdstuk 4"),
+    "opmerking surfaces in the study description",
+  );
 });
 
 test("extractOpenHomework skips done/cancelled/empty", () => {

@@ -764,10 +764,10 @@ async function webChatWithToolsLoop(
         r.success && data && data["status"] === "pending_user_confirmation"
           ? (data as unknown as PendingActionInfo)
           : undefined;
-      if (
-        r.success &&
-        (PLAN_WRITE_TOOLS.includes(name) || name === "run_update_ai_schedule")
-      ) {
+      // Mirrors desktop: run_update_ai_schedule records no undo entries,
+      // so it must not raise the undo chip (it would pop a stale entry or
+      // throw "Niets om ongedaan te maken").
+      if (r.success && PLAN_WRITE_TOOLS.includes(name)) {
         planChanged = true;
       }
       return {

@@ -46,7 +46,7 @@ import {
   loadScheduleItems,
   saveScheduleItems,
 } from "./web-ai-schedule-store.ts";
-import { getContextWindow, todayAmsterdam } from "./ai-time.ts";
+import { addDays, getContextWindow, todayAmsterdam } from "./ai-time.ts";
 import type { TierA } from "./web-tier-b.ts";
 import type { SessionTokens } from "./backend.ts";
 
@@ -444,6 +444,8 @@ test("slim shape cuts long text, drops nulls, flags homework", () => {
   );
   assert.strictEqual((slim["omschrijving"] as string).length, 121); // 120 + …
   assert.strictEqual(slim["huiswerk"], true);
+  assert.strictEqual(slim["is_test"], false);
+  assert.strictEqual(slim["aantekening"], undefined);
   assert.ok(!("inhoud" in slim));
   assert.ok(!("lokaal" in slim), "empty lokalen dropped");
   assert.ok(!("afgerond" in slim), "nulls dropped");
@@ -456,6 +458,15 @@ test("slim shape cuts long text, drops nulls, flags homework", () => {
     makeLesson(8, "2026-09-21T08:30:00", { Inhoud: "  " }),
   );
   assert.strictEqual(noHw["huiswerk"], false);
+  // Test week lesson (InfoType 2 = proefwerk) is flagged for planning.
+  const toets = slimCalendarEvent(
+    makeLesson(9, "2026-09-21T08:30:00", {
+      InfoType: 2,
+      Aantekening: "herstelopgave",
+    }),
+  );
+  assert.strictEqual(toets["is_test"], true);
+  assert.strictEqual(toets["aantekening"], "herstelopgave");
 });
 
 test("paginateItems honours offset/limit bounds", () => {
@@ -941,10 +952,18 @@ async function createItem(
 test("get_ai_schedule defaults to window with pagination meta", async () => {
   await resetPlanStore();
   const be = fakeBe({ afspraken: { Items: [] } });
-  await createItem(be);
+  // Dates relative to today: fixed 2026-09 dates rotted once the default
+  // 3-week window moved past them (time-bomb test).
+  const today = todayAmsterdam();
+  const day1 = addDays(today, 1);
+  const day2 = addDays(today, 2);
   await createItem(be, {
-    start: "2026-09-22T10:30:00",
-    end: "2026-09-22T11:20:00",
+    start: `${day1}T10:30:00`,
+    end: `${day1}T11:20:00`,
+  });
+  await createItem(be, {
+    start: `${day2}T10:30:00`,
+    end: `${day2}T11:20:00`,
   });
   const r = await executeWebTool(planCtx(be), "get_ai_schedule", {});
   assert.strictEqual(r.success, true);

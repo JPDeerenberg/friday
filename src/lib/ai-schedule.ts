@@ -337,38 +337,22 @@ async function webPerformUpdate(
   const todayDay = dayKey(todayMs);
   const [windowStartDay, windowEndDay] = planningWindow(todayDay);
   const windowStartStr = fmtYMD(windowStartDay * 86_400_000);
-  const windowEndStr = fmtYMD(windowEndDay * 86_400_000);
 
   const existingItems = await loadScheduleItems();
   const be = sessionTierA();
 
-  // Lessons in window; assignments broad (2013 → +365d) then filtered
-  // locally — a narrow query misses assignments created outside the window
-  // whose deadline falls inside it.
+  // Lessons in window + 14 days past it (tests need their preparation
+  // horizon — same extension as the desktop fetch_magister_events_inner);
+  // assignments broad (2013 → +365d) then filtered locally.
+  const fetchEndStr = fmtYMD((windowEndDay + 14) * 86_400_000);
   let lessons: PlanLesson[] = [];
   try {
     const data = await be.magister<{ Items?: unknown[]; items?: unknown[] }>(
       tokens,
       "GET",
-      `personen/${personId}/afspraken?tot=${windowEndStr}&van=${windowStartStr}`,
+      `personen/${personId}/afspraken?tot=${fetchEndStr}&van=${windowStartStr}`,
     );
-    lessons = (
-      (data.Items ?? data.items ?? []) as Array<Record<string, unknown>>
-    ).map((ev) => ({
-      id: (ev["Id"] as number) ?? 0,
-      start: (ev["Start"] as string) ?? "",
-      einde: (ev["Einde"] as string) ?? "",
-      status: (ev["Status"] as number) ?? 0,
-      info_type: (ev["InfoType"] as number) ?? 0,
-      afgerond: (ev["Afgerond"] as boolean) ?? false,
-      omschrijving: (ev["Omschrijving"] as string | null) ?? null,
-      inhoud: (ev["Inhoud"] as string | null) ?? null,
-      vakken: Array.isArray(ev["Vakken"])
-        ? (ev["Vakken"] as Array<Record<string, unknown>>).map((v) => ({
-            naam: (v["Naam"] as string | undefined) ?? null,
-          }))
-        : null,
-    }));
+    lessons = toPlanLessons(data.Items ?? data.items ?? []);
   } catch (err) {
     console.warn("updateAiSchedule: lessons fetch failed", err);
   }
@@ -688,6 +672,7 @@ export function toPlanLessons(raw: unknown[]): PlanLesson[] {
     afgerond: (ev["Afgerond"] as boolean) ?? false,
     omschrijving: (ev["Omschrijving"] as string | null) ?? null,
     inhoud: (ev["Inhoud"] as string | null) ?? null,
+    aantekening: (ev["Aantekening"] as string | null) ?? null,
     vakken: Array.isArray(ev["Vakken"])
       ? (ev["Vakken"] as Array<Record<string, unknown>>).map((v) => ({
           naam: (v["Naam"] as string | undefined) ?? null,

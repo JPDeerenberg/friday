@@ -1867,6 +1867,31 @@ async fn handle_schedule_tool(
                     let total = vals.len();
                     let (page, truncated, _) = tools::paginate_slice(&vals, 0, tools::CALENDAR_DEFAULT_LIMIT);
                     emit_schedule_changed(app);
+                    // Summarise what actually changed so the model reports
+                    // accurately instead of claiming a generic success.
+                    let mut n_study = 0usize;
+                    let mut n_work = 0usize;
+                    let mut n_review = 0usize;
+                    let mut tests_covered: Vec<String> = Vec::new();
+                    for it in &updated {
+                        use crate::models::ai_schedule::AiScheduleItemType as T;
+                        match it.item_type {
+                            T::StudyBlock => {
+                                n_study += 1;
+                                if it.id.starts_with("study-test-") {
+                                    let vak = it.related_subject.clone().unwrap_or_else(|| "onbekend vak".to_string());
+                                    let when = it.start.get(0..10).unwrap_or("?").to_string();
+                                    let entry = format!("{} ({})", vak, when);
+                                    if !tests_covered.contains(&entry) {
+                                        tests_covered.push(entry);
+                                    }
+                                }
+                            }
+                            T::AssignmentWork => n_work += 1,
+                            T::HomeworkReview => n_review += 1,
+                            _ => {}
+                        }
+                    }
                     tools::ToolResult {
                         tool: tool_name.to_string(),
                         success: true,
@@ -1875,7 +1900,13 @@ async fn handle_schedule_tool(
                             "count": page.len(),
                             "total": total,
                             "truncated": truncated,
-                            "message": "Planning bijgewerkt voor deze week + volgende week."
+                            "message": "Planning bijgewerkt voor deze week + volgende week.",
+                            "summary": {
+                                "study_blocks": n_study,
+                                "work_blocks": n_work,
+                                "review_blocks": n_review,
+                                "tests_covered": tests_covered,
+                            }
                         }),
                         error: None,
                     }

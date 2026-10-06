@@ -390,10 +390,19 @@ pub(crate) async fn fetch_magister_events_inner(
 ) -> Result<Vec<crate::models::calendar::CalendarEvent>, String> {
     let start_date = if start.len() >= 10 { &start[0..10] } else { start };
     let end_date = if end.len() >= 10 { &end[0..10] } else { end };
-    let events_url = format!("personen/{}/afspraken?tot={}&van={}", person_id, end_date, start_date);
+    // `extract_upcoming_tests` looks up to 14 days past the planning window
+    // so preparation can be scheduled *before* each test. Fetch lessons
+    // across that same horizon, otherwise tests falling just outside the
+    // window are never seen and get no study blocks (test-week planning gap).
+    let fetch_end = crate::ai::schedule::iso_to_naive(end_date)
+        .map(|d| (d + chrono::Duration::days(14)).format("%Y-%m-%d").to_string())
+        .unwrap_or_else(|| end_date.to_string());
+    let events_url = format!("personen/{}/afspraken?tot={}&van={}", person_id, fetch_end, start_date);
     let events_data = crate::client::get_with_shared(&client, &events_url).await.map_err(|e| e.to_string())?;
     let events_resp: crate::models::calendar::CalendarEventsResponse =
         serde_json::from_value(events_data).map_err(|e| e.to_string())?;
+
+    // Note: we skip absences merging for merged schedule (not critical); could add
     Ok(events_resp.items)
 }
 

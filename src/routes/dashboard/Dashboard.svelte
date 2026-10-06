@@ -310,7 +310,7 @@
       lessonHour: string | number;
       index: number;
       event: any;
-      hw: { inhoud: string | null; assignments: any[]; isCompleted: boolean };
+      hw: { inhoud: string | null; aantekening: string | null; assignments: any[]; isCompleted: boolean };
     }[] = [];
 
     for (let i = beforeCount; i < tomorrowEvents.length; i++) {
@@ -332,8 +332,9 @@
   });
 
   // Get extended homework info for a lesson: Inhoud + matching assignments
-  function getLessonHomework(event: CalendarEvent): { inhoud: string | null; assignments: any[]; isCompleted: boolean } {
+  function getLessonHomework(event: CalendarEvent): { inhoud: string | null; aantekening: string | null; assignments: any[]; isCompleted: boolean } {
     const inhoud = (event.Inhoud?.trim()) || null;
+    const aantekening = (event.Aantekening?.trim()) || null;
     const subjectName = event.Vakken?.[0]?.Naam?.toLowerCase() ?? '';
     const assignments = subjectName
       ? tomorrowAssignments.filter(a => {
@@ -341,7 +342,7 @@
           return assignmentSubject.includes(subjectName) || subjectName.includes(assignmentSubject);
         })
       : [];
-    return { inhoud, assignments, isCompleted: !!event.Afgerond };
+    return { inhoud, aantekening, assignments, isCompleted: !!event.Afgerond };
   }
 
   function toggleLesson(index: number) {
@@ -542,6 +543,12 @@
                       {#if hw.inhoud}
                         <div class="text-body-small text-gray-300 leading-relaxed whitespace-pre-wrap {hw.isCompleted ? 'line-through opacity-50' : ''}">
                           {stripHtml(hw.inhoud)}
+                        </div>
+                      {/if}
+                      {#if hw.aantekening}
+                        <div class="flex items-start gap-2 text-body-small leading-relaxed">
+                          <span class="shrink-0 mt-0.5 text-label-small font-semibold text-accent-400 uppercase tracking-wide">Opmerking</span>
+                          <span class="text-gray-300 whitespace-pre-wrap">{hw.aantekening}</span>
                         </div>
                       {/if}
                       {#each hw.assignments as a, j}

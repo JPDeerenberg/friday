@@ -821,6 +821,13 @@ export function slimCalendarEvent(item: unknown): Record<string, unknown> {
   out["huiswerk"] = inhoud.trim().length > 0;
   set("type", r["Type"] ?? null);
   set("afgerond", r["Afgerond"] ?? null);
+  // InfoType 2-5 = upcoming tests/exams (Proefwerk, Tentamen, schriftelijk/
+  // mondeling overhoring); surfaced so the AI plans for them.
+  const infoType =
+    typeof r["InfoType"] === "number" ? (r["InfoType"] as number) : 0;
+  out["is_test"] =
+    infoType === 2 || infoType === 3 || infoType === 4 || infoType === 5;
+  set("aantekening", r["Aantekening"] ?? null);
   return out;
 }
 
@@ -2184,12 +2191,37 @@ export async function executeWebTool(
           const items = await updateAiSchedule();
           const total = items.length;
           const page = items.slice(0, 60);
+          // Summarise what actually changed so the model reports accurately
+          // instead of claiming a generic success (mirrors desktop).
+          let nStudy = 0;
+          let nWork = 0;
+          let nReview = 0;
+          const testsCovered: string[] = [];
+          for (const it of items) {
+            if (it.item_type === "study_block") {
+              nStudy += 1;
+              if (it.id.startsWith("study-test-")) {
+                const entry = `${it.related_subject ?? "onbekend vak"} (${(it.start ?? "?").slice(0, 10)})`;
+                if (!testsCovered.includes(entry)) testsCovered.push(entry);
+              }
+            } else if (it.item_type === "assignment_work") {
+              nWork += 1;
+            } else if (it.item_type === "homework_review") {
+              nReview += 1;
+            }
+          }
           return ok(toolName, {
             items: page,
             count: page.length,
             total,
             truncated: total > page.length,
             message: "Planning bijgewerkt voor deze week + volgende week.",
+            summary: {
+              study_blocks: nStudy,
+              work_blocks: nWork,
+              review_blocks: nReview,
+              tests_covered: testsCovered,
+            },
           });
         } catch (e) {
           return fail(toolName, e);
