@@ -20,17 +20,40 @@ pub(crate) fn truncate(s: &str, max_chars: usize) -> String {
 /// Extract a provider error message from an error response body. Tries the
 /// common `{"error": {"message": "..."}}` shape first; falls back to the raw
 /// body (truncated) so an unexpected error shape still surfaces something
-/// actionable instead of a generic "Onbekende fout".
+/// actionable instead of a generic "Onbekende fout". Appends the machine
+/// readable `type`/`code` (e.g. Mistral's `invalid_request_assistant_message`
+/// /3240) when present, so the client can classify the failure.
 pub(crate) fn extract_error_message(raw_body: &str, max_chars: usize) -> String {
-    serde_json::from_str::<Value>(raw_body)
-        .ok()
-        .and_then(|b| {
-            b.get("error")
-                .and_then(|e| e.get("message"))
-                .and_then(|m| m.as_str())
-                .map(|s| s.to_string())
+    let parsed = serde_json::from_str::<Value>(raw_body).ok();
+    let base = parsed
+        .as_ref()
+        .and_then(|b| b.get("error"))
+        .and_then(|e| e.get("message"))
+        .and_then(|m| m.as_str())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| format!("Onverwacht foutformaat: {}", truncate(raw_body, max_chars)));
+    let suffix = parsed
+        .as_ref()
+        .and_then(|b| b.get("error"))
+        .and_then(|e| {
+            let t = e.get("type").and_then(|v| v.as_str()).unwrap_or("");
+            if t.is_empty() {
+                return None;
+            }
+            let code = e.get("code").map(|v| {
+                if let Some(s) = v.as_str() {
+                    s.to_string()
+                } else {
+                    v.to_string()
+                }
+            });
+            Some(match code {
+                Some(c) if !c.is_empty() => format!(" (type={t}, code={c})"),
+                _ => format!(" (type={t})"),
+            })
         })
-        .unwrap_or_else(|| format!("Onverwacht foutformaat: {}", truncate(raw_body, max_chars)))
+        .unwrap_or_default();
+    format!("{base}{suffix}")
 }
 
 /// Supported AI provider types.

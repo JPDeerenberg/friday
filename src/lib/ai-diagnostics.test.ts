@@ -16,7 +16,10 @@ import {
   clearAiDiagnostics,
   diagnosticsText,
   getAiDiagnostics,
+  historyShapeOf,
+  providerTypeOf,
   recordAiDiag,
+  shapeOfMessage,
 } from "./ai-diagnostics.ts";
 
 test("ring caps at fifty, newest first", () => {
@@ -74,5 +77,69 @@ test("recording never throws", () => {
     }),
   );
   assert.strictEqual(__diagLen(), 1);
+  clearAiDiagnostics();
+});
+
+test("shapes list roles and counts, never content", () => {
+  const shape = historyShapeOf([
+    { role: "system", content: "geheim" },
+    { role: "user", content: "geheime vraag" },
+    {
+      role: "assistant",
+      content: "",
+      tool_calls: [{ id: "c1", name: "t" }],
+    },
+    { role: "tool", content: "geheim resultaat" },
+    { role: "assistant", content: "antwoord" },
+    { role: "assistant", content: "  " },
+  ]);
+  assert.deepStrictEqual(shape, [
+    "system",
+    "user",
+    "assistant(c0,t1)",
+    "tool",
+    "assistant(c1,t0)",
+    "assistant(c0,t0)",
+  ]);
+  assert.ok(!shape.join(",").includes("geheim"));
+  assert.strictEqual(shapeOfMessage({ role: "user" }), "user");
+});
+
+test("provider type is extracted from suffixed errors", () => {
+  assert.strictEqual(
+    providerTypeOf(
+      new Error(
+        "AI-fout (400): x (type=invalid_request_assistant_message, code=3240)",
+      ),
+    ),
+    "invalid_request_assistant_message",
+  );
+  assert.strictEqual(providerTypeOf(new Error("Weg")), undefined);
+});
+
+test("4xx entries carry shape and provider type in the dump", () => {
+  clearAiDiagnostics();
+  recordAiDiag({
+    provider: "mistral",
+    model: "mistral-small-latest",
+    op: "tools",
+    status: "error",
+    durationMs: 900,
+    errorClass: "invalid_assistant_message",
+    providerType: "invalid_request_assistant_message",
+    messageShape: ["system", "user", "assistant(c0,t0)"],
+    toolNames: [],
+  });
+  const [e] = getAiDiagnostics();
+  assert.deepStrictEqual(e.messageShape, [
+    "system",
+    "user",
+    "assistant(c0,t0)",
+  ]);
+  assert.strictEqual(e.providerType, "invalid_request_assistant_message");
+  const text = diagnosticsText();
+  assert.match(text, /err=invalid_assistant_message/);
+  assert.match(text, /type=invalid_request_assistant_message/);
+  assert.match(text, /shape=\[system,user,assistant\(c0,t0\)\]/);
   clearAiDiagnostics();
 });

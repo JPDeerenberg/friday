@@ -15,44 +15,88 @@ fn build_request_body(
     stream: bool,
 ) -> (String, Value) {
     let url = format!("{}/chat/completions", config.base_url.trim_end_matches('/'));
-    let chat_messages: Vec<Value> = messages
-        .iter()
-        .map(|m| {
+    // Sanitiser (mirrors `crates/web-api/src/ai.rs::openai_messages`): drop
+    // assistant messages with empty content and no surviving tool calls
+    // (Mistral 400 `invalid_request_assistant_message`), omit `tool_calls`
+    // when empty, drop nameless calls, make ids unique (`call_<n>`) while
+    // keeping the matching `tool_call_id` consistent, and drop tool messages
+    // with no preceding assistant call of that id.
+    let mut chat_messages: Vec<Value> = Vec::new();
+    let mut preceding_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut empty_renames: std::collections::VecDeque<String> = std::collections::VecDeque::new();
+    let mut counter: u32 = 0;
+    for m in messages {
+        if m.role == "assistant" {
+            let mut cleaned: Vec<Value> = Vec::new();
+            if let Some(tcs) = &m.tool_calls {
+                for tc in tcs {
+                    if tc.name.is_empty() {
+                        continue;
+                    }
+                    let id = if tc.id.is_empty() || preceding_ids.contains(&tc.id) {
+                        let fresh = loop {
+                            counter += 1;
+                            let candidate = format!("call_{counter}");
+                            if !preceding_ids.contains(&candidate) {
+                                break candidate;
+                            }
+                        };
+                        if tc.id.is_empty() {
+                            empty_renames.push_back(fresh.clone());
+                        }
+                        fresh
+                    } else {
+                        tc.id.clone()
+                    };
+                    preceding_ids.insert(id.clone());
+                    cleaned.push(serde_json::json!({
+                        "id": id,
+                        "type": "function",
+                        "function": {
+                            "name": tc.name,
+                            "arguments": serde_json::to_string(&tc.arguments).unwrap_or_default(),
+                        }
+                    }));
+                }
+            }
+            if m.content.trim().is_empty() && cleaned.is_empty() {
+                continue;
+            }
             let mut msg = serde_json::json!({
                 "role": m.role,
                 "content": m.content,
             });
-            // For tool role messages, include tool_call_id and name
-            if m.role == "tool" {
-                if let Some(id) = &m.tool_call_id {
-                    msg["tool_call_id"] = serde_json::Value::String(id.clone());
-                }
-                if let Some(name) = &m.name {
-                    msg["name"] = serde_json::Value::String(name.clone());
+            if !cleaned.is_empty() {
+                msg["tool_calls"] = serde_json::Value::Array(cleaned);
+            }
+            chat_messages.push(msg);
+        } else if m.role == "tool" {
+            let mut tid = m.tool_call_id.clone().unwrap_or_default();
+            if tid.is_empty() {
+                match empty_renames.pop_front() {
+                    Some(relinked) => tid = relinked,
+                    None => continue,
                 }
             }
-            // For assistant messages with tool calls, include the tool_calls array
-            if m.role == "assistant" {
-                if let Some(tcs) = &m.tool_calls {
-                    let tool_calls_value: Vec<Value> = tcs
-                        .iter()
-                        .map(|tc| {
-                            serde_json::json!({
-                                "id": tc.id,
-                                "type": "function",
-                                "function": {
-                                    "name": tc.name,
-                                    "arguments": serde_json::to_string(&tc.arguments).unwrap_or_default(),
-                                }
-                            })
-                        })
-                        .collect();
-                    msg["tool_calls"] = serde_json::Value::Array(tool_calls_value);
-                }
+            if !preceding_ids.contains(&tid) {
+                continue;
             }
-            msg
-        })
-        .collect();
+            let mut msg = serde_json::json!({
+                "role": m.role,
+                "content": m.content,
+            });
+            msg["tool_call_id"] = serde_json::Value::String(tid);
+            if let Some(name) = &m.name {
+                msg["name"] = serde_json::Value::String(name.clone());
+            }
+            chat_messages.push(msg);
+        } else {
+            chat_messages.push(serde_json::json!({
+                "role": m.role,
+                "content": m.content,
+            }));
+        }
+    }
 
     let mut request_body = serde_json::json!({
         "model": config.model,
@@ -111,7 +155,25 @@ fn apply_stream_delta(
                 .get("index")
                 .and_then(|i| i.as_u64())
                 .unwrap_or(pos as u64) as u32;
-            let entry = calls.entry(idx).or_default();
+            let incoming_id = tc.get("id").and_then(|v| v.as_str()).unwrap_or_default();
+            // Mirrors the web-api proxy: a delta for an already-named index
+            // carrying a *different* non-empty id starts a new call instead
+            // of concatenating two argument streams into invalid JSON.
+            let key = match calls.get(&idx) {
+                Some(existing)
+                    if !existing.id.is_empty()
+                        && !incoming_id.is_empty()
+                        && existing.id != incoming_id =>
+                {
+                    let mut free = calls.keys().max().map(|m| m + 1).unwrap_or(0);
+                    while calls.contains_key(&free) {
+                        free += 1;
+                    }
+                    free
+                }
+                _ => idx,
+            };
+            let entry = calls.entry(key).or_default();
             if let Some(id) = tc.get("id").and_then(|v| v.as_str()) {
                 if !id.is_empty() && entry.id.is_empty() {
                     entry.id = id.to_string();
@@ -255,8 +317,8 @@ impl AiProvider for OpenAiProvider {
                     .and_then(|f| f.get("arguments"))
                     .and_then(|v| v.as_str())
                     .unwrap_or("{}");
-                let arguments: Value =
-                    serde_json::from_str(args_str).unwrap_or(serde_json::Value::Null);
+                let arguments: Value = serde_json::from_str(args_str)
+                    .unwrap_or_else(|_| serde_json::Value::String(args_str.to_string()));
 
                 tool_calls.push(ToolCall {
                     id,
@@ -343,16 +405,35 @@ impl AiProvider for OpenAiProvider {
             });
         }
         let mut tool_calls = Vec::new();
+        let mut used_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let mut id_counter: u32 = 0;
         for (_, c) in calls {
+            // Mirrors the web-api `assemble_tool_calls`: nameless fragments
+            // are dropped, ids stay unique, and unparseable arguments stay a
+            // string so the loop reports bad arguments.
+            if c.name.is_empty() {
+                continue;
+            }
+            let id = if c.id.is_empty() || used_ids.contains(&c.id) {
+                id_counter += 1;
+                while used_ids.contains(&format!("call_{id_counter}")) {
+                    id_counter += 1;
+                }
+                format!("call_{id_counter}")
+            } else {
+                c.id
+            };
+            used_ids.insert(id.clone());
+            let arguments = if c.arguments.trim().is_empty() {
+                serde_json::Value::Object(serde_json::Map::new())
+            } else {
+                serde_json::from_str(&c.arguments)
+                    .unwrap_or_else(|_| serde_json::Value::String(c.arguments.clone()))
+            };
             tool_calls.push(ToolCall {
-                id: if c.id.is_empty() {
-                    "call_unknown".to_string()
-                } else {
-                    c.id
-                },
+                id,
                 name: c.name,
-                arguments: serde_json::from_str(&c.arguments)
-                    .unwrap_or(serde_json::Value::Null),
+                arguments,
                 status: ToolCallStatus::Pending,
             });
         }
@@ -390,6 +471,109 @@ mod tests {
         assert!(url.ends_with("/chat/completions"));
         assert_eq!(streamed["stream"], true);
         assert_eq!(streamed["model"], "gpt-4o-mini");
+    }
+
+    #[test]
+    fn request_body_sanitises_empty_assistant_and_orphan_tools() {
+        use super::super::ToolCallStatus;
+        let cfg = test_config();
+        let msgs = vec![
+            AiMessage::simple("user", "hi"),
+            AiMessage {
+                role: "assistant".to_string(),
+                content: "  ".to_string(),
+                tool_call_id: None,
+                name: None,
+                tool_calls: None,
+            },
+            AiMessage {
+                role: "assistant".to_string(),
+                content: "".to_string(),
+                tool_call_id: None,
+                name: None,
+                tool_calls: Some(vec![
+                    ToolCall {
+                        id: "c1".to_string(),
+                        name: "get_grades".to_string(),
+                        arguments: serde_json::json!({}),
+                        status: ToolCallStatus::Pending,
+                    },
+                    ToolCall {
+                        id: "c1".to_string(),
+                        name: "get_messages".to_string(),
+                        arguments: serde_json::json!({}),
+                        status: ToolCallStatus::Pending,
+                    },
+                    ToolCall {
+                        id: "".to_string(),
+                        name: "".to_string(),
+                        arguments: serde_json::json!({}),
+                        status: ToolCallStatus::Pending,
+                    },
+                ]),
+            },
+            AiMessage {
+                role: "tool".to_string(),
+                content: "{}".to_string(),
+                tool_call_id: Some("c1".to_string()),
+                name: Some("get_grades".to_string()),
+                tool_calls: None,
+            },
+            AiMessage {
+                role: "tool".to_string(),
+                content: "{}".to_string(),
+                tool_call_id: Some("orphan".to_string()),
+                name: Some("nope".to_string()),
+                tool_calls: None,
+            },
+        ];
+        let (_, body) = build_request_body(&cfg, &msgs, &[], false);
+        let wire = body["messages"].as_array().unwrap();
+        // user + assistant-with-calls + its tool result; the whitespace-only
+        // assistant and the orphan tool message are gone.
+        assert_eq!(wire.len(), 3);
+        assert_eq!(wire[0]["role"], "user");
+        let tcs = wire[1]["tool_calls"].as_array().unwrap();
+        // Nameless call dropped, duplicate id made unique.
+        assert_eq!(tcs.len(), 2);
+        assert_eq!(tcs[0]["id"], "c1");
+        assert_ne!(tcs[1]["id"], "c1");
+        assert!(tcs[1]["id"].as_str().unwrap().starts_with("call_"));
+        assert_eq!(wire[2]["tool_call_id"], "c1");
+    }
+
+    #[test]
+    fn request_body_omits_empty_tool_calls_array() {
+        let cfg = test_config();
+        let msgs = vec![AiMessage {
+            role: "assistant".to_string(),
+            content: "denk".to_string(),
+            tool_call_id: None,
+            name: None,
+            tool_calls: Some(vec![]),
+        }];
+        let (_, body) = build_request_body(&cfg, &msgs, &[], false);
+        let wire = body["messages"].as_array().unwrap();
+        assert_eq!(wire.len(), 1);
+        assert!(wire[0].get("tool_calls").is_none());
+    }
+
+    #[test]
+    fn delta_with_new_id_starts_new_entry() {
+        let mut content = String::new();
+        let mut calls = std::collections::BTreeMap::new();
+        let d1 = r#"{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_a","function":{"name":"get_grades","arguments":"{\"to"}}]}}]}"#;
+        let d2 = r#"{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_b","function":{"name":"get_messages","arguments":"{\"fo"}}]}}]}"#;
+        let d3 = r#"{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"p\":5}"}}]}}]}"#;
+        let d4 = r#"{"choices":[{"delta":{"tool_calls":[{"index":1,"function":{"arguments":"o\":\"x\"}"}}]}}]}"#;
+        assert_eq!(apply_stream_delta(d1, &mut content, &mut calls), None);
+        assert_eq!(apply_stream_delta(d2, &mut content, &mut calls), None);
+        assert_eq!(apply_stream_delta(d3, &mut content, &mut calls), None);
+        assert_eq!(apply_stream_delta(d4, &mut content, &mut calls), None);
+        assert_eq!(calls.len(), 2);
+        assert_eq!(calls.get(&0).unwrap().arguments, "{\"top\":5}");
+        assert_eq!(calls.get(&1).unwrap().arguments, "{\"foo\":\"x\"}");
+        assert_eq!(calls.get(&1).unwrap().id, "call_b");
     }
 
     #[test]

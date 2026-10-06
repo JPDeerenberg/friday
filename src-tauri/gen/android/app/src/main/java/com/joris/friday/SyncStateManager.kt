@@ -140,28 +140,31 @@ object SyncStateManager {
     @Synchronized
     fun detectChanges(
         context: Context,
-        currentMessages: JSONArray,
-        currentGrades: JSONArray,
-        currentAssignments: JSONArray,
-        currentCalendar: JSONArray
+        currentMessages: JSONArray?,
+        currentGrades: JSONArray?,
+        currentAssignments: JSONArray?,
+        currentCalendar: JSONArray?
     ): SyncChanges {
         val previousState = loadState(context) ?: JSONObject()
         val hasPreviousState = previousState.length() > 0
-        
-        Log.d("SyncStateManager", "detectChanges: hasPreviousState=$hasPreviousState, currentMessages=${currentMessages.length()}")
-        
+
+        Log.d("SyncStateManager", "detectChanges: hasPreviousState=$hasPreviousState, currentMessages=${currentMessages?.length() ?: "failed"}")
+
         val prevMessages = previousState.optJSONArray("messages")
         val prevGrades = previousState.optJSONArray("grades")
         val prevAssignments = previousState.optJSONArray("assignments")
         val prevCalendar = previousState.optJSONArray("calendar")
-        
+
         Log.d("SyncStateManager", "detectChanges: prevMessages=${prevMessages?.length() ?: "null"}, prevGrades=${prevGrades?.length() ?: "null"}")
-        
-        val newMessages = detectNewMessages(prevMessages, currentMessages)
-        val newGrades = detectNewGrades(prevGrades, currentGrades)
-        val upcomingDeadlines = detectAssignmentChanges(context, prevAssignments, currentAssignments)
-        val calendarChanges = detectCalendarChanges(prevCalendar, currentCalendar)
-        
+
+        // A null section means that fetch failed (rate-limited / network).
+        // Produce no notifications for it and keep its previous baseline so a
+        // failed run can never look like "everything is new" next time.
+        val newMessages = if (currentMessages == null) emptyList() else detectNewMessages(prevMessages, currentMessages)
+        val newGrades = if (currentGrades == null) emptyList() else detectNewGrades(prevGrades, currentGrades)
+        val upcomingDeadlines = if (currentAssignments == null) emptyList() else detectAssignmentChanges(context, prevAssignments, currentAssignments)
+        val calendarChanges = if (currentCalendar == null) emptyList() else detectCalendarChanges(prevCalendar, currentCalendar)
+
         // Calculate overall relevance score based on detected changes
         val relevanceScore = calculateOverallRelevanceScore(
             newMessages.size,
@@ -169,17 +172,28 @@ object SyncStateManager {
             upcomingDeadlines.size,
             calendarChanges.size
         )
-        
-        // Save new state
+
+        // Save new state. Start from the previous state so sections that
+        // failed this run keep their old baseline; only successful sections
+        // are overwritten.
         val newState = JSONObject().apply {
-            put("messages", currentMessages)
-            put("grades", currentGrades)
-            put("assignments", currentAssignments)
-            put("calendar", currentCalendar)
-            put("lastSync", System.currentTimeMillis())
+            val prevKeys = previousState.keys()
+            while (prevKeys.hasNext()) {
+                val key = prevKeys.next()
+                try {
+                    put(key, previousState.get(key))
+                } catch (e: Exception) {
+                    Log.w("SyncStateManager", "detectChanges: could not copy '$key' from previous state", e)
+                }
+            }
         }
+        if (currentMessages != null) newState.put("messages", currentMessages)
+        if (currentGrades != null) newState.put("grades", currentGrades)
+        if (currentAssignments != null) newState.put("assignments", currentAssignments)
+        if (currentCalendar != null) newState.put("calendar", currentCalendar)
+        newState.put("lastSync", System.currentTimeMillis())
         saveState(context, newState)
-        
+
         return SyncChanges(
             newMessages = newMessages,
             newGrades = newGrades,

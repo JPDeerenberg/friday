@@ -1,22 +1,41 @@
 <script lang="ts">
-  import '../app.css';
-  import { onMount } from 'svelte';
-  import { listen } from '@tauri-apps/api/event';
-  import { getCurrentWindow } from '@tauri-apps/api/window';
-  import { attachConsole } from '@tauri-apps/plugin-log';
-  import { isLoggedIn, personId, accountInfo, profilePicture, currentPage, userSettings, loginError, resumedAt, restoreStatus } from '$lib/stores';
-  import { restoreSession, getAccount, getPersonId, getProfilePicture, handleAuthCallback, logout, type RestoreSessionStatus } from '$lib/api';
-  import { getCurrent as getCurrentDeepLink } from '@tauri-apps/plugin-deep-link';
-  import { getAiConfig } from '$lib/ai';
-  import { navIcon } from '$lib/icons';
-  import { get } from 'svelte/store';
-  import { fade } from 'svelte/transition';
-  import AIAssistant from '$lib/components/AIAssistant.svelte';
-  import IconButton from '$lib/components/IconButton.svelte';
-  import { ensureAutoUpdateCheck } from '$lib/updates';
-  import { photoDataUrl } from '$lib/web-session';
-  import { base } from '$app/paths';
-  import type { Account } from '$lib/types';
+  import "../app.css";
+  import { onMount } from "svelte";
+  import { listen } from "@tauri-apps/api/event";
+  import { getCurrentWindow } from "@tauri-apps/api/window";
+  import { attachConsole } from "@tauri-apps/plugin-log";
+  import {
+    isLoggedIn,
+    personId,
+    accountInfo,
+    profilePicture,
+    currentPage,
+    userSettings,
+    loginError,
+    resumedAt,
+    restoreStatus,
+    getStartPage,
+  } from "$lib/stores";
+  import {
+    restoreSession,
+    getAccount,
+    getPersonId,
+    getProfilePicture,
+    handleAuthCallback,
+    logout,
+    type RestoreSessionStatus,
+  } from "$lib/api";
+  import { getCurrent as getCurrentDeepLink } from "@tauri-apps/plugin-deep-link";
+  import { getAiConfig } from "$lib/ai";
+  import { navIcon } from "$lib/icons";
+  import { get } from "svelte/store";
+  import { fade } from "svelte/transition";
+  import AIAssistant from "$lib/components/AIAssistant.svelte";
+  import IconButton from "$lib/components/IconButton.svelte";
+  import { ensureAutoUpdateCheck } from "$lib/updates";
+  import { photoDataUrl } from "$lib/web-session";
+  import { base } from "$app/paths";
+  import type { Account } from "$lib/types";
 
   let { children } = $props();
   let loading = $state(true);
@@ -28,7 +47,7 @@
   // Web build (no Tauri runtime): session lives in IndexedDB and auth is the
   // password form. Every Tauri-only call below (deep links, listeners,
   // invoke-based restore) is branched on this — desktop behavior unchanged.
-  const isTauri = typeof window !== 'undefined' && !!(window as any).__TAURI__;
+  const isTauri = typeof window !== "undefined" && !!(window as any).__TAURI__;
 
   async function checkAiConfig() {
     try {
@@ -51,13 +70,15 @@
     await checkAiConfig();
   }
 
-  async function attemptRestore(isResume = false): Promise<RestoreSessionStatus> {
+  async function attemptRestore(
+    isResume = false,
+  ): Promise<RestoreSessionStatus> {
     if (!isTauri) return attemptWebRestore();
     try {
       const status = await restoreSession();
       restoreState = status;
       restoreStatus.set(status as any);
-      if (status === 'restored') {
+      if (status === "restored") {
         // Mark logged in immediately so cached data can render even if
         // subsequent account/person fetches hit a transient network blip.
         // Only restoreSession itself determines 'unavailable' vs 'logged_out'.
@@ -69,7 +90,10 @@
           const account = await getAccount();
           accountInfo.set(account);
         } catch (e) {
-          console.warn('getAccount after restore failed (keeping stale cache)', e);
+          console.warn(
+            "getAccount after restore failed (keeping stale cache)",
+            e,
+          );
         }
         try {
           const pid = await getPersonId();
@@ -79,16 +103,21 @@
             profilePicture.set(pic);
           } catch (_) {}
         } catch (e) {
-          console.warn('getPersonId after restore failed (keeping stale cache)', e);
+          console.warn(
+            "getPersonId after restore failed (keeping stale cache)",
+            e,
+          );
           // personId may still be null on very first cold boot offline; pages guard on it.
         }
-      } else if (status === 'logged_out') {
+      } else if (status === "logged_out") {
         isLoggedIn.set(false);
         personId.set(null);
         accountInfo.set(null);
         profilePicture.set(null);
-      } else if (status === 'unavailable') {
-        console.warn('Session restore unavailable (offline) — will retry on next resume');
+      } else if (status === "unavailable") {
+        console.warn(
+          "Session restore unavailable (offline) — will retry on next resume",
+        );
         // Do not clear isLoggedIn/personId – if we were previously logged in,
         // keep showing stale cached data. If this is a cold boot, the offline
         // overlay (restoreState==='unavailable' && !$isLoggedIn) will show a
@@ -96,10 +125,10 @@
       }
       return status;
     } catch (e) {
-      console.warn('restoreSession threw, treating as unavailable', e);
-      restoreState = 'unavailable';
-      restoreStatus.set('unavailable');
-      return 'unavailable';
+      console.warn("restoreSession threw, treating as unavailable", e);
+      restoreState = "unavailable";
+      restoreStatus.set("unavailable");
+      return "unavailable";
     }
   }
 
@@ -108,51 +137,69 @@
   // overlay and resume logic below behave identically on both builds.
   async function attemptWebRestore(): Promise<RestoreSessionStatus> {
     try {
-      const { restoreWebSession, loadWebSession, webRequest, webRequestBytes, bytesToBase64 } = await import('$lib/web-session');
+      const {
+        restoreWebSession,
+        loadWebSession,
+        webRequest,
+        webRequestBytes,
+        bytesToBase64,
+      } = await import("$lib/web-session");
       const status = await restoreWebSession();
       restoreState = status;
       restoreStatus.set(status as any);
-      if (status === 'restored') {
+      if (status === "restored") {
         isLoggedIn.set(true);
         try {
-          const account = await webRequest('GET', 'account?noCache=0');
+          const account = await webRequest("GET", "account?noCache=0");
           accountInfo.set(account as Account);
         } catch (e) {
-          console.warn('getAccount after restore failed (keeping stale cache)', e);
+          console.warn(
+            "getAccount after restore failed (keeping stale cache)",
+            e,
+          );
         }
         try {
           const tokens = await loadWebSession();
           if (tokens?.personId != null) {
             personId.set(tokens.personId);
             try {
-              const pic = await webRequestBytes(`leerlingen/${tokens.personId}/foto`);
+              const pic = await webRequestBytes(
+                `leerlingen/${tokens.personId}/foto`,
+              );
               profilePicture.set(pic ? bytesToBase64(pic) : null);
             } catch (_) {}
           }
         } catch (e) {
-          console.warn('personId after restore failed (keeping stale cache)', e);
+          console.warn(
+            "personId after restore failed (keeping stale cache)",
+            e,
+          );
         }
-      } else if (status === 'logged_out') {
+      } else if (status === "logged_out") {
         isLoggedIn.set(false);
         personId.set(null);
         accountInfo.set(null);
         profilePicture.set(null);
       } else {
-        console.warn('Session restore unavailable (offline) — will retry on next resume');
+        console.warn(
+          "Session restore unavailable (offline) — will retry on next resume",
+        );
       }
       return status;
     } catch (e) {
-      console.warn('restoreWebSession threw, treating as unavailable', e);
-      restoreState = 'unavailable';
-      restoreStatus.set('unavailable');
-      return 'unavailable';
+      console.warn("restoreWebSession threw, treating as unavailable", e);
+      restoreState = "unavailable";
+      restoreStatus.set("unavailable");
+      return "unavailable";
     }
   }
 
   function retryRestore() {
     loading = true;
     attemptRestore(false).finally(async () => {
-      try { await checkAiConfig(); } catch (_) {}
+      try {
+        await checkAiConfig();
+      } catch (_) {}
       loading = false;
     });
   }
@@ -162,16 +209,40 @@
   // than no network), wipe local state so the login screen shows instead
   // of trapping the user on this overlay with no way forward.
   async function reloginFromOffline() {
-    try { await logout(); } catch (_) {}
+    try {
+      await logout();
+    } catch (_) {}
     isLoggedIn.set(false);
     personId.set(null);
     accountInfo.set(null);
     profilePicture.set(null);
-    restoreState = 'logged_out';
-    restoreStatus.set('logged_out');
+    restoreState = "logged_out";
+    restoreStatus.set("logged_out");
   }
 
   onMount(() => {
+    if (!isTauri) {
+      // Warm-up (web only): Render's free tier sleeps after ~15 min idle and
+      // answers 503 while waking (~30-60 s). Pinging /ping fire-and-forget
+      // while the user reads/types the login form wins back that head start.
+      // VITE_API_URL ends in '/api'; /ping lives at the service root.
+      try {
+        const api =
+          (
+            import.meta as unknown as {
+              env?: Record<string, string | undefined>;
+            }
+          ).env?.["VITE_API_URL"] ?? "/api";
+        const pingUrl = api.replace(/\/$/, "").replace(/\/api$/, "") + "/ping";
+        fetch(pingUrl, {
+          method: "GET",
+          cache: "no-store",
+          keepalive: true,
+        }).catch(() => {});
+      } catch {
+        // Warm-up must never break startup.
+      }
+    }
     if (isTauri) {
       // Forward console.* (info/warn/error) into friday.log via the Rust
       // logger, so frontend diagnostic lines land in the same exported log
@@ -179,17 +250,26 @@
       // Web builds skip this — no Tauri runtime to forward to.
       attachConsole().catch(() => {});
     }
-    if (typeof window !== 'undefined' && (window as any).__TAURI__) {
-      // Double rAF guarantees the "Laden..." spinner below has actually
-      // painted before the native window is revealed — avoids a blank frame.
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          getCurrentWindow().show().catch(() => {});
-        });
-      });
+    if (typeof window !== "undefined" && (window as any).__TAURI__) {
+      // Reveal the native window once the first frame is ready. The window is
+      // configured `visible: false` to avoid a blank flash, but a double
+      // requestAnimationFrame is NOT reliable for a hidden native window:
+      // WebKit suspends rAF while the window is occluded/hidden, so `show()`
+      // would never run and the window would stay hidden forever. Reveal via
+      // rAF when it fires, with a setTimeout fallback that always fires.
+      const revealWindow = () => {
+        getCurrentWindow()
+          .show()
+          .catch((e) => console.error("[Layout] window show failed", e));
+      };
+      requestAnimationFrame(() => requestAnimationFrame(revealWindow));
+      setTimeout(revealWindow, 300);
     }
 
-    let unlistenCallback: any, unlistenSuccess: any, unlistenError: any, unlistenBack: any;
+    let unlistenCallback: any,
+      unlistenSuccess: any,
+      unlistenError: any,
+      unlistenBack: any;
 
     (async () => {
       // This component is the sole owner of processing these events now —
@@ -203,12 +283,12 @@
       async function processAuthCallback(url: string) {
         if (handledCallbackUrls.has(url)) return;
         handledCallbackUrls.add(url);
-        loginError.set('');
+        loginError.set("");
         try {
           const account = await handleAuthCallback(url);
           await handleLogin(account);
         } catch (e) {
-          console.error('Auth callback error:', e);
+          console.error("Auth callback error:", e);
           loginError.set(String(e));
         }
       }
@@ -217,17 +297,17 @@
       // no listener runtime — and `listen()` would reject, aborting the
       // startup sequence below — so the whole block is skipped there.
       if (isTauri) {
-        unlistenCallback = await listen('auth-callback', async (event) => {
+        unlistenCallback = await listen("auth-callback", async (event) => {
           await processAuthCallback(event.payload as string);
         });
 
-        unlistenSuccess = await listen('auth-success', async (event) => {
-          loginError.set('');
+        unlistenSuccess = await listen("auth-success", async (event) => {
+          loginError.set("");
           await handleLogin(event.payload as Account);
         });
 
-        unlistenError = await listen('auth-error', (event) => {
-          console.error('Auth error:', event.payload);
+        unlistenError = await listen("auth-error", (event) => {
+          console.error("Auth error:", event.payload);
           loginError.set(String(event.payload));
         });
       }
@@ -279,62 +359,70 @@
       // the `resumedAt` store (pages watch it alongside their manual refresh
       // trigger). Mirrors the pattern already proven in Settings.svelte:140.
       const handleVisibilityChange = async () => {
-        if (document.visibilityState !== 'visible') return;
+        if (document.visibilityState !== "visible") return;
         const currentRestore = get(restoreStatus) ?? restoreState;
         const logged = get(isLoggedIn);
-        if (currentRestore === 'unavailable' || logged) {
+        if (currentRestore === "unavailable" || logged) {
           await attemptRestore(true);
         }
         // Publish resume so pages refresh (stale-while-revalidate) – single
         // signal after revalidation to avoid double-load on every resume.
         resumedAt.set(Date.now());
       };
-      document.addEventListener('visibilitychange', handleVisibilityChange);
+      document.addEventListener("visibilitychange", handleVisibilityChange);
       // Store for cleanup
       (window as any).__friday_visibility_handler = handleVisibilityChange;
 
       unlistenBack = isTauri
-        ? await listen('tauri://back-button', () => {
-          if (mobileSidebarOpen) {
-            mobileSidebarOpen = false;
-            return;
-          }
-          const cp = get(currentPage);
-          if (cp !== 'dashboard') {
-            currentPage.set('dashboard');
-          }
-        })
+        ? await listen("tauri://back-button", () => {
+            if (mobileSidebarOpen) {
+              mobileSidebarOpen = false;
+              return;
+            }
+            const cp = get(currentPage);
+            const sp = getStartPage();
+            if (cp !== sp) {
+              currentPage.set(sp);
+            }
+          })
         : undefined;
     })();
 
     const handlePopstate = () => {
       const cp = get(currentPage);
-      if (cp !== 'dashboard') {
-        currentPage.set('dashboard');
+      const sp = getStartPage();
+      if (cp !== sp) {
+        currentPage.set(sp);
       }
     };
-    window.addEventListener('popstate', handlePopstate);
+    window.addEventListener("popstate", handlePopstate);
 
     // Disable pinch / double-tap / Ctrl+wheel zoom – app is native, not a webpage.
     const preventZoomWheel = (e: WheelEvent) => {
       if (e.ctrlKey || e.metaKey) e.preventDefault();
     };
     const preventZoomKey = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && ['+', '-', '=', '0', '_'].includes(e.key)) {
+      if (
+        (e.ctrlKey || e.metaKey) &&
+        ["+", "-", "=", "0", "_"].includes(e.key)
+      ) {
         e.preventDefault();
       }
       // Ctrl + +/- via Numpad
-      if ((e.ctrlKey || e.metaKey) && ['NumpadAdd', 'NumpadSubtract', 'Numpad0'].includes(e.code)) {
+      if (
+        (e.ctrlKey || e.metaKey) &&
+        ["NumpadAdd", "NumpadSubtract", "Numpad0"].includes(e.code)
+      ) {
         e.preventDefault();
       }
     };
     const preventGesture = (e: Event) => e.preventDefault();
-    window.addEventListener('wheel', preventZoomWheel, { passive: false });
-    window.addEventListener('keydown', preventZoomKey);
+    window.addEventListener("wheel", preventZoomWheel, { passive: false });
+    window.addEventListener("keydown", preventZoomKey);
     // iOS Safari legacy gesture events
-    (window as any).addEventListener?.('gesturestart', preventGesture);
-    (window as any).addEventListener?.('gesturechange', preventGesture);
-    (window as any).addEventListener?.('gestureend', preventGesture);
+    (window as any).addEventListener?.("gesturestart", preventGesture);
+    (window as any).addEventListener?.("gesturechange", preventGesture);
+    (window as any).addEventListener?.("gestureend", preventGesture);
 
     return () => {
       if (unlistenCallback) unlistenCallback();
@@ -342,73 +430,133 @@
       if (unlistenError) unlistenError();
       if (unlistenBack) unlistenBack();
       const hv = (window as any).__friday_visibility_handler;
-      if (hv) document.removeEventListener('visibilitychange', hv);
-      window.removeEventListener('popstate', handlePopstate);
-      window.removeEventListener('wheel', preventZoomWheel);
-      window.removeEventListener('keydown', preventZoomKey);
-      (window as any).removeEventListener?.('gesturestart', preventGesture);
-      (window as any).removeEventListener?.('gesturechange', preventGesture);
-      (window as any).removeEventListener?.('gestureend', preventGesture);
+      if (hv) document.removeEventListener("visibilitychange", hv);
+      window.removeEventListener("popstate", handlePopstate);
+      window.removeEventListener("wheel", preventZoomWheel);
+      window.removeEventListener("keydown", preventZoomKey);
+      (window as any).removeEventListener?.("gesturestart", preventGesture);
+      (window as any).removeEventListener?.("gesturechange", preventGesture);
+      (window as any).removeEventListener?.("gestureend", preventGesture);
     };
   });
 
   $effect(() => {
     const cp = $currentPage;
-    if (cp !== 'dashboard') {
+    if (cp !== "dashboard") {
       window.history.pushState({ page: cp }, "");
     }
   });
 
   // Bottom nav items (most used pages)
   const bottomNavItems = [
-    { id: 'dashboard', label: 'Home', icon: `<svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>` },
-    { id: 'calendar', label: 'Agenda', icon: `<svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/></svg>` },
-    { id: 'grades', label: 'Cijfers', icon: `<svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M7.105 13.123l2.895-2.123 2.895 2.123 5.105-4.123"/><path d="M3 21h18"/><path d="M3 3v18h18"/></svg>` },
-    { id: 'messages', label: 'Berichten', icon: `<svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/><rect width="20" height="14" x="2" y="5" rx="2"/></svg>` },
-    { id: 'more', label: 'Meer', icon: `<svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>` },
+    {
+      id: "dashboard",
+      label: "Home",
+      icon: `<svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>`,
+    },
+    {
+      id: "calendar",
+      label: "Agenda",
+      icon: `<svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/></svg>`,
+    },
+    {
+      id: "grades",
+      label: "Cijfers",
+      icon: `<svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M7.105 13.123l2.895-2.123 2.895 2.123 5.105-4.123"/><path d="M3 21h18"/><path d="M3 3v18h18"/></svg>`,
+    },
+    {
+      id: "messages",
+      label: "Berichten",
+      icon: `<svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/><rect width="20" height="14" x="2" y="5" rx="2"/></svg>`,
+    },
+    {
+      id: "more",
+      label: "Meer",
+      icon: `<svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>`,
+    },
   ];
 
   const navGroups = [
     {
-      label: 'Overzicht',
-      items: [
-        { id: 'dashboard', label: 'Dashboard', icon: `<svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>` },
-        { id: 'calendar', label: 'Agenda', icon: `<svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/></svg>` },
-        { id: 'grades', label: 'Cijfers', icon: `<svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M7.105 13.123l2.895-2.123 2.895 2.123 5.105-4.123"/><path d="M3 21h18"/><path d="M3 3v18h18"/></svg>` },
-      ]
-    },
-    {
-      label: 'Leren',
-      items: [
-        { id: 'assignments', label: 'Opdrachten', icon: `<svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg>` },
-        { id: 'leermiddelen', label: 'Leermiddelen', icon: `<svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"/></svg>` },
-        { id: 'studiewijzers', label: 'Studiewijzers', icon: `<svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"/><path d="M8 7h6"/><path d="M8 11h8"/></svg>` },
-      ]
-    },
-    {
-      label: 'Planning',
-      items: [
-        { id: 'ai-schedule', label: "Friday's Plan", icon: `<svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/><path d="M12 14l2 2 2-2"/><path d="M12 10v4"/></svg>` },
-      ]
-    },
-    {
-      label: 'School',
-      items: [
-        { id: 'afwezigheid', label: 'Afwezigheid', icon: `<svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" x2="12" y1="9" y2="13"/><line x1="12" x2="12.01" y1="17" y2="17"/></svg>` },
-        { id: 'activiteiten', label: 'Activiteiten', icon: `<svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2v20"/><path d="M2 12h20"/><path d="M12 12l5 5"/></svg>` },
-        { id: 'bronnen', label: 'Bronnen', icon: `<svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>` },
-      ]
-    },
-    {
-      label: 'Communicatie',
+      label: "Overzicht",
       items: [
         {
-          id: 'messages',
-          label: 'Berichten',
-          icon: `<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/><rect width="20" height="14" x="2" y="5" rx="2"/></svg>`
+          id: "dashboard",
+          label: "Dashboard",
+          icon: `<svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>`,
         },
-      ]
-    }
+        {
+          id: "calendar",
+          label: "Agenda",
+          icon: `<svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/></svg>`,
+        },
+        {
+          id: "grades",
+          label: "Cijfers",
+          icon: `<svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M7.105 13.123l2.895-2.123 2.895 2.123 5.105-4.123"/><path d="M3 21h18"/><path d="M3 3v18h18"/></svg>`,
+        },
+      ],
+    },
+    {
+      label: "Leren",
+      items: [
+        {
+          id: "assignments",
+          label: "Opdrachten",
+          icon: `<svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg>`,
+        },
+        {
+          id: "leermiddelen",
+          label: "Leermiddelen",
+          icon: `<svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"/></svg>`,
+        },
+        {
+          id: "studiewijzers",
+          label: "Studiewijzers",
+          icon: `<svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"/><path d="M8 7h6"/><path d="M8 11h8"/></svg>`,
+        },
+      ],
+    },
+    {
+      label: "Planning",
+      items: [
+        {
+          id: "ai-schedule",
+          label: "Friday's Plan",
+          icon: `<svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/><path d="M12 14l2 2 2-2"/><path d="M12 10v4"/></svg>`,
+        },
+      ],
+    },
+    {
+      label: "School",
+      items: [
+        {
+          id: "afwezigheid",
+          label: "Afwezigheid",
+          icon: `<svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" x2="12" y1="9" y2="13"/><line x1="12" x2="12.01" y1="17" y2="17"/></svg>`,
+        },
+        {
+          id: "activiteiten",
+          label: "Activiteiten",
+          icon: `<svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2v20"/><path d="M2 12h20"/><path d="M12 12l5 5"/></svg>`,
+        },
+        {
+          id: "bronnen",
+          label: "Bronnen",
+          icon: `<svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>`,
+        },
+      ],
+    },
+    {
+      label: "Communicatie",
+      items: [
+        {
+          id: "messages",
+          label: "Berichten",
+          icon: `<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/><rect width="20" height="14" x="2" y="5" rx="2"/></svg>`,
+        },
+      ],
+    },
   ];
 
   async function handleLogout() {
@@ -416,20 +564,24 @@
       if (isTauri) {
         await logout();
       } else {
-        const { webBackend, loadWebSession, clearWebSession } = await import('$lib/web-session');
+        const { webBackend, loadWebSession, clearWebSession } =
+          await import("$lib/web-session");
         const tokens = await loadWebSession();
         if (tokens) {
-          try { await webBackend().logout(tokens); } catch (_) {}
+          try {
+            await webBackend().logout(tokens);
+          } catch (_) {}
         }
         await clearWebSession();
       }
     } catch (e) {
-      console.error('Logout error:', e);
+      console.error("Logout error:", e);
     }
     isLoggedIn.set(false);
     personId.set(null);
     accountInfo.set(null);
     profilePicture.set(null);
+    currentPage.set(getStartPage());
     aiConfigured = false;
     mobileSidebarOpen = false;
   }
@@ -440,7 +592,7 @@
   }
 
   function handleBottomNav(id: string) {
-    if (id === 'more') {
+    if (id === "more") {
       mobileSidebarOpen = !mobileSidebarOpen;
     } else {
       navigate(id);
@@ -449,7 +601,11 @@
 
   // Whether a bottom nav item is "active"
   function isBottomActive(id: string): boolean {
-    if (id === 'more') return mobileSidebarOpen || !bottomNavItems.slice(0, 4).some(i => i.id === $currentPage);
+    if (id === "more")
+      return (
+        mobileSidebarOpen ||
+        !bottomNavItems.slice(0, 4).some((i) => i.id === $currentPage)
+      );
     return $currentPage === id;
   }
 </script>
@@ -457,25 +613,49 @@
 {#if loading}
   <div class="flex items-center justify-center h-screen bg-surface-950">
     <div class="flex flex-col items-center gap-4">
-      <div class="w-12 h-12 border-4 border-primary-500 border-t-transparent rounded-full animate-spin"></div>
+      <div
+        class="w-12 h-12 border-4 border-primary-500 border-t-transparent rounded-full animate-spin"
+      ></div>
       <p class="text-gray-400 text-body-medium">Laden...</p>
     </div>
   </div>
-{:else if restoreState === 'unavailable' && !$isLoggedIn}
+{:else if restoreState === "unavailable" && !$isLoggedIn}
   <div class="flex items-center justify-center h-screen bg-surface-950 p-6">
     <div class="flex flex-col items-center gap-4 max-w-sm text-center">
-      <div class="w-12 h-12 rounded-full bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400">
-        <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8v4"/><circle cx="12" cy="16" r="1"/><path d="M12 2a10 10 0 0 0-10 10c0 5.52 4.48 10 10 10s10-4.48 10-10S17.52 2 12 2z"/></svg>
+      <div
+        class="w-12 h-12 rounded-full bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400"
+      >
+        <svg
+          class="w-6 h-6"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          ><path d="M12 8v4" /><circle cx="12" cy="16" r="1" /><path
+            d="M12 2a10 10 0 0 0-10 10c0 5.52 4.48 10 10 10s10-4.48 10-10S17.52 2 12 2z"
+          /></svg
+        >
       </div>
       <p class="text-title-medium text-white">Geen verbinding</p>
-      <p class="text-body-small text-gray-400 leading-relaxed">Kon niet verbinden met Magister. Je opgeslagen sessie blijft behouden — controleer je internet en probeer opnieuw.</p>
-      <button onclick={retryRestore} class="mt-2 px-6 py-2.5 rounded-m3-sm bg-primary-500 text-white text-label-large hover:bg-primary-600 transition-colors">
+      <p class="text-body-small text-gray-400 leading-relaxed">
+        Kon niet verbinden met Magister. Je opgeslagen sessie blijft behouden —
+        controleer je internet en probeer opnieuw.
+      </p>
+      <button
+        onclick={retryRestore}
+        class="mt-2 px-6 py-2.5 rounded-m3-sm bg-primary-500 text-white text-label-large hover:bg-primary-600 transition-colors"
+      >
         Opnieuw proberen
       </button>
-      <button onclick={reloginFromOffline} class="px-6 py-2 rounded-m3-sm text-label-medium text-gray-400 hover:text-gray-200 transition-colors">
+      <button
+        onclick={reloginFromOffline}
+        class="px-6 py-2 rounded-m3-sm text-label-medium text-gray-400 hover:text-gray-200 transition-colors"
+      >
         Opnieuw inloggen
       </button>
-      <p class="text-label-small text-gray-600 mt-1">Of open de app opnieuw zodra je weer online bent.</p>
+      <p class="text-label-small text-gray-600 mt-1">
+        Of open de app opnieuw zodra je weer online bent.
+      </p>
     </div>
   </div>
 {:else}
@@ -484,37 +664,74 @@
     style="--custom-primary: {$userSettings.customThemeColor || '#8b5cf6'}"
   >
     {#if $isLoggedIn}
-
       <!-- ====== MOBILE: "More" drawer (slides in from bottom) ====== -->
       {#if mobileSidebarOpen}
         <!-- svelte-ignore a11y_click_events_have_key_events -->
         <!-- svelte-ignore a11y_no_static_element_interactions -->
-        <div class="fixed inset-0 bg-black/60 z-40 md:hidden" onclick={() => mobileSidebarOpen = false}></div>
-        <div class="fixed bottom-[64px] left-0 right-0 z-50 md:hidden bg-surface-900 border border-surface-700/50 rounded-t-m3-xl shadow-2xl overflow-y-auto max-h-[70dvh]">
-          <div class="flex items-center justify-between px-5 py-4 border-b border-surface-700/50">
+        <div
+          class="fixed inset-0 bg-black/60 z-40 md:hidden"
+          onclick={() => (mobileSidebarOpen = false)}
+        ></div>
+        <div
+          class="fixed bottom-[64px] left-0 right-0 z-50 md:hidden bg-surface-900 border border-surface-700/50 rounded-t-m3-xl shadow-2xl overflow-y-auto max-h-[70dvh]"
+        >
+          <div
+            class="flex items-center justify-between px-5 py-4 border-b border-surface-700/50"
+          >
             <div class="flex items-center gap-3 p-6 mb-2">
-              <div class="w-10 h-10 rounded-m3-sm flex items-center justify-center shrink-0 overflow-hidden">
-                <img src="{base}/logo.png" alt="Friday Logo" class="w-full h-full object-cover" />
+              <div
+                class="w-10 h-10 rounded-m3-sm flex items-center justify-center shrink-0 overflow-hidden"
+              >
+                <img
+                  src="{base}/logo.png"
+                  alt="Friday Logo"
+                  class="w-full h-full object-cover"
+                />
               </div>
               <div class="flex flex-col">
                 <h1 class="text-title-large text-white" in:fade>Friday</h1>
                 <p class="text-label-small text-primary-400" in:fade>Menu</p>
               </div>
             </div>
-            <IconButton onclick={() => mobileSidebarOpen = false} class="text-gray-400" aria-label="Sluit menu">
-              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+            <IconButton
+              onclick={() => (mobileSidebarOpen = false)}
+              class="text-gray-400"
+              aria-label="Sluit menu"
+            >
+              <svg
+                class="w-5 h-5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+                ><path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M6 18L18 6M6 6l12 12"
+                ></path></svg
+              >
             </IconButton>
           </div>
           <nav class="p-4 space-y-5 pb-6">
             {#each navGroups as group}
               <div class="space-y-1">
-                <h3 class="px-3 text-label-small text-gray-500 mb-2">{group.label}</h3>
+                <h3 class="px-3 text-label-small text-gray-500 mb-2">
+                  {group.label}
+                </h3>
                 {#each group.items as item}
                   <button
                     onclick={() => navigate(item.id)}
-                    class="w-full flex items-center gap-3 px-4 py-3 rounded-m3-full text-label-large transition-all {$currentPage === item.id ? 'bg-primary-container text-on-primary-container' : 'text-gray-400 hover:bg-surface-800 hover:text-gray-200'}"
+                    class="w-full flex items-center gap-3 px-4 py-3 rounded-m3-full text-label-large transition-all {$currentPage ===
+                    item.id
+                      ? 'bg-primary-container text-on-primary-container'
+                      : 'text-gray-400 hover:bg-surface-800 hover:text-gray-200'}"
                   >
-                    <span class="text-xl shrink-0">{@html navIcon(item.icon, $currentPage === item.id)}</span>
+                    <span class="text-xl shrink-0"
+                      >{@html navIcon(
+                        item.icon,
+                        $currentPage === item.id,
+                      )}</span
+                    >
                     <span class="truncate">{item.label}</span>
                   </button>
                 {/each}
@@ -522,12 +739,30 @@
             {/each}
             <!-- Profile at bottom of drawer -->
             <div class="space-y-1 border-t border-surface-700/50 pt-4">
-              <button onclick={() => navigate('profile')} class="w-full flex items-center gap-3 px-4 py-3 rounded-m3-md text-label-large text-gray-400 hover:bg-surface-800 hover:text-gray-200 transition-all">
+              <button
+                onclick={() => navigate("profile")}
+                class="w-full flex items-center gap-3 px-4 py-3 rounded-m3-md text-label-large text-gray-400 hover:bg-surface-800 hover:text-gray-200 transition-all"
+              >
                 {#if $profilePicture}
-                  <img src={photoDataUrl($profilePicture) ?? ''} alt="Profiel" class="w-6 h-6 rounded-full object-cover shrink-0" />
+                  <img
+                    src={photoDataUrl($profilePicture) ?? ""}
+                    alt="Profiel"
+                    class="w-6 h-6 rounded-full object-cover shrink-0"
+                  />
                 {:else}
                   <span class="text-primary-400">
-                    <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                    <svg
+                      class="w-5 h-5"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2.5"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      ><path
+                        d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"
+                      /><circle cx="12" cy="7" r="4" /></svg
+                    >
                   </span>
                 {/if}
                 <span>Profiel</span>
@@ -536,11 +771,22 @@
             <!-- Settings inside drawer -->
             <div class="px-6 py-4 border-t border-surface-800/50 mt-auto">
               <button
-                onclick={() => navigate('settings')}
+                onclick={() => navigate("settings")}
                 class="w-full flex items-center gap-4 px-4 py-3 rounded-m3-md bg-surface-800/40 text-gray-300 hover:text-white transition-all border border-white/5 shadow-sm active:scale-95"
               >
                 <span class="text-primary-400">
-                   <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+                  <svg
+                    class="w-5 h-5"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2.5"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    ><path
+                      d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"
+                    /><circle cx="12" cy="12" r="3" /></svg
+                  >
                 </span>
                 <span class="text-label-large">Instellingen</span>
               </button>
@@ -551,7 +797,18 @@
               class="w-full flex items-center gap-4 px-6 py-5 text-red-400 hover:bg-red-400/5 transition-colors border-t border-surface-800/50"
             >
               <span class="text-xl">
-                 <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg>
+                <svg
+                  class="w-5 h-5"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2.5"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  ><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline
+                    points="16 17 21 12 16 7"
+                  /><line x1="21" x2="9" y1="12" y2="12" /></svg
+                >
               </span>
               <span class="text-label-large">Uitloggen</span>
             </button>
@@ -560,11 +817,23 @@
       {/if}
 
       <!-- ====== DESKTOP: Sidebar ====== -->
-      <aside class="hidden md:flex flex-col {sidebarCollapsed ? 'w-16' : 'w-56'} bg-surface-900 border-r border-surface-700/50 transition-all duration-300 shrink-0">
+      <aside
+        class="hidden md:flex flex-col {sidebarCollapsed
+          ? 'w-16'
+          : 'w-56'} bg-surface-900 border-r border-surface-700/50 transition-all duration-300 shrink-0"
+      >
         <!-- Logo -->
-        <div class="flex items-center gap-3 px-4 py-5 border-b border-surface-700/50 shrink-0">
-          <div class="w-8 h-8 rounded-m3-sm flex items-center justify-center shrink-0 overflow-hidden">
-            <img src="{base}/logo.png" alt="Friday" class="w-full h-full object-cover" />
+        <div
+          class="flex items-center gap-3 px-4 py-5 border-b border-surface-700/50 shrink-0"
+        >
+          <div
+            class="w-8 h-8 rounded-m3-sm flex items-center justify-center shrink-0 overflow-hidden"
+          >
+            <img
+              src="{base}/logo.png"
+              alt="Friday"
+              class="w-full h-full object-cover"
+            />
           </div>
           {#if !sidebarCollapsed}
             <span class="text-title-medium text-white truncate">Friday</span>
@@ -576,15 +845,22 @@
           {#each navGroups as group}
             <div class="space-y-1">
               {#if !sidebarCollapsed}
-                <h3 class="px-3 text-label-small text-gray-500 mb-2">{group.label}</h3>
+                <h3 class="px-3 text-label-small text-gray-500 mb-2">
+                  {group.label}
+                </h3>
               {/if}
               {#each group.items as item}
                 <button
                   onclick={() => navigate(item.id)}
-                  title={sidebarCollapsed ? item.label : ''}
-                  class="w-full flex items-center gap-3 px-3 py-2 rounded-m3-full text-label-large transition-all group {$currentPage === item.id ? 'bg-primary-container text-on-primary-container' : 'text-gray-400 hover:bg-surface-800 hover:text-gray-200'}"
+                  title={sidebarCollapsed ? item.label : ""}
+                  class="w-full flex items-center gap-3 px-3 py-2 rounded-m3-full text-label-large transition-all group {$currentPage ===
+                  item.id
+                    ? 'bg-primary-container text-on-primary-container'
+                    : 'text-gray-400 hover:bg-surface-800 hover:text-gray-200'}"
                 >
-                  <span class="text-lg shrink-0 group-hover:scale-110 transition-transform">
+                  <span
+                    class="text-lg shrink-0 group-hover:scale-110 transition-transform"
+                  >
                     {@html navIcon(item.icon, $currentPage === item.id)}
                   </span>
                   {#if !sidebarCollapsed}
@@ -597,28 +873,57 @@
         </nav>
 
         <!-- Profile section -->
-        <button onclick={() => navigate('profile')} class="border-t border-surface-700/50 p-3 hover:bg-surface-800 transition-colors w-full text-left">
+        <button
+          onclick={() => navigate("profile")}
+          class="border-t border-surface-700/50 p-3 hover:bg-surface-800 transition-colors w-full text-left"
+        >
           <div class="flex items-center gap-3">
             {#if $profilePicture}
-              <img src={photoDataUrl($profilePicture) ?? ''} alt="Profielfoto" class="w-8 h-8 rounded-full object-cover shrink-0" />
+              <img
+                src={photoDataUrl($profilePicture) ?? ""}
+                alt="Profielfoto"
+                class="w-8 h-8 rounded-full object-cover shrink-0"
+              />
             {:else}
-              <div class="w-8 h-8 rounded-full bg-primary-600 flex items-center justify-center text-white text-xs font-semibold shrink-0">
-                {$accountInfo?.Persoon?.Roepnaam?.[0] ?? '?'}
+              <div
+                class="w-8 h-8 rounded-full bg-primary-600 flex items-center justify-center text-white text-xs font-semibold shrink-0"
+              >
+                {$accountInfo?.Persoon?.Roepnaam?.[0] ?? "?"}
               </div>
             {/if}
             {#if !sidebarCollapsed}
               <div class="min-w-0">
-                <p class="text-title-small text-gray-200 truncate">{$accountInfo?.Persoon?.Roepnaam ?? 'Gebruiker'}</p>
-                <p class="text-label-small text-gray-500 truncate">Profiel bekijken</p>
+                <p class="text-title-small text-gray-200 truncate">
+                  {$accountInfo?.Persoon?.Roepnaam ?? "Gebruiker"}
+                </p>
+                <p class="text-label-small text-gray-500 truncate">
+                  Profiel bekijken
+                </p>
               </div>
             {/if}
           </div>
         </button>
 
         <!-- Settings button -->
-        <button onclick={() => navigate('settings')} class="w-full flex items-center gap-3 px-5 py-3 text-gray-400 hover:bg-surface-800 hover:text-gray-200 border-t border-surface-700/50 transition-all group">
-          <span class="text-lg shrink-0 text-primary-400 group-hover:rotate-45 transition-transform duration-500">
-             <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+        <button
+          onclick={() => navigate("settings")}
+          class="w-full flex items-center gap-3 px-5 py-3 text-gray-400 hover:bg-surface-800 hover:text-gray-200 border-t border-surface-700/50 transition-all group"
+        >
+          <span
+            class="text-lg shrink-0 text-primary-400 group-hover:rotate-45 transition-transform duration-500"
+          >
+            <svg
+              class="w-5 h-5"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              ><path
+                d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"
+              /><circle cx="12" cy="12" r="3" /></svg
+            >
           </span>
           {#if !sidebarCollapsed}
             <span class="truncate text-label-medium">Instellingen</span>
@@ -626,11 +931,15 @@
         </button>
 
         <!-- Bottom Nav Items (Icons Only) -->
-        <div class="p-3 border-t border-surface-800/50 flex items-center justify-around bg-surface-950/50">
+        <div
+          class="p-3 border-t border-surface-800/50 flex items-center justify-around bg-surface-950/50"
+        >
           {#each bottomNavItems.slice(0, 4) as item}
             <button
               onclick={() => navigate(item.id)}
-              class="p-2.5 rounded-full transition-all {$currentPage === item.id ? 'bg-primary-500 text-white shadow-lg' : 'text-gray-500 hover:text-gray-300 hover:bg-surface-800'}"
+              class="p-2.5 rounded-full transition-all {$currentPage === item.id
+                ? 'bg-primary-500 text-white shadow-lg'
+                : 'text-gray-500 hover:text-gray-300 hover:bg-surface-800'}"
             >
               {@html navIcon(item.icon, $currentPage === item.id)}
             </button>
@@ -640,25 +949,43 @@
         <!-- Logout button (desktop only) -->
         <button
           onclick={handleLogout}
-          title={sidebarCollapsed ? 'Uitloggen' : ''}
+          title={sidebarCollapsed ? "Uitloggen" : ""}
           class="w-full flex items-center gap-3 px-5 py-3 text-red-400 hover:bg-red-500/10 border-t border-surface-700/50 transition-all group"
         >
           <span class="shrink-0">
-            <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg>
+            <svg
+              class="w-5 h-5"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              ><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline
+                points="16 17 21 12 16 7"
+              /><line x1="21" x2="9" y1="12" y2="12" /></svg
+            >
           </span>
           {#if !sidebarCollapsed}
             <span class="truncate text-label-medium">Uitloggen</span>
           {/if}
         </button>
 
-        <IconButton onclick={() => sidebarCollapsed = !sidebarCollapsed} class="w-full rounded-none border-t border-surface-800/50 text-label-large bg-surface-950/30">
-          {sidebarCollapsed ? '→' : '←'}
+        <IconButton
+          onclick={() => (sidebarCollapsed = !sidebarCollapsed)}
+          class="w-full rounded-none border-t border-surface-800/50 text-label-large bg-surface-950/30"
+        >
+          {sidebarCollapsed ? "→" : "←"}
         </IconButton>
       </aside>
     {/if}
 
     <!-- Main content — on mobile add bottom padding so content isn't behind the tab bar -->
-    <main class="flex-1 overflow-y-auto {$isLoggedIn ? 'pb-[calc(64px+env(safe-area-inset-bottom))] md:pb-0' : ''}">
+    <main
+      class="flex-1 overflow-y-auto {$isLoggedIn
+        ? 'pb-[calc(64px+env(safe-area-inset-bottom))] md:pb-0'
+        : ''}"
+    >
       {@render children()}
     </main>
 
@@ -669,14 +996,26 @@
 
     <!-- ====== MOBILE: Fixed bottom tab bar ====== -->
     {#if $isLoggedIn}
-      <nav class="fixed md:hidden bottom-0 left-0 right-0 z-30 bg-surface-950/95 backdrop-blur-md border-t border-surface-800/50 pb-[env(safe-area-inset-bottom)]">
+      <nav
+        class="fixed md:hidden bottom-0 left-0 right-0 z-30 bg-surface-950/95 backdrop-blur-md border-t border-surface-800/50 pb-[env(safe-area-inset-bottom)]"
+      >
         <div class="flex items-stretch h-[64px]">
           {#each bottomNavItems as item}
             <button
               onclick={() => handleBottomNav(item.id)}
-              class="flex-1 flex flex-col items-center justify-center gap-1 transition-all {isBottomActive(item.id) ? 'text-primary-400' : 'text-gray-500'}"
+              class="flex-1 flex flex-col items-center justify-center gap-1 transition-all {isBottomActive(
+                item.id,
+              )
+                ? 'text-primary-400'
+                : 'text-gray-500'}"
             >
-              <span class="px-4 py-0.5 rounded-m3-full transition-colors {isBottomActive(item.id) ? 'bg-primary-container text-on-primary-container' : ''}">
+              <span
+                class="px-4 py-0.5 rounded-m3-full transition-colors {isBottomActive(
+                  item.id,
+                )
+                  ? 'bg-primary-container text-on-primary-container'
+                  : ''}"
+              >
                 {@html navIcon(item.icon, isBottomActive(item.id))}
               </span>
               <span class="text-label-medium">{item.label}</span>

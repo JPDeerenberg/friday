@@ -125,6 +125,7 @@ export interface CalendarEvent {
   Inhoud: string | null;
   InfoType: number;
   Aantekening: string | null;
+  Opmerking: string | null;
   Afgerond: boolean;
   HerhaalStatus: number | null;
   Vakken: CalendarVak[] | null;

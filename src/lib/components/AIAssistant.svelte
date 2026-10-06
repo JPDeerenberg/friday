@@ -269,10 +269,27 @@
     return out;
   }
 
+  /**
+   * An assistant message with blank content and no tool trace: strict
+   * providers (Mistral) reject it with `invalid_request_assistant_message`
+   * when replayed. Never sent, never restored.
+   */
+  function isEmptyAssistant(m: AiMessage): boolean {
+    return (
+      m.role === "assistant" &&
+      !m.error &&
+      m.content.trim() === "" &&
+      !(m.trace && m.trace.length > 0)
+    );
+  }
+
   /** Open a conversation from storage (restore thread + summary). */
   async function openConversation(id: string) {
     const stored = await getMessages(id).catch(() => []);
-    messages = stored.map(toAiMessage);
+    // Older turns may hold empty stopped messages (persisted before the
+    // empty-turn guard below): filter them so a restored chat never replays
+    // a provider-rejected assistant message.
+    messages = stored.map(toAiMessage).filter((m) => !isEmptyAssistant(m));
     renderedHtml = [];
     const conv = await getConversation(id).catch(() => null);
     convSummary = conv?.summary ?? null;
@@ -444,8 +461,12 @@
       const context = getPageContext();
       // Error bubbles never go back to the provider; fields are stripped.
       // Older assistant turns replay with their compact tool trace (item 4).
+      // Empty assistant turns (blank content, no trace — e.g. from a stopped
+      // generation) are dropped too: replaying them trips Mistral's
+      // `invalid_request_assistant_message` 400.
       const thread: ThreadMessage[] = messages
         .filter((m) => !(m.role === "assistant" && m.error))
+        .filter((m) => !isEmptyAssistant(m))
         .map((m) => ({
           role: m.role,
           content: m.content,
@@ -493,6 +514,11 @@
           signal,
           hooks,
         );
+        // A stopped turn with empty content carries nothing: appending and
+        // persisting it would poison the next turn's history (400 on web).
+        if (result.stopped && result.content.trim() === "") {
+          return;
+        }
         const assistantMsg: AiMessage = result.stopped
           ? { role: "assistant", content: result.content, stopped: true }
           : { role: "assistant", content: result.content };

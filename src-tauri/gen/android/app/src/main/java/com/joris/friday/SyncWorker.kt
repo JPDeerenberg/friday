@@ -18,8 +18,10 @@ class SyncWorker(appContext: Context, workerParams: WorkerParameters) :
 
     private val TAG = "FridaySyncWorker"
 
-    // Declare the native method
-    private external fun runSync(dataDir: String): String
+    // Declare the native method. `trigger` is one of alarm|periodic|manual and
+    // `nextAlarmAtMs` is the armed time of the next alarm (0 when unknown) —
+    // both are surfaced in the Rust info-level run line for cadence diagnosis.
+    private external fun runSync(dataDir: String, trigger: String, nextAlarmAtMs: Long): String
 
     // Initialize ndk-context so the Rust keyring store can access the app context.
     // Must be called before any native call that reads/writes secrets. Safe to call
@@ -94,8 +96,10 @@ class SyncWorker(appContext: Context, workerParams: WorkerParameters) :
     }
 
     private fun doSyncInternal(dataDir: String): Result {
+        val trigger = inputData.getString(KEY_TRIGGER) ?: "manual"
+        val nextAlarmAtMs = inputData.getLong(KEY_NEXT_ALARM, 0L)
         val resultString = try {
-            runSync(dataDir)
+            runSync(dataDir, trigger, nextAlarmAtMs)
         } catch (e: Exception) {
             Log.e(TAG, "Native runSync crashed", e)
             "ERROR"
@@ -119,28 +123,54 @@ class SyncWorker(appContext: Context, workerParams: WorkerParameters) :
             return Result.retry()
         }
 
-        processSyncResult(resultString)
+        if (processSyncResult(resultString)) {
+            // Every section failed (e.g. a rate-limit cascade). Keep the
+            // existing WorkManager retry path — do not treat it as success,
+            // so the next attempt happens promptly without a new scheduler.
+            Log.w(TAG, "All sync sections failed, retrying later")
+            return Result.retry()
+        }
 
         return Result.success()
     }
     
-    private fun processSyncResult(resultString: String) {
+    /**
+     * Returns true when every section failed (caller should retry), false when
+     * at least one section succeeded and the result was processed.
+     */
+    private fun processSyncResult(resultString: String): Boolean {
         // Skip if no tokens or critical error (unreachable for the early-
         // returned cases above, but kept as a safety net).
         if (resultString == "NO_TOKENS" || resultString == "ERROR" ||
             resultString.startsWith("ERROR:") || resultString.startsWith("AUTH_") ||
             resultString.startsWith("INVALID") || resultString == "NO_PERSON_ID") {
-            return
+            return false
         }
         
         try {
             val syncData = JSONObject(resultString)
-            
-            // Extract data arrays
-            val messages = syncData.optJSONArray("messages") ?: JSONArray()
-            val grades = syncData.optJSONArray("grades") ?: JSONArray()
-            val assignments = syncData.optJSONArray("assignments") ?: JSONArray()
-            val calendar = syncData.optJSONArray("calendar") ?: JSONArray()
+
+            // Sections listed in "failed" were omitted by the Rust side. A
+            // failed section is passed through as null: no notifications, and
+            // its previous baseline is preserved by SyncStateManager.
+            val failedArray = syncData.optJSONArray("failed")
+            val failed = mutableSetOf<String>()
+            if (failedArray != null) {
+                for (i in 0 until failedArray.length()) {
+                    failed.add(failedArray.optString(i))
+                }
+            }
+            val knownSections = listOf("calendar", "grades", "messages", "assignments")
+            if (knownSections.all { it in failed }) {
+                Log.w(TAG, "Sync result reports all sections failed: $resultString")
+                return true
+            }
+
+            // Extract data arrays (null when that section failed)
+            val messages = if ("messages" in failed) null else syncData.optJSONArray("messages")
+            val grades = if ("grades" in failed) null else syncData.optJSONArray("grades")
+            val assignments = if ("assignments" in failed) null else syncData.optJSONArray("assignments")
+            val calendar = if ("calendar" in failed) null else syncData.optJSONArray("calendar")
             
             // Detect changes using SyncStateManager
             val changes = SyncStateManager.detectChanges(
@@ -154,14 +184,19 @@ class SyncWorker(appContext: Context, workerParams: WorkerParameters) :
             // Send notifications for detected changes
             sendChangeNotifications(changes)
             
-            // Schedule precise DND alarms based on today's lessons
-            // (DndScheduler internally checks if autoDnd is enabled)
-            DndScheduler.scheduleFromCalendar(applicationContext, calendar)
-            
+            // Schedule precise DND alarms based on today's lessons. Only when
+            // the calendar fetch actually succeeded: a failed calendar is
+            // null (not an empty array), so it must not clear existing alarms.
+            if (calendar != null) {
+                DndScheduler.scheduleFromCalendar(applicationContext, calendar)
+            } else {
+                Log.w(TAG, "Calendar section failed — keeping existing DND alarms")
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to process sync result: $resultString", e)
             e.printStackTrace()
         }
+        return false
     }
     
     private fun sendChangeNotifications(changes: SyncStateManager.SyncChanges) {
@@ -255,6 +290,8 @@ class SyncWorker(appContext: Context, workerParams: WorkerParameters) :
 
     companion object {
         private val syncLock = java.util.concurrent.locks.ReentrantLock()
+        const val KEY_TRIGGER = "sync_trigger"
+        const val KEY_NEXT_ALARM = "sync_next_alarm_at"
 
         @JvmStatic
         fun showNotification(context: Context, title: String, message: String) {
@@ -269,9 +306,15 @@ class SyncWorker(appContext: Context, workerParams: WorkerParameters) :
         // Route both foreground-enqueued and system-scheduled work through the
         // RemoteWorkerService so native keyring access never runs in Tao's process.
         @JvmStatic
-        fun remoteInput(context: Context): Data = Data.Builder()
+        fun remoteInput(context: Context, trigger: String = "manual"): Data = Data.Builder()
             .putString(RemoteListenableWorker.ARGUMENT_PACKAGE_NAME, context.packageName)
             .putString(RemoteListenableWorker.ARGUMENT_CLASS_NAME, RemoteWorkerService::class.java.name)
+            .putString(KEY_TRIGGER, trigger)
+            .putLong(
+                KEY_NEXT_ALARM,
+                context.getSharedPreferences("friday_prefs", Context.MODE_PRIVATE)
+                    .getLong(SyncAlarmReceiver.PREF_SYNC_ALARM_SCHEDULED_AT, 0L),
+            )
             .build()
     }
 }

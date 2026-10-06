@@ -467,6 +467,19 @@ test("slim shape cuts long text, drops nulls, flags homework", () => {
   );
   assert.strictEqual(toets["is_test"], true);
   assert.strictEqual(toets["aantekening"], "herstelopgave");
+  // Real toetsweek sample: the only signal is the Opmerking text.
+  const extraTijd = slimCalendarEvent(
+    makeLesson(6169391, "2026-10-05T14:00:00", {
+      Omschrijving: "schk - rmn - bv4.schk2",
+      Lokatie: "B017",
+      InfoType: 0,
+      Opmerking: "Toets: BV4 schk extra tijd",
+      Aantekening: null,
+    }),
+  );
+  assert.strictEqual(extraTijd["is_test"], true);
+  assert.strictEqual(extraTijd["opmerking"], "Toets: BV4 schk extra tijd");
+  assert.strictEqual(extraTijd["test_hint"], "Toets: BV4 schk extra tijd");
 });
 
 test("paginateItems honours offset/limit bounds", () => {

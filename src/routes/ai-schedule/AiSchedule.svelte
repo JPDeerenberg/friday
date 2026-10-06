@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, untrack } from "svelte";
   import { personId, userSettings, resumedAt } from "$lib/stores";
   import { get } from "svelte/store";
   import { formatTime } from "$lib/format";
@@ -83,7 +83,7 @@
       resumedSeen = true;
       return;
     }
-    if (get(personId) !== null) loadMerged(true);
+    if (get(personId) !== null) untrack(() => loadMerged(true));
   });
 
   async function loadMerged(force = false) {

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { userSettings } from "$lib/stores";
-  import { currentPage } from "$lib/stores";
+  import { currentPage, START_PAGE_OPTIONS, getStartPage } from "$lib/stores";
   import {
     triggerTestNotification,
     notifyNewMessage,
@@ -306,7 +306,7 @@
   });
 
   function goBack() {
-    currentPage.set("dashboard");
+    currentPage.set(getStartPage());
   }
 
   function updateToggle(id: string, value: boolean) {
@@ -892,6 +892,19 @@
       isAiSchedule: true,
     },
     {
+      id: "algemeen",
+      title: "Algemeen",
+      settings: [
+        {
+          id: "startPage",
+          label: "Startpagina",
+          description: "De pagina die opent als je de app start.",
+          type: "select",
+          options: START_PAGE_OPTIONS,
+        },
+      ],
+    },
+    {
       id: "agenda",
       title: "Agenda",
       settings: [
@@ -975,6 +988,18 @@
           step: 0.1,
           min: 1,
           max: 10,
+        },
+        {
+          id: "seDetection",
+          label: "SE-herkenning",
+          description:
+            "Bepaalt welke cijfers als schoolexamen (SE) tellen. Automatisch kijkt naar de PTA-markering én de kolomnaam; Alleen Magister-PTA volgt enkel Magister.",
+          type: "select",
+          options: [
+            { value: "auto", label: "Automatisch" },
+            { value: "magister", label: "Alleen Magister-PTA" },
+            { value: "off", label: "Uit" },
+          ],
         },
       ],
     },

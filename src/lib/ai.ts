@@ -33,7 +33,9 @@ import {
 import {
   clearAiDiagnostics as clearLocalDiag,
   getAiDiagnostics as getLocalDiag,
+  providerTypeOf,
   recordAiDiag,
+  shapeOfMessage,
   type AiDiagEntry,
 } from "./ai-diagnostics.ts";
 import { classifyAiError } from "./ai-errors.ts";
@@ -391,6 +393,9 @@ export async function aiChat(
         status: kind === "aborted" ? "aborted" : "error",
         durationMs: Date.now() - diagStart,
         errorClass: kind,
+        // 4xx shape logging: roles + counts only, never content/keys.
+        messageShape: ["system", ...messages.map((m) => shapeOfMessage(m))],
+        providerType: providerTypeOf(e),
       });
       throw e;
     }
@@ -811,6 +816,9 @@ async function webChatWithToolsLoop(
         durationMs: Date.now() - diagStart,
         errorClass: kind,
         toolNames: diagTools,
+        // 4xx shape logging: roles + counts only, never content/keys.
+        messageShape: ["system", ...messages.map((m) => shapeOfMessage(m))],
+        providerType: providerTypeOf(e),
       });
       throw e;
     },

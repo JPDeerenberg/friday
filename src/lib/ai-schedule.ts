@@ -668,11 +668,13 @@ export function toPlanLessons(raw: unknown[]): PlanLesson[] {
     start: (ev["Start"] as string) ?? "",
     einde: (ev["Einde"] as string) ?? "",
     status: (ev["Status"] as number) ?? 0,
+    event_type: (ev["Type"] as number) ?? 0,
     info_type: (ev["InfoType"] as number) ?? 0,
     afgerond: (ev["Afgerond"] as boolean) ?? false,
     omschrijving: (ev["Omschrijving"] as string | null) ?? null,
     inhoud: (ev["Inhoud"] as string | null) ?? null,
     aantekening: (ev["Aantekening"] as string | null) ?? null,
+    opmerking: (ev["Opmerking"] as string | null) ?? null,
     vakken: Array.isArray(ev["Vakken"])
       ? (ev["Vakken"] as Array<Record<string, unknown>>).map((v) => ({
           naam: (v["Naam"] as string | undefined) ?? null,

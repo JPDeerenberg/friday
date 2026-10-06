@@ -258,6 +258,48 @@ impl RequestContext {
     }
 }
 
+/// Shared 429 backoff: delay honours, in order, the `Retry-After` response
+/// header (seconds), `secondsLeft` in the Magister JSON body
+/// (`{"message":"Rate limit reached. Reset in 4 seconds.","secondsLeft":4}`),
+/// then the legacy 2/4/8 s exponential fallback. A ±25 % jitter is applied so
+/// parallel callers do not retry in lockstep, and a single wait is capped at
+/// `max_wait_secs` (10 s foreground, up to ~30 s for background sync).
+pub fn rate_limit_delay(
+    attempt: u32,
+    retry_after_secs: Option<u64>,
+    body_seconds_left: Option<u64>,
+    max_wait_secs: u64,
+) -> std::time::Duration {
+    let base_secs = retry_after_secs
+        .or(body_seconds_left)
+        .unwrap_or_else(|| 1u64 << attempt.min(10));
+    let capped = base_secs.min(max_wait_secs.max(1));
+    let jittered = apply_jitter_secs(capped);
+    std::time::Duration::from_millis((jittered * 1000.0).round() as u64)
+}
+
+fn apply_jitter_secs(base_secs: u64) -> f64 {
+    use rand::RngExt;
+    let mut rng = rand::rng();
+    let factor: f64 = rng.random_range(0.75..=1.25);
+    (base_secs as f64) * factor
+}
+
+/// Parse `secondsLeft` from a 429 JSON body. Returns `None` when the body is
+/// not JSON or carries no such field.
+pub fn parse_seconds_left(body: &str) -> Option<u64> {
+    serde_json::from_str::<serde_json::Value>(body)
+        .ok()?
+        .get("secondsLeft")
+        .and_then(|v| v.as_u64())
+}
+
+/// Parse a `Retry-After` header value (delta-seconds). HTTP-date form is not
+/// supported — returns `None` for it so the caller falls through to the body.
+pub fn parse_retry_after(value: Option<&reqwest::header::HeaderValue>) -> Option<u64> {
+    value?.to_str().ok()?.trim().parse::<u64>().ok()
+}
+
 /// Make an authenticated GET request using a pre-fetched `RequestContext`,
 /// without holding the client lock. This is the parallel-safe counterpart
 /// to `MagisterClient::get()` — same URL-building, 429-retry, and
@@ -296,7 +338,9 @@ pub async fn get_with_context(ctx: &RequestContext, path: &str) -> Result<serde_
         if resp.status().as_u16() == 429 {
             if attempt < MAX_RATE_LIMIT_RETRIES {
                 attempt += 1;
-                let backoff = std::time::Duration::from_secs(1u64 << attempt);
+                let retry_after = parse_retry_after(resp.headers().get(reqwest::header::RETRY_AFTER));
+                let body = resp.text().await.unwrap_or_default();
+                let backoff = rate_limit_delay(attempt, retry_after, parse_seconds_left(&body), 10);
                 log::warn!("API rate limited (GET {}), retrying in {:?} (attempt {}/{})", url, backoff, attempt, MAX_RATE_LIMIT_RETRIES);
                 tokio::time::sleep(backoff).await;
                 continue;
@@ -541,7 +585,9 @@ impl MagisterClient {
             if resp.status().as_u16() == 429 {
                 if attempt < MAX_RATE_LIMIT_RETRIES {
                     attempt += 1;
-                    let backoff = std::time::Duration::from_secs(1u64 << attempt); // 2s, 4s, 8s
+                    let retry_after = parse_retry_after(resp.headers().get(reqwest::header::RETRY_AFTER));
+                    let body = resp.text().await.unwrap_or_default();
+                    let backoff = rate_limit_delay(attempt, retry_after, parse_seconds_left(&body), 10);
                     log::warn!(
                         "API rate limited ({} {}), retrying in {:?} (attempt {}/{})",
                         method, url, backoff, attempt, MAX_RATE_LIMIT_RETRIES
@@ -1525,6 +1571,55 @@ mod tests {
         let result = crate::client::TokenSetPersistence::load_detailed(&dir);
         assert!(result.is_err(), "unexpected: {:?}", result);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_rate_limit_delay_prefers_header_then_body_then_backoff() {
+        // Header wins over body and backoff.
+        let d = crate::client::rate_limit_delay(1, Some(4), Some(9), 10);
+        assert!(d.as_millis() >= 3000 && d.as_millis() <= 5000, "got {:?}", d);
+        // Body used when no header.
+        let d = crate::client::rate_limit_delay(1, None, Some(4), 10);
+        assert!(d.as_millis() >= 3000 && d.as_millis() <= 5000, "got {:?}", d);
+        // Fallback 2s on attempt 1.
+        let d = crate::client::rate_limit_delay(1, None, None, 10);
+        assert!(d.as_millis() >= 1500 && d.as_millis() <= 2500, "got {:?}", d);
+        // Fallback 8s on attempt 3.
+        let d = crate::client::rate_limit_delay(3, None, None, 10);
+        assert!(d.as_millis() >= 6000 && d.as_millis() <= 10000, "got {:?}", d);
+    }
+
+    #[test]
+    fn test_rate_limit_delay_caps_and_jitter_bounds() {
+        // Cap: 60s hint capped to 10s foreground max (+25% jitter ceiling).
+        for _ in 0..50 {
+            let d = crate::client::rate_limit_delay(1, Some(60), None, 10);
+            assert!(
+                d.as_millis() >= 7500 && d.as_millis() <= 12500,
+                "cap+jitter out of bounds: {:?}",
+                d
+            );
+        }
+        // Background cap allows longer waits.
+        let d = crate::client::rate_limit_delay(1, Some(25), None, 30);
+        assert!(d.as_millis() >= 18750 && d.as_millis() <= 31250, "got {:?}", d);
+    }
+
+    #[test]
+    fn test_parse_seconds_left_and_retry_after() {
+        assert_eq!(
+            crate::client::parse_seconds_left(
+                r#"{"message":"Rate limit reached. Reset in 4 seconds.","secondsLeft":4}"#
+            ),
+            Some(4)
+        );
+        assert_eq!(crate::client::parse_seconds_left("not json"), None);
+        assert_eq!(crate::client::parse_seconds_left(r#"{"a":1}"#), None);
+        let hv = reqwest::header::HeaderValue::from_str("7").unwrap();
+        assert_eq!(crate::client::parse_retry_after(Some(&hv)), Some(7));
+        assert_eq!(crate::client::parse_retry_after(None), None);
+        let bad = reqwest::header::HeaderValue::from_str("Wed, 21 Oct 2015 07:28:00 GMT").unwrap();
+        assert_eq!(crate::client::parse_retry_after(Some(&bad)), None);
     }
 
     /// V2 regression (FRIDAY_AUTH_LOGOUT_DIAGNOSIS_V2.md, Fix B): a confirmed

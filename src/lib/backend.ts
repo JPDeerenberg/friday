@@ -86,6 +86,60 @@ function retryAfterMs(res: Response): number | undefined {
   return undefined;
 }
 
+// --- Render free-tier cold start -------------------------------------------
+// The free web service sleeps after ~15 min without traffic and Render's edge
+// answers 502/503/504 while the instance wakes (~30-60 s). A refused/dropped
+// connection surfaces here as status 0. All of those mean "the server is
+// (re)starting", never "the user did something wrong".
+
+/** Dutch message shown while the free-tier instance wakes up. */
+export const SERVER_STARTING_MESSAGE =
+  "De server wordt opgestart, even geduld…";
+
+/** 502/503/504 from the API origin, or no response at all (status 0). */
+export function isServerStartingStatus(status: number): boolean {
+  return status === 0 || status === 502 || status === 503 || status === 504;
+}
+
+export function isServerStartingError(e: unknown): boolean {
+  return e instanceof WebApiError && isServerStartingStatus(e.status);
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+/** Backoff steps (~3-5 s) totalling ~60 s of sleep; with request time on top
+ *  the whole wait lands at ~60-90 s, enough for a Render cold start. */
+const COLD_START_DELAYS_MS = [
+  3000, 3000, 4000, 4000, 5000, 5000, 5000, 5000, 5000, 5000, 5000, 5000,
+];
+
+/**
+ * Run `fn`, retrying "server starting" failures (502/503/504 + network
+ * failure) with backoff up to ~60-90 s total. Anything else throws
+ * immediately. On exhaustion the final error carries
+ * SERVER_STARTING_MESSAGE so the UI can show it verbatim.
+ */
+export async function withServerStartingRetry<T>(
+  fn: () => Promise<T>,
+): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await fn();
+    } catch (e) {
+      if (!isServerStartingError(e)) throw e;
+      const wait = COLD_START_DELAYS_MS.at(attempt);
+      if (wait === undefined) {
+        if (e instanceof WebApiError && e.message !== SERVER_STARTING_MESSAGE)
+          throw new WebApiError(e.status, SERVER_STARTING_MESSAGE, e.ref);
+        throw e;
+      }
+      await sleep(wait);
+    }
+  }
+}
+
 export interface SseFrame {
   event: string;
   /** JSON-parsed payload, or the raw string when it isn't JSON. */
@@ -214,31 +268,54 @@ export class WebBackend implements Backend {
     username: string,
     password: string,
   ): Promise<PasswordLoginResult> {
-    let res: Response;
-    try {
-      res = await fetch(`${this.base}/auth/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ school, username, password }),
-      });
-    } catch {
-      throw new WebApiError(0, "Geen verbinding met de server.");
-    }
-    if (!res.ok) {
-      if (res.status === 429) {
-        const data = (await res.json().catch(() => ({}))) as Record<
-          string,
-          unknown
-        >;
-        throw new WebApiError(
-          429,
-          "Te vaak geprobeerd, wacht een minuut.",
-          errorRef(data),
-        );
+    // Cold start: the free-tier instance may be asleep, so this POST can meet
+    // a 502/503/504 from Render's edge or a refused connection while the
+    // instance wakes (~30-60 s).
+    // - No response received (network failure): nothing was submitted, so
+    //   retry with backoff up to ~60-90 s total.
+    // - A 502/503/504 response WAS received: the POST may have reached the
+    //   app, and login is rate-limited (5/min) — retry at most ONCE, then
+    //   surface the "server wordt opgestart" message.
+    let respondedRetryUsed = false;
+    for (let attempt = 0; ; attempt++) {
+      let res: Response;
+      try {
+        res = await fetch(`${this.base}/auth/login`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ school, username, password }),
+        });
+      } catch {
+        const wait = COLD_START_DELAYS_MS.at(attempt);
+        if (wait === undefined)
+          throw new WebApiError(0, SERVER_STARTING_MESSAGE);
+        await sleep(wait);
+        continue;
       }
-      await throwApiError(res, `Inloggen mislukt (HTTP ${res.status})`);
+      if (isServerStartingStatus(res.status)) {
+        if (!respondedRetryUsed) {
+          respondedRetryUsed = true;
+          await sleep(4000);
+          continue;
+        }
+        throw new WebApiError(res.status, SERVER_STARTING_MESSAGE);
+      }
+      if (!res.ok) {
+        if (res.status === 429) {
+          const data = (await res.json().catch(() => ({}))) as Record<
+            string,
+            unknown
+          >;
+          throw new WebApiError(
+            429,
+            "Te vaak geprobeerd, wacht een minuut.",
+            errorRef(data),
+          );
+        }
+        await throwApiError(res, `Inloggen mislukt (HTTP ${res.status})`);
+      }
+      return (await res.json()) as PasswordLoginResult;
     }
-    return (await res.json()) as PasswordLoginResult;
   }
 
   /** Raw-bytes GET (photos, files). 404 → null (no photo set). */
@@ -246,16 +323,22 @@ export class WebBackend implements Backend {
     tokens: SessionTokens,
     path: string,
   ): Promise<Uint8Array | null> {
-    const res = await fetch(
-      `${this.base}/magister/${path.replace(/^\//, "")}`,
-      {
+    let res: Response;
+    try {
+      res = await fetch(`${this.base}/magister/${path.replace(/^\//, "")}`, {
         headers: {
           Authorization: `Bearer ${tokens.accessToken}`,
           "X-Magister-Endpoint": tokens.apiEndpoint,
         },
-      },
-    );
+      });
+    } catch {
+      // No response at all: waking free-tier instance or offline. The
+      // caller (web-session) retries these with backoff.
+      throw new WebApiError(0, SERVER_STARTING_MESSAGE);
+    }
     if (res.status === 404) return null;
+    if (isServerStartingStatus(res.status))
+      throw new WebApiError(res.status, SERVER_STARTING_MESSAGE);
     if (!res.ok)
       await throwApiError(res, `Verzoek mislukt (HTTP ${res.status})`);
     return new Uint8Array(await res.arrayBuffer());
@@ -398,9 +481,9 @@ export class WebBackend implements Backend {
     path: string,
     body?: unknown,
   ): Promise<T> {
-    const res = await fetch(
-      `${this.base}/magister/${path.replace(/^\//, "")}`,
-      {
+    let res: Response;
+    try {
+      res = await fetch(`${this.base}/magister/${path.replace(/^\//, "")}`, {
         method,
         headers: {
           "Content-Type": "application/json",
@@ -409,8 +492,14 @@ export class WebBackend implements Backend {
           "X-Magister-Endpoint": tokens.apiEndpoint,
         },
         body: body === undefined ? undefined : JSON.stringify(body),
-      },
-    );
+      });
+    } catch {
+      // No response at all: waking free-tier instance or offline. The
+      // caller (web-session) retries these with backoff.
+      throw new WebApiError(0, SERVER_STARTING_MESSAGE);
+    }
+    if (isServerStartingStatus(res.status))
+      throw new WebApiError(res.status, SERVER_STARTING_MESSAGE);
     if (res.status === 429) {
       const data = (await res.json().catch(() => ({}))) as Record<
         string,
@@ -439,8 +528,14 @@ export class WebBackend implements Backend {
         }),
       });
     } catch {
-      throw new WebApiError(0, "Geen verbinding met de server.");
+      // No response at all: waking free-tier instance or offline. The
+      // caller (web-session) retries these with backoff. (A 502/503/504
+      // from Render's edge never reached the app, so retrying this grant
+      // cannot burn the single-use refresh token.)
+      throw new WebApiError(0, SERVER_STARTING_MESSAGE);
     }
+    if (isServerStartingStatus(res.status))
+      throw new WebApiError(res.status, SERVER_STARTING_MESSAGE);
     if (!res.ok)
       await throwApiError(res, `Verversen mislukt (HTTP ${res.status})`);
     const fresh = (await res.json()) as SessionTokens;

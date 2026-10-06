@@ -142,6 +142,25 @@ fn extract_error_message(raw: &str) -> String {
         })
 }
 
+fn extract_error_type(raw: &str) -> Option<(String, String)> {
+    let err = serde_json::from_str::<serde_json::Value>(raw).ok()?.get("error")?.clone();
+    let t = err.get("type").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    if t.is_empty() {
+        return None;
+    }
+    let code = err
+        .get("code")
+        .map(|v| {
+            if let Some(s) = v.as_str() {
+                s.to_string()
+            } else {
+                v.to_string()
+            }
+        })
+        .unwrap_or_default();
+    Some((t, code))
+}
+
 fn provider_error(provider: &str, status: u16, raw: &str) -> String {
     let label = match provider {
         "anthropic" => "Anthropic",
@@ -154,45 +173,140 @@ fn provider_error(provider: &str, status: u16, raw: &str) -> String {
     if status == 429 {
         return format!("{label}: te veel verzoeken, wacht even (HTTP 429).");
     }
-    format!("{label}-fout (HTTP {status}): {}", extract_error_message(raw))
+    let base = format!(
+        "{label}-fout (HTTP {status}): {}",
+        extract_error_message(raw)
+    );
+    // Keep the provider's machine-readable type/code (e.g. Mistral's
+    // `invalid_request_assistant_message`/3240) so the client can classify
+    // the failure and log it in diagnostics. No content, no keys.
+    match extract_error_type(raw) {
+        Some((t, c)) if !c.is_empty() => format!("{base} (type={t}, code={c})"),
+        Some((t, _)) => format!("{base} (type={t})"),
+        None => base,
+    }
+}
+
+/// Shape of one message for 4xx diagnostics, e.g. `assistant(c0,t1)`.
+/// Roles only — never content, never keys.
+fn message_shape_in(role: &str, has_content: bool, tool_count: usize) -> String {
+    if role == "assistant" {
+        format!(
+            "assistant(c{},t{})",
+            if has_content { 1 } else { 0 },
+            tool_count
+        )
+    } else {
+        role.to_string()
+    }
+}
+
+/// Shapes of a whole history for 4xx diagnostics (roles only).
+pub fn history_shape(messages: &[AiMessageIn]) -> Vec<String> {
+    messages
+        .iter()
+        .map(|m| {
+            let tools = m
+                .tool_calls
+                .as_ref()
+                .map(|tcs| tcs.iter().filter(|tc| !tc.name.is_empty()).count())
+                .unwrap_or(0);
+            message_shape_in(&m.role, !m.content.trim().is_empty(), tools)
+        })
+        .collect()
 }
 
 // ─── OpenAI-family (openai, deepseek, mistral, openai_compatible) ───────────
 
+/// Next unused `call_<n>` id (never collides with `used`).
+fn fresh_call_id(used: &std::collections::HashSet<String>, counter: &mut u32) -> String {
+    loop {
+        *counter += 1;
+        let candidate = format!("call_{counter}");
+        if !used.contains(&candidate) {
+            return candidate;
+        }
+    }
+}
+
 fn openai_messages(messages: &[AiMessageIn]) -> Vec<serde_json::Value> {
-    messages
-        .iter()
-        .map(|m| {
+    let mut out = Vec::new();
+    // Final ids emitted on assistant messages so far (in order). A tool
+    // message is kept only when its id was emitted by a *preceding*
+    // assistant message — orphan tool results are rejected by strict
+    // providers (Mistral 400).
+    let mut preceding_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
+    // New ids minted for empty original ids, in order, so a tool message
+    // that echoes the empty id stays linked to its call.
+    let mut empty_renames: std::collections::VecDeque<String> = std::collections::VecDeque::new();
+    let mut counter: u32 = 0;
+    for m in messages {
+        if m.role == "assistant" {
+            let mut cleaned: Vec<serde_json::Value> = Vec::new();
+            if let Some(tcs) = &m.tool_calls {
+                for tc in tcs {
+                    // Drop calls with an empty name (the model sent junk).
+                    if tc.name.is_empty() {
+                        continue;
+                    }
+                    let id = if tc.id.is_empty() || preceding_ids.contains(&tc.id) {
+                        let fresh = fresh_call_id(&preceding_ids, &mut counter);
+                        if tc.id.is_empty() {
+                            empty_renames.push_back(fresh.clone());
+                        }
+                        fresh
+                    } else {
+                        tc.id.clone()
+                    };
+                    // Reserve even the kept originals so later duplicates
+                    // (and fresh ids) can never collide with them.
+                    preceding_ids.insert(id.clone());
+                    cleaned.push(serde_json::json!({
+                        "id": id,
+                        "type": "function",
+                        "function": {
+                            "name": tc.name,
+                            "arguments": serde_json::to_string(&tc.arguments).unwrap_or_default(),
+                        }
+                    }));
+                }
+            }
+            // Drop assistant messages with empty/whitespace content and no
+            // (surviving) tool calls: Mistral rejects them with
+            // `invalid_request_assistant_message` (HTTP 400). An empty
+            // content *with* tool calls stays (existing replay contract).
+            if m.content.trim().is_empty() && cleaned.is_empty() {
+                continue;
+            }
             let mut msg = serde_json::json!({ "role": m.role, "content": m.content });
-            if m.role == "tool" {
-                if let Some(id) = &m.tool_call_id {
-                    msg["tool_call_id"] = serde_json::Value::String(id.clone());
-                }
-                if let Some(name) = &m.name {
-                    msg["name"] = serde_json::Value::String(name.clone());
+            // Omit `tool_calls` when empty — never send an empty array.
+            if !cleaned.is_empty() {
+                msg["tool_calls"] = serde_json::Value::Array(cleaned);
+            }
+            out.push(msg);
+        } else if m.role == "tool" {
+            let mut tid = m.tool_call_id.clone().unwrap_or_default();
+            if tid.is_empty() {
+                // Re-link to the matching renamed empty id, if any.
+                match empty_renames.pop_front() {
+                    Some(relinked) => tid = relinked,
+                    None => continue,
                 }
             }
-            if m.role == "assistant" {
-                if let Some(tcs) = &m.tool_calls {
-                    msg["tool_calls"] = serde_json::Value::Array(
-                        tcs.iter()
-                            .map(|tc| {
-                                serde_json::json!({
-                                    "id": tc.id,
-                                    "type": "function",
-                                    "function": {
-                                        "name": tc.name,
-                                        "arguments": serde_json::to_string(&tc.arguments).unwrap_or_default(),
-                                    }
-                                })
-                            })
-                            .collect(),
-                    );
-                }
+            if !preceding_ids.contains(&tid) {
+                continue;
             }
-            msg
-        })
-        .collect()
+            let mut msg = serde_json::json!({ "role": m.role, "content": m.content });
+            msg["tool_call_id"] = serde_json::Value::String(tid);
+            if let Some(name) = &m.name {
+                msg["name"] = serde_json::Value::String(name.clone());
+            }
+            out.push(msg);
+        } else {
+            out.push(serde_json::json!({ "role": m.role, "content": m.content }));
+        }
+    }
+    out
 }
 
 fn parse_openai_response(body: &serde_json::Value) -> Result<(String, Vec<ToolCallOut>), String> {
@@ -218,7 +332,10 @@ fn parse_openai_response(body: &serde_json::Value) -> Result<(String, Vec<ToolCa
             tool_calls.push(ToolCallOut {
                 id: tc.get("id").and_then(|v| v.as_str()).unwrap_or("call_unknown").to_string(),
                 name: tc.get("function").and_then(|f| f.get("name")).and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                arguments: serde_json::from_str(args_str).unwrap_or(serde_json::Value::Null),
+                // Unparseable arguments stay a string so the loop reports
+                // bad arguments instead of executing a null call.
+                arguments: serde_json::from_str(args_str)
+                    .unwrap_or_else(|_| serde_json::Value::String(args_str.to_string())),
             });
         }
     }
@@ -497,7 +614,15 @@ pub async fn chat(http: &reqwest::Client, mut req: ChatRequest) -> Result<ChatRe
     let status = resp.status().as_u16();
     let raw = resp.text().await.unwrap_or_default();
     if status < 200 || status >= 300 {
-        eprintln!("ai proxy: {} -> HTTP {}", req.provider, status);
+        // Message *shapes* only (roles + content/tool-call counts) — never
+        // content, never keys. Diagnoses 400s like Mistral's
+        // `invalid_request_assistant_message` from the server logs.
+        eprintln!(
+            "ai proxy: {} -> HTTP {} shape={:?}",
+            req.provider,
+            status,
+            history_shape(&req.messages)
+        );
         return Err((status, provider_error(&req.provider, status, &raw)));
     }
     let parsed: serde_json::Value =
@@ -656,7 +781,29 @@ pub fn apply_openai_delta(
                 .get("index")
                 .and_then(|i| i.as_u64())
                 .unwrap_or(pos as u64) as u32;
-            let entry = calls.entry(idx).or_default();
+            let incoming_id = tc
+                .get("id")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default();
+            // A delta for an already-named index that carries a *different*
+            // non-empty id starts a new call instead of appending: some
+            // providers reuse `index` across parallel calls, and appending
+            // would concatenate two argument streams into invalid JSON.
+            let key = match calls.get(&idx) {
+                Some(existing)
+                    if !existing.id.is_empty()
+                        && !incoming_id.is_empty()
+                        && existing.id != incoming_id =>
+                {
+                    let mut free = calls.keys().max().map(|m| m + 1).unwrap_or(0);
+                    while calls.contains_key(&free) {
+                        free += 1;
+                    }
+                    free
+                }
+                _ => idx,
+            };
+            let entry = calls.entry(key).or_default();
             if let Some(id) = tc.get("id").and_then(|v| v.as_str()) {
                 if !id.is_empty() && entry.id.is_empty() {
                     entry.id = id.to_string();
@@ -688,18 +835,35 @@ pub fn apply_openai_delta(
 }
 
 fn assemble_tool_calls(calls: std::collections::BTreeMap<u32, PendingToolCall>) -> Vec<ToolCallOut> {
-    calls
-        .into_iter()
-        .map(|(_, c)| ToolCallOut {
-            id: if c.id.is_empty() {
-                "call_unknown".to_string()
-            } else {
-                c.id
-            },
+    let mut used: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut counter: u32 = 0;
+    let mut out = Vec::new();
+    for (_, c) in calls {
+        // Nameless fragments carry no callable tool — drop them.
+        if c.name.is_empty() {
+            continue;
+        }
+        let id = if c.id.is_empty() || used.contains(&c.id) {
+            fresh_call_id(&used, &mut counter)
+        } else {
+            c.id
+        };
+        used.insert(id.clone());
+        // Empty argument streams mean `{}`; unparseable streams stay a
+        // string so the loop reports bad arguments instead of a null call.
+        let arguments = if c.arguments.trim().is_empty() {
+            serde_json::Value::Object(serde_json::Map::new())
+        } else {
+            serde_json::from_str(&c.arguments)
+                .unwrap_or_else(|_| serde_json::Value::String(c.arguments.clone()))
+        };
+        out.push(ToolCallOut {
+            id,
             name: c.name,
-            arguments: serde_json::from_str(&c.arguments).unwrap_or(serde_json::Value::Null),
-        })
-        .collect()
+            arguments,
+        });
+    }
+    out
 }
 
 fn sse_data(event: &str, json: &str) -> axum::response::sse::Event {
@@ -810,7 +974,12 @@ pub async fn chat_stream(
     let status = resp.status().as_u16();
     if status < 200 || status >= 300 {
         let raw = resp.text().await.unwrap_or_default();
-        eprintln!("ai proxy: {} -> HTTP {}", req.provider, status);
+        eprintln!(
+            "ai proxy: {} -> HTTP {} shape={:?}",
+            req.provider,
+            status,
+            history_shape(&req.messages)
+        );
         return Err((status, provider_error(&req.provider, status, &raw)));
     }
 
@@ -974,6 +1143,261 @@ mod tests {
         assert_eq!(wire[1]["tool_calls"][0]["function"]["name"], "get_grades");
         // Arguments serialize as a JSON *string* on the OpenAI wire.
         assert_eq!(wire[1]["tool_calls"][0]["function"]["arguments"], "{\"top\":5}");
+    }
+
+    #[test]
+    fn sanitiser_drops_empty_assistant_without_calls() {
+        let msgs = vec![
+            AiMessageIn {
+                role: "user".into(),
+                content: "hi".into(),
+                tool_call_id: None,
+                name: None,
+                tool_calls: None,
+            },
+            AiMessageIn {
+                role: "assistant".into(),
+                content: "   ".into(),
+                tool_call_id: None,
+                name: None,
+                tool_calls: None,
+            },
+            AiMessageIn {
+                role: "assistant".into(),
+                content: "".into(),
+                tool_call_id: None,
+                name: None,
+                tool_calls: Some(vec![]),
+            },
+        ];
+        let wire = openai_messages(&msgs);
+        assert_eq!(wire.len(), 1);
+        assert_eq!(wire[0]["role"], "user");
+    }
+
+    #[test]
+    fn sanitiser_keeps_empty_content_with_tool_calls_but_omits_empty_array() {
+        // The existing replay contract: content "" + calls must keep working.
+        let msgs = vec![AiMessageIn {
+            role: "assistant".into(),
+            content: "".into(),
+            tool_call_id: None,
+            name: None,
+            tool_calls: Some(vec![ToolCallIn {
+                id: "c1".into(),
+                name: "get_grades".into(),
+                arguments: serde_json::json!({}),
+            }]),
+        }];
+        let wire = openai_messages(&msgs);
+        assert_eq!(wire.len(), 1);
+        assert!(wire[0].get("tool_calls").is_some());
+
+        // ...while an assistant whose only calls have empty names loses them
+        // (and the empty content with them), and no empty array is sent.
+        let msgs = vec![AiMessageIn {
+            role: "assistant".into(),
+            content: "denk".into(),
+            tool_call_id: None,
+            name: None,
+            tool_calls: Some(vec![ToolCallIn {
+                id: "c2".into(),
+                name: "".into(),
+                arguments: serde_json::json!({}),
+            }]),
+        }];
+        let wire = openai_messages(&msgs);
+        assert_eq!(wire.len(), 1);
+        assert!(wire[0].get("tool_calls").is_none());
+        assert_eq!(wire[0]["content"], "denk");
+    }
+
+    #[test]
+    fn sanitiser_uniques_ids_and_relinks_tool_messages() {
+        let msgs = vec![
+            AiMessageIn {
+                role: "assistant".into(),
+                content: "".into(),
+                tool_call_id: None,
+                name: None,
+                tool_calls: Some(vec![
+                    ToolCallIn {
+                        id: "c1".into(),
+                        name: "get_grades".into(),
+                        arguments: serde_json::json!({}),
+                    },
+                    ToolCallIn {
+                        id: "c1".into(),
+                        name: "get_calendar_events".into(),
+                        arguments: serde_json::json!({}),
+                    },
+                    ToolCallIn {
+                        id: "".into(),
+                        name: "get_messages".into(),
+                        arguments: serde_json::json!({}),
+                    },
+                ]),
+            },
+            AiMessageIn {
+                role: "tool".into(),
+                content: "{}".into(),
+                tool_call_id: Some("c1".into()),
+                name: Some("get_grades".into()),
+                tool_calls: None,
+            },
+            AiMessageIn {
+                role: "tool".into(),
+                content: "{}".into(),
+                tool_call_id: Some("".into()),
+                name: Some("get_messages".into()),
+                tool_calls: None,
+            },
+            AiMessageIn {
+                role: "tool".into(),
+                content: "{}".into(),
+                tool_call_id: Some("orphan".into()),
+                name: Some("nope".into()),
+                tool_calls: None,
+            },
+        ];
+        let wire = openai_messages(&msgs);
+        // Assistant + first tool + relinked empty-id tool; orphan dropped.
+        assert_eq!(wire.len(), 3);
+        let ids: Vec<&str> = wire[0]["tool_calls"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|tc| tc["id"].as_str().unwrap())
+            .collect();
+        assert_eq!(ids[0], "c1");
+        assert_ne!(ids[1], "c1");
+        assert_ne!(ids[1], ids[2]);
+        assert!(ids[1].starts_with("call_"));
+        assert!(ids[2].starts_with("call_"));
+        // The matching tool_call_ids stayed consistent with the calls.
+        assert_eq!(wire[1]["tool_call_id"], ids[0]);
+        assert_eq!(wire[2]["tool_call_id"], ids[2]);
+    }
+
+    #[test]
+    fn history_shape_lists_roles_only() {
+        let msgs = vec![
+            AiMessageIn {
+                role: "system".into(),
+                content: "secret prompt".into(),
+                tool_call_id: None,
+                name: None,
+                tool_calls: None,
+            },
+            AiMessageIn {
+                role: "user".into(),
+                content: "secret vraag".into(),
+                tool_call_id: None,
+                name: None,
+                tool_calls: None,
+            },
+            AiMessageIn {
+                role: "assistant".into(),
+                content: "".into(),
+                tool_call_id: None,
+                name: None,
+                tool_calls: Some(vec![ToolCallIn {
+                    id: "c1".into(),
+                    name: "t".into(),
+                    arguments: serde_json::json!({}),
+                }]),
+            },
+            AiMessageIn {
+                role: "tool".into(),
+                content: "secret result".into(),
+                tool_call_id: Some("c1".into()),
+                name: Some("t".into()),
+                tool_calls: None,
+            },
+            AiMessageIn {
+                role: "assistant".into(),
+                content: "antwoord".into(),
+                tool_call_id: None,
+                name: None,
+                tool_calls: None,
+            },
+        ];
+        let shape = history_shape(&msgs);
+        assert_eq!(
+            shape,
+            vec!["system", "user", "assistant(c0,t1)", "tool", "assistant(c1,t0)"]
+        );
+        let flat = shape.join(",");
+        assert!(!flat.contains("secret"));
+    }
+
+    #[test]
+    fn provider_error_keeps_type_and_code() {
+        let raw = r#"{"object":"error","message":"Assistant message must have either content or tool_calls, but not none.","type":"invalid_request_assistant_message","code":"3240"}"#;
+        let msg = provider_error("mistral", 400, raw);
+        assert!(msg.contains("invalid_request_assistant_message"));
+        assert!(msg.contains("3240"));
+        assert!(msg.contains("Assistant message must have either content"));
+    }
+
+    #[test]
+    fn delta_with_new_id_starts_new_entry() {
+        // Hypothesis (b) mechanism: parallel calls sharing one index with
+        // distinct ids must not have their arguments concatenated.
+        let mut content = String::new();
+        let mut calls = std::collections::BTreeMap::new();
+        let d1 = r#"{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_a","function":{"name":"get_grades","arguments":"{\"to"}}]}}]}"#;
+        let d2 = r#"{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_b","function":{"name":"get_messages","arguments":"{\"fo"}}]}}]}"#;
+        let d3 = r#"{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"p\":5}"}}]}}]}"#;
+        let d4 = r#"{"choices":[{"delta":{"tool_calls":[{"index":1,"function":{"arguments":"o\":\"x\"}"}}]}}]}"#;
+        assert_eq!(apply_openai_delta(d1, &mut content, &mut calls), None);
+        assert_eq!(apply_openai_delta(d2, &mut content, &mut calls), None);
+        assert_eq!(apply_openai_delta(d3, &mut content, &mut calls), None);
+        assert_eq!(apply_openai_delta(d4, &mut content, &mut calls), None);
+        let assembled = assemble_tool_calls(calls);
+        assert_eq!(assembled.len(), 2);
+        assert_eq!(assembled[0].id, "call_a");
+        assert_eq!(assembled[0].name, "get_grades");
+        assert_eq!(assembled[0].arguments, serde_json::json!({"top": 5}));
+        assert_eq!(assembled[1].id, "call_b");
+        assert_eq!(assembled[1].name, "get_messages");
+        assert_eq!(assembled[1].arguments, serde_json::json!({"foo": "x"}));
+    }
+
+    #[test]
+    fn assemble_uniques_ids_and_reports_bad_args() {
+        let mut calls = std::collections::BTreeMap::new();
+        calls.insert(
+            0,
+            PendingToolCall {
+                id: "".to_string(),
+                name: "get_grades".to_string(),
+                arguments: "".to_string(),
+            },
+        );
+        calls.insert(
+            1,
+            PendingToolCall {
+                id: "".to_string(),
+                name: "get_messages".to_string(),
+                arguments: "{oops".to_string(),
+            },
+        );
+        calls.insert(
+            2,
+            PendingToolCall {
+                id: "x".to_string(),
+                name: "".to_string(),
+                arguments: "{}".to_string(),
+            },
+        );
+        let assembled = assemble_tool_calls(calls);
+        // Nameless entry dropped; empty args become {}; junk stays a string.
+        assert_eq!(assembled.len(), 2);
+        assert_ne!(assembled[0].id, assembled[1].id);
+        assert!(assembled[0].id.starts_with("call_"));
+        assert_eq!(assembled[0].arguments, serde_json::json!({}));
+        assert_eq!(assembled[1].arguments, serde_json::Value::String("{oops".to_string()));
     }
 
     #[test]

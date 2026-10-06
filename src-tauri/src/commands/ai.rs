@@ -203,6 +203,11 @@ pub async fn ai_chat(
         duration_ms: diag_start.elapsed().as_millis() as u64,
         error_class: out.as_ref().err().map(|e| diag_error_class(e).to_string()),
         tool_names: Vec::new(),
+        message_shape: match out.as_ref() {
+            Err(_) => diag_message_shape(&messages),
+            Ok(_) => Vec::new(),
+        },
+        provider_type: out.as_ref().err().and_then(|e| diag_provider_type(e)),
     });
     out
 }
@@ -228,6 +233,10 @@ pub struct AiChatWithToolsResult {
 const MAX_ROUNDS: usize = 8;
 /// Per-tool timeout in seconds (plan item 1).
 const TOOL_TIMEOUT_SECS: u64 = 15;
+/// Planner + grade overview fetch calendar + assignments and easily exceed
+/// the flat timeout under 429 backoff — mirrors TS `toolTimeoutMs`.
+const LONG_TOOL_TIMEOUT_SECS: u64 = 45;
+const LONG_TIMEOUT_TOOLS: &[&str] = &["run_update_ai_schedule", "get_full_grade_overview"];
 /// File reads get longer (plan item 1).
 const FILE_READ_TIMEOUT_SECS: u64 = 30;
 const FILE_READ_TOOLS: &[&str] = &["read_attachment_text", "download_file"];
@@ -252,6 +261,17 @@ const PLAN_WRITE_TOOLS: &[&str] = &[
 ];
 
 /// Compact per-turn tool trace for persistence (Phase 5 item 4).
+/// Timeout for one tool execution, in seconds. Mirrors TS `toolTimeoutMs`.
+fn tool_timeout_secs(name: &str) -> u64 {
+    if LONG_TIMEOUT_TOOLS.contains(&name) {
+        LONG_TOOL_TIMEOUT_SECS
+    } else if FILE_READ_TOOLS.contains(&name) {
+        FILE_READ_TIMEOUT_SECS
+    } else {
+        TOOL_TIMEOUT_SECS
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct ToolCallTrace {
     pub name: String,
@@ -285,6 +305,14 @@ pub struct AiDiagEntry {
     pub error_class: Option<String>,
     /// Tool names called this turn — never arguments or results.
     pub tool_names: Vec<String>,
+    /// Message *shapes* at failure time (roles + content/tool-call counts,
+    /// e.g. `assistant(c0,t1)`) — never content, never keys.
+    #[serde(default)]
+    pub message_shape: Vec<String>,
+    /// Provider machine-readable error type (e.g. Mistral's
+    /// `invalid_request_assistant_message`), when the error carried one.
+    #[serde(default)]
+    pub provider_type: Option<String>,
 }
 
 /// Ring capacity (matches TS DIAG_LIMIT).
@@ -313,10 +341,47 @@ fn diag_error_class(msg: &str) -> &'static str {
         "rate_limited"
     } else if is_context_overflow(msg) {
         "context_too_long"
+    } else if m.contains("invalid_request_assistant_message")
+        || m.contains("either content or tool_calls")
+    {
+        "invalid_assistant_message"
     } else if m.contains("abort") {
         "aborted"
     } else {
         "unknown"
+    }
+}
+
+/// Shape of the current history for 4xx diagnostics: roles plus, for
+/// assistant messages, content/tool-call counts. Never content, never keys.
+fn diag_message_shape(messages: &[providers::AiMessage]) -> Vec<String> {
+    messages
+        .iter()
+        .map(|m| {
+            if m.role == "assistant" {
+                format!(
+                    "assistant(c{},t{})",
+                    if m.content.trim().is_empty() { 0 } else { 1 },
+                    m.tool_calls.as_ref().map(|t| t.len()).unwrap_or(0)
+                )
+            } else {
+                m.role.clone()
+            }
+        })
+        .collect()
+}
+
+/// Provider machine-readable error type, if the error string carries one as
+/// ` (type=X[, code=Y])` (appended by `extract_error_message`).
+fn diag_provider_type(msg: &str) -> Option<String> {
+    let rest = msg.find("(type=")? + "(type=".len();
+    let tail = &msg[rest..];
+    let end = tail.find(|c| c == ',' || c == ')')?;
+    let t = tail[..end].trim();
+    if t.is_empty() {
+        None
+    } else {
+        Some(t.to_string())
     }
 }
 
@@ -751,6 +816,8 @@ pub async fn ai_chat_with_tools(
                     duration_ms: diag_start.elapsed().as_millis() as u64,
                     error_class: Some(diag_error_class(&e).to_string()),
                     tool_names: diag_tools.clone(),
+                    message_shape: diag_message_shape(&current_messages),
+                    provider_type: diag_provider_type(&e),
                 });
                 return Err(e);
             }
@@ -846,11 +913,7 @@ pub async fn ai_chat_with_tools(
                     }
                     plan_writes += 1;
                 }
-                let secs = if FILE_READ_TOOLS.contains(&tool_call.name.as_str()) {
-                    FILE_READ_TIMEOUT_SECS
-                } else {
-                    TOOL_TIMEOUT_SECS
-                };
+                let secs = tool_timeout_secs(&tool_call.name);
                 emit_activity(&app, "tool", Some(&tool_call.name), None);
                 let is_schedule_tool = matches!(
                     tool_call.name.as_str(),
@@ -991,6 +1054,8 @@ pub async fn ai_chat_with_tools(
             duration_ms: diag_start.elapsed().as_millis() as u64,
             error_class: None,
             tool_names: diag_tools.clone(),
+            message_shape: Vec::new(),
+            provider_type: None,
         });
         emit_activity(&app, "idle", None, None);
         return Ok(AiChatWithToolsResult {
@@ -1047,6 +1112,8 @@ pub async fn ai_chat_with_tools(
                     duration_ms: diag_start.elapsed().as_millis() as u64,
                     error_class: Some(diag_error_class(&e).to_string()),
                     tool_names: diag_tools.clone(),
+                    message_shape: diag_message_shape(&closing),
+                    provider_type: diag_provider_type(&e),
                 });
                 return Err(e);
             }
@@ -1072,6 +1139,8 @@ pub async fn ai_chat_with_tools(
         duration_ms: diag_start.elapsed().as_millis() as u64,
         error_class: None,
         tool_names: diag_tools,
+        message_shape: Vec::new(),
+        provider_type: None,
     });
     emit_activity(&app, "idle", None, None);
 
@@ -2528,7 +2597,59 @@ mod tests {
             diag_error_class("maximum context length exceeded"),
             "context_too_long"
         );
+        assert_eq!(
+            diag_error_class(
+                "AI-fout (400): Assistant message must have either content or tool_calls, but not none. (type=invalid_request_assistant_message, code=3240)"
+            ),
+            "invalid_assistant_message"
+        );
         assert_eq!(diag_error_class("something bizarre"), "unknown");
+    }
+
+    #[test]
+    fn diag_shape_and_provider_type_helpers() {
+        use crate::ai::providers::AiMessage;
+        let msgs = vec![
+            AiMessage::simple("system", "prompt"),
+            AiMessage::simple("user", "vraag"),
+            AiMessage {
+                role: "assistant".to_string(),
+                content: "".to_string(),
+                tool_call_id: None,
+                name: None,
+                tool_calls: Some(vec![crate::ai::providers::ToolCall {
+                    id: "c1".to_string(),
+                    name: "t".to_string(),
+                    arguments: serde_json::json!({}),
+                    status: crate::ai::providers::ToolCallStatus::Pending,
+                }]),
+            },
+            AiMessage {
+                role: "tool".to_string(),
+                content: "{}".to_string(),
+                tool_call_id: Some("c1".to_string()),
+                name: Some("t".to_string()),
+                tool_calls: None,
+            },
+            AiMessage::simple("assistant", "antwoord"),
+        ];
+        assert_eq!(
+            diag_message_shape(&msgs),
+            vec!["system", "user", "assistant(c0,t1)", "tool", "assistant(c1,t0)"]
+        );
+        assert_eq!(
+            diag_provider_type("AI-fout (400): x (type=invalid_request_assistant_message, code=3240)"),
+            Some("invalid_request_assistant_message".to_string())
+        );
+        assert_eq!(diag_provider_type("AI-fout (500): Weg"), None);
+    }
+
+    #[test]
+    fn tool_timeout_planner_and_grades_overview_get_45s() {
+        assert_eq!(tool_timeout_secs("run_update_ai_schedule"), 45);
+        assert_eq!(tool_timeout_secs("get_full_grade_overview"), 45);
+        assert_eq!(tool_timeout_secs("read_attachment_text"), 30);
+        assert_eq!(tool_timeout_secs("get_grades"), 15);
     }
 
     #[test]
@@ -2548,6 +2669,8 @@ mod tests {
                 duration_ms: 1,
                 error_class: None,
                 tool_names: vec![],
+                message_shape: Vec::new(),
+                provider_type: None,
             });
         }
         let listed = get_ai_diagnostics();

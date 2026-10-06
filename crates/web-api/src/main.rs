@@ -78,7 +78,10 @@ async fn health() -> impl IntoResponse {
 async fn ping() -> impl IntoResponse {
     (
         StatusCode::OK,
-        [(axum::http::header::CONTENT_TYPE, "text/plain")],
+        [
+            (axum::http::header::CONTENT_TYPE, "text/plain"),
+            (axum::http::header::CACHE_CONTROL, "no-store"),
+        ],
         "OK",
     )
 }

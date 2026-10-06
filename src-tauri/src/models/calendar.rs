@@ -35,6 +35,8 @@ pub struct CalendarEvent {
     pub info_type: i32,
     #[serde(rename = "Aantekening")]
     pub aantekening: Option<String>,
+    #[serde(rename = "Opmerking")]
+    pub opmerking: Option<String>,
     #[serde(rename = "Afgerond")]
     pub afgerond: bool,
     #[serde(rename = "HerhaalStatus")]

@@ -15,6 +15,7 @@ import {
   FINAL_NUDGE,
   MAX_ROUNDS,
   runToolLoop,
+  sanitizeHistory,
   toolTimeoutMs,
   trimHistory,
   withToolTimeout,
@@ -110,6 +111,11 @@ test("file reads get the long timeout", () => {
   assert.strictEqual(toolTimeoutMs("read_attachment_text"), 30000);
   assert.strictEqual(toolTimeoutMs("download_file"), 30000);
   assert.strictEqual(toolTimeoutMs("get_grades"), 15000);
+});
+
+test("planner and grade overview get 45s", () => {
+  assert.strictEqual(toolTimeoutMs("run_update_ai_schedule"), 45000);
+  assert.strictEqual(toolTimeoutMs("get_full_grade_overview"), 45000);
 });
 
 // ─── Item 2: malformed args + unknown tools ──────────────────────────────────
@@ -370,6 +376,145 @@ test("trimHistory keeps system + tail", () => {
   assert.strictEqual(trimmed.length, 5);
 });
 
+test("trimHistory never starts the tail with a tool message", () => {
+  const msgs: LoopChatMessage[] = [
+    { role: "system", content: "s" },
+    { role: "user", content: "q1" },
+    {
+      role: "assistant",
+      content: "",
+      tool_calls: [{ id: "1", name: "t", args: {} }],
+    },
+    { role: "tool", content: "r1", tool_call_id: "1", name: "t" },
+    { role: "user", content: "q2" },
+  ];
+  // keep=2 would start at the tool message — it advances to the user message.
+  const trimmed = trimHistory(msgs, 2);
+  assert.strictEqual(trimmed[0].role, "system");
+  assert.deepStrictEqual(
+    trimmed.slice(1).map((m) => m.role),
+    ["user"],
+  );
+  assert.strictEqual(trimmed[1].content, "q2");
+});
+
+test("trimHistory never starts with a cut assistant turn", () => {
+  const msgs: LoopChatMessage[] = [
+    { role: "system", content: "s" },
+    { role: "user", content: "q1" },
+    { role: "assistant", content: "plain answer" },
+    {
+      role: "assistant",
+      content: "",
+      tool_calls: [{ id: "1", name: "t", args: {} }],
+    },
+  ];
+  // keep=2 starts at the plain answer (kept; the trailing assistant turn
+  // with calls is fine at the end), keep=1 starts at the assistant with
+  // cut tool results (dropped, leaving only the system prompt).
+  const two = trimHistory(msgs, 2);
+  assert.deepStrictEqual(
+    two.map((m) => m.content),
+    ["s", "plain answer", ""],
+  );
+  const one = trimHistory(msgs, 1);
+  assert.deepStrictEqual(
+    one.map((m) => m.content),
+    ["s"],
+  );
+});
+
+// ─── History sanitiser (invalid_assistant_message self-heal) ────────────────
+
+test("sanitizeHistory drops empty assistants and orphan tools", () => {
+  const msgs: LoopChatMessage[] = [
+    { role: "system", content: "s" },
+    { role: "user", content: "q" },
+    { role: "assistant", content: "   " },
+    {
+      role: "assistant",
+      content: "",
+      tool_calls: [{ id: "c1", name: "t", args: {} }],
+    },
+    { role: "tool", content: "r", tool_call_id: "c1", name: "t" },
+    { role: "tool", content: "orphan", tool_call_id: "nope", name: "x" },
+    { role: "assistant", content: "antwoord" },
+  ];
+  const cleaned = sanitizeHistory(msgs);
+  assert.deepStrictEqual(
+    cleaned.map((m) => `${m.role}:${m.content}`),
+    ["system:s", "user:q", "assistant:", "tool:r", "assistant:antwoord"],
+  );
+});
+
+test("sanitizeHistory drops nameless calls and uniques ids", () => {
+  const msgs: LoopChatMessage[] = [
+    { role: "system", content: "s" },
+    {
+      role: "assistant",
+      content: "",
+      tool_calls: [
+        { id: "c1", name: "", args: {} },
+        { id: "c1", name: "t", args: {} },
+        { id: "c1", name: "u", args: {} },
+      ],
+    },
+  ];
+  const cleaned = sanitizeHistory(msgs);
+  assert.strictEqual(cleaned.length, 2);
+  const calls = cleaned[1].tool_calls!;
+  assert.strictEqual(calls.length, 2);
+  assert.strictEqual(calls[0].id, "c1");
+  assert.notStrictEqual(calls[1].id, "c1");
+});
+
+test("invalid assistant message retries once with cleaned history", async () => {
+  let calls = 0;
+  const seen: LoopChatMessage[][] = [];
+  const poisoned: LoopChatMessage[] = [
+    { role: "user", content: "maak een plan voor vrijdag" },
+    { role: "assistant", content: "" },
+  ];
+  const out = baseDeps({
+    initialMessages: poisoned,
+    chat: async (msgs) => {
+      calls += 1;
+      seen.push(msgs.map((m) => ({ ...m })));
+      if (calls === 1) {
+        throw new StatusError(
+          400,
+          "Assistant message must have either content or tool_calls, but not none. (type=invalid_request_assistant_message, code=3240)",
+        );
+      }
+      return { content: "hersteld", toolCalls: [] };
+    },
+  });
+  const r = await runToolLoop(out);
+  assert.strictEqual(r.content, "hersteld");
+  assert.strictEqual(calls, 2);
+  // The retry no longer replays the empty assistant message.
+  const retryRoles = seen[1].map((m) => `${m.role}:${m.content}`);
+  assert.deepStrictEqual(retryRoles, [
+    "system:sys",
+    "user:maak een plan voor vrijdag",
+  ]);
+});
+
+test("second invalid assistant message still throws", async () => {
+  let calls = 0;
+  const out = baseDeps({
+    chat: async () => {
+      calls += 1;
+      throw new StatusError(
+        400,
+        "Assistant message must have either content or tool_calls (type=invalid_request_assistant_message)",
+      );
+    },
+  });
+  await assert.rejects(runToolLoop(out), /either content or tool_calls/);
+  assert.strictEqual(calls, 2);
+});
+
 // ─── Abort ──────────────────────────────────────────────────────────────────
 
 test("abort keeps partial text and marks stopped", async () => {
@@ -452,8 +597,12 @@ test("onActivity traces answer, tools and idle", async () => {
   const out = await baseDeps({
     onActivity: (a) => seen.push(a.kind + (a.tool ? `:${a.tool}` : "")),
     chat: async (msgs) => {
-      if (msgs.some((m) => m.role === "tool")) return { content: "answered", toolCalls: [] };
-      return { content: "", toolCalls: [{ id: "1", name: "get_grades", arguments: {} }] };
+      if (msgs.some((m) => m.role === "tool"))
+        return { content: "answered", toolCalls: [] };
+      return {
+        content: "",
+        toolCalls: [{ id: "1", name: "get_grades", arguments: {} }],
+      };
     },
     executeTool: async () => ({ ok: true, data: {} }),
   });

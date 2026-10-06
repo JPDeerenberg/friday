@@ -127,6 +127,37 @@ test("400 without context wording is fatal with settings action", () => {
   assert.strictEqual(info.action?.kind, "open-ai-settings");
 });
 
+test("empty assistant message maps to self-heal kind, Dutch, no blind retry", () => {
+  const info = classifyAiError(
+    new StatusError(
+      400,
+      "AI-fout (400): Assistant message must have either content or tool_calls, but not none. (type=invalid_request_assistant_message, code=3240)",
+    ),
+  );
+  assert.strictEqual(info.kind, "invalid_assistant_message");
+  assert.strictEqual(info.retryable, false);
+  assert.match(info.message, /ruim het gesprek op/);
+  const bare = classifyAiError("invalid_request_assistant_message: rejected");
+  assert.strictEqual(bare.kind, "invalid_assistant_message");
+});
+
+test("invalid assistant message is never blind-retried", async () => {
+  let calls = 0;
+  await assert.rejects(
+    withRetry(
+      async () => {
+        calls += 1;
+        throw new StatusError(
+          400,
+          "Assistant message must have either content or tool_calls",
+        );
+      },
+      { sleep: async () => {} },
+    ),
+  );
+  assert.strictEqual(calls, 1);
+});
+
 test("details never leak secrets", () => {
   const info = classifyAiError(
     new Error("oops sk-abcdef123456789 and Bearer xyz-secret-here"),

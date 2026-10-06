@@ -1,0 +1,94 @@
+[
+  {
+    "name": "sample event test via opmerking",
+    "input": {
+      "Type": 13,
+      "InfoType": 0,
+      "Opmerking": "Toets: BV4 schk extra tijd",
+      "Aantekening": null
+    },
+    "expected": {
+      "isTest": true,
+      "source": "opmerking",
+      "hint": "Toets: BV4 schk extra tijd"
+    }
+  },
+  {
+    "name": "InfoType 2 empty notes",
+    "input": {
+      "Type": 13,
+      "InfoType": 2,
+      "Opmerking": null,
+      "Aantekening": null
+    },
+    "expected": { "isTest": true, "source": "infotype", "hint": null }
+  },
+  {
+    "name": "geen toets deze week",
+    "input": {
+      "Type": 13,
+      "InfoType": 0,
+      "Opmerking": "geen toets deze week",
+      "Aantekening": null
+    },
+    "expected": { "isTest": false, "source": null, "hint": null }
+  },
+  {
+    "name": "normal lesson",
+    "input": {
+      "Type": 13,
+      "InfoType": 0,
+      "Opmerking": null,
+      "Aantekening": null
+    },
+    "expected": { "isTest": false, "source": null, "hint": null }
+  },
+  {
+    "name": "personal event with test words ignored",
+    "input": {
+      "Type": 1,
+      "InfoType": 0,
+      "Opmerking": "Toets wiskunde leren",
+      "Aantekening": null
+    },
+    "expected": { "isTest": false, "source": null, "hint": null }
+  },
+  {
+    "name": "test via aantekening",
+    "input": {
+      "Type": 13,
+      "InfoType": 0,
+      "Opmerking": null,
+      "Aantekening": "morgen proefwerk hoofdstuk 4"
+    },
+    "expected": {
+      "isTest": true,
+      "source": "aantekening",
+      "hint": "morgen proefwerk hoofdstuk 4"
+    }
+  },
+  {
+    "name": "uppercase SO token",
+    "input": {
+      "Type": 13,
+      "InfoType": 0,
+      "Opmerking": "SO hoofdstuk 3",
+      "Aantekening": null
+    },
+    "expected": {
+      "isTest": true,
+      "source": "opmerking",
+      "hint": "SO hoofdstuk 3"
+    }
+  },
+  {
+    "name": "lowercase so is not a token",
+    "input": {
+      "Type": 13,
+      "InfoType": 0,
+      "Opmerking": "neem je so mee",
+      "Aantekening": null
+    },
+    "expected": { "isTest": false, "source": null, "hint": null }
+  }
+]

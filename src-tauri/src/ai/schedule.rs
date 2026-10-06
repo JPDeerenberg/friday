@@ -419,7 +419,8 @@ pub struct TestInput {
     pub event_id: i64,
     pub vak: Option<String>,
     pub omschrijving: Option<String>,
-    pub aantekening: Option<String>,
+    /// Combined Aantekening + Opmerking (de-duplicated), if any.
+    pub notes: Option<String>,
     pub start: NaiveDateTime,
     pub info_type: i32,
 }
@@ -462,8 +463,85 @@ pub fn intervals_overlap_str(a_start: &str, a_end: &str, b_start: &str, b_end: &
     }
 }
 
+/// Merge Aantekening + Opmerking into one note line, de-duplicated.
+/// Mirrors TS `combineNotes`.
+pub fn combine_notes(aantekening: Option<&str>, opmerking: Option<&str>) -> Option<String> {
+    let mut parts: Vec<String> = Vec::new();
+    for n in [aantekening, opmerking] {
+        if let Some(s) = n {
+            let t = s.trim().to_string();
+            if !t.is_empty() && !parts.contains(&t) {
+                parts.push(t);
+            }
+        }
+    }
+    if parts.is_empty() {
+        None
+    } else {
+        Some(parts.join(" / "))
+    }
+}
+
+/// De-duplicate tests on the same date for the same subject (e.g. a test
+/// lesson plus its extra-time slot): keep one, merge the notes. The keeper
+/// prefers the InfoType-based test so the block id stays
+/// `study-test-<event_id>` of the real test. Mirrors TS `dedupeTests`.
+pub fn dedupe_tests(tests: Vec<TestInput>) -> Vec<TestInput> {
+    use std::collections::HashMap;
+    let mut groups: HashMap<(NaiveDate, String), Vec<TestInput>> = HashMap::new();
+    let mut order: Vec<(NaiveDate, String)> = Vec::new();
+    let mut singles: Vec<TestInput> = Vec::new();
+    for t in tests {
+        let vak_key = t.vak.as_deref().unwrap_or("").trim().to_lowercase();
+        if vak_key.is_empty() {
+            singles.push(t);
+            continue;
+        }
+        let key = (t.start.date(), vak_key);
+        if !groups.contains_key(&key) {
+            order.push(key.clone());
+        }
+        groups.entry(key).or_default().push(t);
+    }
+    let mut out: Vec<TestInput> = singles;
+    for key in order {
+        let g = groups.remove(&key).unwrap_or_default();
+        if g.len() == 1 {
+            out.extend(g);
+            continue;
+        }
+        let mut sorted = g;
+        sorted.sort_by_key(|t| t.start);
+        let keeper_idx = sorted
+            .iter()
+            .position(|t| [2, 3, 4, 5].contains(&t.info_type))
+            .unwrap_or(0);
+        let mut parts: Vec<String> = Vec::new();
+        for t in &sorted {
+            if let Some(ref notes) = t.notes {
+                for p in notes.split(" / ") {
+                    let trimmed = p.trim().to_string();
+                    if !trimmed.is_empty() && !parts.contains(&trimmed) {
+                        parts.push(trimmed);
+                    }
+                }
+            }
+        }
+        let mut keeper = sorted.remove(keeper_idx);
+        keeper.notes = if parts.is_empty() {
+            None
+        } else {
+            Some(parts.join(" / "))
+        };
+        out.push(keeper);
+    }
+    out.sort_by_key(|t| t.start);
+    out
+}
+
 /// Extract upcoming tests from Magister lessons: InfoType 2 (Proefwerk),
-/// 3 (Tentamen), 4 (SO), 5 (Mondeling). Includes tests inside the window
+/// 3 (Tentamen), 4 (SO), 5 (Mondeling), plus test signals in
+/// Opmerking/Aantekening (shared spec). Includes tests inside the window
 /// plus up to 14 days after window start so preparation can be scheduled
 /// *before* the test.
 pub fn extract_upcoming_tests(
@@ -474,7 +552,13 @@ pub fn extract_upcoming_tests(
     let horizon = window_end + Duration::days(7);
     let mut out = Vec::new();
     for ev in lessons {
-        if ![2, 3, 4, 5].contains(&ev.info_type) {
+        let detection = crate::ai::test_detection::detect_test(
+            ev.event_type.into(),
+            ev.info_type.into(),
+            ev.opmerking.as_deref(),
+            ev.aantekening.as_deref(),
+        );
+        if !detection.is_test {
             continue;
         }
         // Skip cancelled lessons
@@ -499,13 +583,13 @@ pub fn extract_upcoming_tests(
             event_id: ev.id,
             vak,
             omschrijving: oms,
-            aantekening: ev.aantekening.clone(),
+            notes: combine_notes(ev.aantekening.as_deref(), ev.opmerking.as_deref()),
             start,
             info_type: ev.info_type,
         });
     }
     out.sort_by_key(|t| t.start);
-    out
+    dedupe_tests(out)
 }
 
 /// Extract open calendar homework (InfoType 1, not Afgerond) as work that
@@ -521,6 +605,16 @@ pub fn extract_open_homework(lessons: &[CalendarEvent]) -> Vec<HomeworkInput> {
     let mut out = Vec::new();
     for ev in lessons {
         if ev.info_type != 1 || ev.afgerond {
+            continue;
+        }
+        // A lesson that is really a test moment never yields a homework block.
+        let detection = crate::ai::test_detection::detect_test(
+            ev.event_type.into(),
+            ev.info_type.into(),
+            ev.opmerking.as_deref(),
+            ev.aantekening.as_deref(),
+        );
+        if detection.is_test {
             continue;
         }
         if ev.status == 4 || ev.status == 5 {
@@ -930,7 +1024,7 @@ pub fn generate_plan(
                         urgency
                     );
                 if let Some(a) = test
-                    .aantekening
+                    .notes
                     .as_ref()
                     .map(|s| s.trim())
                     .filter(|s| !s.is_empty())
@@ -1059,6 +1153,7 @@ mod tests {
             inhoud: None,
             info_type: 0,
             aantekening: None,
+            opmerking: None,
             afgerond: false,
             herhaal_status: None,
             vakken: Some(vec![Vak {
@@ -1254,10 +1349,7 @@ mod tests {
         let end = NaiveDate::from_ymd_opt(2026, 9, 14).unwrap();
         let extracted = extract_upcoming_tests(&lessons, start, end);
         assert_eq!(extracted.len(), 1);
-        assert_eq!(
-            extracted[0].aantekening.as_deref(),
-            Some("alleen hoofdstuk 4")
-        );
+        assert_eq!(extracted[0].notes.as_deref(), Some("alleen hoofdstuk 4"));
         let settings = ScheduleSettings::default();
         let map = std::collections::HashMap::new();
         let plan = generate_plan(start, end, &lessons, &[], &[], &[], &settings, &map);
@@ -1271,6 +1363,45 @@ mod tests {
             "opmerking surfaces in the study description, got: {}",
             desc
         );
+    }
+
+    #[test]
+    fn opmerking_test_signal_detected_and_deduped() {
+        // InfoType test lesson plus its extra-time slot (InfoType 0, Opmerking
+        // carries the only signal) on the same date for the same subject.
+        let mut lesson = make_lesson("2026-10-05T10:00:00", "2026-10-05T11:00:00");
+        lesson.id = 100;
+        lesson.info_type = 2;
+        let mut extra = make_lesson("2026-10-05T14:00:00", "2026-10-05T14:20:00");
+        extra.id = 6169391;
+        extra.info_type = 0;
+        extra.opmerking = Some("Toets: BV4 schk extra tijd".to_string());
+        let lessons = vec![lesson, extra];
+        let start = NaiveDate::from_ymd_opt(2026, 10, 5).unwrap();
+        let end = NaiveDate::from_ymd_opt(2026, 10, 11).unwrap();
+        let extracted = extract_upcoming_tests(&lessons, start, end);
+        assert_eq!(extracted.len(), 1, "same-date same-subject dedupes");
+        assert_eq!(extracted[0].event_id, 100, "keeper is the InfoType test");
+        assert!(
+            extracted[0]
+                .notes
+                .as_deref()
+                .unwrap_or("")
+                .contains("Toets: BV4 schk extra tijd"),
+            "notes merged, got: {:?}",
+            extracted[0].notes
+        );
+    }
+
+    #[test]
+    fn test_lesson_yields_no_homework_block() {
+        let mut lesson = make_lesson("2026-09-10T09:00:00", "2026-09-10T10:00:00");
+        lesson.id = 7;
+        lesson.info_type = 1;
+        lesson.inhoud = Some("Maak opg 1".to_string());
+        lesson.aantekening = Some("morgen proefwerk hoofdstuk 4".to_string());
+        let hw = extract_open_homework(std::slice::from_ref(&lesson));
+        assert!(hw.is_empty(), "test moment never yields a homework block");
     }
 
     #[test]

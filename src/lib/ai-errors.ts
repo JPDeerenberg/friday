@@ -14,6 +14,7 @@ export type AiErrorKind =
   | "model_not_found"
   | "rate_limited"
   | "context_too_long"
+  | "invalid_assistant_message"
   | "server_busy"
   | "offline"
   | "unknown";
@@ -156,6 +157,23 @@ export function classifyAiError(err: unknown): AiErrorInfo {
       detail,
     };
   }
+  if (
+    /invalid_request_assistant_message|Assistant message must have either content or tool_calls/i.test(
+      text,
+    )
+  ) {
+    // A poisoned history (empty assistant message replayed without tool
+    // calls, e.g. after stopping a turn). The tool loop heals this with one
+    // sanitised retry — never blind-retried here.
+    return {
+      kind: "invalid_assistant_message",
+      message:
+        "De provider wees het verzoek af (leeg assistant-bericht) — ik ruim het gesprek op en probeer het opnieuw.",
+      retryable: false,
+      action: { label: "Kopieer details", kind: "copy-detail" },
+      detail,
+    };
+  }
   if (status !== null && RETRYABLE_STATUS.has(status)) {
     return {
       kind: "server_busy",
@@ -263,7 +281,8 @@ export interface RetryOptions {
 /**
  * Call `fn` with up to 2 retries for transient failures (network errors,
  * 408/429/502/503/504). Never retries 400/401/403/404 — except through the
- * caller's trim path — and never retries after abort.
+ * caller's trim path (context_too_long) or sanitise path
+ * (invalid_assistant_message) — and never retries after abort.
  */
 export async function withRetry<T>(
   fn: (attempt: number) => Promise<T>,

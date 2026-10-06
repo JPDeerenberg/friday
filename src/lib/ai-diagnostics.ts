@@ -22,6 +22,14 @@ export interface AiDiagEntry {
   errorClass?: string;
   /** Tool names called this turn — never arguments or results. */
   toolNames?: string[];
+  /**
+   * Message *shapes* at failure time (roles + content/tool-call counts,
+   * e.g. `assistant(c0,t1)`) — never content, never keys. Diagnoses 4xx
+   * rejections like Mistral's `invalid_request_assistant_message`.
+   */
+  messageShape?: string[];
+  /** Provider machine-readable error type, when the error carried one. */
+  providerType?: string;
 }
 
 /** Ring capacity (plan item 12). */
@@ -70,11 +78,51 @@ export function diagnosticsText(): string {
         `${new Date(e.ts).toISOString()} ${e.platform}/${e.provider}/${e.model} ${e.op} ` +
         `${e.status} ${e.durationMs}ms` +
         (e.errorClass ? ` err=${e.errorClass}` : "") +
+        (e.providerType ? ` type=${e.providerType}` : "") +
+        (e.messageShape && e.messageShape.length > 0
+          ? ` shape=[${e.messageShape.join(",")}]`
+          : "") +
         (e.toolNames && e.toolNames.length > 0
           ? ` tools=${e.toolNames.join(",")}`
           : ""),
     )
     .join("\n");
+}
+
+/** Minimal structural view of one history message (roles only). */
+export interface ShapeableMessage {
+  role: string;
+  content?: string;
+  /** Web replay / proxy spelling of attached tool calls. */
+  toolCalls?: unknown[];
+  tool_calls?: unknown[];
+  /** Turn-level trace (assistant turns replayed with prior tool context). */
+  trace?: Array<{ calls?: unknown[] }>;
+}
+
+/** Shape of one message, e.g. `assistant(c0,t1)` — never content. */
+export function shapeOfMessage(m: ShapeableMessage): string {
+  if (m.role !== "assistant") return m.role;
+  const hasContent = (m.content ?? "").trim() !== "";
+  const calls =
+    m.toolCalls ?? m.tool_calls ?? m.trace?.flatMap((t) => t.calls ?? []);
+  return `assistant(c${hasContent ? 1 : 0},t${calls?.length ?? 0})`;
+}
+
+/** Shapes of a whole history — never content, never keys. */
+export function historyShapeOf(messages: ShapeableMessage[]): string[] {
+  return messages.map(shapeOfMessage);
+}
+
+/**
+ * Provider machine-readable error type from an error string, when the
+ * proxy/server embedded one as ` (type=X[, code=Y])`.
+ */
+export function providerTypeOf(err: unknown): string | undefined {
+  const text =
+    err instanceof Error ? `${err.name}: ${err.message}` : String(err ?? "");
+  const m = /\(type=([A-Za-z0-9_.-]+)(?:, code=[^)]+)?\)/.exec(text);
+  return m ? m[1] : undefined;
 }
 
 /** Test hook: current buffer size. */

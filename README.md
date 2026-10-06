@@ -69,6 +69,12 @@ Split hosting: static frontend on Pages, API on Render.
 
 To move the Render region later you must recreate the service (Render forbids changing region afterwards) — Frankfurt is closest to Magister (NL).
 
+**Free-tier sleep (important):** Render slaapt gratis services na ~15 min zonder verkeer in. De eerste request daarna krijgt een `503` **van Render's edge (niet van de app — `/ping` zelf geeft nooit een 503 terug)** terwijl de instance wakker wordt (~30–60 s). Daarom:
+
+- Houd een pinger (cron-job.org of een uptime-monitor) op `GET /ping` met een interval van **≤ 10 min** en de maximale request-timeout, zodat de service binnen je gebruiktijden wakker blijft.
+- De web-app pingt `/ping` alvast bij het opstarten en toont tijdens het wakker worden "De server wordt opgestart, even geduld…" met automatische retries (~60–90 s) — een handmatige refresh is niet nodig.
+- Zie je toch een rij `503`s in je monitor: check in Render onder **Events/Logs** of de service sliep, suspende, mid-deploy was of OOM/health-check-restarts had.
+
 ---
 
 ## Local development

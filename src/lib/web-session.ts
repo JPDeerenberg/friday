@@ -15,6 +15,7 @@ import { openDB, type IDBPDatabase } from "idb";
 import {
   WebBackend,
   WebApiError,
+  withServerStartingRetry,
   type MagisterMethod,
   type SessionTokens,
 } from "./backend.ts";
@@ -109,13 +110,17 @@ export function isExpiredLocal(tokens: SessionTokens): boolean {
 
 export type RestoreStatus = "restored" | "logged_out" | "unavailable";
 
-/** Load + validate the stored session, refreshing when (nearly) expired. */
+/** Load + validate the stored session, refreshing when (nearly) expired.
+ * A waking free-tier instance (502/503/504 + network failure) is retried
+ * with backoff (~60-90 s) instead of failing immediately; only a genuine
+ * rejection (401) logs out, anything else stays `unavailable` with the
+ * stored tokens kept for a later retry. */
 export async function restoreWebSession(): Promise<RestoreStatus> {
   const tokens = await loadWebSession();
   if (!tokens) return "logged_out";
   if (!isExpiredLocal(tokens)) return "restored";
   try {
-    await mustRefresh(tokens);
+    await withServerStartingRetry(() => mustRefresh(tokens));
     return "restored";
   } catch (e) {
     if (e instanceof WebApiError && e.status === 401) return "logged_out";
@@ -127,27 +132,36 @@ export async function restoreWebSession(): Promise<RestoreStatus> {
  * One authenticated Tier-A call with the full lifecycle: fresh tokens,
  * single forced-refresh-and-retry on a stale-token 401 (mirrors
  * `get_with_shared` in client.rs), persistence of rotated tokens.
+ * "Server starting" failures (Render cold start) are retried with backoff
+ * (~60-90 s) instead of failing immediately.
  */
 export async function webRequest<T>(
   method: MagisterMethod,
   path: string,
   body?: unknown,
 ): Promise<T> {
-  let tokens = await loadWebSession();
-  if (!tokens) throw new WebApiError(401, "Niet ingelogd.");
-  if (isExpiredLocal(tokens)) {
-    tokens = await mustRefresh(tokens);
-  }
-  try {
-    return await webBackend().magister<T>(tokens, method, path, body);
-  } catch (e) {
-    if (e instanceof WebApiError && e.status === 401) {
-      const fresh = await mustRefresh(tokens);
-      const result = await webBackend().magister<T>(fresh, method, path, body);
-      return result;
+  return withServerStartingRetry(async () => {
+    let tokens = await loadWebSession();
+    if (!tokens) throw new WebApiError(401, "Niet ingelogd.");
+    if (isExpiredLocal(tokens)) {
+      tokens = await mustRefresh(tokens);
     }
-    throw e;
-  }
+    try {
+      return await webBackend().magister<T>(tokens, method, path, body);
+    } catch (e) {
+      if (e instanceof WebApiError && e.status === 401) {
+        const fresh = await mustRefresh(tokens);
+        const result = await webBackend().magister<T>(
+          fresh,
+          method,
+          path,
+          body,
+        );
+        return result;
+      }
+      throw e;
+    }
+  });
 }
 
 // Magister refresh tokens are single-use: the first refresh_token grant wins and
@@ -230,16 +244,18 @@ export function sessionTierA(): TierA {
 export async function webRequestBytes(
   path: string,
 ): Promise<Uint8Array | null> {
-  const tokens = await loadWebSession();
-  if (!tokens) throw new WebApiError(401, "Niet ingelogd.");
-  const fresh = isExpiredLocal(tokens) ? await mustRefresh(tokens) : tokens;
-  try {
-    return await webBackend().magisterBytes(fresh, path);
-  } catch (e) {
-    if (e instanceof WebApiError && e.status === 401) {
-      const retry = await mustRefresh(fresh);
-      return await webBackend().magisterBytes(retry, path);
+  return withServerStartingRetry(async () => {
+    const tokens = await loadWebSession();
+    if (!tokens) throw new WebApiError(401, "Niet ingelogd.");
+    const fresh = isExpiredLocal(tokens) ? await mustRefresh(tokens) : tokens;
+    try {
+      return await webBackend().magisterBytes(fresh, path);
+    } catch (e) {
+      if (e instanceof WebApiError && e.status === 401) {
+        const retry = await mustRefresh(fresh);
+        return await webBackend().magisterBytes(retry, path);
+      }
+      throw e;
     }
-    throw e;
-  }
+  });
 }

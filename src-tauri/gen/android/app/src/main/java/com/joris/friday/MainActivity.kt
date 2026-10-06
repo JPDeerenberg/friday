@@ -61,7 +61,7 @@ class MainActivity : TauriActivity() {
             .build()
         val backstop = PeriodicWorkRequestBuilder<SyncWorker>(BACKSTOP_INTERVAL_MINUTES, TimeUnit.MINUTES)
             .setConstraints(constraints)
-            .setInputData(SyncWorker.remoteInput(this))
+            .setInputData(SyncWorker.remoteInput(this, "periodic"))
             .build()
         WorkManager.getInstance(this).enqueueUniquePeriodicWork(
             PERIODIC_SYNC_WORK,
@@ -149,7 +149,7 @@ class MainActivity : TauriActivity() {
    */
     fun triggerManualSync() {
         val workRequest = androidx.work.OneTimeWorkRequestBuilder<SyncWorker>()
-            .setInputData(SyncWorker.remoteInput(this))
+            .setInputData(SyncWorker.remoteInput(this, "manual"))
             .build()
     WorkManager.getInstance(this).enqueue(workRequest)
   }

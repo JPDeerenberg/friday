@@ -1,7 +1,7 @@
 #[cfg(target_os = "android")]
 use jni::{
     objects::{JClass, JString},
-    sys::{jint, jstring},
+    sys::{jint, jlong, jstring},
     JNIEnv,
 };
 #[cfg(target_os = "android")]
@@ -215,18 +215,27 @@ pub extern "system" fn Java_com_joris_friday_SyncWorker_runSync<'local>(
     mut env: JNIEnv<'local>,
     _class: JClass<'local>,
     data_dir: JString<'local>,
+    trigger: JString<'local>,
+    next_alarm_at_ms: jlong,
 ) -> jstring {
     let dir_path: String = match env.get_string(&data_dir) {
         Ok(s) => s.into(),
         Err(_) => "/data/user/0/com.joris.friday/files".to_string(),
     };
+    // Who kicked off this run: "alarm" (exact-alarm chain), "periodic"
+    // (WorkManager backstop) or "manual". Old Kotlin passes no trigger —
+    // default to manual rather than failing the whole sync.
+    let trigger_str: String = env
+        .get_string(&trigger)
+        .map(|s| s.into())
+        .unwrap_or_else(|_| "manual".to_string());
 
     ensure_sync_logging(&dir_path);
 
     let rt = sync_runtime();
     let guard = rt.lock().unwrap_or_else(|e| e.into_inner());
     let sync_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        guard.block_on(async { do_sync(&dir_path).await })
+        guard.block_on(async { do_sync(&dir_path, &trigger_str, next_alarm_at_ms as i64).await })
     }))
     .unwrap_or_else(|_| {
         log::error!("FridaySync (Rust): do_sync panicked — recovered, returning an error instead of aborting the process");
@@ -521,7 +530,7 @@ pub fn share_downloaded_file(file_path: &std::path::Path) -> Result<(), String> 
 }
 
 #[cfg(target_os = "android")]
-async fn do_sync(data_dir: &str) -> String {
+async fn do_sync(data_dir: &str, trigger: &str, next_alarm_at_ms: i64) -> String {
     use crate::client::{TokenSetPersistence, migrate_legacy_tokens};
     use std::path::PathBuf;
 
@@ -588,9 +597,11 @@ async fn do_sync(data_dir: &str) -> String {
         }
     };
 
+    let sync_started_at = std::time::Instant::now();
+    let sync_started_ts = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
     log::debug!("FridaySync (Rust): Fetching data from Magister...");
-    // Take a cheap snapshot of the client (http + token) so the four fetches can run
-    // concurrently without holding the client's mutable state.
+    // Take a cheap snapshot of the client (http + token) so the fetches can run
+    // without holding the client's mutable state.
     let ctx = match client.request_context().await {
         Ok(ctx) => ctx,
         Err(e) => {
@@ -602,23 +613,51 @@ async fn do_sync(data_dir: &str) -> String {
         }
     };
 
-    // Fetch all data concurrently (don't return early to allow partial syncs).
-    // Each fetch takes ~max(request latency) instead of the sum of all four.
+    // Sequential, polite fetching in priority order (calendar first — DND
+    // depends on it). The old `tokio::join!` fired 4 simultaneous requests
+    // that all hit the Magister rate limit together and then retried in
+    // lockstep; a 300-800 ms jittered pause between sections keeps us under
+    // the limit. Latency does not matter in the background.
     let today = today_string();
     let tomorrow = tomorrow_string();
-    let (mut messages_result, mut grades_result, mut assignments_result, mut calendar_result) = tokio::join!(
-        fetch_messages(&ctx),
-        fetch_recent_grades(&ctx, person_id),
-        fetch_assignments(&ctx, person_id),
-        fetch_calendar(&ctx, person_id, &today, &tomorrow),
-    );
+    let order = ["calendar", "grades", "messages", "assignments"];
+    // (section, result); sections never attempted after a rate-limit stop are
+    // recorded separately as cascaded failures below.
+    let mut results: Vec<(&str, Result<serde_json::Value, ClientError>)> = Vec::with_capacity(4);
+    let mut rate_limited_stop = false;
+    for (i, section) in order.into_iter().enumerate() {
+        if i > 0 {
+            polite_inter_section_delay().await;
+        }
+        let r = fetch_section(section, &ctx, person_id, &today, &tomorrow).await;
+        if matches!(r, Err(ClientError::RateLimited)) {
+            log::warn!(
+                "FridaySync (Rust): section '{}' rate-limited — stopping, remaining sections marked failed (they would be limited too)",
+                section
+            );
+            results.push((section, r));
+            rate_limited_stop = true;
+            break;
+        }
+        results.push((section, r));
+    }
+    let attempted: Vec<&str> = results.iter().map(|(s, _)| *s).collect();
+    let skipped: Vec<&str> = order
+        .into_iter()
+        .filter(|s| !attempted.contains(s))
+        .collect();
+    if rate_limited_stop {
+        log::warn!("FridaySync (Rust): skipped after rate-limit stop: {:?}", skipped);
+    }
 
     // The snapshot above can go stale if the server expires the token
     // mid-sync (same race as the UI parallel reads): force one refresh and
     // retry just the failed fetches once instead of banking empty data.
-    let stale = [&messages_result, &grades_result, &assignments_result, &calendar_result]
+    // Only sections that were actually attempted are retried — skipped
+    // (rate-limit cascade) sections stay failed.
+    let stale = results
         .iter()
-        .any(|r| matches!(r, Err(ClientError::TokenExpiredRetryable(_))));
+        .any(|(_, r)| matches!(r, Err(ClientError::TokenExpiredRetryable(_))));
     if stale {
         log::info!("FridaySync (Rust): stale token mid-sync, forcing refresh and retrying failed fetches once");
         if let Some(ts) = client.token_set.as_mut() {
@@ -627,17 +666,10 @@ async fn do_sync(data_dir: &str) -> String {
         match client.ensure_valid_token().await {
             Ok(_) => match client.request_context().await {
                 Ok(new_ctx) => {
-                    if matches!(messages_result, Err(ClientError::TokenExpiredRetryable(_))) {
-                        messages_result = fetch_messages(&new_ctx).await;
-                    }
-                    if matches!(grades_result, Err(ClientError::TokenExpiredRetryable(_))) {
-                        grades_result = fetch_recent_grades(&new_ctx, person_id).await;
-                    }
-                    if matches!(assignments_result, Err(ClientError::TokenExpiredRetryable(_))) {
-                        assignments_result = fetch_assignments(&new_ctx, person_id).await;
-                    }
-                    if matches!(calendar_result, Err(ClientError::TokenExpiredRetryable(_))) {
-                        calendar_result = fetch_calendar(&new_ctx, person_id, &today, &tomorrow).await;
+                    for (section, r) in results.iter_mut() {
+                        if matches!(r, Err(ClientError::TokenExpiredRetryable(_))) {
+                            *r = fetch_section(*section, &new_ctx, person_id, &today, &tomorrow).await;
+                        }
                     }
                 }
                 Err(e) => log::warn!("FridaySync (Rust): retry context failed: {}", e),
@@ -650,50 +682,191 @@ async fn do_sync(data_dir: &str) -> String {
             }
         }
     }
-    let messages_result = messages_result.unwrap_or_else(|e| {
-        log::warn!("FridaySync (Rust): fetch_messages failed: {}", e);
-        serde_json::json!([])
-    });
-    let grades_result = grades_result.unwrap_or_else(|e| {
-        log::warn!("FridaySync (Rust): fetch_recent_grades failed: {}", e);
-        serde_json::json!([])
-    });
-    let assignments_result = assignments_result.unwrap_or_else(|e| {
-        log::warn!("FridaySync (Rust): fetch_assignments failed: {}", e);
-        serde_json::json!([])
-    });
-    let calendar_result = calendar_result.unwrap_or_else(|e| {
-        log::warn!("FridaySync (Rust): fetch_calendar failed: {}", e);
-        serde_json::json!([])
-    });
 
-    let msg_count = messages_result.as_array().map(|a| a.len()).unwrap_or(0);
-    let grades_count = grades_result.as_array().map(|a| a.len()).unwrap_or(0);
-    let assignments_count = assignments_result.as_array().map(|a| a.len()).unwrap_or(0);
-    let calendar_count = calendar_result.as_array().map(|a| a.len()).unwrap_or(0);
+    for (section, r) in results.iter() {
+        if let Err(e) = r {
+            log::warn!("FridaySync (Rust): fetch_{} failed: {}", section, e);
+        }
+    }
 
-    log::debug!("FridaySync (Rust): Data fetched - messages: {}, grades: {}, assignments: {}, calendar: {}", 
-        msg_count, grades_count, assignments_count, calendar_count);
+    // A failed section is OMITTED from the payload (never `[]`): the Kotlin
+    // side keeps the previous baseline for a missing section instead of
+    // wiping it, which used to cause duplicate notification bursts and a
+    // silently dropped DND schedule.
+    let mut sections: Vec<(&str, Option<serde_json::Value>)> = Vec::with_capacity(4);
+    for name in order {
+        let value = results
+            .iter()
+            .find(|(s, _)| *s == name)
+            .and_then(|(_, r)| r.as_ref().ok().cloned());
+        sections.push((name, value));
+    }
+    let statuses: Vec<(&str, String)> = order
+        .iter()
+        .map(|name| {
+            let status = match results.iter().find(|(s, _)| *s == *name) {
+                Some((_, r)) => section_status(r),
+                None => "failed(RateLimited-cascade)".to_string(),
+            };
+            (*name, status)
+        })
+        .collect();
+    let status_of = |name: &str| {
+        statuses
+            .iter()
+            .find(|(s, _)| *s == name)
+            .map(|(_, st)| st.as_str())
+            .unwrap_or("failed(unknown)")
+    };
 
-    // Build JSON result with all data for change detection
-    let sync_data = serde_json::json!({
-        "messages": messages_result,
-        "grades": grades_result,
-        "assignments": assignments_result,
-        "calendar": calendar_result,
-        "syncTimestamp": chrono::Utc::now().timestamp()
-    });
+    let sync_data = build_sync_payload(&sections, chrono::Utc::now().timestamp());
+
+    // One info-level line per run so cadence problems are diagnosable from
+    // friday-sync.log (debug lines never land there).
+    let next_alarm = if next_alarm_at_ms > 0 {
+        chrono::DateTime::from_timestamp_millis(next_alarm_at_ms)
+            .map(|dt| dt.to_rfc3339_opts(chrono::SecondsFormat::Secs, true))
+            .unwrap_or_else(|| "unknown".to_string())
+    } else {
+        "unknown".to_string()
+    };
+    log::info!(
+        "sync run trigger={} started={} elapsed_ms={} calendar={} grades={} messages={} assignments={} next_alarm={}",
+        trigger,
+        sync_started_ts,
+        sync_started_at.elapsed().as_millis(),
+        status_of("calendar"),
+        status_of("grades"),
+        status_of("messages"),
+        status_of("assignments"),
+        next_alarm,
+    );
 
     log::debug!("FridaySync (Rust): ✓ Sync completed successfully");
     serde_json::to_string(&sync_data).unwrap_or_else(|_| "SYNC_SUCCESS".to_string())
 }
 
+/// Short stable label for a section outcome, used in the info-level run line.
+fn section_status(result: &Result<serde_json::Value, ClientError>) -> String {
+    match result {
+        Ok(v) => format!("ok({})", v.as_array().map(|a| a.len()).unwrap_or(0)),
+        Err(e) => format!("failed({})", short_error_label(e)),
+    }
+}
+
+fn short_error_label(e: &ClientError) -> &'static str {
+    match e {
+        ClientError::RateLimited => "RateLimited",
+        ClientError::RequestFailed(_) => "Network",
+        ClientError::TokenExpiredRetryable(_) => "TokenExpired",
+        ClientError::Unauthorized(_) => "Unauthorized",
+        ClientError::TokenRefreshRejected(_) => "RefreshRejected",
+        ClientError::TokenRefreshFailed(_) => "RefreshFailed",
+        ClientError::NotAuthenticated => "NotAuthenticated",
+        ClientError::ParseFailed(_) => "ParseFailed",
+        ClientError::ApiError(_, _) => "ApiError",
+    }
+}
+
+/// Build the sync-result JSON: successful sections as arrays, failed sections
+/// OMITTED (not `[]`), plus a `"failed"` list naming them. The Kotlin side
+/// treats a missing section as "keep previous baseline, no notifications".
+fn build_sync_payload(
+    sections: &[(&str, Option<serde_json::Value>)],
+    timestamp: i64,
+) -> serde_json::Value {
+    let mut map = serde_json::Map::new();
+    let mut failed = Vec::new();
+    for (name, value) in sections {
+        match value {
+            Some(v) => {
+                map.insert(name.to_string(), v.clone());
+            }
+            None => failed.push(serde_json::Value::String(name.to_string())),
+        }
+    }
+    map.insert(
+        "failed".to_string(),
+        serde_json::Value::Array(failed),
+    );
+    map.insert(
+        "syncTimestamp".to_string(),
+        serde_json::Value::from(timestamp),
+    );
+    serde_json::Value::Object(map)
+}
+
+/// 300-800 ms jittered pause between background fetches (Task B: no lockstep).
+async fn polite_inter_section_delay() {
+    use rand::RngExt;
+    let ms: u64 = rand::rng().random_range(300..=800);
+    tokio::time::sleep(std::time::Duration::from_millis(ms)).await;
+}
+
+/// Fetch one sync section with background-appropriate patience:
+/// one extra attempt after a short delay on a transient network error
+/// (`error sending request`), and — via the shared Task A helper — one
+/// background 429 wait of up to ~30 s plus a single retry before giving up.
+/// A still-rate-limited section is returned as `RateLimited` so the caller
+/// can stop the remaining sections (they would be limited too).
+async fn fetch_section(
+    section: &str,
+    ctx: &RequestContext,
+    person_id: i64,
+    today: &str,
+    tomorrow: &str,
+) -> Result<serde_json::Value, ClientError> {
+    let mut result = fetch_section_once(section, ctx, person_id, today, tomorrow).await;
+
+    if matches!(result, Err(ClientError::RequestFailed(_))) {
+        log::info!(
+            "FridaySync (Rust): section '{}' hit a transient network error, one extra attempt after a short delay",
+            section
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(2000)).await;
+        result = fetch_section_once(section, ctx, person_id, today, tomorrow).await;
+    }
+
+    if matches!(result, Err(ClientError::RateLimited)) {
+        // The fetch already retried internally (foreground cap ~10 s); in the
+        // background we can afford one longer wait before the final attempt.
+        let wait = crate::client::rate_limit_delay(4, None, None, 30);
+        log::info!(
+            "FridaySync (Rust): section '{}' rate-limited, waiting {} s before one background retry",
+            section,
+            wait.as_secs()
+        );
+        tokio::time::sleep(wait).await;
+        result = fetch_section_once(section, ctx, person_id, today, tomorrow).await;
+    }
+
+    result
+}
+
+async fn fetch_section_once(
+    section: &str,
+    ctx: &RequestContext,
+    person_id: i64,
+    today: &str,
+    tomorrow: &str,
+) -> Result<serde_json::Value, ClientError> {
+    match section {
+        "calendar" => fetch_calendar(ctx, person_id, today, tomorrow).await,
+        "grades" => fetch_recent_grades(ctx, person_id).await,
+        "messages" => fetch_messages(ctx).await,
+        "assignments" => fetch_assignments(ctx, person_id).await,
+        _ => fetch_messages(ctx).await,
+    }
+}
+
+/// Sync day boundaries in Europe/Amsterdam (not UTC): between 00:00-02:00
+/// Dutch time UTC `now()` belongs to the previous day.
 fn today_string() -> String {
-    Utc::now().format("%Y-%m-%d").to_string()
+    crate::ai::time::today_amsterdam()
 }
 
 fn tomorrow_string() -> String {
-    (Utc::now() + chrono::Duration::days(1)).format("%Y-%m-%d").to_string()
+    crate::ai::time::add_days(&today_string(), 1)
 }
 
 async fn fetch_messages(ctx: &RequestContext) -> Result<serde_json::Value, ClientError> {
@@ -725,9 +898,9 @@ async fn fetch_recent_grades(ctx: &RequestContext, person_id: i64) -> Result<ser
 }
 
 async fn fetch_assignments(ctx: &RequestContext, person_id: i64) -> Result<serde_json::Value, ClientError> {
-    // Get assignments for next 14 days
-    let today = Utc::now().format("%Y-%m-%d").to_string();
-    let two_weeks = (Utc::now() + chrono::Duration::days(14)).format("%Y-%m-%d").to_string();
+    // Get assignments for next 14 days (Amsterdam dates, like the calendar window)
+    let today = crate::ai::time::today_amsterdam();
+    let two_weeks = crate::ai::time::add_days(&today, 14);
     let url = format!("personen/{}/opdrachten?einddatum={}&startdatum={}&top=50", person_id, two_weeks, today);
     match get_with_context(ctx, &url).await {
         Ok(data) => {
@@ -752,5 +925,87 @@ async fn fetch_calendar(ctx: &RequestContext, person_id: i64, from: &str, to: &s
             }
         },
         Err(e) => Err(e)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn arr(n: usize) -> serde_json::Value {
+        serde_json::Value::Array((0..n).map(|i| serde_json::json!({"Id": i})).collect())
+    }
+
+    #[test]
+    fn all_sections_ok_has_no_failed_entries() {
+        let sections = [
+            ("calendar", Some(arr(12))),
+            ("grades", Some(arr(3))),
+            ("messages", Some(arr(5))),
+            ("assignments", Some(arr(2))),
+        ];
+        let payload = build_sync_payload(&sections, 1_700_000_000);
+        assert_eq!(payload["calendar"].as_array().unwrap().len(), 12);
+        assert_eq!(payload["grades"].as_array().unwrap().len(), 3);
+        assert_eq!(payload["messages"].as_array().unwrap().len(), 5);
+        assert_eq!(payload["assignments"].as_array().unwrap().len(), 2);
+        assert_eq!(payload["failed"].as_array().unwrap().len(), 0);
+        assert_eq!(payload["syncTimestamp"], 1_700_000_000);
+    }
+
+    #[test]
+    fn failed_section_is_omitted_not_empty() {
+        // Regression test for the duplicate-notification burst: a failed
+        // fetch must NOT appear as `[]` (which the Kotlin side used to treat
+        // as "everything is gone / everything is new").
+        let sections = [
+            ("calendar", None),
+            ("grades", Some(arr(3))),
+            ("messages", Some(arr(0))),
+            ("assignments", Some(arr(2))),
+        ];
+        let payload = build_sync_payload(&sections, 1_700_000_000);
+        assert!(payload.get("calendar").is_none(), "failed section must be omitted");
+        assert_eq!(payload["failed"], serde_json::json!(["calendar"]));
+        // An empty-but-successful section stays present as `[]`.
+        assert_eq!(payload["messages"], serde_json::json!([]));
+        assert_eq!(payload["grades"].as_array().unwrap().len(), 3);
+    }
+
+    #[test]
+    fn all_sections_failed_keeps_only_failed_and_timestamp() {
+        let sections: [(&str, Option<serde_json::Value>); 4] = [
+            ("calendar", None),
+            ("grades", None),
+            ("messages", None),
+            ("assignments", None),
+        ];
+        let payload = build_sync_payload(&sections, 1_700_000_000);
+        assert!(payload.get("calendar").is_none());
+        assert!(payload.get("grades").is_none());
+        assert!(payload.get("messages").is_none());
+        assert!(payload.get("assignments").is_none());
+        let failed = payload["failed"].as_array().unwrap();
+        assert_eq!(failed.len(), 4);
+        assert!(failed.contains(&serde_json::json!("calendar")));
+        assert_eq!(payload["syncTimestamp"], 1_700_000_000);
+    }
+
+    #[test]
+    fn section_status_labels_counts_and_error_kinds() {
+        assert_eq!(section_status(&Ok(arr(12))), "ok(12)");
+        assert_eq!(section_status(&Ok(arr(0))), "ok(0)");
+        assert_eq!(
+            section_status(&Err(ClientError::RateLimited)),
+            "failed(RateLimited)"
+        );
+        assert_eq!(
+            section_status(&Err(ClientError::RequestFailed("error sending request".into()))),
+            "failed(Network)"
+        );
+        assert_eq!(
+            section_status(&Err(ClientError::TokenExpiredRetryable("expired".into()))),
+            "failed(TokenExpired)"
+        );
     }
 }

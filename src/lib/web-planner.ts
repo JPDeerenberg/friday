@@ -12,6 +12,8 @@
  * user reads these as the "why" behind each block.
  */
 
+import { detectTest } from "./test-detection.ts";
+
 export interface YMD {
   y: number;
   mo: number; // 1-12
@@ -43,7 +45,8 @@ export interface TestInput {
   event_id: number;
   vak: string | null;
   omschrijving: string | null;
-  aantekening: string | null;
+  /** Combined Aantekening + Opmerking (de-duplicated), if any. */
+  notes: string | null;
   start: number; // wall ms
   info_type: number;
 }
@@ -60,11 +63,13 @@ export interface PlanLesson {
   start: string;
   einde: string;
   status: number;
+  event_type: number;
   info_type: number;
   afgerond: boolean;
   omschrijving: string | null;
   inhoud: string | null;
   aantekening: string | null;
+  opmerking: string | null;
   vakken: Array<{ naam: string | null }> | null;
 }
 
@@ -101,11 +106,26 @@ const DAY_MS = 86_400_000;
 
 // ─── Wall-clock primitives ─────────────────────────────────────────────────
 
-export function dt(y: number, mo: number, d: number, h = 0, mi = 0, s = 0): number {
+export function dt(
+  y: number,
+  mo: number,
+  d: number,
+  h = 0,
+  mi = 0,
+  s = 0,
+): number {
   return Date.UTC(y, mo - 1, d, h, mi, s);
 }
 
-function parts(t: number): { y: number; mo: number; d: number; h: number; mi: number; s: number; wd: number } {
+function parts(t: number): {
+  y: number;
+  mo: number;
+  d: number;
+  h: number;
+  mi: number;
+  s: number;
+  wd: number;
+} {
   const d = new Date(t);
   return {
     y: d.getUTCFullYear(),
@@ -147,7 +167,14 @@ export function isoToWall(s: string): number | null {
   if (/[zZ]|[+-]\d{2}:?\d{2}$/.test(t)) {
     const d = new Date(t);
     if (Number.isNaN(d.getTime())) return null;
-    return dt(d.getFullYear(), d.getMonth() + 1, d.getDate(), d.getHours(), d.getMinutes(), d.getSeconds());
+    return dt(
+      d.getFullYear(),
+      d.getMonth() + 1,
+      d.getDate(),
+      d.getHours(),
+      d.getMinutes(),
+      d.getSeconds(),
+    );
   }
   let m = t.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?/);
   if (m) {
@@ -161,7 +188,14 @@ export function isoToWall(s: string): number | null {
 /** Device-local wall ms "now" (chrono::Local equivalent). */
 export function wallNow(): number {
   const d = new Date();
-  return dt(d.getFullYear(), d.getMonth() + 1, d.getDate(), d.getHours(), d.getMinutes(), d.getSeconds());
+  return dt(
+    d.getFullYear(),
+    d.getMonth() + 1,
+    d.getDate(),
+    d.getHours(),
+    d.getMinutes(),
+    d.getSeconds(),
+  );
 }
 
 export function wallTodayStart(): number {
@@ -186,11 +220,21 @@ export function planningWindow(todayDay: number): [number, number] {
   return [todayDay, todayDay + daysUntilSunday + 7];
 }
 
-export function itemsOverlap(aStart: number, aEnd: number, bStart: number, bEnd: number): boolean {
+export function itemsOverlap(
+  aStart: number,
+  aEnd: number,
+  bStart: number,
+  bEnd: number,
+): boolean {
   return aStart < bEnd && bStart < aEnd;
 }
 
-export function intervalsOverlapStr(aStart: string, aEnd: string, bStart: string, bEnd: string): boolean {
+export function intervalsOverlapStr(
+  aStart: string,
+  aEnd: string,
+  bStart: string,
+  bEnd: string,
+): boolean {
   const as = isoToWall(aStart);
   const ae = isoToWall(aEnd);
   const bs = isoToWall(bStart);
@@ -281,7 +325,8 @@ export function freeSlotsForDay(
     const s = isoToWall(ev.start);
     const e = isoToWall(ev.einde);
     if (s == null || e == null) continue;
-    if (e > dayStart && s < dayEnd) dayLessons.push([Math.max(s, dayStart), Math.min(e, dayEnd)]);
+    if (e > dayStart && s < dayEnd)
+      dayLessons.push([Math.max(s, dayStart), Math.min(e, dayEnd)]);
   }
   if (dayLessons.length > 0) {
     dayLessons.sort((a, b) => a[0] - b[0]);
@@ -293,7 +338,8 @@ export function freeSlotsForDay(
       busy.push([schoolStart, schoolEnd]);
     }
     const bufferEnd = schoolEnd + settings.afterSchoolBufferMin * MIN;
-    if (bufferEnd > schoolEnd) busy.push([schoolEnd, Math.min(bufferEnd, dayEnd + 6 * 3_600_000)]);
+    if (bufferEnd > schoolEnd)
+      busy.push([schoolEnd, Math.min(bufferEnd, dayEnd + 6 * 3_600_000)]);
   }
 
   for (const item of lockedItems) {
@@ -307,7 +353,15 @@ export function freeSlotsForDay(
     }
   }
 
-  const weekdayNames = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
+  const weekdayNames = [
+    "monday",
+    "tuesday",
+    "wednesday",
+    "thursday",
+    "friday",
+    "saturday",
+    "sunday",
+  ];
   const wd = mondayIndex(base);
   const dayName = weekdayNames[wd];
   const isoDay = fmtYMD(base);
@@ -390,7 +444,10 @@ export function generateSleepItems(
   return items;
 }
 
-export function generateFreeTimeItems(freeSlots: FreeSlot[], nowIso: string): PlanItem[] {
+export function generateFreeTimeItems(
+  freeSlots: FreeSlot[],
+  nowIso: string,
+): PlanItem[] {
   return freeSlots.map((slot, i) => ({
     id: `freetime-${fmtYMD(slot.start)}-${i}`,
     title: "Vrije tijd",
@@ -412,7 +469,10 @@ export function generateFreeTimeItems(freeSlots: FreeSlot[], nowIso: string): Pl
   }));
 }
 
-export function subjectAverageMinutes(items: PlanItem[], subject: string): number | null {
+export function subjectAverageMinutes(
+  items: PlanItem[],
+  subject: string,
+): number | null {
   let total = 0;
   let count = 0;
   for (const item of items) {
@@ -437,7 +497,13 @@ export function extractUpcomingTests(
   const horizon = windowEndDay + 7;
   const out: TestInput[] = [];
   for (const ev of lessons) {
-    if (![2, 3, 4, 5].includes(ev.info_type)) continue;
+    const detection = detectTest({
+      Type: ev.event_type ?? 0,
+      InfoType: ev.info_type,
+      Opmerking: ev.opmerking ?? null,
+      Aantekening: ev.aantekening ?? null,
+    });
+    if (!detection.isTest) continue;
     if (ev.status === 4 || ev.status === 5) continue;
     const start = isoToWall(ev.start);
     if (start == null) continue;
@@ -448,14 +514,79 @@ export function extractUpcomingTests(
       Array.isArray(vakkenRaw) && vakkenRaw.length > 0
         ? (vakkenRaw[0] as Record<string, unknown> | null)
         : null;
-    const vak = typeof firstVak?.["naam"] === "string" ? (firstVak["naam"] as string) : null;
+    const vak =
+      typeof firstVak?.["naam"] === "string"
+        ? (firstVak["naam"] as string)
+        : null;
     out.push({
       event_id: ev.id,
       vak,
       omschrijving: ev.omschrijving ?? ev.inhoud ?? null,
-      aantekening: ev.aantekening ?? null,
+      notes: combineNotes(ev.aantekening ?? null, ev.opmerking ?? null),
       start,
       info_type: ev.info_type,
+    });
+  }
+  out.sort((a, b) => a.start - b.start);
+  return dedupeTests(out);
+}
+
+/**
+ * Merge Aantekening + Opmerking into one note line, de-duplicated.
+ * Mirrors Rust `combine_notes`.
+ */
+export function combineNotes(
+  aantekening: string | null,
+  opmerking: string | null,
+): string | null {
+  const parts: string[] = [];
+  for (const n of [aantekening, opmerking]) {
+    const t = n?.trim();
+    if (t && !parts.includes(t)) parts.push(t);
+  }
+  return parts.length > 0 ? parts.join(" / ") : null;
+}
+
+/**
+ * De-duplicate tests on the same date for the same subject (e.g. a test
+ * lesson plus its extra-time slot): keep one, merge the notes. The keeper
+ * prefers the InfoType-based test so the block id stays
+ * `study-test-<event_id>` of the real test. Mirrors Rust `dedupe_tests`.
+ */
+export function dedupeTests(tests: TestInput[]): TestInput[] {
+  const groups = new Map<string, TestInput[]>();
+  const singles: TestInput[] = [];
+  for (const t of tests) {
+    const vakKey = (t.vak ?? "").trim().toLowerCase();
+    if (!vakKey) {
+      singles.push(t);
+      continue;
+    }
+    const key = `${dayKey(t.start)}|${vakKey}`;
+    const g = groups.get(key);
+    if (g) g.push(t);
+    else groups.set(key, [t]);
+  }
+  const out: TestInput[] = [...singles];
+  for (const g of groups.values()) {
+    if (g.length === 1) {
+      out.push(g[0]);
+      continue;
+    }
+    const sorted = [...g].sort((a, b) => a.start - b.start);
+    const keeper =
+      sorted.find((t) => [2, 3, 4, 5].includes(t.info_type)) ?? sorted[0];
+    const parts: string[] = [];
+    for (const t of sorted) {
+      if (!t.notes) continue;
+      for (const p of t.notes.split(" / ")) {
+        const trimmed = p.trim();
+        if (trimmed && !parts.includes(trimmed)) parts.push(trimmed);
+      }
+    }
+    out.push({
+      ...keeper,
+      notes: parts.length > 0 ? parts.join(" / ") : null,
     });
   }
   out.sort((a, b) => a.start - b.start);
@@ -466,6 +597,14 @@ export function extractOpenHomework(lessons: PlanLesson[]): HomeworkInput[] {
   const out: HomeworkInput[] = [];
   for (const ev of lessons) {
     if (ev.info_type !== 1 || ev.afgerond) continue;
+    // A lesson that is really a test moment never yields a homework block.
+    const detection = detectTest({
+      Type: ev.event_type ?? 0,
+      InfoType: ev.info_type,
+      Opmerking: ev.opmerking ?? null,
+      Aantekening: ev.aantekening ?? null,
+    });
+    if (detection.isTest) continue;
     if (ev.status === 4 || ev.status === 5) continue;
     const lesStart = isoToWall(ev.start);
     if (lesStart == null) continue;
@@ -474,7 +613,10 @@ export function extractOpenHomework(lessons: PlanLesson[]): HomeworkInput[] {
       Array.isArray(vakkenRaw) && vakkenRaw.length > 0
         ? (vakkenRaw[0] as Record<string, unknown> | null)
         : null;
-    const vak = typeof firstVak?.["naam"] === "string" ? (firstVak["naam"] as string) : null;
+    const vak =
+      typeof firstVak?.["naam"] === "string"
+        ? (firstVak["naam"] as string)
+        : null;
     const oms = ev.inhoud ?? ev.omschrijving ?? null;
     if ((!oms || oms.trim() === "") && vak == null) continue;
     out.push({ event_id: ev.id, vak, omschrijving: oms, les_start: lesStart });
@@ -491,7 +633,10 @@ function infoTypeLabel(t: number): string {
 }
 
 /** Earliest slot that fits. Mutates freeSlots. */
-function takeSlot(freeSlots: FreeSlot[], minutes: number): [number, number] | null {
+function takeSlot(
+  freeSlots: FreeSlot[],
+  minutes: number,
+): [number, number] | null {
   const idx = freeSlots.findIndex((s) => s.end - s.start >= minutes * MIN);
   if (idx < 0) return null;
   return consumeFront(freeSlots, idx, minutes);
@@ -517,7 +662,11 @@ function takeLatestSlot(
   return consumeFront(freeSlots, best, minutes);
 }
 
-function consumeFront(freeSlots: FreeSlot[], idx: number, minutes: number): [number, number] | null {
+function consumeFront(
+  freeSlots: FreeSlot[],
+  idx: number,
+  minutes: number,
+): [number, number] | null {
   const slot = freeSlots[idx];
   if (!slot) return null;
   const start = slot.start;
@@ -531,7 +680,11 @@ function consumeFront(freeSlots: FreeSlot[], idx: number, minutes: number): [num
   return [start, end];
 }
 
-function overlapsPlanned(result: PlanItem[], start: number, end: number): boolean {
+function overlapsPlanned(
+  result: PlanItem[],
+  start: number,
+  end: number,
+): boolean {
   return result.some((it) => {
     const s = isoToWall(it.start);
     const e = isoToWall(it.end);
@@ -575,11 +728,21 @@ export function generatePlan(input: GeneratePlanInput): PlanItem[] {
   const nowIso = input.nowIso ?? localNowIso();
   const result: PlanItem[] = [];
 
-  const freeSlots = computeFreeSlots(windowStartDay, windowEndDay, lessons, lockedItems, settings);
+  const freeSlots = computeFreeSlots(
+    windowStartDay,
+    windowEndDay,
+    lessons,
+    lockedItems,
+    settings,
+  );
 
   const sorted = [...assignments].sort((a, b) => {
-    const dla = isoToWall(a.inleveren_voor) ?? (windowEndDay + 1) * DAY_MS + 23 * 3_600_000 + 59 * MIN + 59_000;
-    const dlb = isoToWall(b.inleveren_voor) ?? (windowEndDay + 1) * DAY_MS + 23 * 3_600_000 + 59 * MIN + 59_000;
+    const dla =
+      isoToWall(a.inleveren_voor) ??
+      (windowEndDay + 1) * DAY_MS + 23 * 3_600_000 + 59 * MIN + 59_000;
+    const dlb =
+      isoToWall(b.inleveren_voor) ??
+      (windowEndDay + 1) * DAY_MS + 23 * 3_600_000 + 59 * MIN + 59_000;
     const ua = computeUrgency(dla, todayDay);
     const ub = computeUrgency(dlb, todayDay);
     if (ua !== ub) return ub - ua;
@@ -588,11 +751,18 @@ export function generatePlan(input: GeneratePlanInput): PlanItem[] {
 
   for (const assignment of sorted) {
     const deadline =
-      isoToWall(assignment.inleveren_voor) ?? (windowEndDay + 1) * DAY_MS + (23 * 60 + 59) * MIN + 59_000;
+      isoToWall(assignment.inleveren_voor) ??
+      (windowEndDay + 1) * DAY_MS + (23 * 60 + 59) * MIN + 59_000;
     if (dayKey(deadline) < windowStartDay - 7) continue;
     const days = daysUntil(dayKey(deadline), todayDay);
     const daysTxt =
-      days < 0 ? `${-days} dag(en) TE LAAT` : days === 0 ? "vandaag" : days === 1 ? "morgen" : `over ${days} dagen`;
+      days < 0
+        ? `${-days} dag(en) TE LAAT`
+        : days === 0
+          ? "vandaag"
+          : days === 1
+            ? "morgen"
+            : `over ${days} dagen`;
     const urgency = computeUrgency(deadline, todayDay);
     const vak = assignment.vak ?? "Algemeen";
 
@@ -603,7 +773,9 @@ export function generatePlan(input: GeneratePlanInput): PlanItem[] {
       est = known.minutes;
       source = known.source;
     } else {
-      const avg = assignment.vak ? subjectAverageMinutes(existingItems, assignment.vak) : null;
+      const avg = assignment.vak
+        ? subjectAverageMinutes(existingItems, assignment.vak)
+        : null;
       if (avg != null) {
         est = avg;
         source = "subject_average";
@@ -653,8 +825,9 @@ export function generatePlan(input: GeneratePlanInput): PlanItem[] {
     while (remaining > 0) {
       const thisChunk = Math.min(remaining, chunkSize);
       const placed =
-        (prevDay != null ? takeLatestSlot(freeSlots, thisChunk, latest, prevDay) : null) ??
-        takeLatestSlot(freeSlots, thisChunk, latest, null);
+        (prevDay != null
+          ? takeLatestSlot(freeSlots, thisChunk, latest, prevDay)
+          : null) ?? takeLatestSlot(freeSlots, thisChunk, latest, null);
       if (!placed) break;
       const [start, end] = placed;
       placements.push([start, end, thisChunk]);
@@ -667,7 +840,9 @@ export function generatePlan(input: GeneratePlanInput): PlanItem[] {
     const totalChunks = placements.length;
     placements.forEach(([start, end, mins], chunkIndex) => {
       const title =
-        totalChunks > 1 ? `${assignment.titel} (deel ${chunkIndex + 1}/${totalChunks})` : assignment.titel;
+        totalChunks > 1
+          ? `${assignment.titel} (deel ${chunkIndex + 1}/${totalChunks})`
+          : assignment.titel;
       const desc =
         totalChunks > 1
           ? `Reden: deelsessie ${chunkIndex + 1}/${totalChunks} voor ${vak} (deadline ${fmtDMHM(deadline)}, ${daysTxt}) — gepland op ${fmtDayTime(start)} (${mins} min, urgentie ${urgency}/5) zodat het werk over meerdere dagen is gespreid. ${assignment.omschrijving ?? "Huiswerk maken"}.`
@@ -712,8 +887,9 @@ export function generatePlan(input: GeneratePlanInput): PlanItem[] {
       } else {
         const prevDay = placed.length > 0 ? dayKey(placed[0][0]) : null;
         slot =
-          (prevDay != null ? takeLatestSlot(freeSlots, minutes, latestEnd, prevDay) : null) ??
-          takeLatestSlot(freeSlots, minutes, latestEnd, null);
+          (prevDay != null
+            ? takeLatestSlot(freeSlots, minutes, latestEnd, prevDay)
+            : null) ?? takeLatestSlot(freeSlots, minutes, latestEnd, null);
       }
       if (!slot) break;
       const [start, end] = slot;
@@ -728,15 +904,18 @@ export function generatePlan(input: GeneratePlanInput): PlanItem[] {
     const n = placed.length;
     placed.forEach(([start, end, mins], emitIdx) => {
       const title =
-        n > 1 ? `Leren voor ${label} ${vak} (sessie ${emitIdx + 1}/${n})` : `Leren voor ${label} ${vak}`;
-      const whenTxt = days < 0 ? "geweest" : days === 0 ? "vandaag" : `over ${days} dagen`;
+        n > 1
+          ? `Leren voor ${label} ${vak} (sessie ${emitIdx + 1}/${n})`
+          : `Leren voor ${label} ${vak}`;
+      const whenTxt =
+        days < 0 ? "geweest" : days === 0 ? "vandaag" : `over ${days} dagen`;
       result.push({
         id: `study-test-${test.event_id}-${emitIdx}`,
         title,
         description:
           `Reden: ${label} ${vak} op ${fmtDayTime(test.start)} (${whenTxt}). Voorbereiding — geen specifieke opdracht, wel herhalen/oefenen. Urgentie ${urgency}/5.` +
-          (test.aantekening?.trim()
-            ? ` Opmerking bij de toets: ${test.aantekening.trim()}`
+          (test.notes?.trim()
+            ? ` Opmerking bij de toets: ${test.notes.trim()}`
             : ""),
         item_type: "study_block",
         start: fmtISO(start),
@@ -759,17 +938,20 @@ export function generatePlan(input: GeneratePlanInput): PlanItem[] {
   // --- Open calendar homework: short work blocks ---
   const homeworks = extractOpenHomework(lessons);
   for (const hw of homeworks) {
-    if (result.some((i) => i.related_calendar_event_id === hw.event_id)) continue;
+    if (result.some((i) => i.related_calendar_event_id === hw.event_id))
+      continue;
     if (
       existingItems.some(
         (i) =>
-          i.related_calendar_event_id === hw.event_id && (i.status === "planned" || i.status === "in_progress"),
+          i.related_calendar_event_id === hw.event_id &&
+          (i.status === "planned" || i.status === "in_progress"),
       )
     ) {
       continue;
     }
     const vak = hw.vak ?? "Algemeen";
-    const est = (hw.vak ? subjectAverageMinutes(existingItems, hw.vak) : null) ?? 30;
+    const est =
+      (hw.vak ? subjectAverageMinutes(existingItems, hw.vak) : null) ?? 30;
     const placed = takeSlot(freeSlots, est);
     if (!placed) continue;
     const [start, end] = placed;
@@ -781,8 +963,7 @@ export function generatePlan(input: GeneratePlanInput): PlanItem[] {
     result.push({
       id: `hw-cal-${hw.event_id}`,
       title: `Huiswerk: ${vak}`,
-      description:
-        `Reden: huiswerk uit de les (${vak} op ${fmtDayTime(hw.les_start)}). Korte werksessie van ${est} min — maak/af wat in de les is opgegeven. Vak-gemiddelde of 30 min default.`,
+      description: `Reden: huiswerk uit de les (${vak} op ${fmtDayTime(hw.les_start)}). Korte werksessie van ${est} min — maak/af wat in de les is opgegeven. Vak-gemiddelde of 30 min default.`,
       item_type: "assignment_work",
       start: fmtISO(start),
       end: fmtISO(end),
@@ -801,7 +982,9 @@ export function generatePlan(input: GeneratePlanInput): PlanItem[] {
   }
 
   result.push(...generateFreeTimeItems(freeSlots, nowIso));
-  result.push(...generateSleepItems(windowStartDay, windowEndDay, settings, nowIso));
+  result.push(
+    ...generateSleepItems(windowStartDay, windowEndDay, settings, nowIso),
+  );
   result.sort((a, b) => {
     const as = isoToWall(a.start) ?? 0;
     const bs = isoToWall(b.start) ?? 0;

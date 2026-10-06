@@ -1,0 +1,24 @@
+{
+  "infoTypes": [2, 3, 4, 5],
+  "tokens": [
+    "toets",
+    "toetsen",
+    "proefwerk",
+    "proefwerken",
+    "overhoring",
+    "overhoren",
+    "tentamen",
+    "examen",
+    "schoolexamen",
+    "repetitie"
+  ],
+  "uppercaseOnlyTokens": ["SO", "PW", "SE"],
+  "negativePhrases": [
+    "geen toets",
+    "geen proefwerk",
+    "geen so",
+    "geen overhoring",
+    "toets vervalt",
+    "toets vervallen"
+  ]
+}

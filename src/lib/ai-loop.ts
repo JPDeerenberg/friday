@@ -33,6 +33,15 @@ export const FILE_READ_TOOLS = new Set([
   "read_attachment_text",
   "download_file",
 ]);
+/**
+ * Planner + grade overview fetch calendar + assignments and easily exceed
+ * the flat timeout under 429 backoff. Mirrored in Rust (`tool_timeout_secs`).
+ */
+export const LONG_TOOL_TIMEOUT_MS = 45000;
+export const LONG_TIMEOUT_TOOLS = new Set([
+  "run_update_ai_schedule",
+  "get_full_grade_overview",
+]);
 /** Default rounds per turn (plan item 5). */
 export const MAX_ROUNDS = 8;
 /** Final tools-disabled nudge (plan item 5). */
@@ -43,7 +52,9 @@ export const EMPTY_FALLBACK =
   "Ik kon geen antwoord formuleren. Probeer het opnieuw.";
 
 export function toolTimeoutMs(name: string): number {
-  return FILE_READ_TOOLS.has(name) ? FILE_READ_TIMEOUT_MS : TOOL_TIMEOUT_MS;
+  if (FILE_READ_TOOLS.has(name)) return FILE_READ_TIMEOUT_MS;
+  if (LONG_TIMEOUT_TOOLS.has(name)) return LONG_TOOL_TIMEOUT_MS;
+  return TOOL_TIMEOUT_MS;
 }
 
 export interface LoopToolCall {
@@ -214,6 +225,11 @@ export function withToolTimeout<T>(
 /**
  * Trim an over-long history for one recovery retry: keep the system prompt
  * plus the last few turns. (Phase 5 will upgrade this to a rolling summary.)
+ *
+ * The kept tail never starts with a `tool` message or an assistant message
+ * whose tool results were cut (strict providers reject orphan tool results):
+ * it advances to the first `user` message, or to a plain assistant message
+ * (content, no tool calls) when no user message survived the window.
  */
 export function trimHistory(
   messages: LoopChatMessage[],
@@ -221,8 +237,78 @@ export function trimHistory(
 ): LoopChatMessage[] {
   if (messages.length === 0) return messages;
   const [first, ...rest] = messages;
-  const tail = rest.slice(-keep);
+  let tail = rest.slice(-keep);
+  while (tail.length > 0) {
+    const head = tail[0];
+    if (head.role === "tool") {
+      tail = tail.slice(1);
+      continue;
+    }
+    if (
+      head.role === "assistant" &&
+      head.tool_calls !== undefined &&
+      head.tool_calls.length > 0
+    ) {
+      tail = tail.slice(1);
+      continue;
+    }
+    break;
+  }
   return first.role === "system" ? [first, ...tail] : tail.slice(-keep);
+}
+
+/**
+ * Client-side twin of the server sanitiser (`openai_messages`): drop
+ * assistant messages with blank content and no tool calls, drop nameless
+ * tool calls (and the now-empty call list), and drop tool messages whose id
+ * has no preceding assistant call. Used for the one-shot self-heal retry on
+ * `invalid_assistant_message` — same shape rules, no content inspection.
+ */
+export function sanitizeHistory(
+  messages: LoopChatMessage[],
+): LoopChatMessage[] {
+  const out: LoopChatMessage[] = [];
+  const precedingIds = new Set<string>();
+  const emptyRenames: string[] = [];
+  let counter = 0;
+  const freshId = (): string => {
+    do {
+      counter += 1;
+    } while (precedingIds.has(`call_${counter}`));
+    return `call_${counter}`;
+  };
+  for (const m of messages) {
+    if (m.role === "assistant") {
+      const calls = (m.tool_calls ?? []).filter((tc) => tc.name !== "");
+      const renamed = calls.map((tc) => {
+        if (tc.id === "" || precedingIds.has(tc.id)) {
+          const fresh = freshId();
+          if (tc.id === "") emptyRenames.push(fresh);
+          precedingIds.add(fresh);
+          return { ...tc, id: fresh };
+        }
+        precedingIds.add(tc.id);
+        return tc;
+      });
+      if (m.content.trim() === "" && renamed.length === 0) continue;
+      out.push({
+        ...m,
+        tool_calls: renamed.length > 0 ? renamed : undefined,
+      });
+    } else if (m.role === "tool") {
+      let tid = m.tool_call_id ?? "";
+      if (tid === "") {
+        const relinked = emptyRenames.shift();
+        if (relinked === undefined) continue;
+        tid = relinked;
+      }
+      if (!precedingIds.has(tid)) continue;
+      out.push({ ...m, tool_call_id: tid });
+    } else {
+      out.push(m);
+    }
+  }
+  return out;
 }
 
 function failureText(
@@ -267,6 +353,7 @@ export async function runToolLoop(deps: LoopDeps): Promise<LoopResult> {
   let toolCallsSeen = false;
   let budgetTripped = false;
   let trimRetried = false;
+  let sanitizeRetried = false;
 
   try {
     for (let round = 0; round < maxRounds; round++) {
@@ -285,11 +372,20 @@ export async function runToolLoop(deps: LoopDeps): Promise<LoopResult> {
           { signal: deps.signal, sleep: deps.sleep },
         );
       } catch (err) {
-        if (classifyAiError(err).kind === "context_too_long" && !trimRetried) {
+        const kind = classifyAiError(err).kind;
+        if (kind === "context_too_long" && !trimRetried) {
           trimRetried = true;
           const trimmed = trimHistory(messages);
           messages.length = 0;
           messages.push(...trimmed);
+          round -= 1;
+          continue;
+        }
+        if (kind === "invalid_assistant_message" && !sanitizeRetried) {
+          sanitizeRetried = true;
+          const cleaned = sanitizeHistory(messages);
+          messages.length = 0;
+          messages.push(...cleaned);
           round -= 1;
           continue;
         }

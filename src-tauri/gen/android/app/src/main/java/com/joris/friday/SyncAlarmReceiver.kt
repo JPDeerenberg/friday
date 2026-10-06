@@ -44,6 +44,20 @@ class SyncAlarmReceiver : BroadcastReceiver() {
         }
 
         Log.d(TAG, "Sync alarm fired — enqueuing sync worker")
+        // Diagnose the "sync takes 3-5 h" cadence problem: compare when the
+        // alarm was armed for against when it actually fired (Doze may defer
+        // even setExactAndAllowWhileIdle).
+        val prefs = context.getSharedPreferences("friday_prefs", Context.MODE_PRIVATE)
+        val scheduledAt = prefs.getLong(PREF_SYNC_ALARM_SCHEDULED_AT, 0L)
+        if (scheduledAt > 0L) {
+            val now = System.currentTimeMillis()
+            Log.i(
+                TAG,
+                "Sync alarm fire: scheduled=${formatTime(scheduledAt)} actual=${formatTime(now)} drift_ms=${now - scheduledAt}",
+            )
+        } else {
+            Log.i(TAG, "Sync alarm fire: actual=${formatTime(System.currentTimeMillis())} (no scheduled time recorded)")
+        }
 
         // 1. Enqueue a one-shot sync via WorkManager so the actual execution still
         // gets retry/constraint guarantees and runs off the main thread.
@@ -52,7 +66,7 @@ class SyncAlarmReceiver : BroadcastReceiver() {
             .build()
         val workRequest = OneTimeWorkRequestBuilder<SyncWorker>()
             .setConstraints(constraints)
-            .setInputData(SyncWorker.remoteInput(context))
+            .setInputData(SyncWorker.remoteInput(context, "alarm"))
             .build()
         WorkManager.getInstance(context).enqueue(workRequest)
 
@@ -64,6 +78,7 @@ class SyncAlarmReceiver : BroadcastReceiver() {
         const val TAG = "FridaySyncAlarm"
         const val ACTION_SYNC_ALARM = "com.joris.friday.SYNC_ALARM"
         const val REQUEST_CODE = 50001
+        const val PREF_SYNC_ALARM_SCHEDULED_AT = "sync_alarm_scheduled_at"
 
         /**
          * Arm (or re-arm) the next sync alarm at `now + intervalMinutes`, reading
@@ -100,6 +115,7 @@ class SyncAlarmReceiver : BroadcastReceiver() {
             }
 
             Log.d(TAG, "Sync alarm armed for ${formatTime(triggerAtMs)} (interval $intervalMinutes min)")
+            prefs.edit().putLong(PREF_SYNC_ALARM_SCHEDULED_AT, triggerAtMs).apply()
         }
 
         /**

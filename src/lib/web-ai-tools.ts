@@ -60,6 +60,7 @@ import {
   PlanGuardrailError,
 } from "./ai-schedule.ts";
 import type { PlanLesson } from "./web-planner.ts";
+import { detectTest } from "./test-detection.ts";
 import { loadWebAiConfig } from "./web-ai-store.ts";
 
 /** AI-Geheugen schrijftools (sequentieel uitvoeren, nooit parallel). */
@@ -786,6 +787,12 @@ function cut120(s: string): string {
   return `${Array.from(s).slice(0, 120).join("")}…`;
 }
 
+/** Cut to 200 chars without splitting a surrogate pair. */
+function cut200(s: string): string {
+  if (Array.from(s).length <= 200) return s;
+  return `${Array.from(s).slice(0, 200).join("")}…`;
+}
+
 /**
  * Slim one raw afspraak to the compact model shape. Nulls/empties are
  * dropped; teacher names stay redacted; the long homework text (`Inhoud`)
@@ -821,13 +828,25 @@ export function slimCalendarEvent(item: unknown): Record<string, unknown> {
   out["huiswerk"] = inhoud.trim().length > 0;
   set("type", r["Type"] ?? null);
   set("afgerond", r["Afgerond"] ?? null);
-  // InfoType 2-5 = upcoming tests/exams (Proefwerk, Tentamen, schriftelijk/
-  // mondeling overhoring); surfaced so the AI plans for them.
+  // Test/toetsweek detection: InfoType 2-5 (Proefwerk, Tentamen, SO,
+  // Mondeling) plus test signals in Opmerking/Aantekening (shared spec).
   const infoType =
     typeof r["InfoType"] === "number" ? (r["InfoType"] as number) : 0;
-  out["is_test"] =
-    infoType === 2 || infoType === 3 || infoType === 4 || infoType === 5;
+  const eventType = typeof r["Type"] === "number" ? (r["Type"] as number) : 0;
+  const opmerkingRaw =
+    typeof r["Opmerking"] === "string" ? (r["Opmerking"] as string) : null;
+  const aantekeningRaw =
+    typeof r["Aantekening"] === "string" ? (r["Aantekening"] as string) : null;
+  const detection = detectTest({
+    Type: eventType,
+    InfoType: infoType,
+    Opmerking: opmerkingRaw,
+    Aantekening: aantekeningRaw,
+  });
+  out["is_test"] = detection.isTest;
   set("aantekening", r["Aantekening"] ?? null);
+  if (opmerkingRaw?.trim()) set("opmerking", cut200(opmerkingRaw.trim()));
+  if (detection.hint) set("test_hint", cut200(detection.hint));
   return out;
 }
 
@@ -951,6 +970,8 @@ export async function executeWebTool(
           omschrijving: r["Omschrijving"] ?? null,
           inhoud: inhoud || null,
           huiswerk: inhoud.trim().length > 0,
+          aantekening: r["Aantekening"] ?? null,
+          opmerking: r["Opmerking"] ?? null,
           afgerond: r["Afgerond"] ?? null,
           type: r["Type"] ?? null,
           status: r["Status"] ?? null,

@@ -112,6 +112,16 @@ fn cut_120(s: &str) -> String {
     out
 }
 
+/// Cut to 200 chars on a char boundary (never splits UTF-8).
+fn cut_200(s: &str) -> String {
+    if s.chars().count() <= 200 {
+        return s.to_string();
+    }
+    let mut out: String = s.chars().take(200).collect();
+    out.push('…');
+    out
+}
+
 fn insert_if_present(map: &mut serde_json::Map<String, Value>, key: &str, v: Value) {
     if v.is_null() {
         return;
@@ -167,14 +177,26 @@ pub fn slim_calendar_item(item: &Value) -> Value {
     out.insert("huiswerk".to_string(), Value::Bool(!inhoud.trim().is_empty()));
     insert_if_present(&mut out, "type", item.get("Type").cloned().unwrap_or(Value::Null));
     insert_if_present(&mut out, "afgerond", item.get("Afgerond").cloned().unwrap_or(Value::Null));
-    // InfoType 2-5 = upcoming tests/exams (Proefwerk, Tentamen, schriftelijk/
-    // mondeling overhoring); surfaced for planning.
-    let is_test = matches!(
-        item.get("InfoType").and_then(|v| v.as_i64()),
-        Some(2) | Some(3) | Some(4) | Some(5)
+    // Test/toetsweek detection: InfoType 2-5 (Proefwerk, Tentamen, SO,
+    // Mondeling) plus test signals in Opmerking/Aantekening (shared spec).
+    let detection = crate::ai::test_detection::detect_test(
+        item.get("Type").and_then(|v| v.as_i64()).unwrap_or(0),
+        item.get("InfoType").and_then(|v| v.as_i64()).unwrap_or(0),
+        item.get("Opmerking").and_then(|v| v.as_str()),
+        item.get("Aantekening").and_then(|v| v.as_str()),
     );
-    out.insert("is_test".to_string(), Value::Bool(is_test));
+    out.insert("is_test".to_string(), Value::Bool(detection.is_test));
     insert_if_present(&mut out, "aantekening", item.get("Aantekening").cloned().unwrap_or(Value::Null));
+    if let Some(opmerking) = item.get("Opmerking").and_then(|v| v.as_str()) {
+        if !opmerking.trim().is_empty() {
+            out.insert("opmerking".to_string(), Value::String(cut_200(opmerking.trim())));
+        }
+    }
+    if let Some(hint) = detection.hint {
+        if !hint.is_empty() {
+            out.insert("test_hint".to_string(), Value::String(cut_200(&hint)));
+        }
+    }
     Value::Object(out)
 }
 
@@ -813,6 +835,8 @@ pub async fn execute_tool(
                                     "omschrijving": item.get("Omschrijving"),
                                     "inhoud": if inhoud.is_empty() { Value::Null } else { Value::String(inhoud.to_string()) },
                                     "huiswerk": !inhoud.trim().is_empty(),
+                                    "aantekening": item.get("Aantekening").cloned().unwrap_or(Value::Null),
+                                    "opmerking": item.get("Opmerking").cloned().unwrap_or(Value::Null),
                                     "afgerond": item.get("Afgerond"),
                                     "type": item.get("Type"),
                                     "status": item.get("Status"),
@@ -2888,6 +2912,24 @@ mod tests {
         assert!(slim_bare.get("afgerond").is_none(), "nulls dropped");
         assert!(slim_bare.get("lokaal").is_none(), "empty lokalen dropped");
         assert_eq!(slim_bare["huiswerk"], Value::Bool(false));
+
+        // Real toetsweek sample: the only signal is the Opmerking text.
+        let mut extra = lesson(6169391, "2026-10-05T14:00:00");
+        extra["Omschrijving"] = Value::String("schk - rmn - bv4.schk2".to_string());
+        extra["Lokatie"] = Value::String("B017".to_string());
+        extra["InfoType"] = Value::from(0);
+        extra["Opmerking"] = Value::String("Toets: BV4 schk extra tijd".to_string());
+        extra["Aantekening"] = Value::Null;
+        let slim_extra = slim_calendar_item(&extra);
+        assert_eq!(slim_extra["is_test"], Value::Bool(true));
+        assert_eq!(
+            slim_extra["opmerking"],
+            Value::String("Toets: BV4 schk extra tijd".to_string())
+        );
+        assert_eq!(
+            slim_extra["test_hint"],
+            Value::String("Toets: BV4 schk extra tijd".to_string())
+        );
     }
 
     #[test]

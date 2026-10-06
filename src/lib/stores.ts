@@ -1,11 +1,10 @@
-import { writable } from "svelte/store";
+import { writable, get } from "svelte/store";
 import type { Account } from "$lib/types";
 
 export const isLoggedIn = writable(false);
 export const personId = writable<number | null>(null);
 export const accountInfo = writable<Account | null>(null);
 export const profilePicture = writable<string | null>(null);
-export const currentPage = writable<string>("dashboard");
 export const navigationStack = writable<string[]>([]);
 // Surfaces auth-callback/auth-success/auth-error failures from +layout.svelte
 // (the sole owner of processing those events) to whatever screen wants to
@@ -54,13 +53,34 @@ export function goBack() {
 }
 
 // Persistent Settings
+export const START_PAGE_OPTIONS = [
+  { value: "dashboard", label: "Dashboard" },
+  { value: "calendar", label: "Agenda" },
+  { value: "grades", label: "Cijfers" },
+  { value: "messages", label: "Berichten" },
+  { value: "assignments", label: "Opdrachten" },
+  { value: "leermiddelen", label: "Leermiddelen" },
+  { value: "studiewijzers", label: "Studiewijzers" },
+  { value: "afwezigheid", label: "Afwezigheid" },
+  { value: "activiteiten", label: "Activiteiten" },
+  { value: "bronnen", label: "Bronnen" },
+  { value: "ai-schedule", label: "Friday's Plan" },
+];
+
+const START_PAGE_VALUES = START_PAGE_OPTIONS.map((o) => o.value);
+
 export const DEFAULT_SETTINGS = {
+  startPage: "dashboard",
   roundedGraphs: true,
   showSummary: true,
   decimalPoints: 1,
   highlightFailing: true,
   compactView: false,
   insufficientThreshold: 5.5,
+  // SE (schoolexamen) herkenning: "auto" | "magister" | "off". Alleen deze
+  // twee sleutels horen bij Task E — andere settings blijven onaangeroerd.
+  seDetection: "auto",
+  grade_se_overrides: {} as Record<number, boolean>,
   zoomGraph: false,
   showWeekend: true,
   weekView: "auto",
@@ -108,6 +128,17 @@ export function loadSettings() {
         ...DEFAULT_SETTINGS,
         ...parsed,
       };
+      // Task E: valideer SE-herkenning (alleen deze twee sleutels).
+      if (!["auto", "magister", "off"].includes(merged.seDetection)) {
+        merged.seDetection = DEFAULT_SETTINGS.seDetection;
+      }
+      if (
+        typeof merged.grade_se_overrides !== "object" ||
+        merged.grade_se_overrides === null ||
+        Array.isArray(merged.grade_se_overrides)
+      ) {
+        merged.grade_se_overrides = {};
+      }
       // Deep merge nested aiSchedule so partial stored objects don't lose defaults
       if (parsed.aiSchedule) {
         merged.aiSchedule = {
@@ -126,6 +157,9 @@ export function loadSettings() {
             DEFAULT_SETTINGS.aiSchedule.planInSchoolGaps;
         }
       }
+      if (!START_PAGE_VALUES.includes((merged as any).startPage)) {
+        (merged as any).startPage = "dashboard";
+      }
       return merged;
     } catch (e) {
       return DEFAULT_SETTINGS;
@@ -135,6 +169,18 @@ export function loadSettings() {
 }
 
 export const userSettings = writable(loadSettings());
+
+export const currentPage = writable<string>(loadSettings().startPage);
+
+export function getStartPage(): string {
+  try {
+    if (typeof window === "undefined") return "dashboard";
+    const val = (get(userSettings) as any)?.startPage;
+    return START_PAGE_VALUES.includes(val) ? val : "dashboard";
+  } catch {
+    return "dashboard";
+  }
+}
 
 const NOTIFICATION_SETTING_KEYS = [
   "notifyMessages",
