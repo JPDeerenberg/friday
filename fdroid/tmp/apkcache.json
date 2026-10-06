@@ -1479,7 +1479,7 @@
     "added": 1791279153.105923
   },
   "friday_21100.apk": {
-    "hash": "4144d1b037294dcaf5a711df1a4a1f3e6edea1a12769e4f9d05cf203c3ba8f6b",
+    "hash": "7a6a56ca733cda606653eaf44501c88135e46c2227c6900a7cbcf60ac54aeadc",
     "hashType": "sha256",
     "uses-permission": [
       [
@@ -1545,6 +1545,6 @@
     "signer": "a78c487208a97ffb2dadf9a69bdec2a6c0050b2f99ef528ed43a01dd5c5687a3",
     "size": 23254571,
     "apkName": "friday_21100.apk",
-    "added": 1791308231.276127
+    "added": 1791308231.0
   }
 }
