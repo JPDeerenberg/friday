@@ -846,22 +846,52 @@
     isDragging = false;
   }
 
+  // A touch that gets cancelled (the OS/WebView takes over the gesture) never
+  // fires touchend, which would leave the content stuck mid-drag.
+  function handleTouchCancel() {
+    isDragging = false;
+    isHorizontalSwipe = false;
+    swipeOffset = 0;
+  }
+
+  function findScrollParent(node: HTMLElement): HTMLElement | null {
+    let el = node.parentElement;
+    while (el && el !== document.body) {
+      const overflowY = getComputedStyle(el).overflowY;
+      if (overflowY === "auto" || overflowY === "scroll") return el;
+      el = el.parentElement;
+    }
+    return null;
+  }
+
   function swipeGesture(node: HTMLDivElement) {
-    const removeTouchStart = on(node, "touchstart", handleTouchStart, {
+    // The page wrapper in +page.svelte has no explicit height, so this node
+    // (and its `h-full`) only spans its content. Touches in the empty area
+    // below the lessons land on the layout's scroll container instead and
+    // never reached the handlers. Listen on that scroll container, which
+    // always covers the whole screen area, and fall back to the node itself.
+    const target = findScrollParent(node) ?? node;
+    const previousTouchAction = target.style.touchAction;
+    target.style.touchAction = "pan-y";
+
+    const removeTouchStart = on(target, "touchstart", handleTouchStart, {
       passive: false,
     });
-    const removeTouchMove = on(node, "touchmove", handleTouchMove, {
+    const removeTouchMove = on(target, "touchmove", handleTouchMove, {
       passive: false,
     });
-    const removeTouchEnd = on(node, "touchend", handleTouchEnd, {
+    const removeTouchEnd = on(target, "touchend", handleTouchEnd, {
       passive: false,
     });
+    const removeTouchCancel = on(target, "touchcancel", handleTouchCancel);
 
     return {
       destroy() {
         removeTouchStart();
         removeTouchMove();
         removeTouchEnd();
+        removeTouchCancel();
+        target.style.touchAction = previousTouchAction;
       },
     };
   }

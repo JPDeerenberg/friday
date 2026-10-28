@@ -1,0 +1,100 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "server": {
+    "port": 3000,
+    "hostname": "0.0.0.0"
+  },
+  "command": {},
+  "plugin": [
+    "opencode-ssh-session",
+    "file:///home/joris/code/friday/.opencode/plugins/env-protection.js",
+    "file:///home/joris/code/friday/.opencode/plugins/pnpm-guard.js"
+  ],
+  "username": "joris",
+  "mode": {},
+  "agent": {},
+  "mcp": {
+    "tavily": {
+      "type": "remote",
+      "url": "https://mcp.tavily.com/mcp/?tavilyApiKey=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",
+      "enabled": true
+    },
+    "context7": {
+      "type": "remote",
+      "url": "https://mcp.context7.com/mcp",
+      "enabled": true,
+      "headers": {
+        "Authorization": "Bearer ctx7sk-8ed84b66-5b2d-41ff-b1ab-981431485915"
+      }
+    },
+    "android-mcp-server": {
+      "type": "local",
+      "command": [
+        "/home/joris/android-mcp-server/.venv/bin/python",
+        "-m",
+        "src.server"
+      ],
+      "cwd": "/home/joris/android-mcp-server"
+    },
+    "tailwindcss": {
+      "type": "local",
+      "command": [
+        "npx",
+        "-y",
+        "tailwindcss-mcp-server"
+      ],
+      "enabled": true
+    },
+    "svelte": {
+      "type": "local",
+      "command": [
+        "npx",
+        "-y",
+        "@sveltejs/mcp"
+      ],
+      "enabled": true
+    },
+    "tauri": {
+      "type": "local",
+      "command": [
+        "npx",
+        "-y",
+        "@hypothesi/tauri-mcp-server"
+      ],
+      "enabled": true
+    },
+    "docx-mcp": {
+      "type": "local",
+      "command": [
+        "uvx",
+        "--with",
+        "mcp<2",
+        "docx-mcp-server"
+      ],
+      "enabled": true
+    },
+    "playwright": {
+      "type": "local",
+      "command": [
+        "npx",
+        "-y",
+        "@playwright/mcp@latest"
+      ],
+      "enabled": true
+    },
+    "gh_grep": {
+      "type": "remote",
+      "url": "https://mcp.grep.app",
+      "enabled": true
+    }
+  },
+  "formatter": true,
+  "permission": {
+    "edit": "ask",
+    "bash": "ask",
+    "external_directory": "ask",
+    "webfetch": "ask",
+    "doom_loop": "ask",
+    "ssh_connect": "ask"
+  }
+}
