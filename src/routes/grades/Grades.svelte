@@ -56,6 +56,15 @@
   import Chip from "$lib/components/Chip.svelte";
   import IconButton from "$lib/components/IconButton.svelte";
   import Switch from "$lib/components/Switch.svelte";
+  import GradeReveal from "$lib/components/GradeReveal.svelte";
+  import PendingGradesBanner from "$lib/components/PendingGradesBanner.svelte";
+  import {
+    gradeRevealState,
+    markGradeOpened,
+    splitGrades,
+    toRevealItem,
+    type RevealItem,
+  } from "$lib/grade-reveal";
   import type { Grade, GradePeriod, Schoolyear } from "$lib/types";
 
   type SubjectSummary = {
@@ -83,7 +92,31 @@
 
   let schoolyears = $state<Schoolyear[]>([]);
   let selectedYear = $state<Schoolyear | null>(null);
-  let grades = $state<Grade[]>([]);
+  // Everything the API returned. `grades` is what the page shows: new grades
+  // the user has not opened yet are held back (see $lib/grade-reveal), so
+  // averages, charts and lists never leak them early.
+  let allGrades = $state<Grade[]>([]);
+  const gradeSplit = $derived(
+    splitGrades(
+      allGrades,
+      $userSettings.gradeReveal !== false,
+      $gradeRevealState,
+    ),
+  );
+  const grades = $derived(gradeSplit.visible);
+  const pendingGrades = $derived(gradeSplit.hidden);
+
+  // Queue for the reveal overlay, captured when it opens (null = closed).
+  let revealQueue = $state<RevealItem[] | null>(null);
+  function openReveal() {
+    revealQueue = pendingGrades.map((g) => toRevealItem(g, isVoldoende(g)));
+  }
+  function onGradeRevealed(id: number) {
+    markGradeOpened(id);
+    // `grades` now includes it: rebuild the per-subject summaries.
+    subjects = getSubjects();
+    ensureRemainingTests();
+  }
   let subjects = $state<SubjectSummary[]>([]);
   let snapshots = $state<Snapshot[]>([]);
   let loading = $state(true);
@@ -372,7 +405,7 @@
         return fetchedGrades;
       };
 
-      grades = force
+      allGrades = force
         ? await cacheRefresh(`grades_${pid}_${yearId}`, fetcher, 5 * 60 * 1000)
         : await cacheGet(`grades_${pid}_${yearId}`, fetcher, 5 * 60 * 1000);
 
@@ -902,6 +935,10 @@
   </div>
 
   <main class="flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-6 space-y-5">
+    {#if pendingGrades.length > 0 && !activeSnapshot && !loading}
+      <PendingGradesBanner count={pendingGrades.length} onopen={openReveal} />
+    {/if}
+
     {#if activeSnapshot}
       <div
         class="bg-amber-500/10 border border-amber-500/30 rounded-3xl p-5 flex flex-col sm:flex-row items-center justify-between gap-4"
@@ -3812,6 +3849,14 @@
     {/if}
   </main>
 </div>
+
+{#if revealQueue}
+  <GradeReveal
+    items={revealQueue}
+    onrevealed={onGradeRevealed}
+    onclose={() => (revealQueue = null)}
+  />
+{/if}
 
 <style>
   .glass {

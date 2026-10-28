@@ -58,6 +58,8 @@
   import Button from "$lib/components/Button.svelte";
   import Chip from "$lib/components/Chip.svelte";
   import IconButton from "$lib/components/IconButton.svelte";
+  import GradeReveal from "$lib/components/GradeReveal.svelte";
+  import { resetGradeRevealBaseline } from "$lib/grade-reveal";
   import { fade, fly, slide } from "svelte/transition";
   import { onMount, onDestroy } from "svelte";
   import { open } from "@tauri-apps/plugin-dialog";
@@ -309,7 +311,13 @@
     currentPage.set(getStartPage());
   }
 
+  // Demo of the grade reveal animation (nothing gets marked as opened).
+  let showRevealPreview = $state(false);
+
   function updateToggle(id: string, value: boolean) {
+    // Switching the reveal back on starts fresh, so grades that arrived while
+    // it was off don't suddenly get hidden again.
+    if (id === "gradeReveal" && value) resetGradeRevealBaseline();
     userSettings.update((s) => ({ ...s, [id]: value }));
   }
 
@@ -971,6 +979,21 @@
           label: "Onvoldoendes Markeren",
           description: "Geef onvoldoendes een rode kleur.",
           type: "toggle",
+        },
+        {
+          id: "gradeReveal",
+          label: "Cijfers onthullen",
+          description:
+            "Nieuwe cijfers blijven verborgen tot je ze opent met een korte animatie. Zet dit uit om nieuwe cijfers meteen te zien.",
+          type: "toggle",
+        },
+        {
+          id: "previewGradeReveal",
+          label: "Voorbeeld onthulling",
+          description:
+            "Bekijk de animatie met een voorbeeldcijfer. Er wordt niets als geopend gemarkeerd.",
+          type: "action",
+          action: () => (showRevealPreview = true),
         },
         {
           id: "decimalPoints",
@@ -2287,6 +2310,8 @@
                                 <span class="animate-pulse">⏳ Wachten...</span>
                               {:else if setting.id === "openDndSettings"}
                                 {dndActionLabel()}
+                              {:else if setting.id === "previewGradeReveal"}
+                                Bekijken
                               {:else}
                                 Testen
                               {/if}
@@ -3028,6 +3053,23 @@
     </div>
   {/if}
 </div>
+
+{#if showRevealPreview}
+  <GradeReveal
+    preview
+    items={[
+      {
+        id: -1,
+        subject: "Voorbeeld",
+        title: "Zo ziet het eruit",
+        value: "7,5",
+        passed: true,
+        weight: null,
+      },
+    ]}
+    onclose={() => (showRevealPreview = false)}
+  />
+{/if}
 
 <style>
   .glass {

@@ -30,6 +30,15 @@
   import { fade, fly, scale } from "svelte/transition";
   import Button from "$lib/components/Button.svelte";
   import IconButton from "$lib/components/IconButton.svelte";
+  import GradeReveal from "$lib/components/GradeReveal.svelte";
+  import PendingGradesBanner from "$lib/components/PendingGradesBanner.svelte";
+  import {
+    gradeRevealState,
+    markGradeOpened,
+    splitGrades,
+    toRevealItem,
+    type RevealItem,
+  } from "$lib/grade-reveal";
   import type { Assignment, CalendarEvent, Grade } from "$lib/types";
   import {
     computeWeekStats,
@@ -40,7 +49,22 @@
 
   // Svelte 5 State
   let todayEvents = $state<CalendarEvent[]>([]);
-  let latestGrades = $state<Grade[]>([]);
+  // New grades the user has not opened yet are held back (see
+  // $lib/grade-reveal) and offered through a banner instead.
+  let allLatestGrades = $state<Grade[]>([]);
+  const latestSplit = $derived(
+    splitGrades(
+      allLatestGrades,
+      $userSettings.gradeReveal !== false,
+      $gradeRevealState,
+    ),
+  );
+  const latestGrades = $derived(latestSplit.visible);
+  const pendingGrades = $derived(latestSplit.hidden);
+  let revealQueue = $state<RevealItem[] | null>(null);
+  function openReveal() {
+    revealQueue = pendingGrades.map((g) => toRevealItem(g, isVoldoende(g)));
+  }
   let unreadCount = $state(0);
   let upcomingAssignments = $state<Assignment[]>([]);
 
@@ -288,7 +312,7 @@
           );
 
       todayEvents = data.todayEvents;
-      latestGrades = data.latestGrades;
+      allLatestGrades = data.latestGrades;
       unreadCount = data.unreadCount;
       upcomingAssignments = data.upcomingAssignments;
       tomorrowEvents = data.tomorrowEvents;
@@ -1378,6 +1402,13 @@
                 </div>
               {/each}
             {:else}
+              {#if pendingGrades.length > 0}
+                <PendingGradesBanner
+                  count={pendingGrades.length}
+                  onopen={openReveal}
+                  class="sm:col-span-2"
+                />
+              {/if}
               {#each latestGrades as grade, i (grade.CijferId || i)}
                 <button
                   onclick={() => currentPage.set("grades")}
@@ -1417,35 +1448,39 @@
                   </div>
                 </button>
               {:else}
-                <div
-                  class="sm:col-span-2 py-10 rounded-m3-md flex flex-col items-center justify-center text-center border border-dashed border-white/15 bg-surface-800/30"
-                  in:fade
-                >
-                  <svg
-                    class="w-10 h-10 text-gray-600 mb-3"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="1.5"
-                    ><path
-                      d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"
-                    /><rect x="9" y="3" width="6" height="4" rx="1" /></svg
+                {#if pendingGrades.length === 0}
+                  <div
+                    class="sm:col-span-2 py-10 rounded-m3-md flex flex-col items-center justify-center text-center border border-dashed border-white/15 bg-surface-800/30"
+                    in:fade
                   >
-                  <p class="text-title-small text-gray-400">Nog geen cijfers</p>
-                  <Button
-                    variant="text"
-                    onclick={() => currentPage.set("grades")}
-                    class="mt-3"
-                  >
-                    Bekijk cijferpagina <svg
-                      class="w-3 h-3"
+                    <svg
+                      class="w-10 h-10 text-gray-600 mb-3"
                       viewBox="0 0 24 24"
                       fill="none"
                       stroke="currentColor"
-                      stroke-width="3"><path d="m9 18 6-6-6-6" /></svg
+                      stroke-width="1.5"
+                      ><path
+                        d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"
+                      /><rect x="9" y="3" width="6" height="4" rx="1" /></svg
                     >
-                  </Button>
-                </div>
+                    <p class="text-title-small text-gray-400">
+                      Nog geen cijfers
+                    </p>
+                    <Button
+                      variant="text"
+                      onclick={() => currentPage.set("grades")}
+                      class="mt-3"
+                    >
+                      Bekijk cijferpagina <svg
+                        class="w-3 h-3"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="3"><path d="m9 18 6-6-6-6" /></svg
+                      >
+                    </Button>
+                  </div>
+                {/if}
               {/each}
             {/if}
           </div>
@@ -1618,6 +1653,14 @@
     </div>
   </main>
 </div>
+
+{#if revealQueue}
+  <GradeReveal
+    items={revealQueue}
+    onrevealed={markGradeOpened}
+    onclose={() => (revealQueue = null)}
+  />
+{/if}
 
 <style>
   /* Custom Animations & UI Extensions */

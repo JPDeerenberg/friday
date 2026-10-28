@@ -75,6 +75,8 @@ export const DEFAULT_SETTINGS = {
   showSummary: true,
   decimalPoints: 1,
   highlightFailing: true,
+  // Hold back new grades until the user opens them with a short animation.
+  gradeReveal: true,
   compactView: false,
   insufficientThreshold: 5.5,
   // SE (schoolexamen) herkenning: "auto" | "magister" | "off". Alleen deze
