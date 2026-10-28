@@ -91,25 +91,32 @@
       resumedSeen = true;
       return;
     }
-    untrack(() =>
-      (async () => {
-        try {
-          folders = await cacheRefresh(
-            "messages_folders",
-            () => getMessageFolders(),
-            5 * 60 * 1000,
-          );
-          if (selectedFolder) {
-            const updated = folders.find((f) => f.id === selectedFolder!.id);
-            if (updated) selectedFolder = updated;
-          }
-          await loadMessages(true);
-        } catch (e) {
-          console.warn("Messages resume refresh failed", e);
-        }
-      })(),
-    );
+    untrack(() => refresh());
   });
+
+  // Force-refresh the folder list (unread counts) and the open folder's
+  // messages. Used by the refresh button and by the foreground-resume hook.
+  let refreshing = $state(false);
+  async function refresh() {
+    if (refreshing) return;
+    refreshing = true;
+    try {
+      folders = await cacheRefresh(
+        "messages_folders",
+        () => getMessageFolders(),
+        5 * 60 * 1000,
+      );
+      if (selectedFolder) {
+        const updated = folders.find((f) => f.id === selectedFolder!.id);
+        if (updated) selectedFolder = updated;
+      }
+      await loadMessages(true);
+    } catch (e) {
+      console.warn("Messages refresh failed", e);
+    } finally {
+      refreshing = false;
+    }
+  }
 
   async function loadMessages(force = false) {
     console.info(
@@ -250,8 +257,8 @@
     <div
       class="hidden md:flex flex-col w-52 bg-surface-900/50 border-r border-surface-700/20 shrink-0"
     >
-      <div class="p-3 border-b border-surface-700/20">
-        <Button onclick={() => (showCompose = true)} class="w-full">
+      <div class="p-3 border-b border-surface-700/20 flex items-center gap-2">
+        <Button onclick={() => (showCompose = true)} class="flex-1">
           <svg
             class="w-4 h-4"
             viewBox="0 0 24 24"
@@ -263,6 +270,25 @@
           >
           Nieuw
         </Button>
+        <IconButton
+          onclick={refresh}
+          disabled={refreshing}
+          aria-label="Vernieuwen"
+          title="Vernieuwen"
+        >
+          <svg
+            class="w-5 h-5 {refreshing ? 'animate-spin' : ''}"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2.5"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            ><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" /><path
+              d="M21 3v5h-5"
+            /></svg
+          >
+        </IconButton>
       </div>
       <div class="flex-1 overflow-y-auto p-2 space-y-0.5">
         {#if loading}
@@ -346,6 +372,25 @@
                 ><circle cx="11" cy="11" r="8" /><path
                   d="m21 21-4.35-4.35"
                 /></svg
+              >
+            </IconButton>
+            <IconButton
+              onclick={refresh}
+              disabled={refreshing}
+              aria-label="Vernieuwen"
+              title="Vernieuwen"
+            >
+              <svg
+                class="w-5 h-5 {refreshing ? 'animate-spin' : ''}"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                ><path
+                  d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"
+                /><path d="M21 3v5h-5" /></svg
               >
             </IconButton>
             <IconButton
