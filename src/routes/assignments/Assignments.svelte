@@ -422,7 +422,7 @@
                   {assignment.Titel}
                 </p>
                 <span
-                  class="px-2 py-0.5 rounded-m3-sm text-label-small border shrink-0 {getStatusStyle(
+                  class="px-2 py-0.5 rounded-m3-sm text-label-small border shrink-0 whitespace-nowrap {getStatusStyle(
                     status.key,
                   )}"
                 >
@@ -442,7 +442,7 @@
                   )}
                 </span>
               </div>
-              {#if isOverdue(assignment)}
+              {#if isOverdue(assignment) && status.key !== "overdue"}
                 <div class="mt-1.5 flex items-center gap-1 text-red-400">
                   <svg
                     class="w-3 h-3"
@@ -521,15 +521,30 @@
               <div class="flex-1 min-w-0">
                 <div class="flex items-center gap-2 mb-2 flex-wrap">
                   <span
-                    class="px-2.5 py-1 rounded-m3-sm text-label-small border {getStatusStyle(
+                    class="inline-flex items-center gap-1 whitespace-nowrap px-2.5 py-1 rounded-m3-sm text-label-small border {getStatusStyle(
                       getStatus(selectedAssignment).key,
                     )}"
                   >
+                    {#if getStatus(selectedAssignment).key === "overdue"}
+                      <svg
+                        class="w-3 h-3"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2.5"
+                        ><circle cx="12" cy="12" r="10" /><line
+                          x1="12"
+                          y1="8"
+                          x2="12"
+                          y2="12"
+                        /><line x1="12" y1="16" x2="12.01" y2="16" /></svg
+                      >
+                    {/if}
                     {getStatus(selectedAssignment).label}
                   </span>
-                  {#if isOverdue(selectedAssignment)}
+                  {#if isOverdue(selectedAssignment) && getStatus(selectedAssignment).key !== "overdue"}
                     <span
-                      class="flex items-center gap-1 px-2.5 py-1 rounded-m3-sm text-label-small bg-red-500/15 text-red-400 border border-red-500/25 animate-pulse"
+                      class="inline-flex items-center gap-1 whitespace-nowrap px-2.5 py-1 rounded-m3-sm text-label-small bg-red-500/15 text-red-400 border border-red-500/25"
                     >
                       <svg
                         class="w-3 h-3"
