@@ -30,11 +30,11 @@ cd crates/web-api && PORT=3000 cargo run   # stateless web API for web dev
 
 Friday is a Magister school client (agenda, grades, messages, assignments, absences) with three distributable forms from one SvelteKit codebase:
 
-| Form                                                                         | How it runs                                | Auth                                                             | Backend                                     |
-| ---------------------------------------------------------------------------- | ------------------------------------------ | ---------------------------------------------------------------- | ------------------------------------------- |
-| **Desktop** (Windows/Linux via `pnpm tauri build`)                           | Tauri v2 webview + Rust                    | OAuth in system browser, `m6loapp://` deep-link callback         | Rust commands in `src-tauri/`               |
-| **Android** (APK via `pnpm tauri android build --apk`, CI release)           | Tauri v2 + Kotlin                          | Same OAuth deep-link                                             | Rust + Kotlin (`SyncWorker`, JNI)           |
-| **Web / PWA** (live at https://jpdeerenberg.github.io/friday, self-hostable) | Static SvelteKit SPA + stateless `web-api` | School + username + password form (one login call, never stored) | `crates/web-api` (Axum, no DB, no sessions) |
+| Form                                                               | How it runs                                | Auth                                                             | Backend                                     |
+| ------------------------------------------------------------------ | ------------------------------------------ | ---------------------------------------------------------------- | ------------------------------------------- |
+| **Desktop** (Windows/Linux via `pnpm tauri build`)                 | Tauri v2 webview + Rust                    | OAuth in system browser, `m6loapp://` deep-link callback         | Rust commands in `src-tauri/`               |
+| **Android** (APK via `pnpm tauri android build --apk`, CI release) | Tauri v2 + Kotlin                          | Same OAuth deep-link                                             | Rust + Kotlin (`SyncWorker`, JNI)           |
+| **Web / PWA** (live at https://fridayapp.nl, self-hostable)        | Static SvelteKit SPA + stateless `web-api` | School + username + password form (one login call, never stored) | `crates/web-api` (Axum, no DB, no sessions) |
 
 Dutch UI throughout. Unofficial Magister client — see README disclaimer.
 
@@ -81,7 +81,7 @@ src-tauri/gen/android/        Kotlin: MainActivity, SyncWorker, SyncAlarmReceive
 Dockerfile.web / Caddyfile / docker-compose.yml   VPS self-host stack
 crates/web-api/Dockerfile / render.yaml           free-tier self-host pieces
 .github/workflows/
-  deploy-web.yml              main → GitHub Pages (/friday/, VITE_API_URL baked at build)
+  deploy-web.yml              main → GitHub Pages (custom domain fridayapp.nl, VITE_API_URL baked at build)
   release.yml                 manual dispatch → draft GitHub release (Windows, Linux, Android)
 fixes/                        diagnosis docs (e.g. FRIDAY_AUTH_LOGOUT_DIAGNOSIS.md) — read
                               the relevant one before touching auth/sync
@@ -92,7 +92,7 @@ fixes/                        diagnosis docs (e.g. FRIDAY_AUTH_LOGOUT_DIAGNOSIS.
 - **Routing**: custom, not file-based. `src/routes/+page.svelte` lazy-loads page components keyed by `$currentPage` store (`src/lib/stores.ts`: `currentPage`, `navigationStack`, `resumedAt`, `restoreStatus`). `+layout.svelte` owns auth-callback events and the hidden→visible resume signal.
 - **Desktop/Android data path**: Svelte → `src/lib/api.ts` (`invoke()`) → Rust command (`src-tauri/src/commands/`) → `MagisterClient` (`client.rs`) → Magister REST. All commands `async`, errors are `Result<T, String>`.
 - **Web data path**: Svelte → `backend.ts`/`web-session.ts` (`fetch`) → `web-api` (`/api/magister/*` Tier-A passthrough, `/api/auth/*` grants) → Magister. Tokens stay in browser IndexedDB; server holds nothing. Tier-B aggregation (grades shaping, planner) runs in TypeScript (`web-tier-b.ts`); Tier-C (auth/AI/export) has dedicated endpoints.
-- **Build variants**: `BASE_PATH` env controls subpath. GitHub Pages sets `BASE_PATH=/friday`; Tauri/Caddy/dev leave it empty (root-based). `VITE_API_URL` is baked at web build time (`/api` default for same-origin Caddy, full URL for split Pages+Render hosting). `vite.config.js` proxies `/api` → `WEB_API_TARGET` (default `localhost:3000`) in dev.
+- **Build variants**: `BASE_PATH` env controls subpath (optional, for subdirectory hosting only). GitHub Pages serves fridayapp.nl at root, so do Tauri/Caddy/dev builds — leave `BASE_PATH` unset. `VITE_API_URL` is baked at web build time (`/api` default for same-origin Caddy, full URL for split Pages+Render hosting). `vite.config.js` proxies `/api` → `WEB_API_TARGET` (default `localhost:3000`) in dev.
 - **State & caching**: global state in `src/lib/stores.ts` (writable stores, `$store` in templates). App data cached to IndexedDB via `idb` (`cacheGet`/`cacheRefresh`, 5–30 min TTL, stale-while-revalidate). Settings in `localStorage` (merge strategy). Dashboard fans out with `Promise.allSettled()` (per-section errors).
 - **Styling**: Tailwind CSS 4 + Material 3 semantic tokens (`--m3-*` in `src/app.css`). Dark default, AMOLED via `.mode-amoled`. Utility-first, `@apply` sparingly. Shared primitives in `src/lib/components/` (Button, Card, Chip, Switch, …).
 

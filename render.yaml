@@ -18,7 +18,8 @@ services:
     envVars:
       - key: RUST_LOG
         value: info
-      # GitHub Pages origin. Tighten only after the Pages site exists;
-      # unset/permissive is safe (per-request Bearer auth, never cookies).
+      # GitHub Pages origin (custom domain fridayapp.nl). Tighten only after
+      # the Pages site exists; unset/permissive is safe (per-request Bearer
+      # auth, never cookies).
       - key: ALLOWED_ORIGINS
-        value: https://jpdeerenberg.github.io
+        value: https://fridayapp.nl,https://jpdeerenberg.github.io,https://www.fridayapp.nl

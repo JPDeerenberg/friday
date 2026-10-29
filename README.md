@@ -2,7 +2,7 @@
 
 Friday is an unofficial, open-source Magister client for students: agenda, cijfers, berichten, huiswerk, afwezigheid and more — in one fast, dark, Dutch app.
 
-- **Try the web version now:** **https://jpdeerenberg.github.io/friday** — works in any modern browser, installable as an app (Add to Home Screen, also on iOS). Log in with your school + Magister username + password.
+- **Try the web version now:** **https://fridayapp.nl** — works in any modern browser, installable as an app (Add to Home Screen, also on iOS). Log in with your school + Magister username + password.
 - **Native apps:** download Windows, Linux and Android builds from [GitHub Releases](https://github.com/JPDeerenberg/agenda-tauri/releases).
 
 > ⚠️ **Disclaimer:** Friday is an unofficial client and is not affiliated with Magister or Iddink. Using it may conflict with your school's or Magister's terms of service — you are responsible for that choice. Your password is only ever used for the single login call and is never stored (see [How login works](#how-login-works)).
@@ -27,7 +27,7 @@ Friday is an unofficial, open-source Magister client for students: agenda, cijfe
 
 The link above runs entirely as a static site + a tiny stateless API:
 
-1. Open **https://jpdeerenberg.github.io/friday**.
+1. Open **https://fridayapp.nl**.
 2. Pick your school, enter your Magister username + password, log in.
 3. Optional: _Share → Add to Home Screen_ for a fullscreen PWA experience.
 
@@ -63,9 +63,9 @@ docker compose up -d --build
 Split hosting: static frontend on Pages, API on Render.
 
 1. **API:** in Render, _Blueprints → New_, point it at your fork — `render.yaml` in the repo root defines a free Frankfurt Docker service (`dockerfilePath: ./crates/web-api/Dockerfile`, health check `/health`). Note the public URL, e.g. `https://friday-api-xyz.onrender.com`.
-2. **Frontend:** fork the repo, enable Pages (Settings → Pages → _Deploy from a branch_, `gh-pages`). The `deploy-web.yml` workflow builds on every `main` push with `BASE_PATH=/friday` and bakes in the API URL.
+2. **Frontend:** fork the repo, enable Pages (Settings → Pages → _Deploy from a branch_, `gh-pages`). The `deploy-web.yml` workflow builds on every `main` push (root-based; point your own domain's DNS at GitHub Pages and set it under Settings → Pages) and bakes in the API URL.
 3. Set the API URL via repo Settings → _Variables → Actions_ → `VITE_API_URL=https://<your-service>.onrender.com/api`. Without it, the build falls back to the default in `deploy-web.yml`.
-4. Your app is live at `https://<you>.github.io/friday/`.
+4. Your app is live at your Pages URL (project URL `https://<you>.github.io/<repo>/` or a custom domain, e.g. https://fridayapp.nl for this repo).
 
 To move the Render region later you must recreate the service (Render forbids changing region afterwards) — Frankfurt is closest to Magister (NL).
 

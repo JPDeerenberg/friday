@@ -1,8 +1,11 @@
 # Deploy the Friday web app to GitHub Pages (gh-pages BRANCH).
 #
+# Served at the custom domain https://fridayapp.nl (apex, DNS: A records →
+# GitHub Pages IPs). github.io URLs redirect there once the domain is set.
+#
 # Coexists with the F-Droid repo on the SAME branch:
-# - the app lives at site root (/friday/), fdroid at /friday/fdroid/ (untouched)
-# - rsync --delete prunes stale APP files only; /fdroid is always excluded
+# - the app lives at site root, fdroid at /fdroid/ (untouched)
+# - rsync --delete prunes stale APP files only; /fdroid and CNAME are excluded
 # - release.yml's peaceiris step has keep_files:true so Android releases
 #   never wipe the app (and this workflow never touches fdroid/)
 # - pushes retry with rebase in case an Android release lands mid-deploy
@@ -74,10 +77,8 @@ jobs:
 
       - name: Build static site
         working-directory: source
-        env:
-          # Project site lives at /friday/ — bake the subpath into asset URLs.
-          # (Tauri/Caddy/dev builds never set this and stay root-based.)
-          BASE_PATH: /friday
+        # Custom domain fridayapp.nl — site lives at root, exactly like
+        # Tauri/Caddy/dev builds. BASE_PATH stays unset.
         run: pnpm build
 
       - name: Overlay build onto Pages branch (fdroid/ excluded)
@@ -86,12 +87,16 @@ jobs:
           # Jekyll would ignore _app/ — disable it (one empty file, harmless to fdroid).
           touch pages/.nojekyll
           # Merge build output into branch root; prune stale app files;
-          # never touch fdroid/ (or .git/.nojekyll/CNAME if present).
+          # never touch fdroid/ or the Pages CNAME (custom domain fridayapp.nl).
           rsync -a --delete \
             --exclude='/fdroid' \
             --exclude='/.git' \
             --exclude='/.nojekyll' \
+            --exclude='/CNAME' \
             source/build/ pages/
+          # Custom domain — GitHub Pages needs this exact file to serve the
+          # apex domain and issue its TLS cert. Idempotent (same content).
+          printf 'fridayapp.nl\n' > pages/CNAME
           cd pages
           git add -A
           if git diff --cached --quiet; then
