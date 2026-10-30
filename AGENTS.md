@@ -13,7 +13,7 @@ pnpm check                      # svelte-kit sync + svelte-check (type-check)
 pnpm exec prettier --check .    # frontend format check (prettier + prettier-plugin-svelte)
 pnpm test                       # all 6 frontend test files (node built-in test runner)
 pnpm tauri dev                  # full desktop app (frontend + Rust backend)
-pnpm tauri dev -- --features devtools  # same + MCP automation bridge (agent `tauri_*` tools need this; release builds never include it)
+pnpm dev:tools                  # = tauri dev + devtools feature + `src-tauri/tauri.devtools.conf.json` (MCP automation bridge; use this one, see §9)
 pnpm tauri build                # desktop production binary
 pnpm tauri android build --apk  # Android APK (needs Android SDK + JDK 17)
 
@@ -151,6 +151,7 @@ All servers below are already connected (`opencode mcp list` = 9). Call their to
 Rules:
 
 - Frontend component work → `svelte` + `tailwindcss`; verify with `playwright`, not just `pnpm check`.
+- Driving the desktop app with the `tauri_*` MCP tools → `pnpm dev:tools` (§1), never plain `pnpm tauri dev`. It merges `src-tauri/tauri.devtools.conf.json`, which adds the `mcp-bridge:default` capability the bridge needs to return script results. That permission cannot live in `capabilities/default.json`: the plugin is optional, so a non-devtools `cargo check`/`tauri build` fails with `Permission mcp-bridge:default not found`. After the app is up, `driver_session` (port 9223) → `webview_*`/`ipc_*`. `webview_interact`'s `swipe` does not produce usable `PointerEvent`s for the card gestures; dispatch `PointerEvent`s via `webview_execute_js` instead.
 - Rust `commands/`/`client.rs` work → `context7` (Axum/Tauri docs) + `gh_grep` for patterns; never invent Magister endpoints — check `client.rs`/`magister-core` first.
 - Android sync/DND work → read §6 + `fixes/` first, then `android-mcp-server` only for device/Kotlin checks.
 - Secrets: tokens live in OS keyring / browser IndexedDB (§5). Never `read`/`grep` `.env`, `tokens.json`, `sync_state.json` — the `env-protection` plugin blocks this.

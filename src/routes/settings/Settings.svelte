@@ -58,8 +58,9 @@
   import Button from "$lib/components/Button.svelte";
   import Chip from "$lib/components/Chip.svelte";
   import IconButton from "$lib/components/IconButton.svelte";
-  import GradeReveal from "$lib/components/GradeReveal.svelte";
-  import { resetGradeRevealBaseline } from "$lib/grade-reveal";
+  import PackReveal from "$lib/components/PackReveal.svelte";
+  import { buildCards } from "$lib/cards";
+  import { resetCollection } from "$lib/grade-reveal";
   import { fade, fly, slide } from "svelte/transition";
   import { onMount, onDestroy } from "svelte";
   import { open } from "@tauri-apps/plugin-dialog";
@@ -311,13 +312,47 @@
     currentPage.set(getStartPage());
   }
 
-  // Demo of the grade reveal animation (nothing gets marked as opened).
+  // Demo pack for the card reveal (nothing gets recorded).
   let showRevealPreview = $state(false);
+  const sampleCards = (() => {
+    const rows: Array<[number, string, string]> = [
+      [-2, "6,2", "Nederlands"],
+      [-3, "3,8", "Scheikunde"],
+      [-7, "7,1", "Engels"],
+      [-1, "8,0", "Wiskunde B"],
+      [-5, "9,0", "Natuurkunde"],
+      [-6, "10", "Biologie"],
+    ];
+    const grades = rows.map(([id, value, subject], i) => ({
+      CijferId: id,
+      CijferStr: value,
+      IsVoldoende: Number(value.replace(",", ".")) >= 5.5,
+      DatumIngevoerd: `2026-09-0${i + 1}T10:00:00`,
+      Weging: i === 5 ? 3 : 1,
+      CijferKolom: {
+        Id: 1,
+        KolomNaam: "Toets",
+        KolomOmschrijving: "Voorbeeld",
+        KolomSoort: 1,
+      },
+      Vak: { Id: i, Afkorting: "", Omschrijving: subject, Volgnr: i },
+    })) as unknown as Parameters<typeof buildCards>[0];
+    return [...buildCards(grades, { threshold: 5.5 }).values()];
+  })();
+
+  // Two-step reset: first tap arms it, second tap (within 4s) wipes the collection.
+  let resetArmed = $state(false);
+  function armOrResetCollection() {
+    if (resetArmed) {
+      resetCollection();
+      resetArmed = false;
+      return;
+    }
+    resetArmed = true;
+    setTimeout(() => (resetArmed = false), 4000);
+  }
 
   function updateToggle(id: string, value: boolean) {
-    // Switching the reveal back on starts fresh, so grades that arrived while
-    // it was off don't suddenly get hidden again.
-    if (id === "gradeReveal" && value) resetGradeRevealBaseline();
     userSettings.update((s) => ({ ...s, [id]: value }));
   }
 
@@ -982,18 +1017,44 @@
         },
         {
           id: "gradeReveal",
-          label: "Cijfers onthullen",
+          label: "Cijfers verbergen als kaarten",
           description:
-            "Nieuwe cijfers blijven verborgen tot je ze opent met een korte animatie. Zet dit uit om nieuwe cijfers meteen te zien.",
+            "Al je cijfers blijven verborgen tot je ze opent als verzamelkaart. Met het oog-icoon bij Cijfers zie je alles tijdelijk zonder iets te openen. Zet dit uit om cijfers altijd te tonen.",
+          type: "toggle",
+        },
+        {
+          id: "cardIntensity",
+          label: "Kaartanimaties",
+          description:
+            "Uit: tikken en klaar. Normaal: lichtere effecten. Vol: alle effecten, ook op zeldzame kaarten.",
+          type: "select",
+          options: [
+            { value: "uit", label: "Uit" },
+            { value: "normaal", label: "Normaal" },
+            { value: "vol", label: "Vol" },
+          ],
+        },
+        {
+          id: "cardSound",
+          label: "Geluid bij kaarten",
+          description: "Korte, zelfgemaakte geluidjes tijdens het openen.",
           type: "toggle",
         },
         {
           id: "previewGradeReveal",
-          label: "Voorbeeld onthulling",
+          label: "Voorbeeldpakket",
           description:
-            "Bekijk de animatie met een voorbeeldcijfer. Er wordt niets als geopend gemarkeerd.",
+            "Open een voorbeeldpakket met alle zeldzaamheden. Er wordt niets opgeslagen.",
           type: "action",
           action: () => (showRevealPreview = true),
+        },
+        {
+          id: "resetCardCollection",
+          label: "Verzameling resetten",
+          description:
+            "Verberg al je cijfers opnieuw en wis je kaarten, XP en prestaties op dit apparaat.",
+          type: "action",
+          action: armOrResetCollection,
         },
         {
           id: "decimalPoints",
@@ -2312,6 +2373,8 @@
                                 {dndActionLabel()}
                               {:else if setting.id === "previewGradeReveal"}
                                 Bekijken
+                              {:else if setting.id === "resetCardCollection"}
+                                {resetArmed ? "Zeker weten?" : "Resetten"}
                               {:else}
                                 Testen
                               {/if}
@@ -3055,18 +3118,12 @@
 </div>
 
 {#if showRevealPreview}
-  <GradeReveal
+  <PackReveal
     preview
-    items={[
-      {
-        id: -1,
-        subject: "Voorbeeld",
-        title: "Zo ziet het eruit",
-        value: "7,5",
-        passed: true,
-        weight: null,
-      },
-    ]}
+    queue={sampleCards}
+    intensity={($userSettings.cardIntensity ?? "vol") as
+      "uit" | "normaal" | "vol"}
+    sound={$userSettings.cardSound === true}
     onclose={() => (showRevealPreview = false)}
   />
 {/if}

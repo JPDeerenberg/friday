@@ -56,15 +56,17 @@
   import Chip from "$lib/components/Chip.svelte";
   import IconButton from "$lib/components/IconButton.svelte";
   import Switch from "$lib/components/Switch.svelte";
-  import GradeReveal from "$lib/components/GradeReveal.svelte";
+  import PackReveal from "$lib/components/PackReveal.svelte";
+  import CardAlbum from "$lib/components/CardAlbum.svelte";
+  import GradeCardView from "$lib/components/GradeCardView.svelte";
   import PendingGradesBanner from "$lib/components/PendingGradesBanner.svelte";
   import {
+    gradePeek,
     gradeRevealState,
-    markGradeOpened,
+    openPackIntent,
     splitGrades,
-    toRevealItem,
-    type RevealItem,
   } from "$lib/grade-reveal";
+  import { buildCards, type CardData } from "$lib/cards";
   import type { Grade, GradePeriod, Schoolyear } from "$lib/types";
 
   type SubjectSummary = {
@@ -92,30 +94,57 @@
 
   let schoolyears = $state<Schoolyear[]>([]);
   let selectedYear = $state<Schoolyear | null>(null);
-  // Everything the API returned. `grades` is what the page shows: new grades
-  // the user has not opened yet are held back (see $lib/grade-reveal), so
-  // averages, charts and lists never leak them early.
+  // Everything the API returned. `grades` is what the page shows: while grade
+  // reveal is on, EVERY grade stays hidden until the user opens its card (see
+  // $lib/grade-reveal), so averages, charts and lists never leak a hidden grade.
+  // Peek mode shows everything without opening anything.
   let allGrades = $state<Grade[]>([]);
+  const revealEnabled = $derived($userSettings.gradeReveal !== false);
   const gradeSplit = $derived(
-    splitGrades(
-      allGrades,
-      $userSettings.gradeReveal !== false,
-      $gradeRevealState,
-    ),
+    splitGrades(allGrades, revealEnabled, $gradeRevealState, $gradePeek),
   );
   const grades = $derived(gradeSplit.visible);
-  const pendingGrades = $derived(gradeSplit.hidden);
+  // Per-subject summaries are built imperatively, so rebuild them whenever the
+  // visible set changes: a card gets opened, or peek mode is switched on/off.
+  $effect(() => {
+    void grades;
+    untrack(() => {
+      subjects = getSubjects();
+      ensureRemainingTests();
+    });
+  });
 
-  // Queue for the reveal overlay, captured when it opens (null = closed).
-  let revealQueue = $state<RevealItem[] | null>(null);
-  function openReveal() {
-    revealQueue = pendingGrades.map((g) => toRevealItem(g, isVoldoende(g)));
+  // One collectible card per grade.
+  const cardMap = $derived(
+    buildCards(allGrades, {
+      threshold: $userSettings.insufficientThreshold ?? 5.5,
+    }),
+  );
+  const cardList = $derived([...cardMap.values()]);
+  const openedSet = $derived(new Set($gradeRevealState.opened));
+  /** Cards still face-down, newest first (independent of peek mode). */
+  const unopenedCards = $derived(
+    revealEnabled
+      ? cardList
+          .filter((c) => !openedSet.has(c.id))
+          .sort((a, b) => (b.date ?? "").localeCompare(a.date ?? ""))
+      : [],
+  );
+  const cardIntensity = $derived(
+    ($userSettings.cardIntensity ?? "vol") as "uit" | "normaal" | "vol",
+  );
+
+  // Queue for the pack overlay, captured when it opens (null = closed).
+  let revealQueue = $state<CardData[] | null>(null);
+  function openPack() {
+    if (unopenedCards.length === 0) return;
+    revealQueue = unopenedCards.slice(0, 5);
   }
-  function onGradeRevealed(id: number) {
-    markGradeOpened(id);
-    // `grades` now includes it: rebuild the per-subject summaries.
-    subjects = getSubjects();
-    ensureRemainingTests();
+  function openCards(ids: number[]) {
+    const picked = ids
+      .map((id) => cardMap.get(id))
+      .filter((c): c is CardData => !!c);
+    if (picked.length) revealQueue = picked;
   }
   let subjects = $state<SubjectSummary[]>([]);
   let snapshots = $state<Snapshot[]>([]);
@@ -125,9 +154,38 @@
   let errorMessage = $state<string | null>(null);
 
   // New tab: Analyse
-  let currentTab = $state<"vakken" | "recent" | "tools" | "analytisch">(
-    "vakken",
+  let currentTab = $state<
+    "vakken" | "recent" | "tools" | "analytisch" | "kaarten"
+  >("vakken");
+
+  /**
+   * Nothing rendered yet but cards are waiting: show the pack hero instead.
+   * Counts only real grade columns (`KolomSoort === 1`), because the visible
+   * set also carries SE/period columns that no list renders — keying off
+   * `grades.length` left the Vakken tab blank next to the banner.
+   */
+  const visibleGrades = $derived(
+    grades.filter((g) => g.Vak && g.CijferKolom?.KolomSoort === 1).length,
   );
+  const showHero = $derived(
+    revealEnabled &&
+      !$gradePeek &&
+      !loading &&
+      !activeSnapshot &&
+      visibleGrades === 0 &&
+      unopenedCards.length > 0 &&
+      (currentTab === "vakken" ||
+        currentTab === "recent" ||
+        currentTab === "analytisch"),
+  );
+
+  // The dashboard can ask for a pack to be opened as soon as grades are loaded.
+  $effect(() => {
+    if ($openPackIntent && !loading && allGrades.length > 0) {
+      openPackIntent.set(false);
+      untrack(openPack);
+    }
+  });
 
   // Subject Sort Filter
   let subjectSortMode = $state<
@@ -889,6 +947,37 @@
             /></svg
           >
         </IconButton>
+        {#if revealEnabled}
+          <IconButton
+            onclick={() => gradePeek.update((v) => !v)}
+            aria-label={$gradePeek
+              ? "Cijfers weer verbergen"
+              : "Alle cijfers tonen"}
+            aria-pressed={$gradePeek}
+            title={$gradePeek ? "Cijfers weer verbergen" : "Alle cijfers tonen"}
+            class={$gradePeek ? "text-amber-300!" : ""}
+          >
+            <svg
+              class="w-4 h-4"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2.2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              {#if $gradePeek}
+                <path
+                  d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"
+                /><circle cx="12" cy="12" r="3" />
+              {:else}
+                <path
+                  d="M17.94 17.94A10.07 10.07 0 0 1 12 19c-6.5 0-10-7-10-7a17.7 17.7 0 0 1 4.06-5.06M9.9 4.24A9.12 9.12 0 0 1 12 4c6.5 0 10 7 10 7a17.6 17.6 0 0 1-2.16 3.19M1 1l22 22"
+                />
+              {/if}
+            </svg>
+          </IconButton>
+        {/if}
       </div>
       <div class="flex flex-wrap items-center gap-2 justify-end flex-1 min-w-0">
         {#each schoolyears as year}
@@ -906,9 +995,9 @@
 
     <!-- Tabs – M3 wrap: 2×2 on phones, single row on larger -->
     <div
-      class="grid grid-cols-2 sm:flex sm:flex-nowrap items-center gap-1 bg-surface-900 p-1 rounded-2xl border border-white/5 mb-3"
+      class="grid grid-cols-3 sm:flex sm:flex-nowrap items-center gap-1 bg-surface-900 p-1 rounded-2xl border border-white/5 mb-3"
     >
-      {#each [{ id: "vakken", label: "Vakken", icon: '<path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>' }, { id: "recent", label: "Recent", icon: '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>' }, { id: "analytisch", label: "Analytisch", icon: '<path d="M18 20V10M12 20V4M6 20v-6"/><path d="M2 20h20"/>' }, { id: "tools", label: "Tools", icon: '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>' }] as tab}
+      {#each [{ id: "vakken", label: "Vakken", icon: '<path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>' }, { id: "recent", label: "Recent", icon: '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>' }, { id: "analytisch", label: "Analytisch", icon: '<path d="M18 20V10M12 20V4M6 20v-6"/><path d="M2 20h20"/>' }, { id: "tools", label: "Tools", icon: '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>' }, { id: "kaarten", label: "Kaarten", icon: '<rect x="3" y="6" width="12" height="15" rx="2"/><path d="M8 3h11a2 2 0 0 1 2 2v13"/>' }] as tab}
         <div class="flex justify-center">
           <Chip
             variant="filter"
@@ -935,8 +1024,22 @@
   </div>
 
   <main class="flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-6 space-y-5">
-    {#if pendingGrades.length > 0 && !activeSnapshot && !loading}
-      <PendingGradesBanner count={pendingGrades.length} onopen={openReveal} />
+    {#if revealEnabled && !activeSnapshot && !loading}
+      {#if $gradePeek}
+        <button
+          type="button"
+          onclick={() => gradePeek.set(false)}
+          class="w-full rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-2.5 text-left text-label-large text-amber-300 transition-colors hover:bg-amber-500/15"
+        >
+          Alle cijfers zichtbaar · tik om weer te verbergen
+        </button>
+      {:else if unopenedCards.length > 0 && !showHero && currentTab !== "kaarten"}
+        <PendingGradesBanner
+          count={unopenedCards.length}
+          onopen={openPack}
+          onpeek={() => gradePeek.set(true)}
+        />
+      {/if}
     {/if}
 
     {#if activeSnapshot}
@@ -1027,8 +1130,43 @@
         </Button>
       </div>
     {:else}
-      <!-- ======= VAKKEN TAB ======= -->
-      {#if currentTab === "vakken"}
+      {#if showHero}
+        <div class="hero-pack rounded-[2rem] p-8 text-center space-y-5">
+          <div class="fan" aria-hidden="true">
+            {#each unopenedCards.slice(0, 3) as c, i (c.id)}
+              <div class="fan-card" style="--i:{i}">
+                <GradeCardView
+                  card={c}
+                  scale={7}
+                  faceDown
+                  calm
+                  animateFlip={false}
+                />
+              </div>
+            {/each}
+          </div>
+          <div class="space-y-1.5">
+            <h2 class="text-headline-small text-white">
+              Je cijfers zijn verborgen
+            </h2>
+            <p class="text-body-medium text-gray-400">
+              {unopenedCards.length}
+              {unopenedCards.length === 1 ? "kaart wacht" : "kaarten wachten"} op
+              je. Open een pakketje en onthul ze één voor één.
+            </p>
+          </div>
+          <div class="flex flex-wrap items-center justify-center gap-2">
+            <button type="button" class="reveal-btn" onclick={openPack}
+              >Open pakket</button
+            >
+            <button
+              type="button"
+              class="reveal-btn ghost"
+              onclick={() => gradePeek.set(true)}>Alles tonen</button
+            >
+          </div>
+        </div>
+      {:else if currentTab === "vakken"}
         <!-- Overall trend graph -->
         {#if subjects.length > 0}
           {@const chronoAll = getAllChronologicalValues()}
@@ -1779,6 +1917,14 @@
         {/if}
 
         <!-- ======= RECENT TAB ======= -->
+      {:else if currentTab === "kaarten"}
+        <CardAlbum
+          cards={cardList}
+          calm={cardIntensity === "uit"}
+          hiddenCount={unopenedCards.length}
+          onopen={openCards}
+          onpack={openPack}
+        />
       {:else if currentTab === "recent"}
         <!-- Date filter chips -->
         <div class="flex items-center gap-2">
@@ -3851,9 +3997,11 @@
 </div>
 
 {#if revealQueue}
-  <GradeReveal
-    items={revealQueue}
-    onrevealed={onGradeRevealed}
+  <PackReveal
+    queue={revealQueue}
+    collection={cardList}
+    intensity={cardIntensity}
+    sound={$userSettings.cardSound === true}
     onclose={() => (revealQueue = null)}
   />
 {/if}
@@ -3865,6 +4013,62 @@
     -webkit-backdrop-filter: blur(12px);
     border: 1px solid rgba(255, 255, 255, 0.06);
     box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+  }
+  .hero-pack {
+    background:
+      radial-gradient(
+        80% 60% at 50% 0%,
+        color-mix(in srgb, var(--color-primary-500) 22%, transparent),
+        transparent 70%
+      ),
+      var(--color-surface-900);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+  }
+  .fan {
+    position: relative;
+    height: 11.5rem;
+    display: flex;
+    justify-content: center;
+  }
+  .fan-card {
+    position: absolute;
+    top: 0.4rem;
+    transform: translateX(calc((var(--i) - 1) * 4.4rem))
+      rotate(calc((var(--i) - 1) * 9deg));
+    transform-origin: 50% 110%;
+    animation: fan-in 0.7s cubic-bezier(0.2, 1.2, 0.4, 1) both;
+    animation-delay: calc(var(--i) * 90ms);
+  }
+  @keyframes fan-in {
+    from {
+      transform: translateX(0) rotate(0) scale(0.6);
+      opacity: 0;
+    }
+  }
+  .reveal-btn {
+    height: 3rem;
+    padding: 0 1.8rem;
+    border-radius: 9999px;
+    font-size: 0.9375rem;
+    font-weight: 700;
+    background: var(--m3-primary, #d8b4fe);
+    color: var(--m3-on-primary, #4c1d95);
+    box-shadow: 0 8px 28px -8px
+      color-mix(in srgb, var(--color-primary-500) 70%, transparent);
+    transition:
+      filter 0.15s,
+      transform 0.15s;
+  }
+  .reveal-btn:hover {
+    filter: brightness(1.08);
+  }
+  .reveal-btn:active {
+    transform: scale(0.96);
+  }
+  .reveal-btn.ghost {
+    background: rgba(255, 255, 255, 0.08);
+    color: #d1d5db;
+    box-shadow: none;
   }
   .no-scrollbar::-webkit-scrollbar {
     display: none;

@@ -75,8 +75,12 @@ export const DEFAULT_SETTINGS = {
   showSummary: true,
   decimalPoints: 1,
   highlightFailing: true,
-  // Hold back new grades until the user opens them with a short animation.
+  // Hide every grade until the user opens its card (pack reveal).
   gradeReveal: true,
+  // How wild the card reveals get: "uit" | "normaal" | "vol".
+  cardIntensity: "vol" as "uit" | "normaal" | "vol",
+  // Synthesized sounds during card reveals.
+  cardSound: false,
   compactView: false,
   insufficientThreshold: 5.5,
   // SE (schoolexamen) herkenning: "auto" | "magister" | "off". Alleen deze

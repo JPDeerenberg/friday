@@ -1,46 +1,45 @@
 /**
- * Grade reveal ("cijfer onthullen").
+ * Grade reveal + card collection state.
  *
- * When the setting `gradeReveal` is on, a grade that arrives *after* the
- * feature was first used on this device stays hidden until the user opens it
- * (with a short animation). The real grade never changes; it is only held back
- * from the UI.
+ * With the setting `gradeReveal` on, EVERY grade is hidden until the user opens
+ * it (as a card, see cards.ts). Opened-state lives on this device only
+ * (localStorage), so a fresh device starts with everything hidden.
  *
- * Which grades count as "new"?
- *  - `since` is a timestamp set the first time this module runs on a device
- *    (and again whenever the user switches the feature back on). Only grades
- *    entered after `since` can be hidden, so existing grades — and the grades of
- *    earlier school years — are never hidden on update.
- *  - `opened` holds the ids of grades the user has already revealed.
+ * "Peek" mode (`gradePeek`) shows all grades without marking anything as opened,
+ * for when you actually need to check or calculate. It is deliberately
+ * session-only: restart the app and everything is hidden again.
  *
- * Hidden grades are filtered out of the data (see `splitGrades`) before any
- * averages, charts or lists are built, so nothing can leak the value early.
+ * Hidden grades are filtered out of the data (see `splitGrades`) before averages,
+ * charts or lists are built, so nothing can leak a value early.
  *
- * State is per device (localStorage). Keep this module free of `$lib` runtime
- * imports so it stays importable from plain Node tests.
+ * Keep this module free of `$lib` runtime imports so it stays importable from
+ * plain Node tests.
  */
 import { writable, get } from "svelte/store";
 import type { Grade } from "$lib/types";
+import {
+  emptyTally,
+  tallyAfterOpening,
+  earnedAchievementIds,
+  type AchievementContext,
+  type CardData,
+  type Tally,
+} from "./cards.ts";
 
-const STORAGE_KEY = "friday_grade_reveal";
-/** Cap so the opened-list can't grow forever; oldest ids drop off first. */
-const MAX_OPENED = 2000;
+const STORAGE_KEY = "friday_grade_reveal_v2";
+/** v1 stored `{ since, opened }`; we only carry the opened ids over. */
+const LEGACY_KEY = "friday_grade_reveal";
+const MAX_OPENED = 5000;
+const MAX_SHOWCASE = 3;
 
 export interface GradeRevealState {
-  /** ms timestamp; only grades entered after this can be hidden. */
-  since: number;
-  /** CijferId of grades the user already opened. */
+  /** CijferId of every grade the user has opened. */
   opened: number[];
-}
-
-/** What the reveal overlay needs to know about one grade. */
-export interface RevealItem {
-  id: number;
-  subject: string;
-  title: string;
-  value: string;
-  passed: boolean;
-  weight: number | null;
+  /** Achievement id → unlock timestamp. */
+  unlocked: Record<string, number>;
+  /** Up to 3 favourite card ids pinned in the album. */
+  showcase: number[];
+  tally: Tally;
 }
 
 function hasStorage(): boolean {
@@ -51,133 +50,168 @@ function hasStorage(): boolean {
   }
 }
 
+function isNumberArray(v: unknown): v is number[] {
+  return (
+    Array.isArray(v) &&
+    v.every((n) => typeof n === "number" && Number.isFinite(n))
+  );
+}
+
 export function loadGradeRevealState(): GradeRevealState {
-  if (hasStorage()) {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (
-          typeof parsed?.since === "number" &&
-          Number.isFinite(parsed.since) &&
-          Array.isArray(parsed.opened)
-        ) {
-          return {
-            since: parsed.since,
-            opened: parsed.opened.filter(
-              (n: unknown) => typeof n === "number" && Number.isFinite(n),
-            ),
-          };
-        }
+  const fresh = (): GradeRevealState => ({
+    opened: [],
+    unlocked: {},
+    showcase: [],
+    tally: emptyTally(),
+  });
+  if (!hasStorage()) return fresh();
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      const p = JSON.parse(raw);
+      if (isNumberArray(p?.opened)) {
+        const base = emptyTally();
+        return {
+          opened: p.opened,
+          unlocked:
+            p.unlocked && typeof p.unlocked === "object" ? p.unlocked : {},
+          showcase: isNumberArray(p.showcase)
+            ? p.showcase.slice(0, MAX_SHOWCASE)
+            : [],
+          tally: {
+            ...base,
+            ...(p.tally ?? {}),
+            byRarity: { ...base.byRarity, ...(p.tally?.byRarity ?? {}) },
+          },
+        };
       }
-    } catch {
-      /* corrupt value: fall through to a fresh state */
     }
+    const legacy = localStorage.getItem(LEGACY_KEY);
+    if (legacy) {
+      const p = JSON.parse(legacy);
+      if (isNumberArray(p?.opened)) return { ...fresh(), opened: p.opened };
+    }
+  } catch {
+    /* corrupt value: start fresh */
   }
-  // First run on this device: everything that exists right now counts as seen.
-  return { since: Date.now(), opened: [] };
+  return fresh();
 }
 
 export const gradeRevealState = writable<GradeRevealState>(
   loadGradeRevealState(),
 );
 
-// Persist every change (this also writes the initial state on first run).
 gradeRevealState.subscribe((value) => {
   if (!hasStorage()) return;
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(value));
   } catch {
-    /* storage full / blocked: the feature simply won't remember */
+    /* storage full / blocked: the collection simply won't be remembered */
   }
 });
 
-function isHiddenGrade(
-  grade: Grade,
-  since: number,
-  opened: ReadonlySet<number>,
-): boolean {
+/** Session-only: show everything without opening it. */
+export const gradePeek = writable(false);
+
+/** Set by the dashboard; the grades page opens a pack when it sees this. */
+export const openPackIntent = writable(false);
+
+// ---------------------------------------------------------------- hiding
+
+function isHiddenGrade(grade: Grade, opened: ReadonlySet<number>): boolean {
   if (!grade.CijferStr) return false;
   // Only real grade columns; average/period columns are never held back.
   if (grade.CijferKolom?.KolomSoort !== 1) return false;
-  if (opened.has(grade.CijferId)) return false;
-  if (!grade.DatumIngevoerd) return false;
-  const entered = Date.parse(grade.DatumIngevoerd);
-  if (!Number.isFinite(entered)) return false;
-  return entered > since;
+  return !opened.has(grade.CijferId);
 }
 
 /** True when this grade should currently be held back. */
 export function isGradeHidden(
   grade: Grade,
   enabled: boolean,
-  state: GradeRevealState,
+  state: Pick<GradeRevealState, "opened">,
+  peek = false,
 ): boolean {
-  if (!enabled) return false;
-  return isHiddenGrade(grade, state.since, new Set(state.opened));
+  if (!enabled || peek) return false;
+  return isHiddenGrade(grade, new Set(state.opened));
 }
 
 /**
- * Split grades into the ones to show and the ones still to be revealed.
- * `hidden` is sorted oldest → newest so they are opened in the order they came.
+ * Split grades into the ones to show and the ones still hidden. `hidden` is
+ * sorted newest → oldest, so the newest grades go into the first pack.
  */
 export function splitGrades(
   grades: Grade[],
   enabled: boolean,
-  state: GradeRevealState,
+  state: Pick<GradeRevealState, "opened">,
+  peek = false,
 ): { visible: Grade[]; hidden: Grade[] } {
-  if (!enabled) return { visible: grades, hidden: [] };
+  if (!enabled || peek) return { visible: grades, hidden: [] };
   const opened = new Set(state.opened);
   const visible: Grade[] = [];
   const hidden: Grade[] = [];
   for (const grade of grades) {
-    (isHiddenGrade(grade, state.since, opened) ? hidden : visible).push(grade);
+    (isHiddenGrade(grade, opened) ? hidden : visible).push(grade);
   }
   hidden.sort((a, b) =>
-    (a.DatumIngevoerd ?? "").localeCompare(b.DatumIngevoerd ?? ""),
+    (b.DatumIngevoerd ?? "").localeCompare(a.DatumIngevoerd ?? ""),
   );
   return { visible, hidden };
 }
 
-export function markGradesOpened(ids: number[]): void {
-  if (ids.length === 0) return;
+// ---------------------------------------------------------------- collection
+
+/**
+ * Mark a card as opened: updates the opened list, XP/streak tally and any newly
+ * earned achievements in one step. Idempotent per card id.
+ * Returns the ids of achievements unlocked by this card.
+ */
+export function recordOpen(
+  card: CardData,
+  ctx: AchievementContext = { completeSets: 0 },
+): { newlyUnlocked: string[] } {
+  let newlyUnlocked: string[] = [];
   gradeRevealState.update((state) => {
-    const merged = [...new Set([...state.opened, ...ids])];
+    if (state.opened.includes(card.id)) return state;
+    const tally = tallyAfterOpening(state.tally, card);
+    const opened = [...state.opened, card.id];
+    const earned = earnedAchievementIds(tally, ctx).filter(
+      (id) => !(id in state.unlocked),
+    );
+    newlyUnlocked = earned;
+    const now = Date.now();
+    const unlocked = { ...state.unlocked };
+    for (const id of earned) unlocked[id] = now;
     return {
       ...state,
-      opened: merged.length > MAX_OPENED ? merged.slice(-MAX_OPENED) : merged,
+      opened: opened.length > MAX_OPENED ? opened.slice(-MAX_OPENED) : opened,
+      tally,
+      unlocked,
     };
+  });
+  return { newlyUnlocked };
+}
+
+/** Pin / unpin a card in the showcase (max 3, oldest pin drops off first). */
+export function toggleShowcase(id: number): void {
+  gradeRevealState.update((state) => {
+    if (state.showcase.includes(id)) {
+      return { ...state, showcase: state.showcase.filter((x) => x !== id) };
+    }
+    return { ...state, showcase: [...state.showcase, id].slice(-MAX_SHOWCASE) };
   });
 }
 
-export function markGradeOpened(id: number): void {
-  markGradesOpened([id]);
+/** Forget everything: all grades are hidden again and the collection is empty. */
+export function resetCollection(): void {
+  gradeRevealState.set({
+    opened: [],
+    unlocked: {},
+    showcase: [],
+    tally: emptyTally(),
+  });
 }
 
-/**
- * Start fresh: everything that exists right now counts as seen. Called when the
- * user switches the feature back on, so grades that arrived while it was off
- * don't suddenly disappear.
- */
-export function resetGradeRevealBaseline(): void {
-  gradeRevealState.set({ since: Date.now(), opened: [] });
-}
-
-export function toRevealItem(grade: Grade, passed: boolean): RevealItem {
-  return {
-    id: grade.CijferId,
-    subject: grade.Vak?.Omschrijving ?? "Onbekend vak",
-    title:
-      grade.CijferKolom?.KolomOmschrijving ??
-      grade.CijferKolom?.KolomNaam ??
-      "Cijfer",
-    value: grade.CijferStr ?? "",
-    passed,
-    weight: grade.Weging ?? null,
-  };
-}
-
-/** Snapshot of the current state (handy for non-component callers). */
 export function getGradeRevealState(): GradeRevealState {
   return get(gradeRevealState);
 }

@@ -1,0 +1,24 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "app": {
+    "security": {
+      "capabilities": [
+        {
+          "identifier": "devtools-mcp",
+          "description": "Dev-only: grants the MCP automation bridge (agent tooling) access to the webview. Only usable together with `--features devtools`, which is the only build that links tauri-plugin-mcp-bridge; release builds never see this capability because the merged config is only passed by `pnpm dev:tools`.",
+          "windows": ["main", "magister-login"],
+          "permissions": [
+            "mcp-bridge:default",
+            "core:default",
+            "opener:default",
+            "dialog:default",
+            "deep-link:default",
+            "core:window:allow-create",
+            "core:window:allow-close",
+            "core:window:allow-show"
+          ]
+        }
+      ]
+    }
+  }
+}

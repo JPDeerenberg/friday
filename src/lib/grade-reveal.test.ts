@@ -1,150 +1,121 @@
 import test from "node:test";
 import assert from "node:assert";
 import {
+  gradePeek,
   gradeRevealState,
   isGradeHidden,
-  markGradeOpened,
-  markGradesOpened,
-  resetGradeRevealBaseline,
+  recordOpen,
+  resetCollection,
   splitGrades,
-  toRevealItem,
+  toggleShowcase,
+  getGradeRevealState,
   type GradeRevealState,
 } from "./grade-reveal.ts";
+import { buildCards } from "./cards.ts";
 import type { Grade } from "$lib/types";
 
-const SINCE = Date.parse("2026-10-01T00:00:00");
-const state = (opened: number[] = []): GradeRevealState => ({
-  since: SINCE,
-  opened,
-});
-
-function mkGrade(overrides: Partial<Grade> = {}): Grade {
+function mkGrade(id: number, value = "7,5", over: Partial<Grade> = {}): Grade {
   return {
-    CijferId: 1,
-    CijferStr: "7,5",
+    CijferId: id,
+    CijferStr: value,
     IsVoldoende: true,
-    IngevoerdDoor: null,
-    DatumIngevoerd: "2026-10-20T10:00:00",
-    Weging: 2,
-    Inhalen: false,
-    Vrijstelling: false,
-    TeltMee: true,
+    DatumIngevoerd: `2026-10-${String(10 + (id % 18)).padStart(2, "0")}T10:00:00`,
+    Weging: 1,
     CijferKolom: {
       Id: 1,
-      KolomNaam: "Toets 3",
-      KolomNummer: null,
-      KolomVolgNummer: null,
-      KolomKop: null,
-      KolomOmschrijving: "Hoofdstuk 3",
+      KolomNaam: "Toets",
+      KolomOmschrijving: "H1",
       KolomSoort: 1,
-      IsHerkansingKolom: false,
-      IsDocentKolom: false,
-      HeeftOnderliggendeKolommen: false,
-      IsPTAKolom: false,
     },
-    CijferKolomIdEloOpdracht: null,
-    Docent: null,
-    VakOntheffing: false,
-    VakVrijstelling: false,
-    CijferPeriode: null,
     Vak: { Id: 1, Afkorting: "wi", Omschrijving: "Wiskunde", Volgnr: 1 },
-    description: null,
-    test_date: null,
-    extra_weight: null,
-    ...overrides,
+    ...over,
   } as Grade;
 }
+const none = { opened: [] as number[] };
 
-test("a grade entered after the baseline is hidden", () => {
-  assert.equal(isGradeHidden(mkGrade(), true, state()), true);
+test("everything is hidden by default, even old grades", () => {
+  const old = mkGrade(1, "7,5", { DatumIngevoerd: "2024-01-01T10:00:00" });
+  assert.equal(isGradeHidden(old, true, none), true);
 });
 
-test("nothing is hidden when the feature is off", () => {
-  const g = mkGrade();
-  assert.equal(isGradeHidden(g, false, state()), false);
-  const { visible, hidden } = splitGrades([g], false, state());
-  assert.equal(visible.length, 1);
-  assert.equal(hidden.length, 0);
+test("nothing is hidden when the feature is off or when peeking", () => {
+  const g = mkGrade(1);
+  assert.equal(isGradeHidden(g, false, none), false);
+  assert.equal(isGradeHidden(g, true, none, true), false);
+  const split = splitGrades([g], true, none, true);
+  assert.equal(split.visible.length, 1);
+  assert.equal(split.hidden.length, 0);
 });
 
-test("grades from before the baseline (e.g. older years) stay visible", () => {
-  const old = mkGrade({ DatumIngevoerd: "2025-03-02T09:00:00" });
-  assert.equal(isGradeHidden(old, true, state()), false);
-});
-
-test("an opened grade is no longer hidden", () => {
-  assert.equal(
-    isGradeHidden(mkGrade({ CijferId: 5 }), true, state([5])),
-    false,
+test("opened grades become visible; others stay hidden", () => {
+  const { visible, hidden } = splitGrades(
+    [mkGrade(1), mkGrade(2), mkGrade(3)],
+    true,
+    { opened: [2] },
   );
-});
-
-test("average columns, empty values and undated grades are never hidden", () => {
-  const avg = mkGrade({
-    CijferKolom: { ...mkGrade().CijferKolom, KolomSoort: 2 },
-  });
-  assert.equal(isGradeHidden(avg, true, state()), false);
-  assert.equal(
-    isGradeHidden(mkGrade({ CijferStr: null }), true, state()),
-    false,
-  );
-  assert.equal(
-    isGradeHidden(mkGrade({ DatumIngevoerd: null }), true, state()),
-    false,
-  );
-  assert.equal(
-    isGradeHidden(mkGrade({ DatumIngevoerd: "not a date" }), true, state()),
-    false,
-  );
-});
-
-test("non-numeric grades (V, G, *) are hidden too", () => {
-  assert.equal(isGradeHidden(mkGrade({ CijferStr: "V" }), true, state()), true);
-  assert.equal(isGradeHidden(mkGrade({ CijferStr: "*" }), true, state()), true);
-});
-
-test("splitGrades separates visible/hidden and sorts hidden oldest first", () => {
-  const old = mkGrade({ CijferId: 1, DatumIngevoerd: "2025-01-01T08:00:00" });
-  const b = mkGrade({ CijferId: 2, DatumIngevoerd: "2026-10-22T08:00:00" });
-  const a = mkGrade({ CijferId: 3, DatumIngevoerd: "2026-10-05T08:00:00" });
-  const { visible, hidden } = splitGrades([old, b, a], true, state());
   assert.deepEqual(
     visible.map((g) => g.CijferId),
-    [1],
+    [2],
   );
-  assert.deepEqual(
-    hidden.map((g) => g.CijferId),
-    [3, 2],
-  );
+  assert.equal(hidden.length, 2);
 });
 
-test("opening grades updates the shared state and dedupes", () => {
-  resetGradeRevealBaseline();
-  markGradeOpened(10);
-  markGradesOpened([10, 11]);
-  let current: GradeRevealState | undefined;
-  gradeRevealState.subscribe((v) => (current = v))();
-  assert.deepEqual(current?.opened, [10, 11]);
-});
-
-test("resetting the baseline clears opened ids and moves 'since' to now", () => {
-  markGradeOpened(99);
-  const before = Date.now();
-  resetGradeRevealBaseline();
-  let current: GradeRevealState | undefined;
-  gradeRevealState.subscribe((v) => (current = v))();
-  assert.deepEqual(current?.opened, []);
-  assert.ok((current?.since ?? 0) >= before);
-});
-
-test("toRevealItem maps the fields the overlay shows", () => {
-  const item = toRevealItem(mkGrade({ CijferId: 7 }), true);
-  assert.deepEqual(item, {
-    id: 7,
-    subject: "Wiskunde",
-    title: "Hoofdstuk 3",
-    value: "7,5",
-    passed: true,
-    weight: 2,
+test("average columns and empty values are never hidden", () => {
+  const avg = mkGrade(1, "7,0", {
+    CijferKolom: {
+      Id: 2,
+      KolomNaam: "Gem",
+      KolomSoort: 2,
+    } as Grade["CijferKolom"],
   });
+  assert.equal(isGradeHidden(avg, true, none), false);
+  assert.equal(isGradeHidden(mkGrade(2, ""), true, none), false);
+});
+
+test("hidden grades are sorted newest first", () => {
+  const a = mkGrade(1, "7", { DatumIngevoerd: "2026-10-01T08:00:00" });
+  const b = mkGrade(2, "7", { DatumIngevoerd: "2026-10-20T08:00:00" });
+  const c = mkGrade(3, "7", { DatumIngevoerd: "2026-10-10T08:00:00" });
+  assert.deepEqual(
+    splitGrades([a, b, c], true, none).hidden.map((g) => g.CijferId),
+    [2, 3, 1],
+  );
+});
+
+test("recordOpen is idempotent, tracks xp and unlocks achievements once", () => {
+  resetCollection();
+  const card = buildCards([mkGrade(5, "9,0")], { threshold: 5.5 }).get(5)!;
+  const first = recordOpen(card);
+  assert.ok(first.newlyUnlocked.includes("first-pull"));
+  assert.ok(first.newlyUnlocked.includes("legend"));
+  const again = recordOpen(card);
+  assert.deepEqual(again.newlyUnlocked, []);
+  const s = getGradeRevealState();
+  assert.deepEqual(s.opened, [5]);
+  assert.equal(s.tally.total, 1);
+  assert.equal(s.tally.xp, card.xp);
+  assert.ok(typeof s.unlocked["first-pull"] === "number");
+});
+
+test("showcase holds at most 3 and toggles off", () => {
+  resetCollection();
+  [1, 2, 3, 4].forEach(toggleShowcase);
+  assert.deepEqual(getGradeRevealState().showcase, [2, 3, 4]);
+  toggleShowcase(3);
+  assert.deepEqual(getGradeRevealState().showcase, [2, 4]);
+});
+
+test("reset hides everything again", () => {
+  recordOpen(buildCards([mkGrade(9)], { threshold: 5.5 }).get(9)!);
+  resetCollection();
+  let s!: GradeRevealState;
+  gradeRevealState.subscribe((v) => (s = v))();
+  assert.deepEqual(s.opened, []);
+  assert.equal(s.tally.total, 0);
+});
+
+test("peek is session state that starts off", () => {
+  let v;
+  gradePeek.subscribe((x) => (v = x))();
+  assert.equal(v, false);
 });

@@ -30,14 +30,12 @@
   import { fade, fly, scale } from "svelte/transition";
   import Button from "$lib/components/Button.svelte";
   import IconButton from "$lib/components/IconButton.svelte";
-  import GradeReveal from "$lib/components/GradeReveal.svelte";
   import PendingGradesBanner from "$lib/components/PendingGradesBanner.svelte";
   import {
+    gradePeek,
     gradeRevealState,
-    markGradeOpened,
+    openPackIntent,
     splitGrades,
-    toRevealItem,
-    type RevealItem,
   } from "$lib/grade-reveal";
   import type { Assignment, CalendarEvent, Grade } from "$lib/types";
   import {
@@ -49,21 +47,19 @@
 
   // Svelte 5 State
   let todayEvents = $state<CalendarEvent[]>([]);
-  // New grades the user has not opened yet are held back (see
-  // $lib/grade-reveal) and offered through a banner instead.
+  // While grade reveal is on, every grade stays hidden until its card is opened
+  // (see $lib/grade-reveal); the dashboard offers a banner instead. Opening a
+  // pack happens on the grades page, where cards are built from the full list.
   let allLatestGrades = $state<Grade[]>([]);
+  const revealEnabled = $derived($userSettings.gradeReveal !== false);
   const latestSplit = $derived(
-    splitGrades(
-      allLatestGrades,
-      $userSettings.gradeReveal !== false,
-      $gradeRevealState,
-    ),
+    splitGrades(allLatestGrades, revealEnabled, $gradeRevealState, $gradePeek),
   );
   const latestGrades = $derived(latestSplit.visible);
   const pendingGrades = $derived(latestSplit.hidden);
-  let revealQueue = $state<RevealItem[] | null>(null);
-  function openReveal() {
-    revealQueue = pendingGrades.map((g) => toRevealItem(g, isVoldoende(g)));
+  function openPack() {
+    openPackIntent.set(true);
+    currentPage.set("grades");
   }
   let unreadCount = $state(0);
   let upcomingAssignments = $state<Assignment[]>([]);
@@ -1402,10 +1398,19 @@
                 </div>
               {/each}
             {:else}
-              {#if pendingGrades.length > 0}
+              {#if revealEnabled && $gradePeek}
+                <button
+                  type="button"
+                  onclick={() => gradePeek.set(false)}
+                  class="sm:col-span-2 w-full rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-2.5 text-left text-label-large text-amber-300 transition-colors hover:bg-amber-500/15"
+                >
+                  Alle cijfers zichtbaar · tik om weer te verbergen
+                </button>
+              {:else if pendingGrades.length > 0}
                 <PendingGradesBanner
                   count={pendingGrades.length}
-                  onopen={openReveal}
+                  onopen={openPack}
+                  onpeek={() => gradePeek.set(true)}
                   class="sm:col-span-2"
                 />
               {/if}
@@ -1653,14 +1658,6 @@
     </div>
   </main>
 </div>
-
-{#if revealQueue}
-  <GradeReveal
-    items={revealQueue}
-    onrevealed={markGradeOpened}
-    onclose={() => (revealQueue = null)}
-  />
-{/if}
 
 <style>
   /* Custom Animations & UI Extensions */

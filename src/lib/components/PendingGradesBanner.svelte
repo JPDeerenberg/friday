@@ -1,44 +1,67 @@
 <script lang="ts">
-  /** "N new grades — tap to reveal" card shown above the grades / on the dashboard. */
+  /** "N hidden grades — tap to open a pack" card, with a quick "show all". */
   let {
     count,
     onopen,
+    onpeek,
     class: className = "",
   }: {
     count: number;
     onopen: () => void;
+    /** Show every grade without opening it (for checking / calculating). */
+    onpeek?: () => void;
     class?: string;
   } = $props();
 </script>
 
-<button
-  type="button"
-  onclick={onopen}
-  class="pending-banner group flex w-full items-center gap-4 rounded-m3-md p-4 text-left transition-all active:scale-[0.99] {className}"
+<div
+  class="pending-banner flex w-full items-stretch gap-2 rounded-m3-md p-2 {className}"
 >
-  <span class="badge" aria-hidden="true">
-    <span class="ping motion-reduce:hidden"></span>
-    <span class="relative">?</span>
-  </span>
-  <span class="min-w-0 flex-1">
-    <span class="block text-title-small text-white">
-      {count === 1 ? "1 nieuw cijfer" : `${count} nieuwe cijfers`}
-    </span>
-    <span class="block text-label-medium text-gray-400">
-      Tik om te onthullen
-    </span>
-  </span>
-  <svg
-    class="chev h-5 w-5 shrink-0 transition-transform group-hover:translate-x-1"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    stroke-width="3"
-    stroke-linecap="round"
-    stroke-linejoin="round"
-    aria-hidden="true"><path d="m9 18 6-6-6-6" /></svg
+  <button
+    type="button"
+    onclick={onopen}
+    class="group flex min-w-0 flex-1 items-center gap-3 rounded-m3-sm p-2 text-left transition-transform active:scale-[0.99]"
   >
-</button>
+    <span class="badge" aria-hidden="true">
+      <span class="ping motion-reduce:hidden"></span>
+      <span class="relative">🎁</span>
+    </span>
+    <span class="min-w-0 flex-1">
+      <span class="block text-title-small text-white">
+        {count === 1 ? "1 verborgen cijfer" : `${count} verborgen cijfers`}
+      </span>
+      <span class="block text-label-medium text-gray-400">
+        Tik om een pakketje te openen
+      </span>
+    </span>
+  </button>
+  {#if onpeek}
+    <button
+      type="button"
+      onclick={onpeek}
+      class="peek"
+      aria-label="Alle cijfers tonen"
+      title="Alle cijfers tonen"
+    >
+      <svg
+        class="h-5 w-5"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        aria-hidden="true"
+        ><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" /><circle
+          cx="12"
+          cy="12"
+          r="3"
+        /></svg
+      >
+      <span>Alles tonen</span>
+    </button>
+  {/if}
+</div>
 
 <style>
   .pending-banner {
@@ -54,10 +77,6 @@
     border: 1px solid
       color-mix(in srgb, var(--color-primary-500) 32%, transparent);
   }
-  .pending-banner:hover {
-    border-color: color-mix(in srgb, var(--color-primary-400) 60%, transparent);
-  }
-
   .badge {
     position: relative;
     display: flex;
@@ -66,25 +85,36 @@
     justify-content: center;
     width: 3rem;
     height: 3rem;
-    border-radius: 0.5rem;
+    border-radius: 0.75rem;
     font-size: 1.5rem;
-    font-weight: 900;
-    color: var(--color-primary-400);
-    background: color-mix(in srgb, var(--color-primary-500) 16%, transparent);
+    background: color-mix(in srgb, var(--color-primary-500) 18%, transparent);
   }
-
   .ping {
     position: absolute;
     inset: 0;
-    border-radius: 0.5rem;
-    background: color-mix(in srgb, var(--color-primary-500) 22%, transparent);
+    border-radius: 0.75rem;
+    background: color-mix(in srgb, var(--color-primary-500) 24%, transparent);
     animation: ping 1.8s cubic-bezier(0, 0, 0.2, 1) infinite;
   }
-
-  .chev {
-    color: var(--color-primary-400);
+  .peek {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.15rem;
+    flex-shrink: 0;
+    padding: 0 0.85rem;
+    border-radius: 0.75rem;
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    color: #d1d5db;
+    background: rgba(255, 255, 255, 0.06);
+    transition: background 0.15s;
   }
-
+  .peek:hover {
+    background: rgba(255, 255, 255, 0.12);
+  }
   @keyframes ping {
     75%,
     100% {
