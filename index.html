@@ -23,38 +23,58 @@
     <meta name="apple-mobile-web-app-title" content="Friday" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <title>Magister Agenda</title>
-    <link href="/_app/immutable/entry/start.B0wp5IN4.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/CGOc9wz5.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/DgmvlVgD.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/D04fhwMp.js" rel="modulepreload">
-		<link href="/_app/immutable/entry/app.Cyk2175W.js" rel="modulepreload">
+    <!-- Apply the saved background mode before first paint (no dark flash in light mode). -->
+    <script>
+      (function () {
+        try {
+          var m = JSON.parse(localStorage.getItem("user_settings") || "{}").backgroundMode;
+          var light =
+            m === "light" ||
+            (m === "system" && window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches);
+          var c = document.documentElement.classList;
+          if (light) {
+            c.remove("dark");
+            c.add("mode-light");
+            document.documentElement.style.colorScheme = "light";
+            document.querySelector('meta[name="theme-color"]').setAttribute("content", "#f6f4fb");
+          } else if (m === "amoled") {
+            c.add("mode-amoled");
+          }
+        } catch (e) {}
+      })();
+    </script>
+    <link href="/_app/immutable/entry/start.DFNCevMs.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/1dhyL1WX.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/C7cIWglo.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/D-5scdEw.js" rel="modulepreload">
+		<link href="/_app/immutable/entry/app.B4vdKEMQ.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/uBIymjUX.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/xihTtKlq.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/0.-ks0P9uZ.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/CcyZHeJa.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/0.Cgly4_PA.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/B1buPxJ6.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/hTByFGMt.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/DsPrawSl.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/BUM4sQCg.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/CKpNu0fW.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/B6eaEeN2.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/B3xh6Hef.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/B1LYC3Rb.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/BQR3KOcT.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/DaKGLMJK.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CJiFAhTh.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/bltYKJgO.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/BLVU0Tpw.js" rel="modulepreload">
 		
-		<link href="/_app/immutable/assets/0.DA1kMlkN.css" rel="stylesheet">
+		<link href="/_app/immutable/assets/0.BVYsj_y1.css" rel="stylesheet">
   </head>
   <body data-sveltekit-preload-data="hover" class="bg-gray-950 text-gray-100 font-sans">
     <div style="display: contents">
 			<script>
 				{
-					__sveltekit_ae319z = {
+					__sveltekit_1izklg0 = {
 						base: ""
 					};
 
 					const element = document.currentScript.parentElement;
 
 					Promise.all([
-						import("/_app/immutable/entry/start.B0wp5IN4.js"),
-						import("/_app/immutable/entry/app.Cyk2175W.js")
+						import("/_app/immutable/entry/start.DFNCevMs.js"),
+						import("/_app/immutable/entry/app.B4vdKEMQ.js")
 					]).then(([kit, app]) => {
 						kit.start(app, element);
 					});
