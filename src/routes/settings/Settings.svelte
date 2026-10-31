@@ -55,6 +55,8 @@
   import { openUrl } from "@tauri-apps/plugin-opener";
   import ColorSwatchPicker from "$lib/components/ColorSwatchPicker.svelte";
   import Switch from "$lib/components/Switch.svelte";
+  import LetterGradesEditor from "$lib/components/LetterGradesEditor.svelte";
+  import CompensationEditor from "$lib/components/CompensationEditor.svelte";
   import Button from "$lib/components/Button.svelte";
   import Chip from "$lib/components/Chip.svelte";
   import IconButton from "$lib/components/IconButton.svelte";
@@ -1085,6 +1087,65 @@
             { value: "off", label: "Uit" },
           ],
         },
+        {
+          id: "gradeRounding",
+          label: "Afronding van gemiddelden",
+          description:
+            "Hoe gemiddelden worden getoond. Decimalen volgt de instelling hierboven; hele of halve cijfers rondt af zoals een eindcijfer.",
+          type: "select",
+          options: [
+            { value: "decimals", label: "Decimalen" },
+            { value: "whole", label: "Hele cijfers" },
+            { value: "half", label: "Halve cijfers" },
+          ],
+        },
+        {
+          id: "judgeRounded",
+          label: "Beoordeel het afgeronde cijfer",
+          description:
+            "Een 5,45 die als 5,5 wordt getoond, telt dan als voldoende. Uit: het exacte gemiddelde beslist.",
+          type: "toggle",
+        },
+        {
+          id: "retakeRule",
+          label: "Herkansingen",
+          description:
+            "Hoe een herkansing meetelt. Magister volgt precies wat Magister stuurt. De andere opties koppelen een herkansing op kolomnaam aan het origineel.",
+          type: "select",
+          options: [
+            { value: "magister", label: "Zoals Magister" },
+            { value: "best", label: "Hoogste telt" },
+            { value: "replace", label: "Herkansing vervangt" },
+            { value: "ignore", label: "Herkansingen negeren" },
+          ],
+        },
+        {
+          id: "letterGradeRules",
+          label: "Letters in je cijfers",
+          description:
+            "Letters als V, O of A+ staan bij je cijfers. Hier bepaal je wat ze betekenen. Onbekende letters zijn neutraal en worden nooit rood.",
+          type: "letters-editor",
+        },
+        {
+          id: "lettersGetCards",
+          label: "Kaarten voor letters",
+          description:
+            "Geef letters ook een kaart in de pakketten. Uit: alleen cijfers met een getal krijgen een kaart.",
+          type: "toggle",
+        },
+        {
+          id: "compensationEnabled",
+          label: "Compensatiepunten",
+          description:
+            "Toon op de Cijfers-pagina een rekenhulp voor schoolregels met compensatiepunten (bijv. bevordering).",
+          type: "toggle",
+        },
+        {
+          id: "compensation",
+          label: "Regels compensatiepunten",
+          description: "Punten per cijfer en de eisen van jouw school.",
+          type: "compensation-editor",
+        },
       ],
     },
     {
@@ -1100,11 +1161,14 @@
         {
           id: "backgroundMode",
           label: "Achtergrond",
-          description: "Kies hoe donker de achtergrond moet zijn.",
+          description:
+            "Kies tussen donker, zwart (AMOLED), licht of de instelling van je apparaat.",
           type: "select",
           options: [
-            { value: "normal", label: "Normaal (Getint)" },
+            { value: "normal", label: "Donker (Getint)" },
             { value: "amoled", label: "AMOLED (Zwart)" },
+            { value: "light", label: "Licht" },
+            { value: "system", label: "Automatisch (systeem)" },
           ],
         },
       ],
@@ -2251,7 +2315,11 @@
                     {#each section.settings as setting (setting.id)}
                       {#if (!setting.hideOnWeb || !isWeb) && (setting.type !== "action" || !setting.compactFor)}
                         <div
-                          class="glass p-5 rounded-m3-md border-white/5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-6 transition-all hover:bg-surface-800/40"
+                          class="glass p-5 rounded-m3-md border-white/5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-6 transition-all hover:bg-surface-800/40 {setting.type ===
+                            'letters-editor' ||
+                          setting.type === 'compensation-editor'
+                            ? 'sm:flex-wrap sm:items-start'
+                            : ''}"
                         >
                           <div class="flex-1">
                             <p class="text-title-small text-gray-100">
@@ -2308,6 +2376,14 @@
                               step={setting.step ?? 1}
                               class="w-20 px-3 py-2 rounded-m3-xs bg-surface-950 border border-surface-700 text-title-small text-gray-100 text-center focus:outline-none focus:border-primary-500 shadow-inner"
                             />
+                          {:else if setting.type === "letters-editor"}
+                            <div class="w-full sm:basis-full">
+                              <LetterGradesEditor />
+                            </div>
+                          {:else if setting.type === "compensation-editor"}
+                            <div class="w-full sm:basis-full">
+                              <CompensationEditor />
+                            </div>
                           {:else if setting.type === "theme-picker"}
                             <ColorSwatchPicker
                               colors={themeColors}

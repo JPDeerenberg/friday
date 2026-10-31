@@ -113,7 +113,7 @@
   }
 </script>
 
-<div class="space-y-6">
+<div class="space-y-6 keep-dark">
   <!-- ======= level + stats ======= -->
   <section class="hero glass-ish rounded-3xl p-5 space-y-4">
     <div class="flex items-center justify-between gap-3">

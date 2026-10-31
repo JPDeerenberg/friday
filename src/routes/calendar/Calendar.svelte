@@ -915,7 +915,6 @@
           <input
             type="date"
             class="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-            style="color-scheme: dark;"
             value={selectedDate.toISOString().split("T")[0]}
             onchange={(e) => {
               if (e.currentTarget.value) {
@@ -1068,7 +1067,7 @@
               </span>
               <span
                 class="w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 {$userSettings.hideCancelled
-                  ? 'bg-primary-500 border-primary-500 text-white'
+                  ? 'bg-primary-500 border-primary-500 text-on-fill'
                   : 'border-surface-600'}"
               >
                 {#if $userSettings.hideCancelled}<svg
@@ -1118,7 +1117,7 @@
               </span>
               <span
                 class="w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 {showWeekView
-                  ? 'bg-primary-500 border-primary-500 text-white'
+                  ? 'bg-primary-500 border-primary-500 text-on-fill'
                   : 'border-surface-600'}"
               >
                 {#if showWeekView}<svg
@@ -1162,7 +1161,7 @@
               </span>
               <span
                 class="w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 {$userSettings.compactView
-                  ? 'bg-primary-500 border-primary-500 text-white'
+                  ? 'bg-primary-500 border-primary-500 text-on-fill'
                   : 'border-surface-600'}"
               >
                 {#if $userSettings.compactView}<svg
@@ -1416,7 +1415,7 @@
             loadAppointments();
           }}
           class="flex-1 flex flex-col items-center py-1.5 px-0.5 rounded-m3-sm transition-all border min-w-[38px] relative {isSelected
-            ? 'bg-primary-500 border-primary-400 text-white shadow-md shadow-primary-500/25'
+            ? 'bg-primary-500 border-primary-400 text-on-fill shadow-md shadow-primary-500/25'
             : 'bg-surface-800/60 border-white/5 text-gray-400 hover:bg-surface-700 hover:text-gray-200'}"
         >
           <span class="text-label-small opacity-60">
@@ -2021,7 +2020,7 @@
                     ? "Markeer als niet afgerond"
                     : "Markeer als afgerond"}
                   class="w-7 h-7 md:w-8 md:h-8 rounded-full border-2 transition-all flex items-center justify-center {app.Afgerond
-                    ? 'bg-emerald-500 border-emerald-400 text-white shadow-sm shadow-emerald-500/30'
+                    ? 'bg-emerald-500 border-emerald-400 text-on-fill shadow-sm shadow-emerald-500/30'
                     : 'bg-primary-500/15 border-primary-400/60 text-primary-300 hover:bg-primary-500/25 hover:border-primary-400 active:scale-110 shadow-sm shadow-primary-500/20'}"
                 >
                   <svg
@@ -2270,7 +2269,7 @@
                 onclick={() => toggleDone(selectedAppointment!)}
                 class="w-full mb-3 {selectedAppointment.Afgerond
                   ? 'bg-emerald-500/10! text-emerald-400! border-2 border-emerald-500/50!'
-                  : 'bg-primary-500! text-white! shadow-md shadow-primary-500/20'}"
+                  : 'bg-primary-500! text-on-fill! shadow-md shadow-primary-500/20'}"
               >
                 <div
                   class="w-5 h-5 rounded-full border-2 border-current flex items-center justify-center"
@@ -2568,7 +2567,6 @@
                     type="time"
                     bind:value={calcAppointmentTime}
                     class="w-full bg-surface-900 border border-white/5 rounded-m3-xs px-3 py-2 text-body-medium text-white focus:outline-none"
-                    style="color-scheme: dark"
                   />
                 </div>
 
@@ -2607,7 +2605,6 @@
                 bind:value={newApp.start}
                 type="time"
                 class="w-full bg-surface-950 border border-white/5 rounded-m3-xs px-3 md:px-4 py-2.5 md:py-3 text-body-large text-white focus:outline-none"
-                style="color-scheme: dark"
               />
             </div>
             <div class="space-y-1">
@@ -2620,7 +2617,6 @@
                 bind:value={newApp.einde}
                 type="time"
                 class="w-full bg-surface-950 border border-white/5 rounded-m3-xs px-3 md:px-4 py-2.5 md:py-3 text-body-large text-white focus:outline-none"
-                style="color-scheme: dark"
               />
             </div>
           </div>

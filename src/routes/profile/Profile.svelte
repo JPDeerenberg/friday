@@ -298,7 +298,7 @@
               {/if}
             </div>
             <div
-              class="absolute -bottom-1 -right-1 w-11 h-11 bg-gradient-to-br from-primary-500 to-primary-600 rounded-m3-md flex items-center justify-center text-white shadow-xl border-4 border-surface-950 group-hover:rotate-12 transition-transform duration-500"
+              class="absolute -bottom-1 -right-1 w-11 h-11 bg-gradient-to-br from-primary-500 to-primary-600 rounded-m3-md flex items-center justify-center text-on-fill shadow-xl border-4 border-surface-950 group-hover:rotate-12 transition-transform duration-500"
             >
               <svg
                 class="w-5 h-5"

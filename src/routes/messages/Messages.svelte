@@ -307,7 +307,7 @@
               <span class="truncate">{folder.naam}</span>
               {#if folder.aantalOngelezen > 0}
                 <span
-                  class="bg-primary-500 text-white text-label-small rounded-full px-1.5 py-0.5 ml-1 shadow-lg shadow-primary-500/30"
+                  class="bg-primary-500 text-on-fill text-label-small rounded-full px-1.5 py-0.5 ml-1 shadow-lg shadow-primary-500/30"
                 >
                   {folder.aantalOngelezen}
                 </span>
@@ -422,7 +422,7 @@
               onclick={() => selectFolder(folder)}
               class="flex items-center gap-1.5 px-3 py-1.5 rounded-m3-sm text-label-medium whitespace-nowrap shrink-0 transition-all {selectedFolder?.id ===
               folder.id
-                ? 'bg-primary-500 text-white shadow-lg shadow-primary-500/25'
+                ? 'bg-primary-500 text-on-fill shadow-lg shadow-primary-500/25'
                 : 'bg-surface-800 text-gray-400 hover:text-gray-200'}"
             >
               {folder.naam}
@@ -430,7 +430,7 @@
                 <span
                   class="{selectedFolder?.id === folder.id
                     ? 'bg-white/25'
-                    : 'bg-primary-500 text-white'} text-label-small rounded-full px-1.5"
+                    : 'bg-primary-500 text-on-fill'} text-label-small rounded-full px-1.5"
                 >
                   {folder.aantalOngelezen}
                 </span>
@@ -625,7 +625,7 @@
 
           <div class="flex items-center gap-3">
             <div
-              class="w-9 h-9 rounded-full bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center text-white text-sm font-black shrink-0 shadow-lg shadow-primary-500/25"
+              class="w-9 h-9 rounded-full bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center text-on-fill text-sm font-black shrink-0 shadow-lg shadow-primary-500/25"
             >
               {selectedMessage.afzender?.naam?.[0]?.toUpperCase() ?? "?"}
             </div>
@@ -725,7 +725,7 @@
             </h2>
             <div class="flex items-center gap-3">
               <div
-                class="w-8 h-8 rounded-full bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center text-white text-xs font-black shrink-0"
+                class="w-8 h-8 rounded-full bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center text-on-fill text-xs font-black shrink-0"
               >
                 {selectedMessage.afzender?.naam?.[0]?.toUpperCase() ?? "?"}
               </div>

@@ -23,6 +23,26 @@
     <meta name="apple-mobile-web-app-title" content="Friday" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <title>Magister Agenda</title>
+    <!-- Apply the saved background mode before first paint (no dark flash in light mode). -->
+    <script>
+      (function () {
+        try {
+          var m = JSON.parse(localStorage.getItem("user_settings") || "{}").backgroundMode;
+          var light =
+            m === "light" ||
+            (m === "system" && window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches);
+          var c = document.documentElement.classList;
+          if (light) {
+            c.remove("dark");
+            c.add("mode-light");
+            document.documentElement.style.colorScheme = "light";
+            document.querySelector('meta[name="theme-color"]').setAttribute("content", "#f6f4fb");
+          } else if (m === "amoled") {
+            c.add("mode-amoled");
+          }
+        } catch (e) {}
+      })();
+    </script>
     %sveltekit.head%
   </head>
   <body data-sveltekit-preload-data="hover" class="bg-gray-950 text-gray-100 font-sans">

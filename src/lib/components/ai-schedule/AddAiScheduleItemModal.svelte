@@ -134,7 +134,7 @@
 
       <div class="shrink-0 border-t border-surface-800 px-5 py-4 bg-surface-900 flex gap-3">
         <button onclick={() => (open = false)} class="flex-1 py-3 rounded-m3-sm bg-surface-800 border border-white/10 text-gray-300">Annuleren</button>
-        <button onclick={handleCreate} disabled={saving || !title.trim() || !start || !end} class="flex-1 py-3 rounded-m3-sm bg-primary-500 text-white disabled:opacity-40"> {saving ? "Bezig..." : "Toevoegen"} </button>
+        <button onclick={handleCreate} disabled={saving || !title.trim() || !start || !end} class="flex-1 py-3 rounded-m3-sm bg-primary-500 text-on-fill disabled:opacity-40"> {saving ? "Bezig..." : "Toevoegen"} </button>
       </div>
     </div>
   </div>

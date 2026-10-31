@@ -1,5 +1,21 @@
-import { writable, get } from "svelte/store";
+import { writable, get, derived } from "svelte/store";
 import type { Account } from "$lib/types";
+import {
+  sanitizeRules,
+  buildLetterTable,
+  detectLetterTokens,
+  normalizeToken,
+  type LetterRule,
+  type DetectedToken,
+  type GradeLike,
+} from "./grades/scale.ts";
+import { RETAKE_RULES, type RetakeRule } from "./grades/retake.ts";
+import type { RoundingMode } from "./grades/rounding.ts";
+import {
+  DEFAULT_COMPENSATION,
+  sanitizeCompensation,
+  type CompensationConfig,
+} from "./grades/compensation.ts";
 
 export const isLoggedIn = writable(false);
 export const personId = writable<number | null>(null);
@@ -69,11 +85,49 @@ export const START_PAGE_OPTIONS = [
 
 const START_PAGE_VALUES = START_PAGE_OPTIONS.map((o) => o.value);
 
+export type BackgroundMode = "normal" | "amoled" | "light" | "system";
+
+export const BACKGROUND_MODES: BackgroundMode[] = [
+  "normal",
+  "amoled",
+  "light",
+  "system",
+];
+
+/** Resolve "system" to a concrete mode using the OS colour-scheme preference. */
+export function resolveBackgroundMode(
+  mode: string,
+  prefersLight: boolean,
+): "normal" | "amoled" | "light" {
+  if (mode === "system") return prefersLight ? "light" : "normal";
+  if (mode === "amoled" || mode === "light") return mode;
+  return "normal";
+}
+
 export const DEFAULT_SETTINGS = {
   startPage: "dashboard",
   roundedGraphs: true,
   showSummary: true,
   decimalPoints: 1,
+  // Grade maths. See $lib/grades/{scale,rounding,retake,compensation}.
+  /** Table that tells the app what letter grades (V, O, A+ ...) mean. */
+  letterGradeRules: [] as LetterRule[],
+  /** How retakes count. "magister" = exactly as Magister sends them. */
+  retakeRule: "magister" as RetakeRule,
+  /** How averages are shown: decimals / whole grades / halves. */
+  gradeRounding: "decimals" as RoundingMode,
+  /** Judge voldoende on the rounded number you see (5.45 shown as 5.5 passes). */
+  judgeRounded: false,
+  /** Give letter grades (V, O, A+ ...) a collectible card too. */
+  lettersGetCards: false,
+  /** Show the compensation-points calculator (school promotion rules). */
+  compensationEnabled: false,
+  compensation: {
+    ...DEFAULT_COMPENSATION,
+    points: { ...DEFAULT_COMPENSATION.points },
+  } as CompensationConfig,
+  /** Subjects left out of the compensation calculator (LO, CKV ...). */
+  compensationExcluded: [] as string[],
   highlightFailing: true,
   // Hide every grade until the user opens its card (pack reveal).
   gradeReveal: true,
@@ -91,7 +145,8 @@ export const DEFAULT_SETTINGS = {
   showWeekend: true,
   weekView: "auto",
   themeColor: "violet",
-  backgroundMode: "normal",
+  // "normal" | "amoled" | "light" | "system" (system follows the OS setting).
+  backgroundMode: "normal" as BackgroundMode,
   customThemeColor: "",
   // Notification toggles
   notifyMessages: true,
@@ -163,6 +218,31 @@ export function loadSettings() {
             DEFAULT_SETTINGS.aiSchedule.planInSchoolGaps;
         }
       }
+      merged.letterGradeRules = sanitizeRules(
+        (parsed as any).letterGradeRules,
+      );
+      if (!RETAKE_RULES.includes(merged.retakeRule)) {
+        merged.retakeRule = DEFAULT_SETTINGS.retakeRule;
+      }
+      if (!["decimals", "whole", "half"].includes(merged.gradeRounding)) {
+        merged.gradeRounding = DEFAULT_SETTINGS.gradeRounding;
+      }
+      merged.judgeRounded = merged.judgeRounded === true;
+      merged.lettersGetCards = merged.lettersGetCards === true;
+      merged.compensationEnabled = merged.compensationEnabled === true;
+      merged.compensation = sanitizeCompensation(
+        (parsed as any).compensation,
+      );
+      merged.compensationExcluded = Array.isArray(
+        (parsed as any).compensationExcluded,
+      )
+        ? (parsed as any).compensationExcluded.filter(
+            (x: unknown) => typeof x === "string",
+          )
+        : [];
+      if (!BACKGROUND_MODES.includes(merged.backgroundMode)) {
+        merged.backgroundMode = DEFAULT_SETTINGS.backgroundMode;
+      }
       if (!START_PAGE_VALUES.includes((merged as any).startPage)) {
         (merged as any).startPage = "dashboard";
       }
@@ -177,6 +257,40 @@ export function loadSettings() {
 export const userSettings = writable(loadSettings());
 
 export const currentPage = writable<string>(loadSettings().startPage);
+
+// --- Letter grades seen in the user's own grades --------------------------
+// Grades.svelte / Dashboard feed this whenever grades load, so the settings
+// table can list "what the app found" without fetching anything itself.
+const LETTER_SCAN_KEY = "letter_grade_scan";
+
+function loadLetterScan(): DetectedToken[] {
+  try {
+    if (typeof localStorage === "undefined") return [];
+    const raw = localStorage.getItem(LETTER_SCAN_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed)
+      ? parsed.filter((d) => d && typeof d.token === "string")
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+export const letterScan = writable<DetectedToken[]>(loadLetterScan());
+
+/** Remember the non-numeric grades in `grades` (merged with earlier scans). */
+export function recordLetterScan(grades: readonly GradeLike[]) {
+  const fresh = detectLetterTokens(grades);
+  letterScan.update((old) => {
+    const map = new Map(old.map((d) => [normalizeToken(d.token), d]));
+    for (const d of fresh) map.set(normalizeToken(d.token), d);
+    const next = [...map.values()];
+    try {
+      localStorage.setItem(LETTER_SCAN_KEY, JSON.stringify(next));
+    } catch {}
+    return next;
+  });
+}
 
 export function getStartPage(): string {
   try {
@@ -299,3 +413,19 @@ function syncPreferencesToAndroid(settings: typeof DEFAULT_SETTINGS) {
       });
   }
 }
+
+/**
+ * The letter table the app actually calculates with: the user's saved rows,
+ * plus automatic suggestions for letters found in their grades that have no
+ * row yet. Saved rows always win, so the table in settings only needs touching
+ * when the automatic guess is wrong.
+ */
+export const effectiveLetterRules = derived(
+  [userSettings, letterScan],
+  ([$s, $scan]): LetterRule[] =>
+    buildLetterTable($s.letterGradeRules ?? [], $scan).map((r) => ({
+      token: r.token,
+      status: r.status,
+      value: r.value,
+    })),
+);

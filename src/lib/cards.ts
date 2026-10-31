@@ -223,6 +223,11 @@ export interface BuildOptions {
   threshold: number;
   /** Weight at which a grade is a "boss" test. */
   bossWeight?: number;
+  /**
+   * Give letter grades (V, O, A+ ...) a card too. Off by default: they are
+   * usually weight 0 and say little about how a test went.
+   */
+  includeLetters?: boolean;
 }
 
 function subjectOf(grade: Grade): string {
@@ -270,10 +275,15 @@ export function buildCards(
   grades: Grade[],
   options: BuildOptions,
 ): Map<number, CardData> {
-  const opts: Required<BuildOptions> = { bossWeight: 3, ...options };
+  const opts: Required<BuildOptions> = {
+    bossWeight: 3,
+    includeLetters: false,
+    ...options,
+  };
   const bySubject = new Map<string, Grade[]>();
   for (const g of grades) {
     if (!g.CijferStr || g.CijferKolom?.KolomSoort !== 1) continue;
+    if (!opts.includeLetters && parseGradeNumber(g.CijferStr) === null) continue;
     const key = subjectOf(g);
     if (!bySubject.has(key)) bySubject.set(key, []);
     bySubject.get(key)!.push(g);

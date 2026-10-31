@@ -1,3 +1,10 @@
+import { roundHalfUp } from './rounding.ts';
+
+/** Half-up rounded fixed-point string (5.45 -> "5.5", unlike toFixed). */
+function fixed(v: number, decimals: number): string {
+  return roundHalfUp(v, decimals).toFixed(decimals);
+}
+
 export interface WeightedGrade {
   value: number;
   weight: number;
@@ -45,7 +52,7 @@ export function calcRequiredGrade(input: RequiredGradeInput): string {
   const required = (input.targetAverage * (currentWeight + input.gradeWeight) - currentPoints) / input.gradeWeight;
   if (required > 10) return 'Onmogelijk (>10)';
   if (required < 1) return '1.0';
-  return required.toFixed(input.decimalPoints);
+  return fixed(required, input.decimalPoints);
 }
 
 export interface PredictedAverageInput {
@@ -62,7 +69,7 @@ export function calcPredictedAverage(input: PredictedAverageInput): string {
   for (const g of input.simulationGrades) { simulatedPoints += g.value * g.weight; simulatedWeight += g.weight; }
   const totalP = input.totalPoints + (input.includeSimulation ? simulatedPoints : 0);
   const totalW = input.totalWeight + (input.includeSimulation ? simulatedWeight : 0);
-  return totalW > 0 ? (totalP / totalW).toFixed(input.decimalPoints) : '0';
+  return totalW > 0 ? fixed(totalP / totalW, input.decimalPoints) : '0';
 }
 
 export interface MinGradeForPassInput {
@@ -92,7 +99,7 @@ export interface AverageForGradeInput {
 export function calcAverageForGrade(input: AverageForGradeInput): string {
   const totalP = input.totalPoints + input.grade * input.weight;
   const totalW = input.totalWeight + input.weight;
-  return totalW > 0 ? (totalP / totalW).toFixed(input.decimalPoints) : '0';
+  return totalW > 0 ? fixed(totalP / totalW, input.decimalPoints) : '0';
 }
 
 export interface NewOverallAverageInput {
@@ -110,7 +117,7 @@ export function calcNewOverallAverage(input: NewOverallAverageInput): string {
   for (const sub of validSubjects) {
     totalAverages += sub.name === input.subjectName ? parseFloat(input.predictedAverage) : sub.avg;
   }
-  return (totalAverages / validSubjects.length).toFixed(input.decimalPoints);
+  return fixed(totalAverages / validSubjects.length, input.decimalPoints);
 }
 
 export interface NewOverallForGradeInput {
@@ -128,7 +135,7 @@ export function calcNewOverallForGrade(input: NewOverallForGradeInput): string {
   for (const sub of validSubjects) {
     totalAverages += sub.name === input.subjectName ? parseFloat(input.newAverage) : sub.avg;
   }
-  return (totalAverages / validSubjects.length).toFixed(input.decimalPoints);
+  return fixed(totalAverages / validSubjects.length, input.decimalPoints);
 }
 
 export interface MultiSubjectTargetRow {

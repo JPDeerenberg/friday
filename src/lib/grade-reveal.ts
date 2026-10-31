@@ -23,6 +23,7 @@ import {
   earnedAchievementIds,
   type AchievementContext,
   type CardData,
+  parseGradeNumber,
   type Tally,
 } from "./cards.ts";
 
@@ -118,8 +119,15 @@ export const openPackIntent = writable(false);
 
 // ---------------------------------------------------------------- hiding
 
-function isHiddenGrade(grade: Grade, opened: ReadonlySet<number>): boolean {
+function isHiddenGrade(
+  grade: Grade,
+  opened: ReadonlySet<number>,
+  includeLetters = false,
+): boolean {
   if (!grade.CijferStr) return false;
+  // Letters have no card unless the user asked for them, so nothing to open.
+  if (!includeLetters && parseGradeNumber(grade.CijferStr) === null)
+    return false;
   // Only real grade columns; average/period columns are never held back.
   if (grade.CijferKolom?.KolomSoort !== 1) return false;
   return !opened.has(grade.CijferId);
@@ -131,9 +139,10 @@ export function isGradeHidden(
   enabled: boolean,
   state: Pick<GradeRevealState, "opened">,
   peek = false,
+  includeLetters = false,
 ): boolean {
   if (!enabled || peek) return false;
-  return isHiddenGrade(grade, new Set(state.opened));
+  return isHiddenGrade(grade, new Set(state.opened), includeLetters);
 }
 
 /**
@@ -145,13 +154,16 @@ export function splitGrades(
   enabled: boolean,
   state: Pick<GradeRevealState, "opened">,
   peek = false,
+  includeLetters = false,
 ): { visible: Grade[]; hidden: Grade[] } {
   if (!enabled || peek) return { visible: grades, hidden: [] };
   const opened = new Set(state.opened);
   const visible: Grade[] = [];
   const hidden: Grade[] = [];
   for (const grade of grades) {
-    (isHiddenGrade(grade, opened) ? hidden : visible).push(grade);
+    (isHiddenGrade(grade, opened, includeLetters) ? hidden : visible).push(
+      grade,
+    );
   }
   hidden.sort((a, b) =>
     (b.DatumIngevoerd ?? "").localeCompare(a.DatumIngevoerd ?? ""),

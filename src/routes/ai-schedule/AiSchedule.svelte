@@ -624,7 +624,6 @@
           <input
             type="date"
             class="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-            style="color-scheme: dark;"
             value={selectedDate.toISOString().split("T")[0]}
             onchange={(e) => {
               if (e.currentTarget.value)
@@ -812,7 +811,7 @@
               </span>
               <span
                 class="w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 {$userSettings.hideCancelled
-                  ? 'bg-primary-500 border-primary-500 text-white'
+                  ? 'bg-primary-500 border-primary-500 text-on-fill'
                   : 'border-surface-600'}"
               >
                 {#if $userSettings.hideCancelled}<svg
@@ -862,7 +861,7 @@
               </span>
               <span
                 class="w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 {showWeekView
-                  ? 'bg-primary-500 border-primary-500 text-white'
+                  ? 'bg-primary-500 border-primary-500 text-on-fill'
                   : 'border-surface-600'}"
               >
                 {#if showWeekView}<svg
@@ -906,7 +905,7 @@
               </span>
               <span
                 class="w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 {$userSettings.compactView
-                  ? 'bg-primary-500 border-primary-500 text-white'
+                  ? 'bg-primary-500 border-primary-500 text-on-fill'
                   : 'border-surface-600'}"
               >
                 {#if $userSettings.compactView}<svg
@@ -1206,7 +1205,7 @@
         <button
           onclick={() => navigateToDay(new Date(date))}
           class="flex-1 flex flex-col items-center py-1.5 px-0.5 rounded-m3-sm transition-all border min-w-[38px] relative {isSelected
-            ? 'bg-primary-500 border-primary-400 text-white shadow-md shadow-primary-500/25'
+            ? 'bg-primary-500 border-primary-400 text-on-fill shadow-md shadow-primary-500/25'
             : 'bg-surface-800/60 border-white/5 text-gray-400 hover:bg-surface-700 hover:text-gray-200'}"
         >
           <span class="text-label-small opacity-60"

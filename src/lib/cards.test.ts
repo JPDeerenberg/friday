@@ -88,6 +88,15 @@ test("buildCards: rarity, passed and threshold", () => {
   assert.equal(cards.get(1)?.rarity, "episch");
   assert.equal(cards.get(2)?.rarity, "glitch");
   assert.equal(cards.get(2)?.passed, false);
+  // Letters get no card unless asked for.
+  assert.equal(cards.get(3), undefined);
+});
+
+test("buildCards: includeLetters gives letters a special card", () => {
+  const cards = buildCards([mkGrade(1, "7,5"), mkGrade(3, "V")], {
+    threshold: 5.5,
+    includeLetters: true,
+  });
   assert.equal(cards.get(3)?.rarity, "speciaal");
 });
 

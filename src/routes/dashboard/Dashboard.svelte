@@ -5,6 +5,7 @@
     userSettings,
     currentPage,
     resumedAt,
+    effectiveLetterRules,
   } from "$lib/stores";
   import { get } from "svelte/store";
   import { untrack } from "svelte";
@@ -37,6 +38,7 @@
     openPackIntent,
     splitGrades,
   } from "$lib/grade-reveal";
+  import { parseGrade } from "$lib/grades/scale";
   import type { Assignment, CalendarEvent, Grade } from "$lib/types";
   import {
     computeWeekStats,
@@ -53,7 +55,13 @@
   let allLatestGrades = $state<Grade[]>([]);
   const revealEnabled = $derived($userSettings.gradeReveal !== false);
   const latestSplit = $derived(
-    splitGrades(allLatestGrades, revealEnabled, $gradeRevealState, $gradePeek),
+    splitGrades(
+      allLatestGrades,
+      revealEnabled,
+      $gradeRevealState,
+      $gradePeek,
+      $userSettings.lettersGetCards === true,
+    ),
   );
   const latestGrades = $derived(latestSplit.visible);
   const pendingGrades = $derived(latestSplit.hidden);
@@ -482,13 +490,12 @@
   }
 
   function isVoldoende(grade: Grade): boolean {
-    const val = parseFloat((grade.CijferStr ?? "0").replace(",", "."));
-    // Non-numeric grade strings (e.g. "Vrijgesteld"/"V" for exempted, "n.b.") parse
-    // to NaN, and NaN >= threshold is always false in JS — so these were silently
-    // rendered as failing/red whenever highlightFailing is on, even though they're
-    // not a numeric grade at all. Treat "can't parse it as a number" as neutral.
-    if (isNaN(val)) return true;
-    return val >= ($userSettings.insufficientThreshold ?? 5.5);
+    // One shared parser: numbers as numbers, letters via the user's table.
+    // Letters the table does not call "onvoldoende" are never painted red.
+    const p = parseGrade(grade.CijferStr, $effectiveLetterRules);
+    if (p.kind === "letter" && p.status === "fail") return false;
+    if (p.value === null) return true;
+    return p.value >= ($userSettings.insufficientThreshold ?? 5.5);
   }
 </script>
 
@@ -510,7 +517,7 @@
       <div class="flex items-center gap-6" in:fly={{ x: -20, duration: 800 }}>
         <div class="relative group">
           <div
-            class="w-16 h-16 rounded-m3-md bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center text-white text-3xl font-black shadow-2xl shadow-primary-500/30 group-hover:rotate-6 group-hover:scale-105 transition-all duration-500 cursor-help"
+            class="w-16 h-16 rounded-m3-md bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center text-on-fill text-3xl font-black shadow-2xl shadow-primary-500/30 group-hover:rotate-6 group-hover:scale-105 transition-all duration-500 cursor-help"
           >
             {$accountInfo?.Persoon?.Roepnaam?.[0] ?? "U"}
           </div>

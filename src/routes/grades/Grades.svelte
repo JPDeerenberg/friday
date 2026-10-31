@@ -1,5 +1,11 @@
 <script lang="ts">
-  import { personId, userSettings, resumedAt } from "$lib/stores";
+  import {
+    personId,
+    userSettings,
+    resumedAt,
+    recordLetterScan,
+    effectiveLetterRules,
+  } from "$lib/stores";
   import {
     getSchoolyears,
     getGrades,
@@ -29,6 +35,20 @@
     calcMultiSubjectTarget,
   } from "$lib/grades/predictor";
   import { getPeriods, filterGradesByPeriod } from "$lib/grades/periods";
+  import {
+    parseGrade,
+    gradeNumber,
+    effectiveWeight,
+  } from "$lib/grades/scale";
+  import { applyRetakeRule } from "$lib/grades/retake";
+  import { formatRounded, effectivePassLimit } from "$lib/grades/rounding";
+  import {
+    bestWorstCase,
+    testsNeeded,
+    effortToPass,
+  } from "$lib/grades/scenarios";
+  import { schoolAverages, compareWithSchool } from "$lib/grades/compare";
+  import { evaluateCompensation } from "$lib/grades/compensation";
   import {
     isSchoolexamenGrade,
     seReason,
@@ -101,13 +121,22 @@
   let allGrades = $state<Grade[]>([]);
   const revealEnabled = $derived($userSettings.gradeReveal !== false);
   const gradeSplit = $derived(
-    splitGrades(allGrades, revealEnabled, $gradeRevealState, $gradePeek),
+    splitGrades(
+      allGrades,
+      revealEnabled,
+      $gradeRevealState,
+      $gradePeek,
+      $userSettings.lettersGetCards === true,
+    ),
   );
   const grades = $derived(gradeSplit.visible);
   // Per-subject summaries are built imperatively, so rebuild them whenever the
   // visible set changes: a card gets opened, or peek mode is switched on/off.
   $effect(() => {
     void grades;
+    // The letter table and the retake rule change how subjects are summed.
+    void letterRules;
+    void $userSettings.retakeRule;
     untrack(() => {
       subjects = getSubjects();
       ensureRemainingTests();
@@ -118,6 +147,7 @@
   const cardMap = $derived(
     buildCards(allGrades, {
       threshold: $userSettings.insufficientThreshold ?? 5.5,
+      includeLetters: $userSettings.lettersGetCards === true,
     }),
   );
   const cardList = $derived([...cardMap.values()]);
@@ -225,9 +255,58 @@
 
   // === Analytical functions (moved to $lib/grades/stats) ===
 
-  /** Parse a grade's CijferStr into a number (0 when missing). */
+  /** The user's letter table (V/O/G, A–F ...). Unknown letters are neutral. */
+  const letterRules = $derived($effectiveLetterRules);
+
+  /**
+   * Raw value from which an average counts as voldoende. Equals the threshold
+   * unless the user judges the rounded number they see.
+   */
+  const passLimit = $derived(
+    effectivePassLimit(
+      $userSettings.insufficientThreshold,
+      $userSettings.judgeRounded === true,
+      $userSettings.gradeRounding ?? "decimals",
+      $userSettings.decimalPoints,
+    ),
+  );
+
+  /** Format an average with the user's decimals / rounding mode (half up). */
+  function fmt(v: number): string {
+    return formatRounded(
+      v,
+      $userSettings.gradeRounding ?? "decimals",
+      $userSettings.decimalPoints,
+    );
+  }
+
+  /**
+   * Number a grade calculates with. Plain numbers as-is, letters only when the
+   * letter table maps them to a number; otherwise NaN (kept out of every
+   * average, chart and count).
+   */
   function gradeValue(g: Grade): number {
-    return getNumericValue(g.CijferStr ?? "0");
+    return gradeNumber(g, letterRules) ?? NaN;
+  }
+
+  /** "≈ 8" for a letter that stands in for a number, "" otherwise. */
+  function approxText(g: Grade): string {
+    const p = parseGrade(g.CijferStr, letterRules);
+    return p.approximate && p.value !== null ? `≈ ${fmt(p.value)}` : "";
+  }
+
+  /** Colour class for one grade: letters are never red unless the table says fail. */
+  function gradeTextClass(g: Grade, passClass: string): string {
+    const p = parseGrade(g.CijferStr, letterRules);
+    if (p.kind === "letter") {
+      if (p.status === "fail") return "text-red-400";
+      if (p.status === "pass") return passClass;
+      if (p.value !== null) {
+        return isPassing(p.value, passLimit) ? passClass : "text-red-400";
+      }
+      return "text-gray-400";
+    }
+    return isPassing(gradeValue(g), passLimit) ? passClass : "text-red-400";
   }
 
   /** All valid chronological grade values across all subjects */
@@ -284,11 +363,18 @@
   /** Count voldoende/onvoldoende */
   const passFailCount = $derived(() => {
     const vals = allGradeValues();
-    const threshold = $userSettings.insufficientThreshold;
+    // Letters the table marks pass/fail but has no number for still count.
+    const letters = subjects
+      .flatMap((s) => s.grades)
+      .filter((g) => g.TeltMee && g.CijferKolom?.KolomSoort === 1)
+      .map((g) => parseGrade(g.CijferStr, letterRules))
+      .filter((p) => p.kind === "letter" && p.value === null);
+    const letterPass = letters.filter((p) => p.status === "pass").length;
+    const letterFail = letters.filter((p) => p.status === "fail").length;
     return {
-      passing: vals.filter((v) => v >= threshold).length,
-      failing: vals.filter((v) => v < threshold).length,
-      total: vals.length,
+      passing: vals.filter((v) => v >= passLimit).length + letterPass,
+      failing: vals.filter((v) => v < passLimit).length + letterFail,
+      total: vals.length + letterPass + letterFail,
     };
   });
 
@@ -305,6 +391,77 @@
     } else {
       comparisonSubjects = [...comparisonSubjects, name];
     }
+  }
+
+  // === Scenario's: what can still happen ===
+  let scenarioRemainingWeight = $state(2);
+  let scenarioGrade = $state(7);
+  let scenarioNextWeight = $state(1);
+
+  const scenarioRows = $derived.by(() =>
+    subjects
+      .filter((s) => s.totalWeight > 0)
+      .map((s) => ({
+        s,
+        range: bestWorstCase(s, scenarioRemainingWeight),
+        needed: testsNeeded(s, passLimit, scenarioGrade, scenarioNextWeight),
+      })),
+  );
+  const rescueRows = $derived.by(() =>
+    effortToPass(
+      subjects.map((s) => ({
+        name: s.name,
+        totalPoints: s.totalPoints,
+        totalWeight: s.totalWeight,
+      })),
+      passLimit,
+      scenarioNextWeight,
+    ),
+  );
+
+  // === Compensatiepunten (schoolregels) ===
+  const compensationList = $derived.by(() => {
+    const excluded = new Set($userSettings.compensationExcluded ?? []);
+    const included = subjects.filter((s) => !excluded.has(s.name));
+    const result = evaluateCompensation(included, $userSettings.compensation);
+    const rowByName = new Map(result.rows.map((r) => [r.name, r]));
+    return {
+      result,
+      list: subjects
+        .filter((s) => s.avg > 0)
+        .map((s) => ({
+          name: s.name,
+          included: !excluded.has(s.name),
+          row: rowByName.get(s.name) ?? null,
+        })),
+    };
+  });
+  function toggleCompensationSubject(name: string) {
+    userSettings.update((st) => {
+      const ex = new Set(st.compensationExcluded ?? []);
+      if (ex.has(name)) ex.delete(name);
+      else ex.add(name);
+      return { ...st, compensationExcluded: [...ex] };
+    });
+  }
+
+  /**
+   * App average vs the school's own average column in Magister. Skipped while
+   * any grade of the subject is still face-down, because the school's number
+   * would include grades you have not opened yet.
+   */
+  function schoolCompare(subject: SubjectSummary) {
+    if (gradeSplit.hidden.some((g) => g.Vak?.Omschrijving === subject.name))
+      return null;
+    const averages = schoolAverages(
+      grades.filter((g) => g.Vak?.Omschrijving === subject.name),
+    );
+    return compareWithSchool(
+      averages,
+      subject.avg,
+      $userSettings.decimalPoints,
+      selectedPeriod?.Id ?? null,
+    );
   }
 
   // Enhanced calculator state
@@ -467,6 +624,7 @@
         ? await cacheRefresh(`grades_${pid}_${yearId}`, fetcher, 5 * 60 * 1000)
         : await cacheGet(`grades_${pid}_${yearId}`, fetcher, 5 * 60 * 1000);
 
+      recordLetterScan(allGrades);
       subjects = getSubjects();
       ensureRemainingTests();
       // Dev-only SE-diagnose (Task E, stap 4): distincte kolomnamen tonen zodat
@@ -551,18 +709,20 @@
     let totalPoints = 0,
       totalWeight = 0;
     const validGrades: { value: number; weight: number }[] = [];
-    subGrades
-      .filter((g) => g.CijferStr && g.TeltMee)
-      .forEach((g) => {
-        const cs = g.CijferStr;
-        if (!cs) return;
-        const val = parseFloat(cs.replace(",", "."));
-        const w = typeof g.Weging === "number" ? g.Weging : 1;
-        if (isNaN(val)) return;
-        totalPoints += val * w;
-        totalWeight += w;
-        validGrades.push({ value: val, weight: w });
-      });
+    // Retake rule first (default "magister" = untouched), then the shared
+    // parser: numbers as-is, letters only via the table, weight 0 by default.
+    applyRetakeRule(
+      subGrades.filter((g) => g.CijferStr && g.TeltMee),
+      $userSettings.retakeRule ?? "magister",
+      letterRules,
+    ).forEach((g) => {
+      const parsed = parseGrade(g.CijferStr, letterRules);
+      if (parsed.value === null) return;
+      const w = effectiveWeight(g, parsed);
+      totalPoints += parsed.value * w;
+      totalWeight += w;
+      validGrades.push({ value: parsed.value, weight: w });
+    });
     const se = seWeightedAverage(subGrades, seConfig());
     const avg = totalWeight > 0 ? totalPoints / totalWeight : 0;
     return {
@@ -641,8 +801,12 @@
   }
 
   function isVoldoende(grade: Grade | number): boolean {
+    if (typeof grade !== "number") {
+      const p = parseGrade(grade.CijferStr, letterRules);
+      if (p.kind === "letter" && p.value === null) return p.status !== "fail";
+    }
     const val = typeof grade === "number" ? grade : gradeValue(grade);
-    return isPassing(val, $userSettings.insufficientThreshold);
+    return isPassing(val, passLimit);
   }
 
   /** Compute chart bounds and evenly-spaced points for a subject (chart math in $lib/charts) */
@@ -721,7 +885,7 @@
     return calcMinGradeForPass({
       totalPoints: subject.totalPoints,
       totalWeight: subject.totalWeight,
-      threshold: $userSettings.insufficientThreshold,
+      threshold: passLimit,
     });
   }
 
@@ -1503,7 +1667,7 @@
                         ? 'text-accent-400'
                         : 'text-red-400'}"
                     >
-                      {subject.avg.toFixed($userSettings.decimalPoints)}
+                      {fmt(subject.avg)}
                     </span>
                   {/if}
                   <svg
@@ -1523,7 +1687,32 @@
                 {@const subStats = computeStats(chronoVals)}
                 {@const subDist = getDistribution(chronoVals)}
                 <div class="border-t border-surface-700/50 p-4 space-y-4">
+                  {#if schoolCompare(subject)}
+                    {@const cmp = schoolCompare(subject)!}
+                    <div
+                      class="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 rounded-xl border text-xs {cmp.matches
+                        ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
+                        : 'bg-amber-500/10 border-amber-500/30 text-amber-400'}"
+                    >
+                      <span class="font-black"
+                        >{cmp.matches ? "Klopt met Magister" : "Wijkt af van Magister"}</span
+                      >
+                      <span class="text-gray-400"
+                        >{cmp.school.label}: {fmt(cmp.school.value)} · jij: {fmt(
+                          cmp.computed,
+                        )}{cmp.matches
+                          ? ""
+                          : ` (${cmp.diff > 0 ? "+" : ""}${cmp.diff.toFixed(Math.max(1, $userSettings.decimalPoints))})`}</span
+                      >
+                      {#if !cmp.matches}
+                        <span class="w-full text-[10px] text-gray-500 leading-snug"
+                          >Scholen wegen of ronden soms anders. Controleer de weging, herkansingen en de afronding in Instellingen → Cijfers.</span
+                        >
+                      {/if}
+                    </div>
+                  {/if}
                   <!-- Stats row -->
+                  {#if chronoVals.length > 0}
                   <div class="grid grid-cols-5 gap-2">
                     <div
                       class="bg-surface-900/50 rounded-xl p-2.5 text-center border border-white/5"
@@ -1538,7 +1727,7 @@
                           ? 'text-accent-400'
                           : 'text-red-400'}"
                       >
-                        {subject.avg.toFixed($userSettings.decimalPoints)}
+                        {fmt(subject.avg)}
                       </p>
                     </div>
                     <div
@@ -1590,6 +1779,7 @@
                       </p>
                     </div>
                   </div>
+                  {/if}
 
                   <!-- SE / PTA info -->
                   {#if subject.seCount > 0}
@@ -1615,7 +1805,7 @@
                             ? 'text-primary-400'
                             : 'text-red-400'}"
                         >
-                          {subject.seAvg.toFixed($userSettings.decimalPoints)}
+                          {fmt(subject.seAvg)}
                         </p>
                         <p
                           class="text-[8px] text-gray-600 font-black uppercase tracking-widest"
@@ -1649,7 +1839,7 @@
                               <div
                                 class="h-full rounded-full transition-all duration-700 {parseInt(
                                   bucket.label,
-                                ) >= $userSettings.insufficientThreshold
+                                ) >= passLimit
                                   ? 'bg-gradient-to-r from-primary-500 to-accent-400'
                                   : 'bg-gradient-to-r from-red-500 to-red-400'}"
                                 style="width: {Math.max(
@@ -1805,12 +1995,17 @@
                               </div>
                             {/if}
                             <span
-                              class="text-lg font-black {isVoldoende(grade)
-                                ? 'text-primary-400'
-                                : 'text-red-400'}"
+                              class="text-lg font-black {gradeTextClass(grade, 'text-primary-400')}"
                             >
                               {grade.CijferStr}
                             </span>
+                            {#if approxText(grade)}
+                              <span
+                                class="text-[10px] font-bold text-gray-500"
+                                title="Geschat op basis van je lettertabel"
+                                >{approxText(grade)}</span
+                              >
+                            {/if}
                           </div>
                         </div>
                         <div
@@ -1883,7 +2078,7 @@
                           ? 'text-primary-400'
                           : 'text-red-400'}"
                       >
-                        {s.seAvg.toFixed($userSettings.decimalPoints)}
+                        {fmt(s.seAvg)}
                       </p>
                       <p
                         class="text-[8px] text-gray-600 font-black uppercase tracking-widest"
@@ -1897,7 +2092,7 @@
                           ? 'text-accent-400'
                           : 'text-red-400'}"
                       >
-                        {s.avg.toFixed($userSettings.decimalPoints)}
+                        {fmt(s.avg)}
                       </p>
                       <p
                         class="text-[8px] text-gray-600 font-black uppercase tracking-widest"
@@ -2000,12 +2195,17 @@
                 </div>
                 <div class="flex flex-col items-end gap-1">
                   <span
-                    class="text-2xl font-black {isVoldoende(grade)
-                      ? 'text-accent-400'
-                      : 'text-red-400'}"
+                    class="text-2xl font-black {gradeTextClass(grade, 'text-accent-400')}"
                   >
                     {grade.CijferStr}
                   </span>
+                  {#if approxText(grade)}
+                    <span
+                      class="text-[10px] font-bold text-gray-500"
+                      title="Geschat op basis van je lettertabel"
+                      >{approxText(grade)}</span
+                    >
+                  {/if}
                   {#if grade.TeltMee === false}
                     <span
                       class="text-[9px] text-gray-600 font-bold bg-surface-800 px-1.5 py-0.5 rounded-md border border-surface-700/50"
@@ -2042,7 +2242,7 @@
                   class="text-2xl font-black {isVoldoende(overallAvg2)
                     ? 'text-accent-400'
                     : 'text-red-400'}"
-                  >{overallAvg2.toFixed($userSettings.decimalPoints)}</span
+                  >{fmt(overallAvg2)}</span
                 >
               </div>
               <div
@@ -2179,7 +2379,7 @@
                     <div
                       class="h-full rounded-full transition-all duration-700 group-hover:brightness-125 {parseInt(
                         bucket.label,
-                      ) >= $userSettings.insufficientThreshold
+                      ) >= passLimit
                         ? 'bg-gradient-to-r from-primary-500 to-accent-400'
                         : 'bg-gradient-to-r from-red-500 to-red-400'}"
                       style="width: {Math.max(
@@ -2241,7 +2441,7 @@
                     <span
                       class="absolute inset-0 flex items-center justify-end pr-2 text-[8px] font-black text-white/80"
                     >
-                      {subject.avg.toFixed($userSettings.decimalPoints)}
+                      {fmt(subject.avg)}
                     </span>
                   </div>
                 </div>
@@ -2263,7 +2463,7 @@
               {#if bestSubject}
                 <p class="text-lg font-black text-white">{bestSubject.name}</p>
                 <p class="text-2xl font-black text-emerald-400 mt-1">
-                  {bestSubject.avg.toFixed($userSettings.decimalPoints)}
+                  {fmt(bestSubject.avg)}
                 </p>
               {:else}
                 <p class="text-xs text-gray-600">Nog geen data</p>
@@ -2281,7 +2481,7 @@
               {#if worstSubject}
                 <p class="text-lg font-black text-white">{worstSubject.name}</p>
                 <p class="text-2xl font-black text-red-400 mt-1">
-                  {worstSubject.avg.toFixed($userSettings.decimalPoints)}
+                  {fmt(worstSubject.avg)}
                 </p>
               {:else}
                 <p class="text-xs text-gray-600">Nog geen data</p>
@@ -2323,7 +2523,7 @@
                           ? 'text-accent-400'
                           : 'text-red-400'}"
                       >
-                        {subject.avg.toFixed($userSettings.decimalPoints)}
+                        {fmt(subject.avg)}
                       </p>
                       <p class="text-[9px] text-gray-600">
                         {vals.length} cijfers
@@ -2496,15 +2696,13 @@
                         >
                           <span class="text-gray-500"
                             >Huidig: <span class="text-gray-300"
-                              >{s.avg.toFixed(
-                                $userSettings.decimalPoints,
-                              )}</span
+                              >{fmt(s.avg)}</span
                             ></span
                           >
                           <span class="text-gray-500"
                             >Voorspeld: <span
                               class={parseFloat(getPredictedAverage(s)) >=
-                              $userSettings.insufficientThreshold
+                              passLimit
                                 ? "text-accent-400"
                                 : "text-red-400"}>{getPredictedAverage(s)}</span
                             ></span
@@ -2516,7 +2714,7 @@
                           <div
                             class="h-full rounded-full transition-all duration-500 {parseFloat(
                               getPredictedAverage(s),
-                            ) >= $userSettings.insufficientThreshold
+                            ) >= passLimit
                               ? 'bg-gradient-to-r from-primary-600 to-accent-400'
                               : 'bg-gradient-to-r from-red-600 to-red-400'}"
                             style="width: {getProgressPercent(s)}%"
@@ -2524,9 +2722,7 @@
                           <div
                             class="absolute top-0 bottom-0 w-0.5 bg-white/80"
                             style="left: calc({pct(s.avg)}% - 1px)"
-                            title="Huidig: {s.avg.toFixed(
-                              $userSettings.decimalPoints,
-                            )}"
+                            title="Huidig: {fmt(s.avg)}"
                           ></div>
                         </div>
 
@@ -2539,7 +2735,7 @@
                             <span
                               class="text-3xl font-black italic tracking-tighter drop-shadow-md {parseFloat(
                                 getPredictedAverage(s),
-                              ) >= $userSettings.insufficientThreshold
+                              ) >= passLimit
                                 ? 'text-white'
                                 : 'text-red-400'}"
                             >
@@ -2720,7 +2916,7 @@
                           <span
                             class="text-6xl font-black italic tracking-tighter drop-shadow-sm {parseFloat(
                               getAverageForGrade(s),
-                            ) >= $userSettings.insufficientThreshold
+                            ) >= passLimit
                               ? 'text-transparent bg-clip-text bg-gradient-to-br from-white via-accent-400 to-primary-400'
                               : 'text-red-400'}"
                           >
@@ -2736,15 +2932,13 @@
                         >
                           <span class="text-gray-500"
                             >Huidig: <span class="text-gray-300"
-                              >{s.avg.toFixed(
-                                $userSettings.decimalPoints,
-                              )}</span
+                              >{fmt(s.avg)}</span
                             ></span
                           >
                           <span class="text-gray-500"
                             >Nieuw: <span
                               class={parseFloat(getAverageForGrade(s)) >=
-                              $userSettings.insufficientThreshold
+                              passLimit
                                 ? "text-accent-400"
                                 : "text-red-400"}>{getAverageForGrade(s)}</span
                             ></span
@@ -2756,7 +2950,7 @@
                           <div
                             class="h-full rounded-full transition-all duration-500 {parseFloat(
                               getAverageForGrade(s),
-                            ) >= $userSettings.insufficientThreshold
+                            ) >= passLimit
                               ? 'bg-gradient-to-r from-accent-600 to-primary-400'
                               : 'bg-gradient-to-r from-red-600 to-red-400'}"
                             style="width: {pct(
@@ -2766,9 +2960,7 @@
                           <div
                             class="absolute top-0 bottom-0 w-0.5 bg-white/80"
                             style="left: calc({pct(s.avg)}% - 1px)"
-                            title="Huidig: {s.avg.toFixed(
-                              $userSettings.decimalPoints,
-                            )}"
+                            title="Huidig: {fmt(s.avg)}"
                           ></div>
                         </div>
 
@@ -2781,7 +2973,7 @@
                             <span
                               class="text-3xl font-black italic tracking-tighter drop-shadow-md {parseFloat(
                                 getAverageForGrade(s),
-                              ) >= $userSettings.insufficientThreshold
+                              ) >= passLimit
                                 ? 'text-white'
                                 : 'text-red-400'}"
                             >
@@ -2828,7 +3020,7 @@
                             ? 'text-accent-400'
                             : 'text-red-400'}"
                         >
-                          {s.avg.toFixed($userSettings.decimalPoints)}
+                          {fmt(s.avg)}
                         </p>
                       </div>
 
@@ -2886,13 +3078,11 @@
                           <span
                             class="text-5xl font-black italic tracking-tighter drop-shadow-sm {getPredictedEnd(
                               s,
-                            ) >= $userSettings.insufficientThreshold
+                            ) >= passLimit
                               ? 'text-transparent bg-clip-text bg-gradient-to-br from-white via-accent-400 to-emerald-400'
                               : 'text-red-400'}"
                           >
-                            {getPredictedEnd(s).toFixed(
-                              $userSettings.decimalPoints,
-                            )}
+                            {fmt(getPredictedEnd(s))}
                           </span>
                         </div>
                       </div>
@@ -3028,7 +3218,7 @@
                             ? 'text-accent-400'
                             : 'text-red-400'}"
                         >
-                          {s.avg.toFixed($userSettings.decimalPoints)}
+                          {fmt(s.avg)}
                         </p>
                       </div>
 
@@ -3190,6 +3380,180 @@
             class="h-px w-3/4 mx-auto bg-gradient-to-r from-transparent via-surface-600 to-transparent"
           ></div>
 
+          <!-- Scenario's -->
+          <div>
+            <div class="flex items-center gap-3 mb-4">
+              <div
+                class="w-8 h-8 rounded-xl bg-primary-500/15 flex items-center justify-center text-primary-400 shrink-0"
+              >
+                <svg
+                  class="w-4 h-4"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  ><path d="M3 17l6-6 4 4 8-8" /><path d="M14 7h7v7" /></svg
+                >
+              </div>
+              <h2
+                class="text-xl font-black text-white italic tracking-tighter flex-1"
+              >
+                Scenario's
+              </h2>
+            </div>
+
+            <div class="glass p-5 rounded-3xl space-y-5">
+              <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <label class="block">
+                  <span
+                    class="block text-[10px] text-gray-500 font-black uppercase tracking-widest mb-1.5"
+                    >Nog te verwachten gewicht</span
+                  >
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.5"
+                    bind:value={scenarioRemainingWeight}
+                    class="w-full bg-surface-800 border border-surface-600/50 rounded-xl px-4 py-2.5 text-sm text-gray-200"
+                  />
+                </label>
+                <label class="block">
+                  <span
+                    class="block text-[10px] text-gray-500 font-black uppercase tracking-widest mb-1.5"
+                    >Gewicht volgende toets</span
+                  >
+                  <input
+                    type="number"
+                    min="0.5"
+                    step="0.5"
+                    bind:value={scenarioNextWeight}
+                    class="w-full bg-surface-800 border border-surface-600/50 rounded-xl px-4 py-2.5 text-sm text-gray-200"
+                  />
+                </label>
+                <label class="block">
+                  <span
+                    class="block text-[10px] text-gray-500 font-black uppercase tracking-widest mb-1.5"
+                    >Als ik halen zou</span
+                  >
+                  <input
+                    type="number"
+                    min="1"
+                    max="10"
+                    step="0.1"
+                    bind:value={scenarioGrade}
+                    class="w-full bg-surface-800 border border-surface-600/50 rounded-xl px-4 py-2.5 text-sm text-gray-200"
+                  />
+                </label>
+              </div>
+
+              {#if rescueRows.length > 0}
+                <div>
+                  <p
+                    class="text-[10px] text-gray-500 font-black uppercase tracking-widest mb-2"
+                  >
+                    Makkelijkste redding (volgende toets)
+                  </p>
+                  <div class="space-y-1.5">
+                    {#each rescueRows as r}
+                      <div
+                        class="flex items-center justify-between gap-3 px-3 py-2 rounded-xl bg-surface-800/40 border border-white/5"
+                      >
+                        <span class="text-sm font-bold text-gray-200 truncate"
+                          >{r.name}</span
+                        >
+                        <span class="text-xs text-gray-500 shrink-0"
+                          >nu {fmt(r.current)}</span
+                        >
+                        <span
+                          class="text-sm font-black shrink-0 {r.feasible
+                            ? 'text-accent-400'
+                            : 'text-red-400'}"
+                          >{r.feasible
+                            ? `${fmt(Math.max(1, r.required))} nodig`
+                            : "niet haalbaar"}</span
+                        >
+                      </div>
+                    {/each}
+                  </div>
+                </div>
+              {:else if subjects.length > 0}
+                <p class="text-sm text-emerald-400 font-bold">
+                  Alle vakken staan op of boven je voldoende-grens.
+                </p>
+              {/if}
+
+              <div>
+                <p
+                  class="text-[10px] text-gray-500 font-black uppercase tracking-widest mb-2"
+                >
+                  Bereik per vak
+                </p>
+                <div class="space-y-1.5">
+                  {#each scenarioRows as row}
+                    <div
+                      class="px-3 py-2.5 rounded-xl bg-surface-800/40 border border-white/5 space-y-1.5"
+                    >
+                      <div class="flex items-center justify-between gap-3">
+                        <span class="text-sm font-bold text-gray-200 truncate"
+                          >{row.s.name}</span
+                        >
+                        {#if row.range}
+                          <span class="text-xs text-gray-400 shrink-0"
+                            >{fmt(row.range.worst)} – {fmt(row.range.best)}</span
+                          >
+                        {/if}
+                      </div>
+                      {#if row.range}
+                        <div
+                          class="relative h-1.5 rounded-full bg-surface-700 overflow-hidden"
+                          title="Balk loopt van 1 tot 10. Het gekleurde stuk is het bereik dat nog mogelijk is."
+                        >
+                          <div
+                            class="absolute inset-y-0 rounded-full bg-primary-500/60"
+                            style="left: {pct(row.range.worst)}%; width: {Math.max(
+                              1,
+                              pct(row.range.best) - pct(row.range.worst),
+                            )}%"
+                          ></div>
+                          {#if row.range.current !== null}
+                            <div
+                              class="absolute inset-y-0 w-0.5 bg-gray-100"
+                              style="left: {pct(row.range.current)}%"
+                            ></div>
+                          {/if}
+                          <div
+                            class="absolute inset-y-0 w-px bg-amber-400"
+                            style="left: {pct(passLimit)}%"
+                            title="Voldoende-grens"
+                          ></div>
+                        </div>
+                      {/if}
+                      <p class="text-[11px] text-gray-500">
+                        {#if row.needed === 0}
+                          Je staat al op of boven de grens.
+                        {:else if row.needed === null}
+                          Met een {fmt(scenarioGrade)} kom je er niet.
+                        {:else}
+                          {row.needed}
+                          {row.needed === 1 ? "toets" : "toetsen"} met een {fmt(
+                            scenarioGrade,
+                          )} (gewicht {scenarioNextWeight}) brengen je op de grens.
+                        {/if}
+                      </p>
+                    </div>
+                  {/each}
+                </div>
+              </div>
+              <p class="text-[10px] text-gray-600 leading-relaxed">
+                Bereik: laagste en hoogste gemiddelde als alle resterende toetsen een 1 of een 10 worden.
+              </p>
+            </div>
+          </div>
+
+          <div
+            class="h-px w-3/4 mx-auto bg-gradient-to-r from-transparent via-surface-600 to-transparent"
+          ></div>
+
           <!-- Totaaldoel -->
           <div>
             <div class="flex items-center gap-3 mb-4">
@@ -3280,7 +3644,7 @@
                 <span
                   class="text-5xl font-black italic tracking-tighter drop-shadow-sm {multiTargetResult.achievable &&
                   multiTargetResult.requiredGrade >=
-                    $userSettings.insufficientThreshold
+                    passLimit
                     ? 'text-transparent bg-clip-text bg-gradient-to-br from-white via-emerald-400 to-accent-400'
                     : 'text-red-400'}"
                 >
@@ -3409,7 +3773,7 @@
                     <div class="flex items-center gap-2">
                       <span
                         class="text-2xl font-black italic {result
-                          ? result.avg >= $userSettings.insufficientThreshold
+                          ? result.avg >= passLimit
                             ? 'text-purple-400'
                             : 'text-red-400'
                           : 'text-gray-600'}"
@@ -3637,6 +4001,105 @@
             class="h-px w-3/4 mx-auto bg-gradient-to-r from-transparent via-surface-600 to-transparent"
           ></div>
 
+          {#if $userSettings.compensationEnabled}
+            <!-- Compensatiepunten -->
+            <div>
+              <div class="flex items-center gap-3 mb-4">
+                <div
+                  class="w-8 h-8 rounded-xl bg-accent-500/15 flex items-center justify-center text-accent-400 shrink-0"
+                >
+                  <svg
+                    class="w-4 h-4"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    ><path d="M12 3v18M3 12h18" /></svg
+                  >
+                </div>
+                <h2
+                  class="text-xl font-black text-white italic tracking-tighter flex-1"
+                >
+                  Compensatiepunten
+                </h2>
+              </div>
+              <div class="glass p-5 rounded-3xl space-y-4">
+                <div
+                  class="flex items-center justify-between gap-3 px-4 py-3 rounded-2xl border {compensationList
+                    .result.ok
+                    ? 'bg-emerald-500/10 border-emerald-500/30'
+                    : 'bg-red-500/10 border-red-500/30'}"
+                >
+                  <div>
+                    <p
+                      class="text-sm font-black {compensationList.result.ok
+                        ? 'text-emerald-400'
+                        : 'text-red-400'}"
+                    >
+                      {compensationList.result.ok
+                        ? "Voldoet aan de regels"
+                        : "Voldoet niet"}
+                    </p>
+                    {#each compensationList.result.reasons as reason}
+                      <p class="text-[11px] text-gray-400">{reason}</p>
+                    {/each}
+                  </div>
+                  <div class="text-right">
+                    <p class="text-2xl font-black text-white">
+                      {compensationList.result.total > 0 ? "+" : ""}{compensationList
+                        .result.total}
+                    </p>
+                    <p class="text-[10px] text-gray-500">
+                      {compensationList.result.insufficientCount} onvoldoende
+                    </p>
+                  </div>
+                </div>
+
+                <div class="space-y-1.5">
+                  {#each compensationList.list as item}
+                    <label
+                      class="flex items-center gap-3 px-3 py-2 rounded-xl bg-surface-800/40 border border-white/5 {item.included
+                        ? ''
+                        : 'opacity-50'}"
+                    >
+                      <input
+                        type="checkbox"
+                        class="accent-primary-500 rounded"
+                        checked={item.included}
+                        onchange={() => toggleCompensationSubject(item.name)}
+                      />
+                      <span class="text-sm font-bold text-gray-200 truncate flex-1"
+                        >{item.name}</span
+                      >
+                      {#if item.row}
+                        <span class="text-xs text-gray-500"
+                          >{fmt(item.row.average)} → {item.row.whole}</span
+                        >
+                        <span
+                          class="text-sm font-black w-8 text-right {item.row.points < 0
+                            ? 'text-red-400'
+                            : item.row.points > 0
+                              ? 'text-accent-400'
+                              : 'text-gray-500'}"
+                          >{item.row.points > 0 ? "+" : ""}{item.row.points}</span
+                        >
+                      {:else}
+                        <span class="text-xs text-gray-600">telt niet mee</span>
+                      {/if}
+                    </label>
+                  {/each}
+                </div>
+                <p class="text-[10px] text-gray-600 leading-relaxed">
+                  Gebaseerd op je huidige gemiddelden, afgerond op hele cijfers. Vink vakken uit die bij jouw school niet meetellen (bijv. LO). De regels pas je aan in Instellingen → Cijfers.
+                </p>
+              </div>
+            </div>
+
+            <div
+              class="h-px w-3/4 mx-auto bg-gradient-to-r from-transparent via-surface-600 to-transparent"
+            ></div>
+          {/if}
+
           <!-- Vergelijk Schooljaren -->
           <div>
             <div class="flex items-center justify-between mb-4">
@@ -3801,9 +4264,7 @@
                             </div>
                           </div>
                           <span
-                            class="text-lg font-black {isVoldoende(grade)
-                              ? 'text-accent-400'
-                              : 'text-red-400'}">{grade.CijferStr}</span
+                            class="text-lg font-black {gradeTextClass(grade, 'text-accent-400')}">{grade.CijferStr}</span
                           >
                         </div>
                       {/each}
@@ -3824,10 +4285,11 @@
                             Gewogen gem.
                           </p>
                           <p class="text-lg font-black text-gray-200">
-                            {(sub.totalWeight > 0
-                              ? sub.totalPoints / sub.totalWeight
-                              : 0
-                            ).toFixed($userSettings.decimalPoints)}
+                            {fmt(
+                              sub.totalWeight > 0
+                                ? sub.totalPoints / sub.totalWeight
+                                : 0,
+                            )}
                           </p>
                         </div>
                         <div class="text-center">
@@ -3837,12 +4299,12 @@
                             Ongewogen gem.
                           </p>
                           <p class="text-lg font-black text-gray-200">
-                            {(
+                            {fmt(
                               sub.validGrades.reduce(
                                 (a: number, b: any) => a + b.value,
                                 0,
-                              ) / Math.max(sub.validGrades.length, 1)
-                            ).toFixed($userSettings.decimalPoints)}
+                              ) / Math.max(sub.validGrades.length, 1),
+                            )}
                           </p>
                         </div>
                       </div>
@@ -3977,7 +4439,7 @@
                           >
                           <span
                             class="text-sm font-black {sub.avg >=
-                            $userSettings.insufficientThreshold
+                            passLimit
                               ? 'text-primary-400'
                               : 'text-red-400'} italic"
                             >{(sub.avg || 0).toFixed(1)}</span

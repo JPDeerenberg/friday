@@ -3,6 +3,7 @@
   import { startLoginFlow, getPersonId, getProfilePicture, handleAuthCallback } from '$lib/api';
   import Button from '$lib/components/Button.svelte';
   import InstallPrompt from '$lib/components/InstallPrompt.svelte';
+  import Logo from '$lib/components/Logo.svelte';
 
   import { webBackend, saveWebSession, webRequest, webRequestBytes, bytesToBase64 } from '$lib/web-session';
 
@@ -133,8 +134,8 @@
   <div class="w-full max-w-md">
     <!-- Logo -->
     <div class="text-center mb-8">
-      <div class="w-20 h-20 rounded-2xl bg-gradient-to-br from-primary-500 via-primary-600 to-accent-500 flex items-center justify-center mx-auto mb-4 shadow-lg shadow-primary-500/20">
-        <span class="text-3xl font-bold text-white">F</span>
+      <div class="w-20 h-20 rounded-2xl bg-gradient-to-br from-primary-500 via-primary-600 to-accent-500 flex items-center justify-center mx-auto mb-4 shadow-lg shadow-primary-500/20 text-on-fill p-3">
+        <Logo class="w-full h-full" title="Friday logo" />
       </div>
       <h1 class="text-2xl font-bold text-gray-100">Friday</h1>
       <p class="text-sm text-gray-500 mt-1">Log in met je Magister account</p>

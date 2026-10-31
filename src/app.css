@@ -25,11 +25,29 @@ body {
   --color-surface-50: oklch(0.99 0 0);
   --color-surface-100: oklch(0.98 0 0);
   --color-surface-200: oklch(0.96 0 0);
+  --color-surface-600: oklch(0.62 0.02 280);
   --color-surface-700: oklch(0.55 0.02 280);
   --color-surface-800: oklch(0.45 0.03 280);
   --color-surface-850: oklch(0.35 0.04 280);
   --color-surface-900: oklch(0.25 0.04 285);
   --color-surface-950: oklch(0.15 0.04 290);
+
+  /* Primary / accent colours. They MUST be declared here: Tailwind only
+     generates bg-primary-500 / text-primary-400 / from-accent-500 ... for
+     colours it knows about. The per-theme classes below (.theme-blue etc.)
+     override these at runtime, exactly like the surface tokens. */
+  --color-primary-100: #f3e8ff;
+  --color-primary-200: #e9d5ff;
+  --color-primary-300: #d8b4fe;
+  --color-primary-400: #d8b4fe;
+  --color-primary-500: #c084fc;
+  --color-primary-600: #a855f7;
+  --color-primary-950: #3b0764;
+  --color-accent-300: #e9d5ff;
+  --color-accent-400: #d8b4fe;
+  --color-accent-500: #c084fc;
+  --color-accent-600: #a855f7;
+  --color-accent-950: #3b0764;
 
   /* Material 3 shape scale (m3.material.io/foundations/shape/shape-scale).
      Tailwind v4 auto-generates rounded-m3-* utilities from --radius-* tokens. */
@@ -317,6 +335,19 @@ body {
   --color-accent-500: var(--m3-primary);
 }
 
+/* Derived shades (100-300, 950). Declared on every themed element so they are
+   computed from THAT element's 400/500/600, i.e. they follow the theme. */
+:root,
+[class*="theme-"] {
+  --color-primary-100: color-mix(in oklch, var(--color-primary-400), white 72%);
+  --color-primary-200: color-mix(in oklch, var(--color-primary-400), white 52%);
+  --color-primary-300: color-mix(in oklch, var(--color-primary-400), white 26%);
+  --color-primary-950: color-mix(in oklch, var(--color-primary-600), black 72%);
+  --color-accent-300: color-mix(in oklch, var(--color-accent-400), white 26%);
+  --color-accent-600: color-mix(in oklch, var(--color-accent-500), black 14%);
+  --color-accent-950: color-mix(in oklch, var(--color-accent-500), black 72%);
+}
+
 .text-accent {
   color: var(--color-accent-500);
 }
@@ -347,8 +378,10 @@ body {
   --color-surface-850: oklch(0.22 0.02 var(--theme-hue, 290));
   --color-surface-800: oklch(0.26 0.02 var(--theme-hue, 290));
   --color-surface-700: oklch(0.34 0.02 var(--theme-hue, 290));
+  --color-surface-600: oklch(0.4 0.02 var(--theme-hue, 290));
 }
 .mode-amoled {
+  --color-surface-600: oklch(0.3 0 0);
   --color-surface-950: oklch(0 0 0);
   --color-surface-900: oklch(0.07 0 0);
   --color-surface-850: oklch(0.11 0 0);
@@ -542,4 +575,297 @@ body {
 .stagger-item {
   animation: staggerFadeIn 0.3s ease-out both;
   animation-delay: calc(var(--i, 0) * 40ms);
+}
+
+/* ======================================================================
+   LIGHT MODE  (.mode-light)
+   Set on <html> (so body, scrollbars, native controls follow) and on the
+   layout wrapper. The app is written dark-first, so instead of touching
+   every class we flip the *tokens* the utilities read from:
+     - surface-*      → light tinted surfaces (cards are white)
+     - gray-* scale   → inverted (text-gray-100 becomes near-black, etc.)
+     - white          → ink, so text-white / border-white/10 / bg-white/5
+                        become dark text and subtle dark overlays
+     - 200/300/400 status shades → darker, so pastel text stays readable
+   Solid white fills and white text on coloured fills are restored below
+   (.bg-white, .text-on-fill).
+   ====================================================================== */
+.mode-light {
+  color-scheme: light;
+
+  --color-surface-950: oklch(0.972 0.008 var(--theme-hue, 290));
+  --color-surface-900: oklch(1 0 0);
+  --color-surface-850: oklch(0.962 0.01 var(--theme-hue, 290));
+  --color-surface-800: oklch(0.935 0.012 var(--theme-hue, 290));
+  --color-surface-700: oklch(0.88 0.014 var(--theme-hue, 290));
+  --color-surface-600: oklch(0.82 0.016 var(--theme-hue, 290));
+
+  --ink: oklch(0.2 0.03 var(--theme-hue, 290));
+  --color-white: var(--ink);
+
+  /* Inverted gray scale (950 <-> 50, 900 <-> 100, ...). */
+  --color-gray-50: oklch(13% 0.028 261.692);
+  --color-gray-100: oklch(21% 0.034 264.665);
+  --color-gray-200: oklch(27.8% 0.033 256.848);
+  --color-gray-300: oklch(37.3% 0.034 259.733);
+  --color-gray-400: oklch(44.6% 0.03 256.802);
+  --color-gray-500: oklch(55.1% 0.027 264.364);
+  --color-gray-600: oklch(56% 0.026 261.325);
+  --color-gray-700: oklch(87.2% 0.01 258.338);
+  --color-gray-800: oklch(92.8% 0.006 264.531);
+  --color-gray-900: oklch(96.7% 0.003 264.542);
+  --color-gray-950: oklch(98.5% 0.002 247.839);
+
+  /* Status colours: pastel text shades -> readable dark shades. Includes 500,
+     because text-amber-500/70 style classes are used for small labels. */
+  --color-red-200: var(--color-red-800);
+  --color-red-300: var(--color-red-700);
+  --color-red-400: var(--color-red-600);
+  --color-orange-200: var(--color-orange-800);
+  --color-orange-300: var(--color-orange-800);
+  --color-orange-400: var(--color-orange-700);
+  --color-orange-500: var(--color-orange-700);
+  --color-amber-200: var(--color-amber-800);
+  --color-amber-300: var(--color-amber-800);
+  --color-amber-400: var(--color-amber-700);
+  --color-amber-500: var(--color-amber-700);
+  --color-emerald-200: var(--color-emerald-800);
+  --color-emerald-300: var(--color-emerald-800);
+  --color-emerald-400: var(--color-emerald-700);
+  --color-emerald-500: var(--color-emerald-700);
+  --color-blue-200: var(--color-blue-800);
+  --color-blue-300: var(--color-blue-700);
+  --color-blue-400: var(--color-blue-600);
+  --color-indigo-300: var(--color-indigo-700);
+  --color-indigo-400: var(--color-indigo-600);
+  --color-purple-300: var(--color-purple-700);
+  --color-purple-400: var(--color-purple-600);
+}
+
+html.mode-light body {
+  background-color: var(--color-surface-950);
+  color: var(--color-gray-100);
+}
+
+/* Solid white fills (switch knob etc.) stay white; text on a coloured fill
+   (primary buttons, avatars, badges) stays white. */
+.mode-light .bg-white {
+  background-color: #fff;
+}
+@utility text-on-fill {
+  color: #fff;
+}
+
+/* Accent colours: the dark-mode pastels are unreadable on white, so each
+   theme gets a darker set in light mode. (Custom colour is left as chosen.) */
+.mode-light.theme-violet {
+  --m3-primary: #7e22ce; --m3-on-primary: #ffffff;
+  --m3-primary-container: #f3e8ff; --m3-on-primary-container: #581c87;
+  --m3-secondary: #9333ea; --m3-secondary-container: #e9d5ff;
+  --m3-on-secondary-container: #581c87; --m3-tertiary: #7c3aed;
+  --color-primary-400: #7e22ce; --color-primary-500: #9333ea; --color-primary-600: #7e22ce;
+  --color-accent-400: #7e22ce; --color-accent-500: #9333ea;
+}
+.mode-light.theme-blue {
+  --m3-primary: #1d4ed8; --m3-on-primary: #ffffff;
+  --m3-primary-container: #dbeafe; --m3-on-primary-container: #1e3a8a;
+  --m3-secondary: #2563eb; --m3-secondary-container: #bfdbfe;
+  --m3-on-secondary-container: #1e3a8a; --m3-tertiary: #3b82f6;
+  --color-primary-400: #1d4ed8; --color-primary-500: #2563eb; --color-primary-600: #1d4ed8;
+  --color-accent-400: #1d4ed8; --color-accent-500: #2563eb;
+}
+.mode-light.theme-cyan {
+  --m3-primary: #0e7490; --m3-on-primary: #ffffff;
+  --m3-primary-container: #cffafe; --m3-on-primary-container: #164e63;
+  --m3-secondary: #0891b2; --m3-secondary-container: #a5f3fc;
+  --m3-on-secondary-container: #164e63; --m3-tertiary: #06b6d4;
+  --color-primary-400: #0e7490; --color-primary-500: #0891b2; --color-primary-600: #0e7490;
+  --color-accent-400: #0e7490; --color-accent-500: #0891b2;
+}
+.mode-light.theme-green {
+  --m3-primary: #15803d; --m3-on-primary: #ffffff;
+  --m3-primary-container: #dcfce7; --m3-on-primary-container: #14532d;
+  --m3-secondary: #16a34a; --m3-secondary-container: #bbf7d0;
+  --m3-on-secondary-container: #14532d; --m3-tertiary: #22c55e;
+  --color-primary-400: #15803d; --color-primary-500: #16a34a; --color-primary-600: #15803d;
+  --color-accent-400: #15803d; --color-accent-500: #16a34a;
+}
+.mode-light.theme-yellow {
+  --m3-primary: #854d0e; --m3-on-primary: #ffffff;
+  --m3-primary-container: #fef9c3; --m3-on-primary-container: #713f12;
+  --m3-secondary: #a16207; --m3-secondary-container: #fef08a;
+  --m3-on-secondary-container: #713f12; --m3-tertiary: #ca8a04;
+  --color-primary-400: #854d0e; --color-primary-500: #a16207; --color-primary-600: #854d0e;
+  --color-accent-400: #854d0e; --color-accent-500: #a16207;
+}
+.mode-light.theme-orange {
+  --m3-primary: #c2410c; --m3-on-primary: #ffffff;
+  --m3-primary-container: #ffedd5; --m3-on-primary-container: #7c2d12;
+  --m3-secondary: #ea580c; --m3-secondary-container: #fed7aa;
+  --m3-on-secondary-container: #7c2d12; --m3-tertiary: #f97316;
+  --color-primary-400: #c2410c; --color-primary-500: #ea580c; --color-primary-600: #c2410c;
+  --color-accent-400: #c2410c; --color-accent-500: #ea580c;
+}
+.mode-light.theme-red {
+  --m3-primary: #b91c1c; --m3-on-primary: #ffffff;
+  --m3-primary-container: #fee2e2; --m3-on-primary-container: #7f1d1d;
+  --m3-secondary: #dc2626; --m3-secondary-container: #fecaca;
+  --m3-on-secondary-container: #7f1d1d; --m3-tertiary: #ef4444;
+  --color-primary-400: #b91c1c; --color-primary-500: #dc2626; --color-primary-600: #b91c1c;
+  --color-accent-400: #b91c1c; --color-accent-500: #dc2626;
+}
+.mode-light.theme-pink {
+  --m3-primary: #be185d; --m3-on-primary: #ffffff;
+  --m3-primary-container: #fce7f3; --m3-on-primary-container: #831843;
+  --m3-secondary: #db2777; --m3-secondary-container: #fbcfe8;
+  --m3-on-secondary-container: #831843; --m3-tertiary: #ec4899;
+  --color-primary-400: #be185d; --color-primary-500: #db2777; --color-primary-600: #be185d;
+  --color-accent-400: #be185d; --color-accent-500: #db2777;
+}
+.mode-light[class*="theme-"] {
+  --color-primary-100: var(--color-primary-400);
+  --color-primary-200: var(--color-primary-400);
+  --color-primary-300: var(--color-primary-400);
+  --color-accent-300: var(--color-accent-400);
+}
+.mode-light.theme-custom {
+  --m3-primary-container: color-mix(in oklch, var(--custom-primary), white 82%);
+  --m3-on-primary-container: color-mix(in oklch, var(--custom-primary), black 55%);
+  --m3-secondary-container: color-mix(in oklch, var(--custom-primary), white 75%);
+  --m3-on-secondary-container: color-mix(in oklch, var(--custom-primary), black 55%);
+}
+
+.mode-light .text-on-surface-variant {
+  color: oklch(0.42 0.03 var(--theme-hue, 280));
+}
+
+/* Elevation: lighter shadows on a light page. */
+.mode-light .elevation-1 { box-shadow: 0 1px 2px rgba(20, 16, 40, 0.08); }
+.mode-light .elevation-2 { box-shadow: 0 1px 3px rgba(20, 16, 40, 0.1); }
+.mode-light .elevation-3 { box-shadow: 0 2px 6px rgba(20, 16, 40, 0.12); }
+.mode-light .elevation-4 { box-shadow: 0 4px 10px rgba(20, 16, 40, 0.14); }
+.mode-light .elevation-5 { box-shadow: 0 6px 16px rgba(20, 16, 40, 0.16); }
+
+/* Glass panels. Pages also define their own scoped `.glass`, so the class is
+   doubled to out-rank those without !important. */
+.mode-light .glass.glass {
+  background: oklch(1 0 0 / 0.78);
+  border: 1px solid oklch(0.82 0.012 var(--theme-hue, 280) / 0.7);
+  box-shadow: 0 6px 24px -10px rgba(40, 30, 80, 0.18);
+}
+
+/* Skeletons / shimmer */
+.mode-light .skeleton-shimmer {
+  background: linear-gradient(
+    90deg,
+    oklch(0.92 0.01 290) 25%,
+    oklch(0.96 0.008 290) 50%,
+    oklch(0.92 0.01 290) 75%
+  );
+  background-size: 200% 100%;
+}
+.mode-light .animate-shimmer {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(0, 0, 0, 0.03) 40%,
+    rgba(0, 0, 0, 0.06) 50%,
+    rgba(0, 0, 0, 0.03) 60%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+}
+
+/* Scrollbars */
+.mode-light ::-webkit-scrollbar-thumb { background: oklch(0.75 0.01 260); }
+.mode-light ::-webkit-scrollbar-thumb:hover { background: oklch(0.65 0.01 260); }
+.mode-light .custom-scrollbar.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.18);
+}
+
+/* Rendered rich text (Magister HTML, AI markdown, editor, assignment prose).
+   Their component styles hard-code dark-theme slate colours. */
+.mode-light .markdown-content h1,
+.mode-light .markdown-content strong,
+.mode-light .markdown-content b,
+.mode-light .markdown-content th,
+.mode-light .magister-content b,
+.mode-light .magister-content strong,
+.mode-light .rich-editor-wrapper .ProseMirror h1,
+.mode-light .rich-editor-wrapper .ProseMirror strong { color: var(--ink); }
+.mode-light .markdown-content h3,
+.mode-light .markdown-content p,
+.mode-light .markdown-content code,
+.mode-light .markdown-content pre code { color: #1e293b; }
+.mode-light .markdown-content em,
+.mode-light .markdown-content i,
+.mode-light .markdown-content ul li,
+.mode-light .markdown-content ol li,
+.mode-light .markdown-content td,
+.mode-light .magister-content i,
+.mode-light .magister-content em,
+.mode-light .rich-editor-wrapper .ProseMirror h3,
+.mode-light .rich-editor-wrapper .ProseMirror em { color: #334155; }
+.mode-light .markdown-content ol,
+.mode-light .markdown-content blockquote,
+.mode-light .magister-content li,
+.mode-light .rich-editor-wrapper .ProseMirror li { color: #475569; }
+.mode-light .markdown-content a,
+.mode-light .magister-content a,
+.mode-light .rich-editor-wrapper .ProseMirror a,
+.mode-light .prose a { color: #0369a1 !important; }
+.mode-light .rich-editor-wrapper .ProseMirror h2 { color: var(--color-primary-500); }
+.mode-light .rich-editor-wrapper .ProseMirror p.is-editor-empty:first-child::before { color: #9ca3af; }
+.mode-light .markdown-content code {
+  background: rgba(0, 0, 0, 0.06);
+  border-color: rgba(0, 0, 0, 0.08);
+}
+.mode-light .markdown-content pre {
+  background: rgba(0, 0, 0, 0.05);
+  border-color: rgba(0, 0, 0, 0.08);
+}
+.mode-light .markdown-content hr { border-top-color: rgba(0, 0, 0, 0.12); }
+.mode-light .markdown-content th { border-bottom-color: rgba(0, 0, 0, 0.16); }
+.mode-light .markdown-content td { border-bottom-color: rgba(0, 0, 0, 0.08); }
+.mode-light .prose h1,
+.mode-light .prose h2,
+.mode-light .prose h3 { color: var(--ink) !important; }
+.mode-light .prose strong { color: #334155 !important; }
+
+/* Pending-grades banner "peek" chip */
+.mode-light .peek { color: #374151; background: rgba(0, 0, 0, 0.06); }
+.mode-light .peek:hover { background: rgba(0, 0, 0, 0.12); }
+
+/* Parts that are deliberately dark in every mode (collectible-card showcase):
+   put .keep-dark on the root and the dark tokens come back for that subtree. */
+.mode-light .keep-dark {
+  color-scheme: dark;
+  --color-white: #ffffff;
+  --color-surface-950: oklch(0.14 0.02 var(--theme-hue, 290));
+  --color-surface-900: oklch(0.18 0.02 var(--theme-hue, 290));
+  --color-surface-850: oklch(0.22 0.02 var(--theme-hue, 290));
+  --color-surface-800: oklch(0.26 0.02 var(--theme-hue, 290));
+  --color-surface-700: oklch(0.34 0.02 var(--theme-hue, 290));
+  --color-surface-600: oklch(0.4 0.02 var(--theme-hue, 290));
+  --color-gray-50: oklch(98.5% 0.002 247.839);
+  --color-gray-100: oklch(96.7% 0.003 264.542);
+  --color-gray-200: oklch(92.8% 0.006 264.531);
+  --color-gray-300: oklch(87.2% 0.01 258.338);
+  --color-gray-400: oklch(70.7% 0.022 261.325);
+  --color-gray-500: oklch(55.1% 0.027 264.364);
+  --color-gray-600: oklch(44.6% 0.03 256.802);
+  --color-gray-700: oklch(37.3% 0.034 259.733);
+  --color-gray-800: oklch(27.8% 0.033 256.848);
+  --color-gray-900: oklch(21% 0.034 264.665);
+  --color-gray-950: oklch(13% 0.028 261.692);
+  color: var(--color-gray-100);
+}
+
+/* Grades page: scoped dark-only colours */
+.mode-light .reveal-btn.reveal-btn.ghost {
+  background: rgba(0, 0, 0, 0.07);
+  color: var(--color-gray-300);
+}
+.mode-light .hero-pack.hero-pack {
+  border-color: rgba(0, 0, 0, 0.08);
 }

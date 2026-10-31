@@ -59,7 +59,7 @@
       <p class="mt-2 text-xs text-gray-400 leading-relaxed">Installeer Friday als app voor een volledig scherm en snellere start.</p>
       <button
         onclick={install}
-        class="mt-3 w-full px-4 py-2.5 rounded-lg bg-primary-500 text-white text-sm font-medium hover:bg-primary-600 transition-colors"
+        class="mt-3 w-full px-4 py-2.5 rounded-lg bg-primary-500 text-on-fill text-sm font-medium hover:bg-primary-600 transition-colors"
       >
         Installeren
       </button>

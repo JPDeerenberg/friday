@@ -707,7 +707,7 @@
   <!-- Floating button -->
   <button
     onclick={handleOpen}
-    class="fixed z-50 bottom-20 md:bottom-8 right-4 md:right-8 w-14 h-14 rounded-2xl bg-gradient-to-br from-primary-500 to-accent-500 text-white shadow-2xl shadow-primary-500/40 hover:scale-105 active:scale-95 transition-all duration-300 flex items-center justify-center group"
+    class="fixed z-50 bottom-20 md:bottom-8 right-4 md:right-8 w-14 h-14 rounded-2xl bg-gradient-to-br from-primary-500 to-accent-500 text-on-fill shadow-2xl shadow-primary-500/40 hover:scale-105 active:scale-95 transition-all duration-300 flex items-center justify-center group"
     aria-label="AI Assistent"
   >
     {#if isOpen}
@@ -756,7 +756,7 @@
             class="w-8 h-8 rounded-xl bg-gradient-to-br from-primary-500 to-accent-500 flex items-center justify-center"
           >
             <svg
-              class="w-4 h-4 text-white"
+              class="w-4 h-4 text-on-fill"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
@@ -1085,7 +1085,7 @@
                   <button
                     onclick={() => confirmAction(action)}
                     disabled={confirmingActionId !== null}
-                    class="flex-1 px-3 py-2 rounded-xl bg-emerald-500 text-white text-[11px] font-bold uppercase tracking-wide hover:bg-emerald-400 transition-all active:scale-95 disabled:opacity-50"
+                    class="flex-1 px-3 py-2 rounded-xl bg-emerald-500 text-on-fill text-[11px] font-bold uppercase tracking-wide hover:bg-emerald-400 transition-all active:scale-95 disabled:opacity-50"
                   >
                     {confirmingActionId === action.action_id
                       ? "Bezig..."
@@ -1264,7 +1264,7 @@
               onclick={sendMessage}
               disabled={!inputText.trim()}
               aria-label="Verstuur bericht"
-              class="shrink-0 w-11 h-11 rounded-2xl bg-primary-500 text-white hover:bg-primary-400 transition-all flex items-center justify-center disabled:opacity-30 disabled:cursor-not-allowed active:scale-90"
+              class="shrink-0 w-11 h-11 rounded-2xl bg-primary-500 text-on-fill hover:bg-primary-400 transition-all flex items-center justify-center disabled:opacity-30 disabled:cursor-not-allowed active:scale-90"
             >
               <svg
                 class="w-5 h-5"

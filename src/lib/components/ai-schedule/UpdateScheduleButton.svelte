@@ -25,7 +25,7 @@
 <button
   onclick={handleClick}
   disabled={loading || disabled}
-  class="w-full flex items-center justify-center gap-2 px-6 py-3.5 rounded-m3-md bg-primary-500 text-white text-title-small hover:bg-primary-600 disabled:opacity-50 transition-all shadow-lg shadow-primary-500/20 active:scale-[0.98]"
+  class="w-full flex items-center justify-center gap-2 px-6 py-3.5 rounded-m3-md bg-primary-500 text-on-fill text-title-small hover:bg-primary-600 disabled:opacity-50 transition-all shadow-lg shadow-primary-500/20 active:scale-[0.98]"
 >
   {#if loading}
     <div class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>

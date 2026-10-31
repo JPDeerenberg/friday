@@ -15,6 +15,7 @@
     resumedAt,
     restoreStatus,
     getStartPage,
+    resolveBackgroundMode,
   } from "$lib/stores";
   import {
     restoreSession,
@@ -34,7 +35,7 @@
   import IconButton from "$lib/components/IconButton.svelte";
   import { ensureAutoUpdateCheck } from "$lib/updates";
   import { photoDataUrl } from "$lib/web-session";
-  import { base } from "$app/paths";
+  import Logo from "$lib/components/Logo.svelte";
   import type { Account } from "$lib/types";
 
   let { children } = $props();
@@ -219,6 +220,41 @@
     restoreState = "logged_out";
     restoreStatus.set("logged_out");
   }
+
+  // --- Light / dark / system background mode ---------------------------------
+  let prefersLight = $state(false);
+  const effectiveMode = $derived(
+    resolveBackgroundMode($userSettings.backgroundMode, prefersLight),
+  );
+
+  $effect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return;
+    const mq = window.matchMedia("(prefers-color-scheme: light)");
+    prefersLight = mq.matches;
+    const onChange = (e: MediaQueryListEvent) => (prefersLight = e.matches);
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  });
+
+  // Mirror the mode on <html> so everything outside the layout wrapper
+  // (body background, scrollbars, native form controls, theme-color) follows.
+  $effect(() => {
+    if (typeof document === "undefined") return;
+    const root = document.documentElement;
+    root.classList.remove("mode-normal", "mode-amoled", "mode-light");
+    root.classList.add(`mode-${effectiveMode}`);
+    root.classList.toggle("dark", effectiveMode !== "light");
+    root.style.colorScheme = effectiveMode === "light" ? "light" : "dark";
+    const themeColor =
+      effectiveMode === "light"
+        ? "#f6f4fb"
+        : effectiveMode === "amoled"
+          ? "#000000"
+          : "#131022";
+    document
+      .querySelector('meta[name="theme-color"]')
+      ?.setAttribute("content", themeColor);
+  });
 
   onMount(() => {
     if (!isTauri) {
@@ -643,7 +679,7 @@
       </p>
       <button
         onclick={retryRestore}
-        class="mt-2 px-6 py-2.5 rounded-m3-sm bg-primary-500 text-white text-label-large hover:bg-primary-600 transition-colors"
+        class="mt-2 px-6 py-2.5 rounded-m3-sm bg-primary-500 text-on-fill text-label-large hover:bg-primary-600 transition-colors"
       >
         Opnieuw proberen
       </button>
@@ -660,7 +696,7 @@
   </div>
 {:else}
   <div
-    class="flex flex-col md:flex-row h-[100dvh] overflow-hidden bg-surface-950 pt-[env(safe-area-inset-top)] theme-{$userSettings.themeColor} mode-{$userSettings.backgroundMode}"
+    class="flex flex-col md:flex-row h-[100dvh] overflow-hidden bg-surface-950 pt-[env(safe-area-inset-top)] theme-{$userSettings.themeColor} mode-{effectiveMode}"
     style="--custom-primary: {$userSettings.customThemeColor || '#8b5cf6'}"
   >
     {#if $isLoggedIn}
@@ -680,13 +716,9 @@
           >
             <div class="flex items-center gap-3 p-6 mb-2">
               <div
-                class="w-10 h-10 rounded-m3-sm flex items-center justify-center shrink-0 overflow-hidden"
+                class="w-10 h-10 rounded-m3-sm flex items-center justify-center shrink-0 bg-gradient-to-br from-primary-500 via-primary-600 to-accent-500 text-on-fill p-1.5 shadow-lg shadow-primary-500/20"
               >
-                <img
-                  src="{base}/logo.png"
-                  alt="Friday Logo"
-                  class="w-full h-full object-cover"
-                />
+                <Logo class="w-full h-full" title="Friday logo" />
               </div>
               <div class="flex flex-col">
                 <h1 class="text-title-large text-white" in:fade>Friday</h1>
@@ -827,13 +859,9 @@
           class="flex items-center gap-3 px-4 py-5 border-b border-surface-700/50 shrink-0"
         >
           <div
-            class="w-8 h-8 rounded-m3-sm flex items-center justify-center shrink-0 overflow-hidden"
+            class="w-8 h-8 rounded-m3-sm flex items-center justify-center shrink-0 bg-gradient-to-br from-primary-500 via-primary-600 to-accent-500 text-on-fill p-1 shadow-lg shadow-primary-500/20"
           >
-            <img
-              src="{base}/logo.png"
-              alt="Friday"
-              class="w-full h-full object-cover"
-            />
+            <Logo class="w-full h-full" title="Friday logo" />
           </div>
           {#if !sidebarCollapsed}
             <span class="text-title-medium text-white truncate">Friday</span>
@@ -886,7 +914,7 @@
               />
             {:else}
               <div
-                class="w-8 h-8 rounded-full bg-primary-600 flex items-center justify-center text-white text-xs font-semibold shrink-0"
+                class="w-8 h-8 rounded-full bg-primary-600 flex items-center justify-center text-on-fill text-xs font-semibold shrink-0"
               >
                 {$accountInfo?.Persoon?.Roepnaam?.[0] ?? "?"}
               </div>
@@ -938,7 +966,7 @@
             <button
               onclick={() => navigate(item.id)}
               class="p-2.5 rounded-full transition-all {$currentPage === item.id
-                ? 'bg-primary-500 text-white shadow-lg'
+                ? 'bg-primary-500 text-on-fill shadow-lg'
                 : 'text-gray-500 hover:text-gray-300 hover:bg-surface-800'}"
             >
               {@html navIcon(item.icon, $currentPage === item.id)}

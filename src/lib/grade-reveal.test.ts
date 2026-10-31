@@ -119,3 +119,18 @@ test("peek is session state that starts off", () => {
   gradePeek.subscribe((x) => (v = x))();
   assert.equal(v, false);
 });
+
+test("letter grades are never held back unless letters get cards", () => {
+  const letter = mkGrade(5, "V");
+  assert.equal(isGradeHidden(letter, true, none), false);
+  assert.equal(isGradeHidden(letter, true, none, false, true), true);
+  const split = splitGrades([mkGrade(1), letter], true, none);
+  assert.deepEqual(
+    split.visible.map((g) => g.CijferId),
+    [5],
+  );
+  assert.deepEqual(
+    split.hidden.map((g) => g.CijferId),
+    [1],
+  );
+});

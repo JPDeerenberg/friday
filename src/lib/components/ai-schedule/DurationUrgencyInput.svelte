@@ -130,7 +130,7 @@
       type="button"
       onclick={handleSave}
       disabled={saving || !localMinutes || parseInt(localMinutes, 10) <= 0}
-      class="w-full py-3 rounded-m3-sm bg-primary-500 text-white text-label-large hover:bg-primary-600 disabled:opacity-40 transition-colors"
+      class="w-full py-3 rounded-m3-sm bg-primary-500 text-on-fill text-label-large hover:bg-primary-600 disabled:opacity-40 transition-colors"
     >
       {saving ? "Opslaan..." : "Opslaan"}
     </button>

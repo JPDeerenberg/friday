@@ -281,7 +281,7 @@
                       <Button
                         variant="filled"
                         onclick={() => handleOpen(link.Href)}
-                        class="w-full bg-emerald-500! text-white! hover:bg-emerald-400! shadow-xl shadow-emerald-500/20 border border-emerald-400/30! ring-1 ring-white/10"
+                        class="w-full bg-emerald-500! text-on-fill! hover:bg-emerald-400! shadow-xl shadow-emerald-500/20 border border-emerald-400/30! ring-1 ring-white/10"
                       >
                         Lezen
                         <svg

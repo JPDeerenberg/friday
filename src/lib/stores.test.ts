@@ -145,3 +145,32 @@ test("getStartPage returns the stored value when valid and dashboard otherwise",
   userSettings.set({ ...DEFAULT_SETTINGS, startPage: "bogus" });
   assert.strictEqual(getStartPage(), "dashboard");
 });
+
+test("loadSettings repairs invalid grade-math settings and keeps valid ones", () => {
+  mockLocalStorage.clear();
+  mockLocalStorage.setItem(
+    "user_settings",
+    JSON.stringify({
+      letterGradeRules: [
+        { token: " V ", status: "pass", value: null },
+        { token: "7", status: "pass", value: 7 },
+        { token: "v", status: "fail", value: null },
+      ],
+      retakeRule: "nonsense",
+      gradeRounding: "huh",
+      judgeRounded: "yes",
+      compensation: { minTotal: "x", points: { "5": -2 } },
+      compensationExcluded: ["LO", 4],
+    }),
+  );
+  const s = loadSettings();
+  assert.deepStrictEqual(s.letterGradeRules, [
+    { token: "V", status: "pass", value: null },
+  ]);
+  assert.strictEqual(s.retakeRule, "magister");
+  assert.strictEqual(s.gradeRounding, "decimals");
+  assert.strictEqual(s.judgeRounded, false);
+  assert.strictEqual(s.compensation.points["5"], -2);
+  assert.strictEqual(s.compensation.minTotal, 0);
+  assert.deepStrictEqual(s.compensationExcluded, ["LO"]);
+});

@@ -1,4 +1,5 @@
 import type { Grade } from "$lib/types";
+import { parseNumeric } from './scale.ts';
 
 /**
  * SE (schoolexamen) herkenning voor cijfers.
@@ -154,8 +155,8 @@ export function seWeightedAverage(
   for (const g of subGrades) {
     if (!g.CijferStr || !g.TeltMee) continue;
     if (!isSchoolexamenGrade(g, config)) continue;
-    const val = parseFloat(g.CijferStr.replace(",", "."));
-    if (isNaN(val)) continue;
+    const val = parseNumeric(g.CijferStr);
+    if (val === null) continue;
     const w = typeof g.Weging === "number" ? g.Weging : 1;
     totalPoints += val * w;
     totalWeight += w;
