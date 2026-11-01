@@ -1,1 +1,0 @@
-import{an as e}from"./B1buPxJ6.js";import"./B1LYC3Rb.js";var t;(function(e){e.Nsis=`nsis`,e.Msi=`msi`,e.Deb=`deb`,e.Rpm=`rpm`,e.AppImage=`appimage`,e.App=`app`})(t||={});async function n(){return e(`plugin:app|version`)}export{n as getVersion};
