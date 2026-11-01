@@ -9,6 +9,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
 import android.provider.Settings
+import android.webkit.WebView
 import android.Manifest
 import androidx.activity.enableEdgeToEdge
 import androidx.core.app.ActivityCompat
@@ -40,12 +41,38 @@ class MainActivity : TauriActivity() {
         // This slow job is kept only as a battery-friendly backstop in case that chain
         // is ever cancelled; SyncWorker guards against concurrent runs.
         const val BACKSTOP_INTERVAL_MINUTES = 60L
+
+        // Set when the app is opened by tapping one of our notifications
+        // (the page the notification belongs to, e.g. "calendar"). Read once by
+        // the web app through FridayBridge.consumeNotificationTap().
+        @Volatile
+        private var pendingTap: String? = null
+
+        @JvmStatic
+        fun takePendingTap(): String? {
+            val tap = pendingTap
+            pendingTap = null
+            return tap
+        }
+    }
+
+    private fun rememberNotificationTap(intent: Intent?) {
+        val page = intent?.getStringExtra("target_page") ?: return
+        pendingTap = page
+        // Consumed: a later recreate of the activity must not show it again.
+        intent?.removeExtra("target_page")
+    }
+
+    // Lets the web app ask whether it was opened from a notification.
+    override fun onWebViewCreate(webView: WebView) {
+        webView.addJavascriptInterface(FridayBridge(applicationContext), "FridayNative")
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         initNdkContext(this.applicationContext)
+        rememberNotificationTap(intent)
 
         // Primary sync driver: a self-rescheduling AlarmManager exact-alarm chain.
         // Each alarm firing enqueues a one-shot SyncWorker via WorkManager (keeping
@@ -82,6 +109,7 @@ class MainActivity : TauriActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        rememberNotificationTap(intent)
     }
   
     override fun onResume() {

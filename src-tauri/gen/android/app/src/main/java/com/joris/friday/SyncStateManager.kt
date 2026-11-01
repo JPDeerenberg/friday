@@ -25,7 +25,9 @@ object SyncStateManager {
         val newGrades: List<GradeInfo>,
         val upcomingDeadlines: List<DeadlineInfo>,
         val calendarChanges: List<CalendarChangeInfo>,
-        val relevanceScore: Int = 50 // default medium relevance
+        val relevanceScore: Int = 50, // default medium relevance
+        /** Detailed agenda changes (see CalendarChanges) for the popup. */
+        val calendarChangeEntries: JSONArray = JSONArray()
     )
     
     data class MessageInfo(
@@ -163,7 +165,20 @@ object SyncStateManager {
         val newMessages = if (currentMessages == null) emptyList() else detectNewMessages(prevMessages, currentMessages)
         val newGrades = if (currentGrades == null) emptyList() else detectNewGrades(prevGrades, currentGrades)
         val upcomingDeadlines = if (currentAssignments == null) emptyList() else detectAssignmentChanges(context, prevAssignments, currentAssignments)
-        val calendarChanges = if (currentCalendar == null) emptyList() else detectCalendarChanges(prevCalendar, currentCalendar)
+        val calendarChangeEntries = detectCalendarChanges(
+            prevCalendar,
+            currentCalendar,
+            previousState.optLong("calendarSyncedAt", 0L)
+        )
+        val calendarChanges = (0 until calendarChangeEntries.length()).mapNotNull { i ->
+            calendarChangeEntries.optJSONObject(i)?.let { c ->
+                CalendarChangeInfo(
+                    id = c.optLong("id"),
+                    title = c.optString("title", ""),
+                    startTime = c.optString("start", "")
+                )
+            }
+        }
 
         // Calculate overall relevance score based on detected changes
         val relevanceScore = calculateOverallRelevanceScore(
@@ -190,7 +205,12 @@ object SyncStateManager {
         if (currentMessages != null) newState.put("messages", currentMessages)
         if (currentGrades != null) newState.put("grades", currentGrades)
         if (currentAssignments != null) newState.put("assignments", currentAssignments)
-        if (currentCalendar != null) newState.put("calendar", currentCalendar)
+        if (currentCalendar != null) {
+            newState.put("calendar", currentCalendar)
+            // When this baseline was fetched: it defines which days it covers,
+            // and can be older than "lastSync" if a calendar fetch failed.
+            newState.put("calendarSyncedAt", System.currentTimeMillis())
+        }
         newState.put("lastSync", System.currentTimeMillis())
         saveState(context, newState)
 
@@ -199,7 +219,8 @@ object SyncStateManager {
             newGrades = newGrades,
             upcomingDeadlines = upcomingDeadlines,
             calendarChanges = calendarChanges,
-            relevanceScore = relevanceScore
+            relevanceScore = relevanceScore,
+            calendarChangeEntries = calendarChangeEntries
         )
     }
     
@@ -377,31 +398,36 @@ object SyncStateManager {
         return changes
     }
     
-    private fun detectCalendarChanges(previous: JSONArray?, current: JSONArray): List<CalendarChangeInfo> {
-        if (current.length() == 0) return emptyList()
-        // When previous is null (first sync), save state but don't fire notifications
-        if (previous == null) return emptyList()
-        
-        val previousIds = mutableSetOf<Long>()
-        for (i in 0 until previous.length()) {
-            previous.getJSONObject(i).optLong("Id").takeIf { id -> id > 0 }?.let { id -> previousIds.add(id) }
-        }
-        
-        val changes = mutableListOf<CalendarChangeInfo>()
-        for (i in 0 until current.length()) {
-            val event = current.getJSONObject(i)
-            val id = event.optLong("Id")
-            if (id > 0 && id !in previousIds) {
-                changes.add(CalendarChangeInfo(
-                    id = id,
-                    title = event.optString("Omschrijving", ""),
-                    startTime = event.optString("Start", "")
-                ))
-            }
-        }
-        return changes
+    /**
+     * Agenda changes since the previous sync: cancelled, moved, other room or
+     * teacher, new and removed appointments. The background sync only fetches
+     * today and tomorrow, so only the days both syncs covered are compared —
+     * otherwise every midnight the newly included day would look "new".
+     */
+    private fun detectCalendarChanges(
+        previous: JSONArray?,
+        current: JSONArray?,
+        previousSyncMs: Long
+    ): JSONArray {
+        // First sync, failed fetch, or unknown previous window: no notification.
+        if (previous == null || current == null || previousSyncMs <= 0L) return JSONArray()
+        val now = System.currentTimeMillis()
+        val prevWindow = CalendarChanges.DayWindow(
+            CalendarChanges.amsterdamDay(previousSyncMs, 0),
+            CalendarChanges.amsterdamDay(previousSyncMs, 1)
+        )
+        val curWindow = CalendarChanges.DayWindow(
+            CalendarChanges.amsterdamDay(now, 0),
+            CalendarChanges.amsterdamDay(now, 1)
+        )
+        return CalendarChanges.diff(
+            previous,
+            current,
+            prevWindow.overlap(curWindow),
+            CalendarChanges.utcIso(now)
+        )
     }
-    
+
     /**
      * Check if any lesson is currently active in the provided calendar data.
      * A lesson is active if now is between start and einde, and it's not cancelled.

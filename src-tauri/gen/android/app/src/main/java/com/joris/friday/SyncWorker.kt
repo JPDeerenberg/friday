@@ -256,16 +256,12 @@ class SyncWorker(appContext: Context, workerParams: WorkerParameters) :
         // Calendar Changes
         if (changes.calendarChanges.isNotEmpty() && 
             SyncStateManager.isNotificationEnabled(context, "calendar")) {
-            val count = changes.calendarChanges.size
-            val firstEvent = changes.calendarChanges.first()
-            val title = if (count == 1) "Nieuwe afspraak" else "$count nieuwe afspraken"
-            val message = if (count == 1) {
-                firstEvent.title
-            } else {
-                "${firstEvent.title} en ${count - 1} andere(n)"
-            }
+            // Remember what changed so the popup can show everything since the
+            // user last looked, then notify about this batch.
+            PendingCalendarChanges.add(context, changes.calendarChangeEntries)
+            val (title, message) = CalendarChanges.notificationText(changes.calendarChangeEntries)
             NotificationHelper.showCalendarNotification(
-                context, title, message, firstEvent.id.toString()
+                context, title, message, changes.calendarChanges.first().id.toString()
             )
         }
     }

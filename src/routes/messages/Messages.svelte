@@ -161,8 +161,13 @@
       if (link) {
         selectedMessage = await getMessageDetail(link);
         if (!msg.isGelezen) {
-          await markMessagesAsRead([msg.id], true);
-          msg.isGelezen = true;
+          // Offline kan dit mislukken; het bericht zelf blijft dan gewoon staan.
+          try {
+            await markMessagesAsRead([msg.id], true);
+            msg.isGelezen = true;
+          } catch (e) {
+            console.warn("Could not mark message as read", e);
+          }
         }
       } else {
         selectedMessage = msg;

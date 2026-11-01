@@ -37,8 +37,90 @@
   import { photoDataUrl } from "$lib/web-session";
   import Logo from "$lib/components/Logo.svelte";
   import type { Account } from "$lib/types";
+  import {
+    clearOffline,
+    loadIdentity,
+    loadLastSyncAt,
+    offlineStatus,
+    saveIdentity,
+    setOfflineEnabled,
+  } from "$lib/offline";
+  import { runOfflineSync } from "$lib/offline-sync";
+  import CalendarChangesDialog from "$lib/components/CalendarChangesDialog.svelte";
+  import {
+    calendarChangesPopup,
+    consumeNotificationTap,
+  } from "$lib/calendar-changes";
+  import { clearGradeMemory, setHiddenGradeRestore } from "$lib/hidden-grades";
 
   let { children } = $props();
+
+  // Offline-opslag moet al aan/uit staan vóór de eerste api-aanroep.
+  setOfflineEnabled(get(userSettings).offlineStorage !== false);
+  let offlineWasOn = get(userSettings).offlineStorage !== false;
+  $effect(() => {
+    const on = $userSettings.offlineStorage !== false;
+    setOfflineEnabled(on);
+    if (offlineWasOn && !on) void clearOffline(); // uitzetten wist de kopie
+    if (!offlineWasOn && on && $personId)
+      void runOfflineSync($personId, { force: true });
+    offlineWasOn = on;
+  });
+
+  // Verborgen cijfers terughalen: aan/uit voor de hele app.
+  setHiddenGradeRestore(get(userSettings).restoreHiddenGrades !== false);
+  let hiddenGradesWasOn = get(userSettings).restoreHiddenGrades !== false;
+  $effect(() => {
+    const on = $userSettings.restoreHiddenGrades !== false;
+    setHiddenGradeRestore(on);
+    if (hiddenGradesWasOn && !on) void clearGradeMemory();
+    hiddenGradesWasOn = on;
+  });
+
+  /** Bewaar wie er is ingelogd, zodat de app ook zonder internet kan starten. */
+  async function rememberIdentity() {
+    const pid = get(personId);
+    if (!pid) return;
+    await saveIdentity({
+      personId: pid,
+      account: get(accountInfo),
+      picture: get(profilePicture),
+    });
+  }
+
+  /**
+   * Koude start zonder verbinding: met een bewaarde kopie gaan we gewoon de
+   * app in, in plaats van op het "Geen verbinding"-scherm te blijven staan.
+   */
+  async function adoptOfflineIdentity(): Promise<boolean> {
+    if (get(isLoggedIn) && get(personId)) return true;
+    const id = await loadIdentity();
+    if (!id) return false;
+    if (!get(personId)) personId.set(id.personId);
+    if (!get(accountInfo) && id.account) accountInfo.set(id.account as Account);
+    if (!get(profilePicture)) profilePicture.set(id.picture);
+    isLoggedIn.set(true);
+    return true;
+  }
+
+  /**
+   * Geopend via een agenda-notificatie? Toon dan wat er is veranderd. De
+   * Android-app geeft dit maar één keer door, dus dit mag vaak aangeroepen
+   * worden (bij start en bij terugkomen in de app).
+   */
+  function checkNotificationTap() {
+    const tap = consumeNotificationTap();
+    if (tap?.page === "calendar") calendarChangesPopup.set(tap.changes);
+  }
+
+  /** Na (her)verbinden: bewaar alles opnieuw, met een kleine pauze zodat de
+   * pagina zelf eerst kan laden. */
+  function scheduleOfflineSync(delayMs = 4000) {
+    setTimeout(() => {
+      const pid = get(personId);
+      if (pid && get(isLoggedIn)) void runOfflineSync(pid);
+    }, delayMs);
+  }
   let loading = $state(true);
   let sidebarCollapsed = $state(false);
   let mobileSidebarOpen = $state(false);
@@ -69,6 +151,8 @@
       profilePicture.set(pic);
     } catch (_) {}
     await checkAiConfig();
+    await rememberIdentity();
+    scheduleOfflineSync(2000);
   }
 
   async function attemptRestore(
@@ -109,7 +193,10 @@
             e,
           );
           // personId may still be null on very first cold boot offline; pages guard on it.
+          await adoptOfflineIdentity();
         }
+        await rememberIdentity();
+        scheduleOfflineSync();
       } else if (status === "logged_out") {
         isLoggedIn.set(false);
         personId.set(null);
@@ -120,9 +207,10 @@
           "Session restore unavailable (offline) — will retry on next resume",
         );
         // Do not clear isLoggedIn/personId – if we were previously logged in,
-        // keep showing stale cached data. If this is a cold boot, the offline
-        // overlay (restoreState==='unavailable' && !$isLoggedIn) will show a
-        // retry button instead of the login screen.
+        // keep showing stale cached data. With offline storage on we use the
+        // saved copy on a cold boot too; otherwise the offline overlay
+        // (restoreState==='unavailable' && !$isLoggedIn) shows a retry button.
+        await adoptOfflineIdentity();
       }
       return status;
     } catch (e) {
@@ -176,6 +264,8 @@
             e,
           );
         }
+        await rememberIdentity();
+        scheduleOfflineSync();
       } else if (status === "logged_out") {
         isLoggedIn.set(false);
         personId.set(null);
@@ -185,6 +275,7 @@
         console.warn(
           "Session restore unavailable (offline) — will retry on next resume",
         );
+        await adoptOfflineIdentity();
       }
       return status;
     } catch (e) {
@@ -404,8 +495,21 @@
         // Publish resume so pages refresh (stale-while-revalidate) – single
         // signal after revalidation to avoid double-load on every resume.
         resumedAt.set(Date.now());
+        scheduleOfflineSync();
+        checkNotificationTap();
       };
       document.addEventListener("visibilitychange", handleVisibilityChange);
+      checkNotificationTap();
+      // Internet terug: sessie opnieuw controleren, pagina's verversen en
+      // de opslag bijwerken.
+      const handleOnline = async () => {
+        await attemptRestore(true);
+        resumedAt.set(Date.now());
+        scheduleOfflineSync(2000);
+      };
+      window.addEventListener("online", handleOnline);
+      (window as any).__friday_online_handler = handleOnline;
+      void loadLastSyncAt();
       // Store for cleanup
       (window as any).__friday_visibility_handler = handleVisibilityChange;
 
@@ -467,6 +571,8 @@
       if (unlistenBack) unlistenBack();
       const hv = (window as any).__friday_visibility_handler;
       if (hv) document.removeEventListener("visibilitychange", hv);
+      const oh = (window as any).__friday_online_handler;
+      if (oh) window.removeEventListener("online", oh);
       window.removeEventListener("popstate", handlePopstate);
       window.removeEventListener("wheel", preventZoomWheel);
       window.removeEventListener("keydown", preventZoomKey);
@@ -1014,8 +1120,36 @@
         ? 'pb-[calc(64px+env(safe-area-inset-bottom))] md:pb-0'
         : ''}"
     >
+      {#if $isLoggedIn && $offlineStatus.stale}
+        <div
+          role="status"
+          class="sticky top-0 z-30 flex items-center gap-2 px-4 py-2 bg-amber-500/15 border-b border-amber-500/20 text-amber-300 text-label-medium backdrop-blur"
+        >
+          <svg
+            class="w-4 h-4 shrink-0"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2.5"
+            ><path d="M12 8v4" /><circle cx="12" cy="16" r="1" /><circle
+              cx="12"
+              cy="12"
+              r="10"
+            /></svg
+          >
+          <span>
+            Offline — je ziet opgeslagen gegevens{$offlineStatus.savedAt
+              ? ` van ${new Date($offlineStatus.savedAt).toLocaleString("nl-NL", { weekday: "short", hour: "2-digit", minute: "2-digit" })}`
+              : ""}.
+          </span>
+        </div>
+      {/if}
       {@render children()}
     </main>
+
+    {#if $isLoggedIn}
+      <CalendarChangesDialog />
+    {/if}
 
     <!-- AI Assistant floating button (available on all pages when configured) -->
     {#if $isLoggedIn && aiConfigured}

@@ -28,6 +28,11 @@ export interface Grade {
   description: string | null;
   test_date: string | null;
   extra_weight: number | null;
+  /**
+   * Gezet als Magister dit cijfer niet meer teruggeeft (door de school
+   * verborgen of verwijderd): ISO-tijdstip waarop het voor het eerst ontbrak.
+   */
+  hiddenSince?: string | null;
 }
 
 export interface CijferKolom {

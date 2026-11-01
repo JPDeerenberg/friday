@@ -136,6 +136,11 @@ export const DEFAULT_SETTINGS = {
   // Synthesized sounds during card reveals.
   cardSound: false,
   compactView: false,
+  // Automatisch alles offline bewaren (agenda, cijfers, berichten, ...) voor
+  // als Magister of je internet er niet is. Geldt voor de hele app.
+  offlineStorage: true,
+  // Cijfers die de school tijdelijk verbergt blijven 10 dagen zichtbaar.
+  restoreHiddenGrades: true,
   insufficientThreshold: 5.5,
   // SE (schoolexamen) herkenning: "auto" | "magister" | "off". Alleen deze
   // twee sleutels horen bij Task E — andere settings blijven onaangeroerd.
@@ -218,21 +223,20 @@ export function loadSettings() {
             DEFAULT_SETTINGS.aiSchedule.planInSchoolGaps;
         }
       }
-      merged.letterGradeRules = sanitizeRules(
-        (parsed as any).letterGradeRules,
-      );
+      merged.letterGradeRules = sanitizeRules((parsed as any).letterGradeRules);
       if (!RETAKE_RULES.includes(merged.retakeRule)) {
         merged.retakeRule = DEFAULT_SETTINGS.retakeRule;
       }
       if (!["decimals", "whole", "half"].includes(merged.gradeRounding)) {
         merged.gradeRounding = DEFAULT_SETTINGS.gradeRounding;
       }
+      merged.offlineStorage = (parsed as any).offlineStorage !== false;
+      merged.restoreHiddenGrades =
+        (parsed as any).restoreHiddenGrades !== false;
       merged.judgeRounded = merged.judgeRounded === true;
       merged.lettersGetCards = merged.lettersGetCards === true;
       merged.compensationEnabled = merged.compensationEnabled === true;
-      merged.compensation = sanitizeCompensation(
-        (parsed as any).compensation,
-      );
+      merged.compensation = sanitizeCompensation((parsed as any).compensation);
       merged.compensationExcluded = Array.isArray(
         (parsed as any).compensationExcluded,
       )

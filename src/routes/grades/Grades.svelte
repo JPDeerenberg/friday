@@ -12,9 +12,11 @@
     formatDate,
     getBulkGradeExtraInfo,
     formatTeacherName,
+    removeHiddenGrade,
   } from "$lib/api";
+  import { HIDDEN_GRADE_DAYS } from "$lib/hidden-grades";
   import { formatDateShort } from "$lib/format";
-  import { cacheGet, cacheRefresh } from "$lib/cache";
+  import { cacheGet, cacheRefresh, cacheClear } from "$lib/cache";
   import {
     computeStats,
     getDistribution,
@@ -35,11 +37,7 @@
     calcMultiSubjectTarget,
   } from "$lib/grades/predictor";
   import { getPeriods, filterGradesByPeriod } from "$lib/grades/periods";
-  import {
-    parseGrade,
-    gradeNumber,
-    effectiveWeight,
-  } from "$lib/grades/scale";
+  import { parseGrade, gradeNumber, effectiveWeight } from "$lib/grades/scale";
   import { applyRetakeRule } from "$lib/grades/retake";
   import { formatRounded, effectivePassLimit } from "$lib/grades/rounding";
   import {
@@ -103,13 +101,6 @@
     seTotalWeight: number;
     trend?: number;
     trendDirection?: number;
-  };
-
-  type Snapshot = {
-    id: string;
-    date: string;
-    name: string;
-    subjects: SubjectSummary[];
   };
 
   let schoolyears = $state<Schoolyear[]>([]);
@@ -177,10 +168,8 @@
     if (picked.length) revealQueue = picked;
   }
   let subjects = $state<SubjectSummary[]>([]);
-  let snapshots = $state<Snapshot[]>([]);
   let loading = $state(true);
   let selectedSubject = $state<string | null>(null);
-  let activeSnapshot = $state<Snapshot | null>(null);
   let errorMessage = $state<string | null>(null);
 
   // New tab: Analyse
@@ -201,7 +190,6 @@
     revealEnabled &&
       !$gradePeek &&
       !loading &&
-      !activeSnapshot &&
       visibleGrades === 0 &&
       unopenedCards.length > 0 &&
       (currentTab === "vakken" ||
@@ -548,8 +536,9 @@
         if (ui.currentTab) currentTab = ui.currentTab;
       } catch {}
     }
-    const savedSnapshots = localStorage.getItem("grade_snapshots");
-    if (savedSnapshots) snapshots = JSON.parse(savedSnapshots);
+    // Snapshots bestaan niet meer (vervangen door automatische offline-opslag
+    // in de instellingen): bewaarde snapshots worden hier verwijderd.
+    localStorage.removeItem("grade_snapshots");
     init();
   });
 
@@ -571,6 +560,31 @@
     }
     if ($personId !== null) untrack(() => init(true));
   });
+
+  /** Tot wanneer een verborgen cijfer nog wordt getoond. */
+  function hiddenUntil(grade: Grade): string {
+    if (!grade.hiddenSince) return "";
+    const until = new Date(grade.hiddenSince);
+    until.setDate(until.getDate() + HIDDEN_GRADE_DAYS);
+    return formatDateShort(until.toISOString());
+  }
+
+  /** Een verborgen cijfer zelf laten vallen (bv. omdat het echt is verwijderd). */
+  async function dropHiddenGrade(grade: Grade) {
+    const pid = $personId;
+    const yearId = selectedYear?.id;
+    if (!pid || !yearId) return;
+    if (
+      !confirm(
+        "Dit cijfer weghalen? Het wordt niet meer teruggehaald, ook niet als de school het weer laat zien.",
+      )
+    )
+      return;
+    await removeHiddenGrade(pid, yearId, grade.CijferId);
+    await cacheClear(`grades_${pid}_${yearId}`);
+    allGrades = allGrades.filter((g) => g.CijferId !== grade.CijferId);
+    subjects = getSubjects();
+  }
 
   async function loadGrades(force = false) {
     console.info(
@@ -643,27 +657,6 @@
       errorMessage = e.message || String(e);
     }
     loading = false;
-  }
-
-  function createSnapshot() {
-    const name = prompt(
-      "Geef deze snapshot een naam:",
-      `Snapshot ${new Date().toLocaleDateString()}`,
-    );
-    if (!name) return;
-    const newSnapshot = {
-      id: crypto.randomUUID(),
-      date: new Date().toISOString(),
-      name,
-      subjects: JSON.parse(JSON.stringify(subjects)),
-    };
-    snapshots = [newSnapshot, ...snapshots];
-    localStorage.setItem("grade_snapshots", JSON.stringify(snapshots));
-  }
-
-  function deleteSnapshot(id: string) {
-    snapshots = snapshots.filter((s) => s.id !== id);
-    localStorage.setItem("grade_snapshots", JSON.stringify(snapshots));
   }
 
   /** SE-config uit de gebruikersinstellingen (Task E: seDetection + overrides). */
@@ -824,18 +817,6 @@
     const data = getSubjectChartData(subject);
     if (!data) return "";
     return buildSmoothPath(data.points);
-  }
-
-  function viewSnapshot(snapshot: Snapshot) {
-    subjects = snapshot.subjects;
-    ensureRemainingTests();
-    activeSnapshot = snapshot;
-    currentTab = "vakken";
-  }
-
-  function returnToLiveData() {
-    activeSnapshot = null;
-    loadGrades();
   }
 
   // Calculator
@@ -1188,7 +1169,7 @@
   </div>
 
   <main class="flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-6 space-y-5">
-    {#if revealEnabled && !activeSnapshot && !loading}
+    {#if revealEnabled && !loading}
       {#if $gradePeek}
         <button
           type="button"
@@ -1204,51 +1185,6 @@
           onpeek={() => gradePeek.set(true)}
         />
       {/if}
-    {/if}
-
-    {#if activeSnapshot}
-      <div
-        class="bg-amber-500/10 border border-amber-500/30 rounded-3xl p-5 flex flex-col sm:flex-row items-center justify-between gap-4"
-      >
-        <div class="flex items-center gap-4">
-          <div
-            class="w-11 h-11 rounded-2xl bg-amber-500/20 flex items-center justify-center text-amber-400"
-          >
-            <svg
-              class="w-6 h-6"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              ><path
-                d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3L14.5 4z"
-              /><circle cx="12" cy="13" r="3" /></svg
-            >
-          </div>
-          <div>
-            <p
-              class="text-[11px] font-black text-amber-500 uppercase tracking-widest"
-            >
-              Snapshot Actief
-            </p>
-            <h3 class="text-base font-black text-white italic tracking-tight">
-              {activeSnapshot.name}
-            </h3>
-            <p class="text-[10px] text-gray-500 font-bold uppercase">
-              {new Date(activeSnapshot.date).toLocaleString([], {
-                dateStyle: "medium",
-                timeStyle: "short",
-              })}
-            </p>
-          </div>
-        </div>
-        <Button
-          onclick={returnToLiveData}
-          class="bg-amber-500! text-black! hover:bg-amber-400! px-5"
-        >
-          Terug naar Live
-        </Button>
-      </div>
     {/if}
 
     {#if loading}
@@ -1695,7 +1631,9 @@
                         : 'bg-amber-500/10 border-amber-500/30 text-amber-400'}"
                     >
                       <span class="font-black"
-                        >{cmp.matches ? "Klopt met Magister" : "Wijkt af van Magister"}</span
+                        >{cmp.matches
+                          ? "Klopt met Magister"
+                          : "Wijkt af van Magister"}</span
                       >
                       <span class="text-gray-400"
                         >{cmp.school.label}: {fmt(cmp.school.value)} · jij: {fmt(
@@ -1705,80 +1643,83 @@
                           : ` (${cmp.diff > 0 ? "+" : ""}${cmp.diff.toFixed(Math.max(1, $userSettings.decimalPoints))})`}</span
                       >
                       {#if !cmp.matches}
-                        <span class="w-full text-[10px] text-gray-500 leading-snug"
-                          >Scholen wegen of ronden soms anders. Controleer de weging, herkansingen en de afronding in Instellingen → Cijfers.</span
+                        <span
+                          class="w-full text-[10px] text-gray-500 leading-snug"
+                          >Scholen wegen of ronden soms anders. Controleer de
+                          weging, herkansingen en de afronding in Instellingen →
+                          Cijfers.</span
                         >
                       {/if}
                     </div>
                   {/if}
                   <!-- Stats row -->
                   {#if chronoVals.length > 0}
-                  <div class="grid grid-cols-5 gap-2">
-                    <div
-                      class="bg-surface-900/50 rounded-xl p-2.5 text-center border border-white/5"
-                    >
-                      <p
-                        class="text-[8px] text-gray-600 font-black uppercase tracking-widest"
+                    <div class="grid grid-cols-5 gap-2">
+                      <div
+                        class="bg-surface-900/50 rounded-xl p-2.5 text-center border border-white/5"
                       >
-                        Gem.
-                      </p>
-                      <p
-                        class="text-sm font-black {isVoldoende(subject.avg)
-                          ? 'text-accent-400'
-                          : 'text-red-400'}"
+                        <p
+                          class="text-[8px] text-gray-600 font-black uppercase tracking-widest"
+                        >
+                          Gem.
+                        </p>
+                        <p
+                          class="text-sm font-black {isVoldoende(subject.avg)
+                            ? 'text-accent-400'
+                            : 'text-red-400'}"
+                        >
+                          {fmt(subject.avg)}
+                        </p>
+                      </div>
+                      <div
+                        class="bg-surface-900/50 rounded-xl p-2.5 text-center border border-white/5"
                       >
-                        {fmt(subject.avg)}
-                      </p>
+                        <p
+                          class="text-[8px] text-gray-600 font-black uppercase tracking-widest"
+                        >
+                          Mediaan
+                        </p>
+                        <p class="text-sm font-black text-gray-300">
+                          {subStats.median.toFixed(1)}
+                        </p>
+                      </div>
+                      <div
+                        class="bg-surface-900/50 rounded-xl p-2.5 text-center border border-white/5"
+                      >
+                        <p
+                          class="text-[8px] text-gray-600 font-black uppercase tracking-widest"
+                        >
+                          Hoogst
+                        </p>
+                        <p class="text-sm font-black text-emerald-400">
+                          {subStats.max.toFixed(1)}
+                        </p>
+                      </div>
+                      <div
+                        class="bg-surface-900/50 rounded-xl p-2.5 text-center border border-white/5"
+                      >
+                        <p
+                          class="text-[8px] text-gray-600 font-black uppercase tracking-widest"
+                        >
+                          Laagst
+                        </p>
+                        <p class="text-sm font-black text-red-400">
+                          {subStats.min.toFixed(1)}
+                        </p>
+                      </div>
+                      <div
+                        class="bg-surface-900/50 rounded-xl p-2.5 text-center border border-white/5"
+                      >
+                        <p
+                          class="text-[8px] text-gray-600 font-black uppercase tracking-widest"
+                        >
+                          Spread
+                        </p>
+                        <p class="text-sm font-black text-gray-300">
+                          {subStats.stdDev.toFixed(2)}
+                        </p>
+                      </div>
                     </div>
-                    <div
-                      class="bg-surface-900/50 rounded-xl p-2.5 text-center border border-white/5"
-                    >
-                      <p
-                        class="text-[8px] text-gray-600 font-black uppercase tracking-widest"
-                      >
-                        Mediaan
-                      </p>
-                      <p class="text-sm font-black text-gray-300">
-                        {subStats.median.toFixed(1)}
-                      </p>
-                    </div>
-                    <div
-                      class="bg-surface-900/50 rounded-xl p-2.5 text-center border border-white/5"
-                    >
-                      <p
-                        class="text-[8px] text-gray-600 font-black uppercase tracking-widest"
-                      >
-                        Hoogst
-                      </p>
-                      <p class="text-sm font-black text-emerald-400">
-                        {subStats.max.toFixed(1)}
-                      </p>
-                    </div>
-                    <div
-                      class="bg-surface-900/50 rounded-xl p-2.5 text-center border border-white/5"
-                    >
-                      <p
-                        class="text-[8px] text-gray-600 font-black uppercase tracking-widest"
-                      >
-                        Laagst
-                      </p>
-                      <p class="text-sm font-black text-red-400">
-                        {subStats.min.toFixed(1)}
-                      </p>
-                    </div>
-                    <div
-                      class="bg-surface-900/50 rounded-xl p-2.5 text-center border border-white/5"
-                    >
-                      <p
-                        class="text-[8px] text-gray-600 font-black uppercase tracking-widest"
-                      >
-                        Spread
-                      </p>
-                      <p class="text-sm font-black text-gray-300">
-                        {subStats.stdDev.toFixed(2)}
-                      </p>
-                    </div>
-                  </div>
                   {/if}
 
                   <!-- SE / PTA info -->
@@ -1977,6 +1918,22 @@
                                   >×{grade.Weging}</span
                                 >
                               {/if}
+                              {#if grade.hiddenSince}
+                                <span
+                                  class="text-[10px] font-bold text-amber-300 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded-md"
+                                  title="Magister geeft dit cijfer niet meer terug sinds {formatDateShort(
+                                    grade.hiddenSince,
+                                  )}. Het blijft hier staan tot {hiddenUntil(
+                                    grade,
+                                  )}.">Verborgen door school</span
+                                >
+                                <button
+                                  type="button"
+                                  class="text-[10px] font-bold text-red-400 hover:text-red-300 underline underline-offset-2"
+                                  onclick={() => dropHiddenGrade(grade)}
+                                  >Verwijderen</button
+                                >
+                              {/if}
                             </div>
                           </div>
                           <div class="flex items-center gap-2">
@@ -1995,7 +1952,10 @@
                               </div>
                             {/if}
                             <span
-                              class="text-lg font-black {gradeTextClass(grade, 'text-primary-400')}"
+                              class="text-lg font-black {gradeTextClass(
+                                grade,
+                                'text-primary-400',
+                              )}"
                             >
                               {grade.CijferStr}
                             </span>
@@ -2195,7 +2155,10 @@
                 </div>
                 <div class="flex flex-col items-end gap-1">
                   <span
-                    class="text-2xl font-black {gradeTextClass(grade, 'text-accent-400')}"
+                    class="text-2xl font-black {gradeTextClass(
+                      grade,
+                      'text-accent-400',
+                    )}"
                   >
                     {grade.CijferStr}
                   </span>
@@ -2210,6 +2173,17 @@
                     <span
                       class="text-[9px] text-gray-600 font-bold bg-surface-800 px-1.5 py-0.5 rounded-md border border-surface-700/50"
                       >Telt niet mee</span
+                    >
+                  {/if}
+                  {#if grade.hiddenSince}
+                    <span
+                      class="text-[9px] font-bold text-amber-300 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded-md"
+                      >Verborgen door school</span
+                    >
+                    <button
+                      type="button"
+                      class="text-[10px] font-bold text-red-400 hover:text-red-300 underline underline-offset-2"
+                      onclick={() => dropHiddenGrade(grade)}>Verwijderen</button
                     >
                   {/if}
                 </div>
@@ -2241,8 +2215,7 @@
                 <span
                   class="text-2xl font-black {isVoldoende(overallAvg2)
                     ? 'text-accent-400'
-                    : 'text-red-400'}"
-                  >{fmt(overallAvg2)}</span
+                    : 'text-red-400'}">{fmt(overallAvg2)}</span
                 >
               </div>
               <div
@@ -3499,7 +3472,9 @@
                         >
                         {#if row.range}
                           <span class="text-xs text-gray-400 shrink-0"
-                            >{fmt(row.range.worst)} – {fmt(row.range.best)}</span
+                            >{fmt(row.range.worst)} – {fmt(
+                              row.range.best,
+                            )}</span
                           >
                         {/if}
                       </div>
@@ -3510,7 +3485,9 @@
                         >
                           <div
                             class="absolute inset-y-0 rounded-full bg-primary-500/60"
-                            style="left: {pct(row.range.worst)}%; width: {Math.max(
+                            style="left: {pct(
+                              row.range.worst,
+                            )}%; width: {Math.max(
                               1,
                               pct(row.range.best) - pct(row.range.worst),
                             )}%"
@@ -3537,7 +3514,8 @@
                           {row.needed}
                           {row.needed === 1 ? "toets" : "toetsen"} met een {fmt(
                             scenarioGrade,
-                          )} (gewicht {scenarioNextWeight}) brengen je op de grens.
+                          )} (gewicht {scenarioNextWeight}) brengen je op de
+                          grens.
                         {/if}
                       </p>
                     </div>
@@ -3545,7 +3523,8 @@
                 </div>
               </div>
               <p class="text-[10px] text-gray-600 leading-relaxed">
-                Bereik: laagste en hoogste gemiddelde als alle resterende toetsen een 1 of een 10 worden.
+                Bereik: laagste en hoogste gemiddelde als alle resterende
+                toetsen een 1 of een 10 worden.
               </p>
             </div>
           </div>
@@ -3643,8 +3622,7 @@
                 </p>
                 <span
                   class="text-5xl font-black italic tracking-tighter drop-shadow-sm {multiTargetResult.achievable &&
-                  multiTargetResult.requiredGrade >=
-                    passLimit
+                  multiTargetResult.requiredGrade >= passLimit
                     ? 'text-transparent bg-clip-text bg-gradient-to-br from-white via-emerald-400 to-accent-400'
                     : 'text-red-400'}"
                 >
@@ -4013,8 +3991,7 @@
                     viewBox="0 0 24 24"
                     fill="none"
                     stroke="currentColor"
-                    stroke-width="2"
-                    ><path d="M12 3v18M3 12h18" /></svg
+                    stroke-width="2"><path d="M12 3v18M3 12h18" /></svg
                   >
                 </div>
                 <h2
@@ -4046,8 +4023,9 @@
                   </div>
                   <div class="text-right">
                     <p class="text-2xl font-black text-white">
-                      {compensationList.result.total > 0 ? "+" : ""}{compensationList
-                        .result.total}
+                      {compensationList.result.total > 0
+                        ? "+"
+                        : ""}{compensationList.result.total}
                     </p>
                     <p class="text-[10px] text-gray-500">
                       {compensationList.result.insufficientCount} onvoldoende
@@ -4068,7 +4046,8 @@
                         checked={item.included}
                         onchange={() => toggleCompensationSubject(item.name)}
                       />
-                      <span class="text-sm font-bold text-gray-200 truncate flex-1"
+                      <span
+                        class="text-sm font-bold text-gray-200 truncate flex-1"
                         >{item.name}</span
                       >
                       {#if item.row}
@@ -4076,12 +4055,14 @@
                           >{fmt(item.row.average)} → {item.row.whole}</span
                         >
                         <span
-                          class="text-sm font-black w-8 text-right {item.row.points < 0
+                          class="text-sm font-black w-8 text-right {item.row
+                            .points < 0
                             ? 'text-red-400'
                             : item.row.points > 0
                               ? 'text-accent-400'
                               : 'text-gray-500'}"
-                          >{item.row.points > 0 ? "+" : ""}{item.row.points}</span
+                          >{item.row.points > 0 ? "+" : ""}{item.row
+                            .points}</span
                         >
                       {:else}
                         <span class="text-xs text-gray-600">telt niet mee</span>
@@ -4090,7 +4071,9 @@
                   {/each}
                 </div>
                 <p class="text-[10px] text-gray-600 leading-relaxed">
-                  Gebaseerd op je huidige gemiddelden, afgerond op hele cijfers. Vink vakken uit die bij jouw school niet meetellen (bijv. LO). De regels pas je aan in Instellingen → Cijfers.
+                  Gebaseerd op je huidige gemiddelden, afgerond op hele cijfers.
+                  Vink vakken uit die bij jouw school niet meetellen (bijv. LO).
+                  De regels pas je aan in Instellingen → Cijfers.
                 </p>
               </div>
             </div>
@@ -4264,7 +4247,10 @@
                             </div>
                           </div>
                           <span
-                            class="text-lg font-black {gradeTextClass(grade, 'text-accent-400')}">{grade.CijferStr}</span
+                            class="text-lg font-black {gradeTextClass(
+                              grade,
+                              'text-accent-400',
+                            )}">{grade.CijferStr}</span
                           >
                         </div>
                       {/each}
@@ -4313,144 +4299,6 @@
                 {/if}
               {/if}
             </div>
-          </div>
-
-          <div
-            class="h-px w-3/4 mx-auto bg-gradient-to-r from-transparent via-surface-600 to-transparent"
-          ></div>
-
-          <!-- Snapshots -->
-          <div>
-            <div class="flex items-center justify-between mb-5">
-              <div class="flex items-center gap-3">
-                <div
-                  class="w-8 h-8 rounded-xl bg-amber-500/15 flex items-center justify-center text-amber-400"
-                >
-                  <svg
-                    class="w-4 h-4"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                    ><path
-                      d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3L14.5 4z"
-                    /><circle cx="12" cy="13" r="3" /></svg
-                  >
-                </div>
-                <h2
-                  class="text-xl font-black text-white italic tracking-tighter"
-                >
-                  Snapshots
-                </h2>
-              </div>
-              <Button variant="filled" onclick={createSnapshot} class="px-4">
-                <svg
-                  class="w-3.5 h-3.5"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="3"><path d="M12 5v14M5 12h14" /></svg
-                >
-                Nieuw
-              </Button>
-            </div>
-
-            {#if snapshots.length === 0}
-              <div
-                class="flex flex-col items-center justify-center py-14 rounded-[2rem] border border-dashed border-white/8 text-center"
-              >
-                <svg
-                  class="w-10 h-10 text-gray-700 mb-3"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="1.5"
-                  ><path
-                    d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3L14.5 4z"
-                  /><circle cx="12" cy="13" r="3" /></svg
-                >
-                <p class="text-gray-500 font-bold text-sm">Geen snapshots</p>
-                <p
-                  class="text-[11px] text-gray-700 font-bold uppercase tracking-widest mt-1.5 px-8"
-                >
-                  Maak een snapshot om je stand van nu te bewaren
-                </p>
-              </div>
-            {:else}
-              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {#each snapshots as snapshot}
-                  <div
-                    onclick={() => viewSnapshot(snapshot)}
-                    onkeydown={(e) =>
-                      e.key === "Enter" && viewSnapshot(snapshot)}
-                    role="button"
-                    tabindex="0"
-                    class="text-left bg-surface-800/50 border border-white/6 rounded-3xl p-5 hover:scale-[1.02] active:scale-[0.98] transition-all group overflow-hidden relative cursor-pointer"
-                  >
-                    <div
-                      class="absolute inset-0 bg-gradient-to-br from-primary-500/8 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"
-                    ></div>
-                    <div
-                      class="flex items-center justify-between mb-4 relative z-10"
-                    >
-                      <div>
-                        <h3
-                          class="text-base font-black text-white italic tracking-tight"
-                        >
-                          {snapshot.name}
-                        </h3>
-                        <p
-                          class="text-[9px] text-gray-600 uppercase font-black tracking-widest mt-0.5"
-                        >
-                          {new Date(snapshot.date).toLocaleString([], {
-                            dateStyle: "short",
-                            timeStyle: "short",
-                          })}
-                        </p>
-                      </div>
-                      <IconButton
-                        onclick={(e) => {
-                          e.stopPropagation();
-                          deleteSnapshot(snapshot.id);
-                        }}
-                        aria-label="Verwijderen"
-                        class="bg-red-500/10! text-red-400! hover:bg-red-500! hover:text-white!"
-                      >
-                        <svg
-                          class="w-4 h-4"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          stroke-width="2.5"
-                          ><path
-                            d="M3 6h18m-2 0v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6m3 0V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"
-                          /></svg
-                        >
-                      </IconButton>
-                    </div>
-                    <div class="grid grid-cols-3 gap-2 relative z-10">
-                      {#each snapshot.subjects.slice(0, 3) as sub}
-                        <div
-                          class="px-2 py-2 rounded-2xl bg-surface-950 border border-white/5 flex flex-col items-center"
-                        >
-                          <span
-                            class="text-[9px] font-black text-gray-600 uppercase tracking-tighter truncate w-full text-center mb-0.5"
-                            >{sub.abbr.slice(0, 3)}</span
-                          >
-                          <span
-                            class="text-sm font-black {sub.avg >=
-                            passLimit
-                              ? 'text-primary-400'
-                              : 'text-red-400'} italic"
-                            >{(sub.avg || 0).toFixed(1)}</span
-                          >
-                        </div>
-                      {/each}
-                    </div>
-                  </div>
-                {/each}
-              </div>
-            {/if}
           </div>
         </div>
       {/if}

@@ -1,5 +1,8 @@
 <script lang="ts">
-  import { userSettings } from "$lib/stores";
+  import { userSettings, personId } from "$lib/stores";
+  import { offlineStatus, clearOffline } from "$lib/offline";
+  import { runOfflineSync } from "$lib/offline-sync";
+  import { calendarChangesPopup } from "$lib/calendar-changes";
   import { currentPage, START_PAGE_OPTIONS, getStartPage } from "$lib/stores";
   import {
     triggerTestNotification,
@@ -127,6 +130,48 @@
   let logExportBusy = $state(false);
   let logExportResult = $state<string | null>(null);
   let logClearBusy = $state(false);
+  let offlineBusy = $state(false);
+  let offlineMsg = $state<string | null>(null);
+
+  function offlineWhen(ts: number | null): string {
+    if (!ts) return "nog niet opgeslagen";
+    return new Date(ts).toLocaleString("nl-NL", {
+      day: "numeric",
+      month: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  }
+
+  async function doOfflineSync() {
+    const pid = $personId;
+    if (!pid || offlineBusy) return;
+    offlineBusy = true;
+    offlineMsg = null;
+    try {
+      const r = await runOfflineSync(pid, { force: true });
+      offlineMsg = r.offline
+        ? "Geen verbinding met Magister — je bewaarde gegevens blijven beschikbaar."
+        : r.failed.length
+          ? `Opgeslagen, maar ${r.failed.length} onderdeel/onderdelen lukten niet.`
+          : "Alles is opgeslagen.";
+    } catch (e) {
+      offlineMsg = `Opslaan mislukt: ${e}`;
+    } finally {
+      offlineBusy = false;
+    }
+  }
+
+  async function doOfflineClear() {
+    if (
+      !confirm(
+        "Opgeslagen offline-gegevens wissen? Je kunt ze daarna pas weer offline bekijken nadat ze opnieuw zijn opgeslagen.",
+      )
+    )
+      return;
+    await clearOffline();
+    offlineMsg = "Offline-opslag gewist.";
+  }
   let logClearResult = $state<string | null>(null);
   let pickingDir = $state(false);
 
@@ -363,6 +408,45 @@
     if (!isNaN(num)) {
       userSettings.update((s) => ({ ...s, [id]: num }));
     }
+  }
+
+  /** Popup met voorbeeldgegevens (werkt ook zonder Android). */
+  function previewCalendarChanges() {
+    const at = (h: number, m = 0, plusDays = 0) => {
+      const d = new Date();
+      d.setDate(d.getDate() + plusDays);
+      d.setHours(h, m, 0, 0);
+      return d.toISOString();
+    };
+    calendarChangesPopup.set([
+      {
+        id: 1,
+        title: "wisk - 4A",
+        start: at(10, 0),
+        end: at(10, 50),
+        kinds: ["cancelled"],
+      },
+      {
+        id: 2,
+        title: "enta - 4A",
+        start: at(13, 10, 1),
+        end: at(14, 0, 1),
+        kinds: ["moved", "room"],
+        oldStart: at(11, 0, 1),
+        oldEnd: at(11, 50, 1),
+        oldRoom: "A1.04",
+        newRoom: "B2.11",
+      },
+      {
+        id: 3,
+        title: "bio - 4A",
+        start: at(9, 0, 1),
+        end: at(9, 50, 1),
+        kinds: ["teacher"],
+        oldTeacher: "Jansen",
+        newTeacher: "de Vries",
+      },
+    ]);
   }
 
   async function testNotificationType(
@@ -1258,6 +1342,15 @@
             ),
         },
         {
+          id: "previewCalendarChanges",
+          label: "Voorbeeld agenda-wijzigingen",
+          description:
+            "Toont de popup die je ziet als je op een agenda-notificatie tikt, met voorbeeldgegevens.",
+          type: "action",
+          compactFor: "notifyCalendar",
+          action: () => previewCalendarChanges(),
+        },
+        {
           id: "notifyAutoDnd",
           label: "Autom. Niet Storen",
           description:
@@ -1292,6 +1385,26 @@
       id: "data",
       title: "Data & Downloads",
       settings: [
+        {
+          id: "offlineStorage",
+          label: "Automatisch offline opslaan",
+          description:
+            "Bewaart je agenda (4 weken terug, 8 vooruit), cijfers, berichten, opdrachten en kleine bijlagen (< 5 MB) op dit apparaat. Is Magister down, blokkeert de school je tijdelijk of heb je geen internet, dan blijft alles gewoon geladen. Uitzetten wist de opgeslagen kopie.",
+          type: "toggle",
+        },
+        {
+          id: "restoreHiddenGrades",
+          label: "Verborgen cijfers terughalen",
+          description:
+            'Verbergt je school tijdelijk een cijfer, dan blijft het 10 dagen zichtbaar met het label "verborgen door school". Cijfers die echt zijn verwijderd kun je zelf bij het cijfer weghalen; na 10 dagen verdwijnen ze vanzelf. Uitzetten wist dit geheugen.',
+          type: "toggle",
+        },
+        {
+          id: "offlineStatus",
+          label: "Offline-opslag",
+          description: "",
+          type: "offline-status",
+        },
         {
           id: "exportAll",
           label: "Alles Exporteren",
@@ -2476,6 +2589,41 @@
                                 {logClearResult}
                               </p>
                             {/if}
+                          {:else if setting.type === "offline-status"}
+                            <div class="flex flex-col items-end gap-2">
+                              <p class="text-label-small text-gray-500">
+                                {$userSettings.offlineStorage
+                                  ? `Laatst opgeslagen: ${offlineWhen($offlineStatus.lastSyncAt)}`
+                                  : "Staat uit"}
+                              </p>
+                              <div class="flex items-center gap-2">
+                                <Button
+                                  variant="text"
+                                  onclick={doOfflineClear}
+                                  disabled={offlineBusy}
+                                  class="text-red-400! hover:text-red-300! px-3"
+                                >
+                                  Wissen
+                                </Button>
+                                <Button
+                                  variant="tonal"
+                                  onclick={doOfflineSync}
+                                  disabled={offlineBusy ||
+                                    !$userSettings.offlineStorage ||
+                                    !$personId}
+                                  class="px-5"
+                                >
+                                  {offlineBusy ? "⏳ Bezig..." : "Nu opslaan"}
+                                </Button>
+                              </div>
+                              {#if offlineMsg}
+                                <p
+                                  class="text-label-small text-gray-500 text-right max-w-[260px]"
+                                >
+                                  {offlineMsg}
+                                </p>
+                              {/if}
+                            </div>
                           {:else if setting.type === "download-dir"}
                             <div class="flex items-center gap-2">
                               {#if $userSettings.downloadDir}

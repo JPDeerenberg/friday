@@ -9,6 +9,25 @@ import {
   webRequestBytes,
 } from "./web-session.ts";
 import * as tierB from "./web-tier-b.ts";
+import {
+  clearOffline,
+  hasFile,
+  isOfflineEnabled,
+  loadDownloadedPath,
+  MAX_OFFLINE_FILE_BYTES,
+  loadFile,
+  loadItem,
+  saveDownloadedPath,
+  saveFile,
+  updateStored,
+  withOffline,
+  withOfflineRange,
+} from "./offline.ts";
+import {
+  clearGradeMemory,
+  forgetHiddenGrade,
+  restoreHiddenGrades,
+} from "./hidden-grades.ts";
 import type { SessionTokens } from "./backend.ts";
 import type {
   Absence,
@@ -126,13 +145,13 @@ export async function isAuthenticated(): Promise<boolean> {
   return invoke("is_authenticated");
 }
 
-export async function getAccount(): Promise<Account> {
+async function getAccountLive(): Promise<Account> {
   if (isWebBuild())
     return (await webRequest("GET", "account?noCache=0")) as unknown as Account;
   return invoke("get_account");
 }
 
-export async function getPersonId(): Promise<number> {
+async function getPersonIdLive(): Promise<number> {
   if (isWebBuild()) {
     const pid = (await wtokens()).personId;
     if (pid == null) throw new Error("Geen leerling gevonden bij dit account.");
@@ -141,9 +160,7 @@ export async function getPersonId(): Promise<number> {
   return invoke("get_person_id");
 }
 
-export async function getProfilePicture(
-  personId: number,
-): Promise<string | null> {
+async function getProfilePictureLive(personId: number): Promise<string | null> {
   if (isWebBuild()) {
     try {
       const pic = await webRequestBytes(`leerlingen/${personId}/foto`);
@@ -156,6 +173,9 @@ export async function getProfilePicture(
 }
 
 export async function logout(): Promise<void> {
+  // De bewaarde kopie hoort bij dit account: nooit meenemen naar de volgende.
+  await clearOffline();
+  await clearGradeMemory();
   if (isWebBuild()) {
     const tokens = await loadWebSession();
     if (tokens) {
@@ -214,7 +234,7 @@ export async function restoreSession(): Promise<RestoreSessionStatus> {
   return "unavailable";
 }
 
-export async function getProfileInfo(personId: number): Promise<ProfileInfo> {
+async function getProfileInfoLive(personId: number): Promise<ProfileInfo> {
   if (isWebBuild()) {
     return (await webRequest(
       "GET",
@@ -224,7 +244,7 @@ export async function getProfileInfo(personId: number): Promise<ProfileInfo> {
   return invoke("get_profile_info", { personId });
 }
 
-export async function getProfileAddresses(
+async function getProfileAddressesLive(
   personId: number,
 ): Promise<ProfileAddress[]> {
   if (isWebBuild()) {
@@ -240,7 +260,7 @@ export async function getProfileAddresses(
   return invoke("get_profile_addresses", { personId });
 }
 
-export async function getCareerInfo(personId: number): Promise<ProfileCareer> {
+async function getCareerInfoLive(personId: number): Promise<ProfileCareer> {
   if (isWebBuild()) {
     return (await webRequest(
       "GET",
@@ -251,7 +271,7 @@ export async function getCareerInfo(personId: number): Promise<ProfileCareer> {
 }
 
 // === Calendar ===
-export async function getCalendarEvents(
+async function getCalendarEventsLive(
   personId: number,
   start: string,
   end: string,
@@ -268,7 +288,7 @@ export async function getCalendarEvents(
   return (events as CalendarEvent[]).map(sanitizeCalendarEvent);
 }
 
-export async function getAbsences(
+async function getAbsencesLive(
   personId: number,
   van: string,
   tot: string,
@@ -284,7 +304,7 @@ export async function getAbsences(
   return invoke("get_absences", { personId, van, tot });
 }
 
-export async function getCalendarEvent(
+async function getCalendarEventLive(
   personId: number,
   eventId: number,
 ): Promise<CalendarEvent> {
@@ -302,7 +322,7 @@ export async function getCalendarEvent(
   return sanitizeCalendarEvent(event);
 }
 
-export async function downloadFile(
+async function downloadFileLive(
   url: string,
   filename: string,
   downloadDir?: string,
@@ -420,7 +440,7 @@ export async function toggleCalendarEventDone(
 }
 
 // === Grades ===
-export async function getSchoolyears(
+async function getSchoolyearsLive(
   personId: number,
   start?: string,
   end?: string,
@@ -436,7 +456,7 @@ export async function getSchoolyears(
   return invoke("get_schoolyears", { personId, start, end });
 }
 
-export async function getGrades(
+async function getGradesLive(
   personId: number,
   schoolyearId: number,
   einde: string,
@@ -452,7 +472,7 @@ export async function getGrades(
   return invoke("get_grades", { personId, schoolyearId, einde });
 }
 
-export async function getGradeExtraInfo(
+async function getGradeExtraInfoLive(
   personId: number,
   schoolyearId: number,
   kolomId: number,
@@ -472,7 +492,7 @@ export async function getGradeExtraInfo(
   });
 }
 
-export async function getBulkGradeExtraInfo(
+async function getBulkGradeExtraInfoLive(
   personId: number,
   schoolyearId: number,
   kolomIds: number[],
@@ -495,7 +515,7 @@ export async function getBulkGradeExtraInfo(
   });
 }
 
-export async function getRecentGrades(
+async function getRecentGradesLive(
   personId: number,
   top?: number,
 ): Promise<Grade[]> {
@@ -510,13 +530,13 @@ export async function getRecentGrades(
 }
 
 // === Messages ===
-export async function getMessageFolders(): Promise<MessagesFolder[]> {
+async function getMessageFoldersLive(): Promise<MessagesFolder[]> {
   if (isWebBuild())
     return tierB.webGetMessageFolders(sessionTierA(), await wtokens());
   return invoke("get_message_folders");
 }
 
-export async function getMessages(
+async function getMessagesLive(
   berichtenLink: string,
   top?: number,
   skip?: number,
@@ -540,7 +560,7 @@ export async function getMessages(
   return (messages as Message[]).map(sanitizeMessage);
 }
 
-export async function getMessageDetail(selfLink: string): Promise<Message> {
+async function getMessageDetailLive(selfLink: string): Promise<Message> {
   if (isWebBuild())
     return tierB.webGetMessageDetail(sessionTierA(), await wtokens(), selfLink);
   const msg = (await invoke("get_message_detail", { selfLink })) as Message;
@@ -621,7 +641,7 @@ export async function searchContacts(
 }
 
 // === Assignments ===
-export async function getAssignments(
+async function getAssignmentsLive(
   personId: number,
   start: string,
   end: string,
@@ -642,9 +662,7 @@ export async function getAssignments(
   return (assignments as Assignment[]).map(sanitizeAssignment);
 }
 
-export async function getAssignmentDetail(
-  selfUrl: string,
-): Promise<Assignment> {
+async function getAssignmentDetailLive(selfUrl: string): Promise<Assignment> {
   if (isWebBuild())
     return tierB.webGetAssignmentDetail(
       sessionTierA(),
@@ -696,7 +714,7 @@ export async function uploadAssignmentAttachment(
 }
 
 // === Leermiddelen ===
-export async function getLeermiddelen(personId: number): Promise<any[]> {
+async function getLeermiddelenLive(personId: number): Promise<any[]> {
   if (isWebBuild())
     return tierB.webGetLeermiddelen(sessionTierA(), await wtokens(), personId);
   return invoke("get_leermiddelen", { personId });
@@ -713,14 +731,14 @@ export async function getLeermiddelLaunchUrl(href: string): Promise<string> {
 }
 
 // === Activities ===
-export async function getActivities(personId: number): Promise<any[]> {
+async function getActivitiesLive(personId: number): Promise<any[]> {
   if (isWebBuild())
     return tierB.webGetActivities(sessionTierA(), await wtokens(), personId);
   const activities = await invoke("get_activities", { personId });
   return (activities as any[]).map(sanitizeActivity);
 }
 
-export async function getActivityElements(
+async function getActivityElementsLive(
   personId: number,
   activityId: number,
 ): Promise<any[]> {
@@ -739,13 +757,13 @@ export async function getActivityElements(
 }
 
 // === Bronnen ===
-export async function getBronnen(path: string): Promise<any[]> {
+async function getBronnenLive(path: string): Promise<any[]> {
   if (isWebBuild())
     return tierB.webGetBronnen(sessionTierA(), await wtokens(), path);
   return invoke("get_bronnen", { path });
 }
 
-export async function getExternalBronSources(personId: number): Promise<any[]> {
+async function getExternalBronSourcesLive(personId: number): Promise<any[]> {
   if (isWebBuild())
     return tierB.webGetExternalBronSources(
       sessionTierA(),
@@ -756,13 +774,13 @@ export async function getExternalBronSources(personId: number): Promise<any[]> {
 }
 
 // === Studiewijzers ===
-export async function getStudiewijzers(personId: number): Promise<any[]> {
+async function getStudiewijzersLive(personId: number): Promise<any[]> {
   if (isWebBuild())
     return tierB.webGetStudiewijzers(sessionTierA(), await wtokens(), personId);
   return invoke("get_studiewijzers", { personId });
 }
 
-export async function getStudiewijzerDetail(
+async function getStudiewijzerDetailLive(
   personId: number,
   id: number,
   isProject: boolean,
@@ -783,7 +801,7 @@ export async function getStudiewijzerDetail(
   return sanitizeStudiewijzerDetail(detail);
 }
 
-export async function getStudiewijzerOnderdeelDetail(
+async function getStudiewijzerOnderdeelDetailLive(
   personId: number,
   swId: number,
   onderdeelId: number,
@@ -1142,4 +1160,282 @@ export function calendarTypeName(type: number): string {
 export function formatTeacherName(name: string | undefined | null): string {
   if (!name) return "";
   return name.replace(/\s*\([^)]+\)/g, "").trim();
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Offline-opslag: elke leesactie hieronder bewaart zijn resultaat en valt
+// terug op die kopie als Magister of het internet er niet is. Zie offline.ts.
+// Sleutels laten bewust datum-argumenten weg die elke dag veranderen
+// ("vandaag", "volgende week"), anders zou een kopie van gisteren nooit passen.
+// ═══════════════════════════════════════════════════════════════════
+
+function offlineRead<A extends unknown[], R>(
+  fn: (...a: A) => Promise<R>,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  key: (...a: any[]) => string,
+  opts?: Parameters<typeof withOffline<R>>[2],
+) {
+  return (...a: A): Promise<R> => withOffline(key(...a), () => fn(...a), opts);
+}
+
+export const getAccount = offlineRead(getAccountLive, () => "account");
+export const getPersonId = offlineRead(getPersonIdLive, () => "personId");
+export const getProfilePicture = offlineRead(
+  getProfilePictureLive,
+  (pid: number) => `photo:${pid}`,
+  { isEmpty: (v) => v == null },
+);
+export const getProfileInfo = offlineRead(
+  getProfileInfoLive,
+  (pid: number) => `profile:${pid}`,
+);
+export const getProfileAddresses = offlineRead(
+  getProfileAddressesLive,
+  (pid: number) => `addresses:${pid}`,
+);
+export const getCareerInfo = offlineRead(
+  getCareerInfoLive,
+  (pid: number) => `career:${pid}`,
+);
+export const getAbsences = offlineRead(
+  getAbsencesLive,
+  (pid: number, van: string, tot: string) => `absences:${pid}:${van}:${tot}`,
+);
+export const getSchoolyears = offlineRead(
+  getSchoolyearsLive,
+  (pid: number, start?: string) => `schoolyears:${pid}:${start ?? ""}`,
+);
+/**
+ * Cijfers: live van Magister, aangevuld met cijfers die de school tijdelijk
+ * verborgen heeft (zie hidden-grades.ts), en daarna offline bewaard.
+ */
+export function getGrades(
+  personId: number,
+  schoolyearId: number,
+  einde: string,
+): Promise<Grade[]> {
+  return withOffline(`grades:${personId}:${schoolyearId}`, async () =>
+    restoreHiddenGrades(
+      personId,
+      schoolyearId,
+      await getGradesLive(personId, schoolyearId, einde),
+    ),
+  );
+}
+
+/** Een verborgen cijfer definitief laten vallen (ook uit de offline kopie). */
+export async function removeHiddenGrade(
+  personId: number,
+  schoolyearId: number,
+  cijferId: number,
+): Promise<void> {
+  await forgetHiddenGrade(personId, schoolyearId, cijferId);
+  await updateStored<Grade[]>(`grades:${personId}:${schoolyearId}`, (list) =>
+    list.filter((g) => g.CijferId !== cijferId),
+  );
+}
+export const getGradeExtraInfo = offlineRead(
+  getGradeExtraInfoLive,
+  (pid: number, yearId: number, kolomId: number) =>
+    `gradeinfo:${pid}:${yearId}:${kolomId}`,
+);
+export const getBulkGradeExtraInfo = offlineRead(
+  getBulkGradeExtraInfoLive,
+  (pid: number, yearId: number) => `gradeinfo-bulk:${pid}:${yearId}`,
+  { merge: (old, fresh) => ({ ...old, ...fresh }) },
+);
+export const getRecentGrades = offlineRead(
+  getRecentGradesLive,
+  (pid: number) => `recent-grades:${pid}`,
+);
+export const getMessageFolders = offlineRead(
+  getMessageFoldersLive,
+  () => "message-folders",
+);
+export const getMessageDetail = offlineRead(
+  getMessageDetailLive,
+  (selfLink: string) => `message:${selfLink}`,
+);
+export const getAssignmentDetail = offlineRead(
+  getAssignmentDetailLive,
+  (selfUrl: string) => `assignment:${selfUrl}`,
+);
+export const getLeermiddelen = offlineRead(
+  getLeermiddelenLive,
+  (pid: number) => `leermiddelen:${pid}`,
+);
+export const getActivities = offlineRead(
+  getActivitiesLive,
+  (pid: number) => `activities:${pid}`,
+);
+export const getActivityElements = offlineRead(
+  getActivityElementsLive,
+  (pid: number, activityId: number) => `activity:${pid}:${activityId}`,
+);
+export const getBronnen = offlineRead(
+  getBronnenLive,
+  (path: string) => `bronnen:${path}`,
+);
+export const getExternalBronSources = offlineRead(
+  getExternalBronSourcesLive,
+  (pid: number) => `bron-sources:${pid}`,
+);
+export const getStudiewijzers = offlineRead(
+  getStudiewijzersLive,
+  (pid: number) => `studiewijzers:${pid}`,
+);
+export const getStudiewijzerDetail = offlineRead(
+  getStudiewijzerDetailLive,
+  (pid: number, id: number, isProject: boolean) =>
+    `studiewijzer:${pid}:${id}:${isProject}`,
+);
+export const getStudiewijzerOnderdeelDetail = offlineRead(
+  getStudiewijzerOnderdeelDetailLive,
+  (pid: number, swId: number, onderdeelId: number, isProject: boolean) =>
+    `studiewijzer-onderdeel:${pid}:${swId}:${onderdeelId}:${isProject}`,
+);
+
+/** Berichten: zoekopdrachten worden nooit bewaard, lijsten wel. */
+export function getMessages(
+  berichtenLink: string,
+  top?: number,
+  skip?: number,
+  query?: string,
+): Promise<Message[]> {
+  return withOffline(
+    `messages:${berichtenLink}:${top ?? ""}:${skip ?? 0}`,
+    () => getMessagesLive(berichtenLink, top, skip, query),
+    { skipStore: !!query },
+  );
+}
+
+/** Agenda: bewaard per afspraak, zodat elke bekeken week de opslag vult. */
+export function getCalendarEvents(
+  personId: number,
+  start: string,
+  end: string,
+): Promise<CalendarEvent[]> {
+  return withOfflineRange<CalendarEvent>({
+    kind: "calendar",
+    pid: personId,
+    start: formatDate(start),
+    end: formatDate(end),
+    fetcher: () => getCalendarEventsLive(personId, start, end),
+    idOf: (e) => e.Id,
+    dateOf: (e) => e.Start,
+  });
+}
+
+/** Eén afspraak: eigen kopie, anders de versie uit de agendalijst. */
+export async function getCalendarEvent(
+  personId: number,
+  eventId: number,
+): Promise<CalendarEvent> {
+  try {
+    return await withOffline(`calendar-event:${personId}:${eventId}`, () =>
+      getCalendarEventLive(personId, eventId),
+    );
+  } catch (e) {
+    const listed = await loadItem<CalendarEvent>("calendar", personId, eventId);
+    if (listed) return listed.item;
+    throw e;
+  }
+}
+
+/** Opdrachten: bewaard per opdracht, gefilterd op inleverdatum. */
+export function getAssignments(
+  personId: number,
+  start: string,
+  end: string,
+): Promise<Assignment[]> {
+  return withOfflineRange<Assignment>({
+    kind: "assignments",
+    pid: personId,
+    start: formatDate(start),
+    end: formatDate(end),
+    fetcher: () => getAssignmentsLive(personId, start, end),
+    idOf: (a) => a.Id,
+    dateOf: (a) => a.InleverenVoor,
+  });
+}
+
+/**
+ * Bijlage downloaden. Web: kleine bestanden (< 5 MB) worden ook in de
+ * offline-opslag bewaard en zijn daarna zonder internet nog te downloaden.
+ * Desktop/Android: het bestand staat al op het apparaat; we onthouden het pad
+ * zodat het offline opnieuw aangeboden kan worden.
+ */
+export async function downloadFile(
+  url: string,
+  filename: string,
+  downloadDir?: string,
+): Promise<string> {
+  if (isWebBuild()) {
+    try {
+      const blob = await tierB.webDownloadFile(
+        sessionTierA(),
+        await wtokens(),
+        url,
+      );
+      void saveFile(url, blob, filename);
+      saveBlobAs(blob, filename);
+      return filename;
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      const marker = "OPEN_IN_BROWSER:";
+      if (msg.startsWith(marker)) {
+        window.open(msg.slice(marker.length), "_blank", "noopener,noreferrer");
+        return filename;
+      }
+      const saved = await loadFile(url);
+      if (saved) {
+        saveBlobAs(saved.blob, filename);
+        return filename;
+      }
+      throw e;
+    }
+  }
+  try {
+    const path = await downloadFileLive(url, filename, downloadDir);
+    void saveDownloadedPath(url, path);
+    return path;
+  } catch (e) {
+    const path = await loadDownloadedPath(url);
+    if (path) return path;
+    throw e;
+  }
+}
+
+function saveBlobAs(blob: Blob, filename: string) {
+  const objectUrl = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = objectUrl;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(objectUrl), 10_000);
+}
+
+/**
+ * Web: haal een kleine bijlage alvast binnen voor offline gebruik. Geeft true
+ * terug als er een nieuw bestand is bewaard. Groter dan 5 MB: overslaan.
+ */
+export async function prefetchAttachment(
+  url: string,
+  size?: number,
+): Promise<boolean> {
+  if (!isWebBuild() || !isOfflineEnabled()) return false;
+  if (typeof size === "number" && size > MAX_OFFLINE_FILE_BYTES) return false;
+  if (await hasFile(url)) return false;
+  try {
+    const blob = await tierB.webDownloadFile(
+      sessionTierA(),
+      await wtokens(),
+      url,
+    );
+    return await saveFile(url, blob, url.split("/").pop() ?? "bijlage");
+  } catch {
+    return false;
+  }
 }
