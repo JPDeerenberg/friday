@@ -1,0 +1,1 @@
+function e(e){if(!e)return`—`;let t=new Date(e);return isNaN(t.getTime())?`—`:t.toLocaleTimeString(`nl-NL`,{hour:`2-digit`,minute:`2-digit`})}function t(e){if(!e)return`—`;let t=new Date(e);return isNaN(t.getTime())?`—`:t.toLocaleDateString(`nl-NL`,{day:`numeric`,month:`short`,year:`numeric`})}export{e as n,t};
