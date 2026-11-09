@@ -10,6 +10,10 @@ pub struct ExportResult {
     pub success: bool,
     pub files: Vec<String>,
     pub error: Option<String>,
+    /// Where the export ended up when the OS picked/knows the place (Android),
+    /// e.g. `Download/Friday`. `None` on desktop, where the user chose the folder.
+    #[serde(default)]
+    pub location: Option<String>,
 }
 
 /// Collect and export all data to JSON files in the selected directory.
@@ -17,9 +21,13 @@ pub struct ExportResult {
 pub async fn export_all_data(
     app: AppHandle,
     client: State<'_, SharedClient>,
+    download_dir: Option<String>,
 ) -> Result<ExportResult, String> {
     #[cfg(not(desktop))]
     let _ = &app;
+    // Desktop asks for a folder every time; only Android uses the saved folder.
+    #[cfg(not(target_os = "android"))]
+    let _ = &download_dir;
 
     let person_id = {
         let client = client.lock().await;
@@ -72,7 +80,6 @@ pub async fn export_all_data(
     // Pre-compute the path parameters (cheap, no I/O) so each fetch future can
     // run standalone without re-reading the shared `today`/`person_id`.
     let lessons_path = format!("personen/{}/afspraken?van={}&tot={}", person_id, start, end);
-    let opdrachten_path = format!("personen/{}/opdrachten?van={}&tot={}", person_id, start, end);
     let absences_path = format!("personen/{}/absenties?van={}&tot={}", person_id, start, end);
     let studiewijzer_peildatum = today.format("%Y-%m-%d").to_string();
     let studiewijzers_path = format!("leerlingen/{}/studiewijzers?peildatum={}", person_id, studiewijzer_peildatum);
@@ -105,46 +112,30 @@ pub async fn export_all_data(
     let grades = async {
         let mut files = Vec::new();
         let mut errors = Vec::new();
+        // Every school year the student has been enrolled in, like the Grades page.
+        // (Before, only `items.first()` was exported: the oldest year of the last
+        // four, which is usually the wrong one — and often empty.)
         let schoolyears_path = format!(
-            "leerlingen/{}/aanmeldingen?begin={}-01-01&einde={}-12-31",
-            person_id, today.year() - 4, today.year()
+            "leerlingen/{}/aanmeldingen?begin=2013-01-01&einde={}-12-31",
+            person_id,
+            today.year()
         );
         match crate::client::get_with_shared(&client, &schoolyears_path).await {
             Ok(schoolyears) => {
-                let items = schoolyears["Items"].as_array()
-                    .or_else(|| schoolyears["items"].as_array())
-                    .or_else(|| schoolyears.as_array());
-                if let Some(items) = items {
-                    if let Some(first) = items.first() {
-                        if let Some(schoolyear_id) = first["Id"].as_i64() {
-                            // Use schoolyear's einde as peildatum (matching frontend behaviour)
-                            let peildatum = match first["Einde"].as_str() {
-                                Some(e) => {
-                                    let d = if e.len() >= 10 { &e[0..10] } else { e };
-                                    d.to_string()
-                                }
-                                None => format!("{}-08-01", today.year() + 1),
-                            };
-                            let path = format!(
-                                "personen/{}/aanmeldingen/{}/cijfers/cijferoverzichtvooraanmelding?actievePerioden=false&alleenBerekendeKolommen=false&alleenPTAKolommen=false&peildatum={}",
-                                person_id, schoolyear_id, peildatum
-                            );
-                            match crate::client::get_with_shared(&client, &path).await {
-                                Ok(data) => {
-                                    if let Ok(filename) = save_json(&dir_path, "cijfers.json", &data) {
-                                        files.push(filename);
-                                    }
-                                }
-                                Err(e) => errors.push(format!("cijfers: {}", e)),
-                            }
-                        } else {
-                            errors.push("cijfers: geen Id in schooljaar".to_string());
-                        }
-                    } else {
-                        errors.push("cijfers: geen schooljaren gevonden".to_string());
+                let (jobs, warnings) = plan_grade_exports(&schoolyears, today.year());
+                errors.extend(warnings);
+                for job in jobs {
+                    let path = format!(
+                        "personen/{}/aanmeldingen/{}/cijfers/cijferoverzichtvooraanmelding?actievePerioden=false&alleenBerekendeKolommen=false&alleenPTAKolommen=false&peildatum={}",
+                        person_id, job.schoolyear_id, job.peildatum
+                    );
+                    match crate::client::get_with_shared(&client, &path).await {
+                        Ok(data) => match save_json(&dir_path, &job.file_name, &data) {
+                            Ok(filename) => files.push(filename),
+                            Err(e) => errors.push(format!("cijfers {}: {}", job.label, e)),
+                        },
+                        Err(e) => errors.push(format!("cijfers {}: {}", job.label, e)),
                     }
-                } else {
-                    errors.push("cijfers: onverwacht response-formaat voor schooljaren".to_string());
                 }
             }
             Err(e) => errors.push(format!("schooljaren: {}", e)),
@@ -155,10 +146,15 @@ pub async fn export_all_data(
     let assignments = async {
         let mut files = Vec::new();
         let mut errors = Vec::new();
-        match crate::client::get_with_shared(&client, &opdrachten_path).await {
-            Ok(data) => {
-                if let Ok(filename) = save_json(&dir_path, "opdrachten.json", &data) {
-                    files.push(filename);
+        // Paged fetch with the date parameters Magister understands (see
+        // `assignments_path`); the old single `van`/`tot` request only returned the
+        // server's default window.
+        match crate::commands::assignments::fetch_assignment_items(&client, person_id, &start, &end).await {
+            Ok(items) => {
+                let data = serde_json::json!({ "Items": items });
+                match save_json(&dir_path, "opdrachten.json", &data) {
+                    Ok(filename) => files.push(filename),
+                    Err(e) => errors.push(format!("opdrachten: {}", e)),
                 }
             }
             Err(e) => errors.push(format!("opdrachten: {}", e)),
@@ -172,20 +168,7 @@ pub async fn export_all_data(
         let mut errors = Vec::new();
         match crate::client::get_with_shared(&client, "berichten/mappen/alle").await {
             Ok(folders) => {
-                // Try to find the inbox folder ID — handles {"Items": [...]}, {"items": [...]}, and bare array
-                let inbox_id = folders["Items"].as_array()
-                    .and_then(|items| items.first())
-                    .and_then(|f| f["Id"].as_i64())
-                    .or_else(|| {
-                        folders["items"].as_array()
-                            .and_then(|items| items.first())
-                            .and_then(|f| f["Id"].as_i64())
-                    })
-                    .or_else(|| {
-                        folders.as_array()
-                            .and_then(|items| items.first())
-                            .and_then(|f| f["Id"].as_i64())
-                    });
+                let inbox_id = find_inbox_id(&folders);
                 match inbox_id {
                     Some(id) => {
                         let path = format!("berichten/mappen/{}/berichten?top=200&skip=0", id);
@@ -308,6 +291,9 @@ pub async fn export_all_data(
         had_errors.extend(errors);
     }
 
+    #[allow(unused_mut)]
+    let mut export_location: Option<String> = None;
+
     // On mobile the JSON files landed in an app-private temp dir the user can't
     // reach, so bundle them into a single archive and (on Android) hand that
     // archive to the OS via the FileProvider so the user gets a native share/
@@ -340,8 +326,13 @@ pub async fn export_all_data(
         zip.finish().map_err(|e| format!("Kan zip niet finaliseren: {}", e))?;
 
         #[cfg(target_os = "android")]
-        crate::jni::share_downloaded_file(&zip_path)
-            .map_err(|e| format!("Kan zip-bestand niet delen: {}", e))?;
+        {
+            let tree = crate::commands::files::android_tree_uri(download_dir.as_deref());
+            let outcome = crate::jni::share_downloaded_file(&zip_path, tree)
+                .map_err(|e| format!("Kan zip-bestand niet opslaan of delen: {}", e))?;
+            log::info!("Export saved to {}", outcome.location);
+            export_location = Some(outcome.location);
+        }
 
         // The user only sees the single shared archive, not the individual JSONs.
         exported_files = vec![zip_name];
@@ -355,5 +346,220 @@ pub async fn export_all_data(
         } else {
             Some(format!("Waarschuwingen bij: {}", had_errors.join("; ")))
         },
+        location: export_location,
     })
+}
+
+/// The id of the inbox ("Postvak IN") in the `berichten/mappen/alle` answer.
+///
+/// Magister answers with camelCase keys (`id`, `naam`) here — the same shape the
+/// app's own `MessagesFolder` model reads. The export looked for `Id` and so never
+/// found a folder ("berichten: geen inbox-map gevonden"). Both spellings are
+/// accepted; the folder is picked by name, with the first folder as a fallback.
+fn find_inbox_id(folders: &serde_json::Value) -> Option<i64> {
+    let items = folders["Items"]
+        .as_array()
+        .or_else(|| folders["items"].as_array())
+        .or_else(|| folders.as_array())?;
+    let id_of = |f: &serde_json::Value| f["id"].as_i64().or_else(|| f["Id"].as_i64());
+    let name_of = |f: &serde_json::Value| {
+        f["naam"]
+            .as_str()
+            .or_else(|| f["Naam"].as_str())
+            .unwrap_or("")
+            .trim()
+            .to_lowercase()
+    };
+    items
+        .iter()
+        .find(|f| matches!(name_of(f).as_str(), "postvak in" | "inbox") && id_of(f).is_some())
+        .or_else(|| items.iter().find(|f| id_of(f).is_some()))
+        .and_then(id_of)
+}
+
+/// One grade overview to fetch: a school year ("aanmelding") plus the file it is saved in.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct GradeJob {
+    schoolyear_id: i64,
+    /// `2025-2026`, or `id<ID>` when the dates are missing. Unique per export.
+    label: String,
+    file_name: String,
+    /// The school year's last day, like the Grades page uses.
+    peildatum: String,
+}
+
+/// Turns the `aanmeldingen` answer into one job per school year (newest first)
+/// plus warnings for entries that cannot be used. Accepts PascalCase and
+/// lowercase keys, like the rest of the app.
+fn plan_grade_exports(
+    schoolyears: &serde_json::Value,
+    fallback_year: i32,
+) -> (Vec<GradeJob>, Vec<String>) {
+    let mut warnings = Vec::new();
+    let items = schoolyears["Items"]
+        .as_array()
+        .or_else(|| schoolyears["items"].as_array())
+        .or_else(|| schoolyears.as_array());
+    let Some(items) = items else {
+        warnings.push("cijfers: onverwacht response-formaat voor schooljaren".to_string());
+        return (Vec::new(), warnings);
+    };
+    if items.is_empty() {
+        warnings.push("cijfers: geen schooljaren gevonden".to_string());
+        return (Vec::new(), warnings);
+    }
+
+    fn text<'a>(item: &'a serde_json::Value, pascal: &str, lower: &str) -> Option<&'a str> {
+        item[pascal].as_str().or_else(|| item[lower].as_str())
+    }
+    fn day(s: &str) -> &str {
+        if s.len() >= 10 { &s[0..10] } else { s }
+    }
+    fn year_of(s: &str) -> Option<&str> {
+        let y = s.get(0..4)?;
+        y.chars().all(|c| c.is_ascii_digit()).then_some(y)
+    }
+
+    let mut ordered: Vec<&serde_json::Value> = items.iter().collect();
+    // Newest first; ISO dates sort as text.
+    ordered.sort_by(|a, b| {
+        text(b, "Begin", "begin")
+            .unwrap_or("")
+            .cmp(text(a, "Begin", "begin").unwrap_or(""))
+    });
+
+    let mut jobs: Vec<GradeJob> = Vec::new();
+    for item in ordered {
+        let Some(id) = item["Id"].as_i64().or_else(|| item["id"].as_i64()) else {
+            warnings.push("cijfers: schooljaar zonder Id overgeslagen".to_string());
+            continue;
+        };
+        let begin = text(item, "Begin", "begin");
+        let einde = text(item, "Einde", "einde");
+        let mut label = match (begin.and_then(year_of), einde.and_then(year_of)) {
+            (Some(b), Some(e)) => format!("{b}-{e}"),
+            _ => format!("id{id}"),
+        };
+        if jobs.iter().any(|j| j.label == label) {
+            // Two enrolments in the same school year (e.g. a class change).
+            label = format!("{label}-{id}");
+        }
+        let peildatum = match einde {
+            Some(e) => day(e).to_string(),
+            None => format!("{}-08-01", fallback_year + 1),
+        };
+        jobs.push(GradeJob {
+            schoolyear_id: id,
+            file_name: format!("cijfers-{label}.json"),
+            label,
+            peildatum,
+        });
+    }
+    (jobs, warnings)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn jobs(v: serde_json::Value) -> (Vec<GradeJob>, Vec<String>) {
+        plan_grade_exports(&v, 2026)
+    }
+
+    #[test]
+    fn finds_the_inbox_in_the_camelcase_answer_magister_sends() {
+        // The shape that made the export fail: keys are `id`/`naam`, not `Id`.
+        let folders = json!({ "items": [
+            { "id": 11, "naam": "Verzonden items", "bovenliggendeId": 0 },
+            { "id": 10, "naam": "Postvak IN", "bovenliggendeId": 0 },
+        ]});
+        assert_eq!(find_inbox_id(&folders), Some(10));
+    }
+
+    #[test]
+    fn finds_the_inbox_in_pascalcase_and_bare_arrays() {
+        assert_eq!(find_inbox_id(&json!({ "Items": [ { "Id": 4, "Naam": "Postvak IN" } ] })), Some(4));
+        assert_eq!(find_inbox_id(&json!([ { "id": 8, "naam": "inbox" } ])), Some(8));
+    }
+
+    #[test]
+    fn falls_back_to_the_first_folder_without_a_matching_name() {
+        let folders = json!({ "Items": [ { "id": 3, "naam": "Iets anders" }, { "id": 4, "naam": "Nog iets" } ] });
+        assert_eq!(find_inbox_id(&folders), Some(3));
+        // First folder without a usable id is skipped.
+        let folders = json!({ "Items": [ { "naam": "kapot" }, { "id": 5, "naam": "x" } ] });
+        assert_eq!(find_inbox_id(&folders), Some(5));
+    }
+
+    #[test]
+    fn no_inbox_when_there_are_no_usable_folders() {
+        assert_eq!(find_inbox_id(&json!({ "Items": [] })), None);
+        assert_eq!(find_inbox_id(&json!({ "oops": true })), None);
+        assert_eq!(find_inbox_id(&json!({ "Items": [ { "naam": "x" } ] })), None);
+    }
+
+    #[test]
+    fn plans_one_job_per_school_year_newest_first() {
+        // Magister lists the oldest year first; the old code exported only that one.
+        let (jobs, warnings) = jobs(json!({ "Items": [
+            { "Id": 11, "Begin": "2023-08-01T00:00:00.0000000Z", "Einde": "2024-07-31T00:00:00.0000000Z" },
+            { "Id": 12, "Begin": "2024-08-01T00:00:00.0000000Z", "Einde": "2025-07-31T00:00:00.0000000Z" },
+            { "Id": 13, "Begin": "2025-08-01T00:00:00.0000000Z", "Einde": "2026-07-31T00:00:00.0000000Z" },
+        ]}));
+        assert!(warnings.is_empty());
+        assert_eq!(
+            jobs.iter().map(|j| (j.schoolyear_id, j.file_name.as_str(), j.peildatum.as_str())).collect::<Vec<_>>(),
+            vec![
+                (13, "cijfers-2025-2026.json", "2026-07-31"),
+                (12, "cijfers-2024-2025.json", "2025-07-31"),
+                (11, "cijfers-2023-2024.json", "2024-07-31"),
+            ]
+        );
+    }
+
+    #[test]
+    fn accepts_lowercase_keys_and_a_bare_array() {
+        let (jobs, warnings) = jobs(json!([
+            { "id": 5, "begin": "2025-08-01T00:00:00Z", "einde": "2026-07-31T00:00:00Z" }
+        ]));
+        assert!(warnings.is_empty());
+        assert_eq!(jobs.len(), 1);
+        assert_eq!(jobs[0].schoolyear_id, 5);
+        assert_eq!(jobs[0].peildatum, "2026-07-31");
+    }
+
+    #[test]
+    fn falls_back_when_dates_are_missing() {
+        let (jobs, _) = jobs(json!({ "Items": [ { "Id": 9 } ] }));
+        assert_eq!(jobs[0].label, "id9");
+        assert_eq!(jobs[0].file_name, "cijfers-id9.json");
+        assert_eq!(jobs[0].peildatum, "2027-08-01");
+    }
+
+    #[test]
+    fn two_enrolments_in_one_year_get_distinct_files() {
+        let (jobs, _) = jobs(json!({ "Items": [
+            { "Id": 1, "Begin": "2025-08-01T00:00:00Z", "Einde": "2026-01-31T00:00:00Z" },
+            { "Id": 2, "Begin": "2025-08-01T00:00:00Z", "Einde": "2026-07-31T00:00:00Z" },
+        ]}));
+        assert_eq!(jobs.len(), 2);
+        assert_ne!(jobs[0].file_name, jobs[1].file_name);
+    }
+
+    #[test]
+    fn reports_unusable_answers_instead_of_failing_silently() {
+        let (j, w) = jobs(json!({ "Items": [] }));
+        assert!(j.is_empty());
+        assert_eq!(w, vec!["cijfers: geen schooljaren gevonden".to_string()]);
+
+        let (j, w) = jobs(json!({ "oops": true }));
+        assert!(j.is_empty());
+        assert!(w[0].contains("onverwacht response-formaat"));
+
+        let (j, w) = jobs(json!({ "Items": [ { "Begin": "2025-08-01T00:00:00Z" }, { "Id": 3, "Begin": "2025-08-01T00:00:00Z", "Einde": "2026-07-31T00:00:00Z" } ]}));
+        assert_eq!(j.len(), 1);
+        assert_eq!(w.len(), 1);
+        assert!(w[0].contains("zonder Id"));
+    }
 }

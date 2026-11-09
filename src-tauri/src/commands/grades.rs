@@ -237,5 +237,8 @@ pub async fn get_recent_grades(
                 .map_err(|e| e.to_string())
         })?;
 
+    // Every other fetch logs its outcome; this one never did, so a missing
+    // result looked the same as a request that stalled.
+    log::debug!("Got {} recent grades", items.len());
     Ok(items)
 }

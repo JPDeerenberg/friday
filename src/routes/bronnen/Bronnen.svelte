@@ -1,9 +1,25 @@
 <script lang="ts">
-  import { personId, resumedAt } from "$lib/stores";
+  import { personId, resumedAt, userSettings } from "$lib/stores";
+  import { get } from "svelte/store";
+  import { openBron } from "$lib/bron-actions";
   import { getBronnen, getExternalBronSources } from "$lib/api";
   import { getFileIcon } from "$lib/icons";
   import { cacheGet, cacheRefresh } from "$lib/cache";
   import { onMount, untrack } from "svelte";
+
+  // One open/download at a time; the buttons used to be dead links.
+  let openingBron = $state<string | null>(null);
+  async function handleOpenBron(item: any) {
+    if (openingBron !== null) return;
+    openingBron = item.Naam;
+    try {
+      await openBron(item, get(userSettings).downloadDir || "");
+    } catch (e) {
+      alert(`Openen mislukt: ${e instanceof Error ? e.message : e}`);
+    } finally {
+      openingBron = null;
+    }
+  }
   import { fade, fly, slide } from "svelte/transition";
   import IconButton from "$lib/components/IconButton.svelte";
 
@@ -368,11 +384,11 @@
 
               <div class="flex items-center gap-3">
                 {#if item.BronSoort === 3}
-                  <a
-                    href={item.Links.find((l: any) => l.Rel === "content")
-                      ?.Href}
-                    target="_blank"
-                    class="p-3 bg-surface-950/50 hover:bg-primary-500/10 rounded-full text-primary-400 transition-all border border-white/5 shadow-inner active:scale-90"
+                  <button
+                    type="button"
+                    onclick={() => handleOpenBron(item)}
+                    disabled={openingBron !== null}
+                    class="p-3 bg-surface-950/50 hover:bg-primary-500/10 rounded-full text-primary-400 transition-all border border-white/5 shadow-inner active:scale-90 disabled:opacity-50"
                     aria-label="Openen"
                   >
                     <svg
@@ -390,13 +406,13 @@
                         y2="3"
                       /></svg
                     >
-                  </a>
+                  </button>
                 {:else if item.BronSoort === 1}
-                  <a
-                    href={item.Links.find((l: any) => l.Rel === "content")
-                      ?.Href}
-                    target="_blank"
-                    class="p-3 bg-surface-950/50 hover:bg-primary-500/10 rounded-full text-primary-400 transition-all border border-white/5 shadow-inner active:scale-90"
+                  <button
+                    type="button"
+                    onclick={() => handleOpenBron(item)}
+                    disabled={openingBron !== null}
+                    class="p-3 bg-surface-950/50 hover:bg-primary-500/10 rounded-full text-primary-400 transition-all border border-white/5 shadow-inner active:scale-90 disabled:opacity-50"
                     aria-label="Download"
                   >
                     <svg
@@ -414,7 +430,7 @@
                         y2="3"
                       /></svg
                     >
-                  </a>
+                  </button>
                 {/if}
               </div>
             </div>

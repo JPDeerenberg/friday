@@ -21,9 +21,11 @@
 
 import type { MagisterMethod, SessionTokens } from "./backend.ts";
 import { sanitizeHtml } from "./sanitize.ts";
+import { buildSubscribeBody } from "./activities.ts";
 import type {
   Absence,
   Assignment,
+  AssignmentVersion,
   CalendarEvent,
   Contact,
   Grade,
@@ -36,17 +38,36 @@ import type {
 
 /** Minimal Tier-A surface Tier-B builds on. `WebBackend` satisfies this structurally. */
 export interface TierA {
-  magister<T>(tokens: SessionTokens, method: MagisterMethod, path: string, body?: unknown): Promise<T>;
+  magister<T>(
+    tokens: SessionTokens,
+    method: MagisterMethod,
+    path: string,
+    body?: unknown,
+  ): Promise<T>;
   /** Raw bytes (photos, files). Optional: helpers needing it fall back when absent. */
-  magisterBytes?(tokens: SessionTokens, path: string): Promise<Uint8Array | null>;
+  magisterBytes?(
+    tokens: SessionTokens,
+    path: string,
+  ): Promise<Uint8Array | null>;
 }
 
 /** MIME sniff for fetched bytes (PNG/JPEG/GIF magic). */
 export function sniffImageMime(bytes: Uint8Array): string {
-  if (bytes.length > 4 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) {
+  if (
+    bytes.length > 4 &&
+    bytes[0] === 0x89 &&
+    bytes[1] === 0x50 &&
+    bytes[2] === 0x4e &&
+    bytes[3] === 0x47
+  ) {
     return "image/png";
   }
-  if (bytes.length > 4 && bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46) {
+  if (
+    bytes.length > 4 &&
+    bytes[0] === 0x47 &&
+    bytes[1] === 0x49 &&
+    bytes[2] === 0x46
+  ) {
     return "image/gif";
   }
   return "image/jpeg";
@@ -76,7 +97,9 @@ export async function webAuthedImageUrl(
     try {
       const bytes = await be.magisterBytes?.(tokens, path);
       if (bytes && bytes.length > 0) {
-        resolved = URL.createObjectURL(new Blob([bytes as BlobPart], { type: sniffImageMime(bytes) }));
+        resolved = URL.createObjectURL(
+          new Blob([bytes as BlobPart], { type: sniffImageMime(bytes) }),
+        );
       }
     } catch {
       resolved = null;
@@ -144,13 +167,19 @@ export function normalizeGrades(data: unknown): Grade[] {
   if (data && typeof data === "object") {
     const obj = data as Record<string, unknown>;
     const direct = itemsArray(data);
-    if (direct.length > 0 || Array.isArray(obj["Items"]) || Array.isArray(obj["items"])) {
+    if (
+      direct.length > 0 ||
+      Array.isArray(obj["Items"]) ||
+      Array.isArray(obj["items"])
+    ) {
       return direct as Grade[];
     }
     if (Array.isArray(data)) return data as Grade[];
     const flat = extractVakGrades(obj["CijferVakken"]);
     if (flat.length > 0) return flat;
-    const nested = (obj["CijferOverzicht"] as Record<string, unknown> | undefined)?.["CijferVakken"];
+    const nested = (
+      obj["CijferOverzicht"] as Record<string, unknown> | undefined
+    )?.["CijferVakken"];
     const flatNested = extractVakGrades(nested);
     if (flatNested.length > 0) return flatNested;
   }
@@ -158,7 +187,9 @@ export function normalizeGrades(data: unknown): Grade[] {
   return [];
 }
 
-export function selfUrlFromLinks(links: Link[] | null | undefined): string | null {
+export function selfUrlFromLinks(
+  links: Link[] | null | undefined,
+): string | null {
   const href = links?.find((l) => l.Rel === "Self")?.Href;
   if (!href) return null;
   return stripApiPrefix(href);
@@ -168,7 +199,10 @@ export function selfUrlFromLinks(links: Link[] | null | undefined): string | nul
  * Merge absences into events via the nested `Afspraak.Id`
  * (commands/calendar.rs matches `absence.afspraak.id`, not a scalar).
  */
-export function mergeAbsencesIntoEvents(events: CalendarEvent[], absences: Absence[]): CalendarEvent[] {
+export function mergeAbsencesIntoEvents(
+  events: CalendarEvent[],
+  absences: Absence[],
+): CalendarEvent[] {
   const byId = new Map<number, CalendarEvent>();
   for (const e of events) byId.set(e.Id, e);
   for (const a of absences) {
@@ -183,7 +217,11 @@ export function mergeAbsencesIntoEvents(events: CalendarEvent[], absences: Absen
   return events;
 }
 
-export function buildMessagesQuery(top?: number, skip?: number, query?: string): string {
+export function buildMessagesQuery(
+  top?: number,
+  skip?: number,
+  query?: string,
+): string {
   const params = [`top=${top ?? 15}`, `skip=${skip ?? 0}`];
   if (query) params.push(`trefwoorden=${encodeURIComponent(query)}`);
   return params.join("&");
@@ -201,24 +239,35 @@ export function buildSendMessageBody(p: {
   relatedMessageId?: number;
   attachmentIds: number[];
 }): { endpoint: string; body: unknown } {
-  const refs = (ids: number[]) => ids.map((id) => ({ id, ref_type: "persoon" }));
+  // Magister's field names are camelCase and the reference discriminator is `type`
+  // — the same body the native app sends (SendMessageRequest in models/messages.rs).
+  // This used to send snake_case (`kopie_ontvangers`, `ref_type`, …), which Magister
+  // does not understand, so sending from the web app failed.
+  const refs = (ids: number[]) => ids.map((id) => ({ id, type: "persoon" }));
   return {
     endpoint: p.isConcept ? "berichten/concepten" : "berichten/berichten",
     body: {
       ontvangers: refs(p.recipients),
-      kopie_ontvangers: refs(p.copyRecipients),
-      blinde_kopie_ontvangers: refs(p.blindCopyRecipients),
-      heeft_prioriteit: p.hasPriority,
+      kopieOntvangers: refs(p.copyRecipients),
+      blindeKopieOntvangers: refs(p.blindCopyRecipients),
+      heeftPrioriteit: p.hasPriority,
       inhoud: p.htmlContent,
       onderwerp: p.subject,
-      verzend_optie: p.sendOption ?? "standaard",
-      gerelateerd_bericht_id: p.relatedMessageId ?? null,
-      bijlagen: p.attachmentIds.map((id) => ({ id, ref_type: "upload" })),
+      verzendOptie: p.sendOption ?? "standaard",
+      // Only present for replies/forwards, like the native request.
+      ...(p.relatedMessageId != null
+        ? { gerelateerdBerichtId: p.relatedMessageId }
+        : {}),
+      bijlagen: p.attachmentIds.map((id) => ({ id, type: "upload" })),
     },
   };
 }
 
-export function buildPatchBody(messageIds: number[], path: "/IsGelezen" | "/MapId", value: boolean | number): unknown {
+export function buildPatchBody(
+  messageIds: number[],
+  path: "/IsGelezen" | "/MapId",
+  value: boolean | number,
+): unknown {
   return {
     berichten: messageIds.map((id) => ({
       berichtId: id,
@@ -227,10 +276,19 @@ export function buildPatchBody(messageIds: number[], path: "/IsGelezen" | "/MapI
   };
 }
 
-export function buildDeleteBody(messageIds: number[], areConcepts: boolean): { endpoint: string; body: unknown } {
+export function buildDeleteBody(
+  messageIds: number[],
+  areConcepts: boolean,
+): { endpoint: string; body: unknown } {
   return areConcepts
-    ? { endpoint: "berichten/concepten", body: messageIds.map((id) => ({ conceptId: id })) }
-    : { endpoint: "berichten/berichten", body: messageIds.map((id) => ({ berichtId: id })) };
+    ? {
+        endpoint: "berichten/concepten",
+        body: messageIds.map((id) => ({ conceptId: id })),
+      }
+    : {
+        endpoint: "berichten/berichten",
+        body: messageIds.map((id) => ({ berichtId: id })),
+      };
 }
 
 /**
@@ -275,13 +333,15 @@ function sanitizeEvent(e: CalendarEvent): CalendarEvent {
 
 function sanitizeMessage(m: Message): Message {
   const rec = m as unknown as Record<string, unknown>;
-  if (typeof rec["inhoud"] === "string") rec["inhoud"] = sanitizeHtml(rec["inhoud"] as string);
+  if (typeof rec["inhoud"] === "string")
+    rec["inhoud"] = sanitizeHtml(rec["inhoud"] as string);
   return m;
 }
 
 function sanitizeAssignment(a: Assignment): Assignment {
   const rec = a as unknown as Record<string, unknown>;
-  if (typeof rec["Omschrijving"] === "string") rec["Omschrijving"] = sanitizeHtml(rec["Omschrijving"] as string);
+  if (typeof rec["Omschrijving"] === "string")
+    rec["Omschrijving"] = sanitizeHtml(rec["Omschrijving"] as string);
   return a;
 }
 
@@ -297,8 +357,16 @@ export async function webGetCalendarEvents(
   const s = truncateDate(start);
   const e = truncateDate(end);
   const [eventsData, absencesData] = await Promise.all([
-    be.magister<unknown>(tokens, "GET", `personen/${personId}/afspraken?tot=${e}&van=${s}`),
-    be.magister<unknown>(tokens, "GET", `personen/${personId}/absenties?tot=${e}&van=${s}`),
+    be.magister<unknown>(
+      tokens,
+      "GET",
+      `personen/${personId}/afspraken?tot=${e}&van=${s}`,
+    ),
+    be.magister<unknown>(
+      tokens,
+      "GET",
+      `personen/${personId}/absenties?tot=${e}&van=${s}`,
+    ),
   ]);
   const events = itemsArray(eventsData) as CalendarEvent[];
   const absences = itemsArray(absencesData) as Absence[];
@@ -326,7 +394,11 @@ export async function webGetCalendarEvent(
   personId: number,
   eventId: number,
 ): Promise<CalendarEvent> {
-  const event = await be.magister<CalendarEvent>(tokens, "GET", `personen/${personId}/afspraken/${eventId}`);
+  const event = await be.magister<CalendarEvent>(
+    tokens,
+    "GET",
+    `personen/${personId}/afspraken/${eventId}`,
+  );
   event.self_url = `personen/${personId}/afspraken/${eventId}`;
   return sanitizeEvent(event);
 }
@@ -345,7 +417,12 @@ export async function webCreateCalendarEvent(
     eventType?: number;
   },
 ): Promise<void> {
-  await be.magister(tokens, "POST", `personen/${personId}/afspraken`, buildCreateEventBody(params));
+  await be.magister(
+    tokens,
+    "POST",
+    `personen/${personId}/afspraken`,
+    buildCreateEventBody(params),
+  );
 }
 
 export async function webUpdateCalendarEvent(
@@ -357,7 +434,11 @@ export async function webUpdateCalendarEvent(
   await be.magister(tokens, "PUT", selfUrl, JSON.parse(eventJson));
 }
 
-export async function webDeleteCalendarEvent(be: TierA, tokens: SessionTokens, selfUrl: string): Promise<void> {
+export async function webDeleteCalendarEvent(
+  be: TierA,
+  tokens: SessionTokens,
+  selfUrl: string,
+): Promise<void> {
   await be.magister(tokens, "DELETE", selfUrl);
 }
 
@@ -381,7 +462,11 @@ export async function webToggleCalendarEventDone(
  * `{"location": ...}` wrapper or 302 — browsers swallow the latter silently)
  * and return a Blob for the browser to save.
  */
-export async function webDownloadFile(be: TierA, tokens: SessionTokens, url: string): Promise<Blob> {
+export async function webDownloadFile(
+  be: TierA,
+  tokens: SessionTokens,
+  url: string,
+): Promise<Blob> {
   let path = stripApiPrefix(url);
   const endpoint = tokens.apiEndpoint.replace(/\/$/, "");
   if (/^https?:\/\//.test(path)) {
@@ -397,8 +482,14 @@ export async function webDownloadFile(be: TierA, tokens: SessionTokens, url: str
   // Fast path: JSON location wrapper answered inline.
   try {
     const first = await be.magister<unknown>(tokens, "GET", path);
-    if (first && typeof first === "object" && typeof (first as Record<string, unknown>)["location"] === "string") {
-      return await fetchBlob((first as Record<string, unknown>)["location"] as string);
+    if (
+      first &&
+      typeof first === "object" &&
+      typeof (first as Record<string, unknown>)["location"] === "string"
+    ) {
+      return await fetchBlob(
+        (first as Record<string, unknown>)["location"] as string,
+      );
     }
     if (first instanceof Blob) return first;
   } catch {
@@ -411,7 +502,11 @@ export async function webDownloadFile(be: TierA, tokens: SessionTokens, url: str
     const redirect = extractHtmlRedirect(raw.text);
     if (redirect) throw new Error(`OPEN_IN_BROWSER:${redirect}`);
   }
-  const resolved = await be.magister<{ location?: string }>(tokens, "GET", `${path}${sep}__resolve=1`);
+  const resolved = await be.magister<{ location?: string }>(
+    tokens,
+    "GET",
+    `${path}${sep}__resolve=1`,
+  );
   if (!resolved?.location) throw new Error("Kon downloadlink niet resolven.");
   return await fetchBlob(resolved.location);
 }
@@ -480,17 +575,20 @@ export async function webGetBulkGradeExtraInfo(
 ): Promise<Record<number, GradeExtraInfo>> {
   const out: Record<number, GradeExtraInfo> = {};
   const queue = [...kolomIds];
-  const workers = Array.from({ length: Math.min(concurrency, queue.length) }, async () => {
-    while (queue.length > 0) {
-      const id = queue.shift();
-      if (id === undefined) return;
-      try {
-        out[id] = await fetchOne(id);
-      } catch {
-        // Skip failed columns, mirroring the Rust collect-ok behavior.
+  const workers = Array.from(
+    { length: Math.min(concurrency, queue.length) },
+    async () => {
+      while (queue.length > 0) {
+        const id = queue.shift();
+        if (id === undefined) return;
+        try {
+          out[id] = await fetchOne(id);
+        } catch {
+          // Skip failed columns, mirroring the Rust collect-ok behavior.
+        }
       }
-    }
-  });
+    },
+  );
   await Promise.all(workers);
   return out;
 }
@@ -501,18 +599,24 @@ export async function webGetRecentGrades(
   personId: number,
   top = 5,
 ): Promise<Grade[]> {
-  const data = await be.magister<unknown>(tokens, "GET", `personen/${personId}/cijfers/laatste?top=${top}&skip=0`);
+  const data = await be.magister<unknown>(
+    tokens,
+    "GET",
+    `personen/${personId}/cijfers/laatste?top=${top}&skip=0`,
+  );
   return normalizeGrades(data);
 }
 
 // ─── Messages ──────────────────────────────────────────────────────────────
 
-export async function webGetMessageFolders(be: TierA, tokens: SessionTokens): Promise<MessagesFolder[]> {
-  const data = await be.magister<{ Items?: MessagesFolder[]; items?: MessagesFolder[] }>(
-    tokens,
-    "GET",
-    "berichten/mappen/alle",
-  );
+export async function webGetMessageFolders(
+  be: TierA,
+  tokens: SessionTokens,
+): Promise<MessagesFolder[]> {
+  const data = await be.magister<{
+    Items?: MessagesFolder[];
+    items?: MessagesFolder[];
+  }>(tokens, "GET", "berichten/mappen/alle");
   return data.Items ?? data.items ?? [];
 }
 
@@ -533,8 +637,16 @@ export async function webGetMessages(
   return (data.Items ?? data.items ?? []).map(sanitizeMessage);
 }
 
-export async function webGetMessageDetail(be: TierA, tokens: SessionTokens, selfLink: string): Promise<Message> {
-  const msg = await be.magister<Message>(tokens, "GET", stripApiPrefix(selfLink));
+export async function webGetMessageDetail(
+  be: TierA,
+  tokens: SessionTokens,
+  selfLink: string,
+): Promise<Message> {
+  const msg = await be.magister<Message>(
+    tokens,
+    "GET",
+    stripApiPrefix(selfLink),
+  );
   return sanitizeMessage(msg);
 }
 
@@ -564,7 +676,12 @@ export async function webMarkMessagesAsRead(
   messageIds: number[],
   read: boolean,
 ): Promise<void> {
-  await be.magister(tokens, "PATCH", "berichten/berichten", buildPatchBody(messageIds, "/IsGelezen", read));
+  await be.magister(
+    tokens,
+    "PATCH",
+    "berichten/berichten",
+    buildPatchBody(messageIds, "/IsGelezen", read),
+  );
 }
 
 export async function webMoveMessagesToFolder(
@@ -573,7 +690,12 @@ export async function webMoveMessagesToFolder(
   messageIds: number[],
   folderId: number,
 ): Promise<void> {
-  await be.magister(tokens, "PATCH", "berichten/berichten", buildPatchBody(messageIds, "/MapId", folderId));
+  await be.magister(
+    tokens,
+    "PATCH",
+    "berichten/berichten",
+    buildPatchBody(messageIds, "/MapId", folderId),
+  );
 }
 
 export async function webDeleteMessages(
@@ -602,6 +724,67 @@ export async function webSearchContacts(
 
 // ─── Assignments ───────────────────────────────────────────────────────────
 
+const ASSIGNMENTS_PAGE = 50;
+const ASSIGNMENTS_MAX_PAGES = 40;
+
+/**
+ * The `opdrachten` request for one page. Magister's assignments endpoint takes
+ * `startdatum`/`einddatum` (as Discipulus and the native app send); the
+ * calendar-style `van`/`tot` used before are ignored by it, so the server answered
+ * with its default window and older school years never came back.
+ */
+export function assignmentsPath(
+  personId: number,
+  start: string,
+  end: string,
+  skip: number,
+): string {
+  return (
+    `personen/${personId}/opdrachten?startdatum=${truncateDate(start)}&einddatum=${truncateDate(end)}` +
+    `&top=${ASSIGNMENTS_PAGE}&skip=${skip}`
+  );
+}
+
+/**
+ * Every assignment in the range, raw, page by page. Stops at a short page or when
+ * a page brings nothing new (a server that ignores `skip` would otherwise repeat
+ * the first page forever).
+ */
+export async function webFetchAssignmentItems(
+  be: TierA,
+  tokens: SessionTokens,
+  personId: number,
+  start: string,
+  end: string,
+): Promise<Assignment[]> {
+  const all: Assignment[] = [];
+  const seen = new Set<number>();
+  for (let page = 0; page < ASSIGNMENTS_MAX_PAGES; page++) {
+    const data = await be.magister<{
+      Items?: Assignment[];
+      items?: Assignment[];
+    }>(
+      tokens,
+      "GET",
+      assignmentsPath(personId, start, end, page * ASSIGNMENTS_PAGE),
+    );
+    const items = data?.Items ?? data?.items;
+    if (!Array.isArray(items))
+      throw new Error("onverwacht antwoord voor opdrachten");
+    let added = 0;
+    for (const item of items) {
+      const id = (item as { Id?: number }).Id;
+      if (typeof id !== "number" || !seen.has(id)) {
+        if (typeof id === "number") seen.add(id);
+        all.push(item);
+        added++;
+      }
+    }
+    if (items.length < ASSIGNMENTS_PAGE || added === 0) break;
+  }
+  return all;
+}
+
 export async function webGetAssignments(
   be: TierA,
   tokens: SessionTokens,
@@ -609,12 +792,9 @@ export async function webGetAssignments(
   start: string,
   end: string,
 ): Promise<Assignment[]> {
-  const data = await be.magister<{ Items?: Assignment[]; items?: Assignment[] }>(
-    tokens,
-    "GET",
-    `personen/${personId}/opdrachten?van=${truncateDate(start)}&tot=${truncateDate(end)}`,
+  return (await webFetchAssignmentItems(be, tokens, personId, start, end)).map(
+    sanitizeAssignment,
   );
-  return (data.Items ?? data.items ?? []).map(sanitizeAssignment);
 }
 
 export async function webGetAssignmentDetail(
@@ -622,8 +802,50 @@ export async function webGetAssignmentDetail(
   tokens: SessionTokens,
   selfUrl: string,
 ): Promise<Assignment> {
-  const detail = await be.magister<Assignment>(tokens, "GET", stripApiPrefix(selfUrl));
+  const detail = await be.magister<Assignment>(
+    tokens,
+    "GET",
+    stripApiPrefix(selfUrl),
+  );
   return sanitizeAssignment(detail);
+}
+
+function sanitizeAssignmentVersion(v: AssignmentVersion): AssignmentVersion {
+  if (!v) return v;
+  const out = { ...v };
+  for (const key of [
+    "LeerlingOpmerking",
+    "DocentOpmerking",
+    "Omschrijving",
+  ] as const) {
+    if (typeof out[key] === "string")
+      out[key] = sanitizeHtml(out[key] as string);
+  }
+  return out;
+}
+
+/** One assignment version (own comment/attachments, teacher feedback, grade), sanitized for display. */
+export async function webGetAssignmentVersion(
+  be: TierA,
+  tokens: SessionTokens,
+  selfUrl: string,
+): Promise<AssignmentVersion> {
+  return sanitizeAssignmentVersion(
+    await webGetAssignmentVersionRaw(be, tokens, selfUrl),
+  );
+}
+
+/** The version exactly as Magister sends it — what a hand-in must post back (no sanitizing). */
+export async function webGetAssignmentVersionRaw(
+  be: TierA,
+  tokens: SessionTokens,
+  selfUrl: string,
+): Promise<AssignmentVersion> {
+  return await be.magister<AssignmentVersion>(
+    tokens,
+    "GET",
+    stripApiPrefix(selfUrl),
+  );
 }
 
 export async function webHandInAssignment(
@@ -633,7 +855,12 @@ export async function webHandInAssignment(
   opdrachtId: number,
   versionJson: string,
 ): Promise<void> {
-  await be.magister(tokens, "POST", `${stripApiPrefix(selfUrl)}?opdrachtId=${opdrachtId}`, JSON.parse(versionJson));
+  await be.magister(
+    tokens,
+    "POST",
+    `${stripApiPrefix(selfUrl)}?opdrachtId=${opdrachtId}`,
+    JSON.parse(versionJson),
+  );
 }
 
 /**
@@ -646,12 +873,12 @@ export async function webUploadAssignmentAttachment(
   tokens: SessionTokens,
   file: File,
 ): Promise<[number, string]> {
-  const slot = await be.magister<{ id: number; storageId: string; uri: string; method: string }>(
-    tokens,
-    "POST",
-    "bestanden/upload",
-    { name: file.name },
-  );
+  const slot = await be.magister<{
+    id: number;
+    storageId: string;
+    uri: string;
+    method: string;
+  }>(tokens, "POST", "bestanden/upload", { name: file.name });
   const put = await fetch(slot.uri, {
     method: "PUT",
     headers: {
@@ -676,6 +903,90 @@ export interface WebExportResult {
   json: string;
 }
 
+/**
+ * The id of the inbox ("Postvak IN") in the `berichten/mappen/alle` answer, picked
+ * by name with the first folder as a fallback. Accepts `id`/`naam` (what Magister
+ * sends) and `Id`/`Naam`. Mirrors `find_inbox_id` in commands/export.rs.
+ */
+export function findInboxId(folders: unknown): number | null {
+  const items = itemsArray(folders) as Array<Record<string, unknown>>;
+  const idOf = (f: Record<string, unknown>): number | null => {
+    const v = f["id"] ?? f["Id"];
+    return typeof v === "number" ? v : null;
+  };
+  const nameOf = (f: Record<string, unknown>): string => {
+    const v = f["naam"] ?? f["Naam"];
+    return typeof v === "string" ? v.trim().toLowerCase() : "";
+  };
+  const byName = items.find(
+    (f) =>
+      (nameOf(f) === "postvak in" || nameOf(f) === "inbox") && idOf(f) !== null,
+  );
+  const chosen = byName ?? items.find((f) => idOf(f) !== null);
+  return chosen ? idOf(chosen) : null;
+}
+
+export interface GradeExportJob {
+  id: number;
+  /** `2025-2026`, or `id<ID>` when the dates are missing. Unique per export. */
+  label: string;
+  /** The school year's last day, like the Grades page uses. */
+  peildatum: string;
+}
+
+/**
+ * One grade overview per school year, newest first, plus warnings for what cannot
+ * be used. Mirrors `plan_grade_exports` in commands/export.rs. (Exporting only
+ * `items[0]` — the oldest of the last four years — is what used to leave the
+ * grades out.)
+ */
+export function planGradeExports(
+  schoolyears: unknown,
+  fallbackYear: number,
+): { jobs: GradeExportJob[]; warnings: string[] } {
+  const warnings: string[] = [];
+  const items = itemsArray(schoolyears) as Array<Record<string, unknown>>;
+  if (items.length === 0) {
+    warnings.push("cijfers: geen schooljaren gevonden");
+    return { jobs: [], warnings };
+  }
+  const str = (
+    o: Record<string, unknown>,
+    pascal: string,
+    lower: string,
+  ): string | null => {
+    const v = o[pascal] ?? o[lower];
+    return typeof v === "string" ? v : null;
+  };
+  const yearOf = (v: string | null): string | null =>
+    v && /^\d{4}/.test(v) ? v.slice(0, 4) : null;
+
+  const ordered = [...items].sort((a, b) =>
+    (str(b, "Begin", "begin") ?? "").localeCompare(
+      str(a, "Begin", "begin") ?? "",
+    ),
+  );
+  const jobs: GradeExportJob[] = [];
+  for (const item of ordered) {
+    const rawId = item["Id"] ?? item["id"];
+    if (typeof rawId !== "number") {
+      warnings.push("cijfers: schooljaar zonder Id overgeslagen");
+      continue;
+    }
+    const begin = yearOf(str(item, "Begin", "begin"));
+    const einde = str(item, "Einde", "einde");
+    const endYear = yearOf(einde);
+    let label = begin && endYear ? `${begin}-${endYear}` : `id${rawId}`;
+    if (jobs.some((j) => j.label === label)) label = `${label}-${rawId}`;
+    jobs.push({
+      id: rawId,
+      label,
+      peildatum: einde ? truncateDate(einde) : `${fallbackYear + 1}-08-01`,
+    });
+  }
+  return { jobs, warnings };
+}
+
 export async function webExportAllData(
   be: TierA,
   tokens: SessionTokens,
@@ -687,67 +998,138 @@ export async function webExportAllData(
   const end = `${year}-12-31`;
   const today = todayLocal();
 
-  const settle = async (key: string, fn: () => Promise<unknown>): Promise<[string, unknown, string | null]> => {
+  const settle = async (
+    key: string,
+    fn: () => Promise<unknown>,
+  ): Promise<[string, unknown, string | null]> => {
     try {
       return [key, await fn(), null];
     } catch (e) {
-      return [key, null, `${key}: ${e instanceof Error ? e.message : String(e)}`];
+      return [
+        key,
+        null,
+        `${key}: ${e instanceof Error ? e.message : String(e)}`,
+      ];
     }
   };
 
-  const gradesChain = async (): Promise<unknown> => {
+  const gradesChain = async (): Promise<{
+    perYear: Record<string, unknown>;
+    warnings: string[];
+  }> => {
     const sy = await be.magister<unknown>(
       tokens,
       "GET",
-      `leerlingen/${personId}/aanmeldingen?begin=${year - 4}-01-01&einde=${year}-12-31`,
+      `leerlingen/${personId}/aanmeldingen?begin=2013-01-01&einde=${year}-12-31`,
     );
-    const first = itemsArray(sy)[0] as Record<string, unknown> | undefined;
-    const sid = first?.["Id"] ?? first?.["id"];
-    if (sid == null) throw new Error("geen schooljaren gevonden");
-    const eindeRaw = (first?.["Einde"] ?? first?.["einde"]) as string | undefined;
-    const peildatum = eindeRaw ? truncateDate(eindeRaw) : `${year + 1}-08-01`;
-    return be.magister<unknown>(
-      tokens,
-      "GET",
-      `personen/${personId}/aanmeldingen/${sid}/cijfers/cijferoverzichtvooraanmelding` +
-        `?actievePerioden=false&alleenBerekendeKolommen=false&alleenPTAKolommen=false&peildatum=${peildatum}`,
-    );
+    const { jobs, warnings } = planGradeExports(sy, year);
+    const perYear: Record<string, unknown> = {};
+    for (const job of jobs) {
+      try {
+        perYear[job.label] = await be.magister<unknown>(
+          tokens,
+          "GET",
+          `personen/${personId}/aanmeldingen/${job.id}/cijfers/cijferoverzichtvooraanmelding` +
+            `?actievePerioden=false&alleenBerekendeKolommen=false&alleenPTAKolommen=false&peildatum=${job.peildatum}`,
+        );
+      } catch (e) {
+        warnings.push(
+          `cijfers ${job.label}: ${e instanceof Error ? e.message : String(e)}`,
+        );
+      }
+    }
+    return { perYear, warnings };
   };
 
   const messagesChain = async (): Promise<unknown> => {
-    const folders = await be.magister<unknown>(tokens, "GET", "berichten/mappen/alle");
-    const first = itemsArray(folders)[0] as Record<string, unknown> | undefined;
-    const inboxId = first?.["Id"] ?? first?.["id"];
+    const folders = await be.magister<unknown>(
+      tokens,
+      "GET",
+      "berichten/mappen/alle",
+    );
+    const inboxId = findInboxId(folders);
     if (inboxId == null) throw new Error("geen inbox-map gevonden");
-    return be.magister<unknown>(tokens, "GET", `berichten/mappen/${inboxId}/berichten?top=200&skip=0`);
+    return be.magister<unknown>(
+      tokens,
+      "GET",
+      `berichten/mappen/${inboxId}/berichten?top=200&skip=0`,
+    );
   };
 
   const studiewijzersCombined = async (): Promise<unknown> => {
     const [sw, proj] = await Promise.all([
-      be.magister<unknown>(tokens, "GET", `leerlingen/${personId}/studiewijzers?peildatum=${today}`).catch(() => null),
-      be.magister<unknown>(tokens, "GET", `leerlingen/${personId}/projecten?peildatum=${today}`).catch(() => null),
+      be
+        .magister<unknown>(
+          tokens,
+          "GET",
+          `leerlingen/${personId}/studiewijzers?peildatum=${today}`,
+        )
+        .catch(() => null),
+      be
+        .magister<unknown>(
+          tokens,
+          "GET",
+          `leerlingen/${personId}/projecten?peildatum=${today}`,
+        )
+        .catch(() => null),
     ]);
     return { Items: [...itemsArray(sw), ...itemsArray(proj)] };
   };
 
   const parts = await Promise.all([
-    settle("lessen", () => be.magister(tokens, "GET", `personen/${personId}/afspraken?van=${start}&tot=${end}`)),
+    settle("lessen", () =>
+      be.magister(
+        tokens,
+        "GET",
+        `personen/${personId}/afspraken?van=${start}&tot=${end}`,
+      ),
+    ),
     settle("cijfers", gradesChain),
-    settle("opdrachten", () => be.magister(tokens, "GET", `personen/${personId}/opdrachten?van=${start}&tot=${end}`)),
+    settle("opdrachten", async () => ({
+      Items: await webFetchAssignmentItems(be, tokens, personId, start, end),
+    })),
     settle("berichten", messagesChain),
-    settle("afwezigheid", () => be.magister(tokens, "GET", `personen/${personId}/absenties?van=${start}&tot=${end}`)),
+    settle("afwezigheid", () =>
+      be.magister(
+        tokens,
+        "GET",
+        `personen/${personId}/absenties?van=${start}&tot=${end}`,
+      ),
+    ),
     settle("studiewijzers", studiewijzersCombined),
-    settle("leermiddelen", () => be.magister(tokens, "GET", `personen/${personId}/lesmateriaal`)),
-    settle("bronnen", () => be.magister(tokens, "GET", `personen/${personId}/bronnen?soort=0`)),
-    settle("activiteiten", () => be.magister(tokens, "GET", `personen/${personId}/activiteiten`)),
+    settle("leermiddelen", () =>
+      be.magister(tokens, "GET", `personen/${personId}/lesmateriaal`),
+    ),
+    settle("bronnen", () =>
+      be.magister(tokens, "GET", `personen/${personId}/bronnen?soort=0`),
+    ),
+    settle("activiteiten", () =>
+      be.magister(tokens, "GET", `personen/${personId}/activiteiten`),
+    ),
   ]);
 
-  const combined: Record<string, unknown> = { geexporteerdOp: new Date().toISOString() };
+  const combined: Record<string, unknown> = {
+    geexporteerdOp: new Date().toISOString(),
+  };
   const files: string[] = [];
   const warnings: string[] = [];
   for (const [key, data, err] of parts) {
     if (err) {
       warnings.push(err);
+      continue;
+    }
+    if (key === "cijfers") {
+      // One overview per school year, like the desktop app's cijfers-<jaar>.json files.
+      const grades = data as {
+        perYear: Record<string, unknown>;
+        warnings: string[];
+      };
+      warnings.push(...grades.warnings);
+      const labels = Object.keys(grades.perYear);
+      if (labels.length > 0) {
+        combined.cijfers = grades.perYear;
+        files.push(...labels.map((l) => `cijfers-${l}.json`));
+      }
       continue;
     }
     combined[key] = data;
@@ -764,8 +1146,16 @@ export async function webExportAllData(
 // All pure Tier-A passthroughs with Items/items tolerance (see
 // commands/leermiddelen.rs, activities.rs, bronnen.rs, studiewijzers.rs).
 
-export async function webGetLeermiddelen(be: TierA, tokens: SessionTokens, personId: number): Promise<any[]> {
-  const data = await be.magister<unknown>(tokens, "GET", `personen/${personId}/lesmateriaal`);
+export async function webGetLeermiddelen(
+  be: TierA,
+  tokens: SessionTokens,
+  personId: number,
+): Promise<any[]> {
+  const data = await be.magister<unknown>(
+    tokens,
+    "GET",
+    `personen/${personId}/lesmateriaal`,
+  );
   return itemsArray(data);
 }
 
@@ -778,36 +1168,54 @@ export async function webGetLeermiddelen(be: TierA, tokens: SessionTokens, perso
  * login flows our Bearer token can't complete).
  */
 export function extractHtmlRedirect(html: string): string | null {
-  const meta = html.match(/<meta[^>]+http-equiv=["']?refresh["']?[^>]*content=["']?\d+\s*;\s*url=([^"'>\s]+)/i);
+  const meta = html.match(
+    /<meta[^>]+http-equiv=["']?refresh["']?[^>]*content=["']?\d+\s*;\s*url=([^"'>\s]+)/i,
+  );
   if (meta?.[1]) return meta[1].replace(/&amp;/g, "&");
-  const script = html.match(/window\.location(?:\.href)?\s*=\s*["']([^"']+)["']/);
+  const script = html.match(
+    /window\.location(?:\.href)?\s*=\s*["']([^"']+)["']/,
+  );
   if (script?.[1]) return script[1].replace(/&amp;/g, "&");
   return null;
 }
 
-async function fetchBytes(be: TierA, tokens: SessionTokens, path: string): Promise<{ text: string } | null> {
+async function fetchBytes(
+  be: TierA,
+  tokens: SessionTokens,
+  path: string,
+): Promise<{ text: string } | null> {
   if (!be.magisterBytes) return null;
   try {
     const bytes = await be.magisterBytes(tokens, path);
-    if (!bytes || bytes.length === 0 || bytes.length > 2 * 1024 * 1024) return null;
+    if (!bytes || bytes.length === 0 || bytes.length > 2 * 1024 * 1024)
+      return null;
     return { text: new TextDecoder("utf-8", { fatal: false }).decode(bytes) };
   } catch {
     return null;
   }
 }
 
-export async function webGetLeermiddelLaunchUrl(be: TierA, tokens: SessionTokens, href: string): Promise<string> {
+export async function webGetLeermiddelLaunchUrl(
+  be: TierA,
+  tokens: SessionTokens,
+  href: string,
+): Promise<string> {
   // Normalize to an endpoint-relative path: same-host absolute URLs are
   // stripped, anything else can't be authorized and is rejected.
   let path = stripApiPrefix(href);
   const endpoint = tokens.apiEndpoint.replace(/\/$/, "");
   if (/^https?:\/\//.test(path)) {
-    if (!path.startsWith(endpoint)) throw new Error("Kon de startlink niet openen.");
+    if (!path.startsWith(endpoint))
+      throw new Error("Kon de startlink niet openen.");
     path = path.slice(endpoint.length).replace(/^\/+/, "");
   }
   try {
     const data = await be.magister<unknown>(tokens, "GET", path);
-    if (data && typeof data === "object" && typeof (data as Record<string, unknown>)["location"] === "string") {
+    if (
+      data &&
+      typeof data === "object" &&
+      typeof (data as Record<string, unknown>)["location"] === "string"
+    ) {
       return (data as Record<string, unknown>)["location"] as string;
     }
     if (typeof data === "string") {
@@ -826,7 +1234,8 @@ export async function webGetLeermiddelLaunchUrl(be: TierA, tokens: SessionTokens
     if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
       try {
         const data = JSON.parse(trimmed) as Record<string, unknown>;
-        if (typeof data["location"] === "string") return data["location"] as string;
+        if (typeof data["location"] === "string")
+          return data["location"] as string;
       } catch {
         // Not JSON after all — continue to __resolve.
       }
@@ -836,7 +1245,11 @@ export async function webGetLeermiddelLaunchUrl(be: TierA, tokens: SessionTokens
     }
   }
   const sep = path.includes("?") ? "&" : "?";
-  const resolved = await be.magister<{ location?: string }>(tokens, "GET", `${path}${sep}__resolve=1`);
+  const resolved = await be.magister<{ location?: string }>(
+    tokens,
+    "GET",
+    `${path}${sep}__resolve=1`,
+  );
   if (resolved?.location) return resolved.location;
   throw new Error("Kon de startlink niet openen.");
 }
@@ -846,8 +1259,16 @@ function sanitizeActivity(a: any): any {
   return a;
 }
 
-export async function webGetActivities(be: TierA, tokens: SessionTokens, personId: number): Promise<any[]> {
-  const data = await be.magister<unknown>(tokens, "GET", `personen/${personId}/activiteiten`);
+export async function webGetActivities(
+  be: TierA,
+  tokens: SessionTokens,
+  personId: number,
+): Promise<any[]> {
+  const data = await be.magister<unknown>(
+    tokens,
+    "GET",
+    `personen/${personId}/activiteiten`,
+  );
   return itemsArray(data).map(sanitizeActivity);
 }
 
@@ -865,13 +1286,49 @@ export async function webGetActivityElements(
   return itemsArray(data).map(sanitizeActivity);
 }
 
-export async function webGetBronnen(be: TierA, tokens: SessionTokens, path: string): Promise<any[]> {
+export async function webSubscribeActivityElement(
+  be: TierA,
+  tokens: SessionTokens,
+  personId: number,
+  activityId: number,
+  elementId: number,
+  subscriptionsUrl: string,
+): Promise<void> {
+  await be.magister(
+    tokens,
+    "POST",
+    stripApiPrefix(subscriptionsUrl),
+    buildSubscribeBody(personId, activityId, elementId),
+  );
+}
+
+export async function webUnsubscribeActivityElement(
+  be: TierA,
+  tokens: SessionTokens,
+  subscriptionsUrl: string,
+): Promise<void> {
+  await be.magister(tokens, "DELETE", stripApiPrefix(subscriptionsUrl));
+}
+
+export async function webGetBronnen(
+  be: TierA,
+  tokens: SessionTokens,
+  path: string,
+): Promise<any[]> {
   const data = await be.magister<unknown>(tokens, "GET", stripApiPrefix(path));
   return itemsArray(data);
 }
 
-export async function webGetExternalBronSources(be: TierA, tokens: SessionTokens, personId: number): Promise<any[]> {
-  const data = await be.magister<unknown>(tokens, "GET", `personen/${personId}/bronnen?soort=0`);
+export async function webGetExternalBronSources(
+  be: TierA,
+  tokens: SessionTokens,
+  personId: number,
+): Promise<any[]> {
+  const data = await be.magister<unknown>(
+    tokens,
+    "GET",
+    `personen/${personId}/bronnen?soort=0`,
+  );
   return itemsArray(data);
 }
 
@@ -895,11 +1352,19 @@ export async function webGetStudiewijzers(
   const today = todayLocal();
   const [sw, proj] = await Promise.all([
     be
-      .magister<unknown>(tokens, "GET", `leerlingen/${personId}/studiewijzers?peildatum=${today}`)
+      .magister<unknown>(
+        tokens,
+        "GET",
+        `leerlingen/${personId}/studiewijzers?peildatum=${today}`,
+      )
       .then(itemsArray)
       .catch(() => [] as unknown[]),
     be
-      .magister<unknown>(tokens, "GET", `leerlingen/${personId}/projecten?peildatum=${today}`)
+      .magister<unknown>(
+        tokens,
+        "GET",
+        `leerlingen/${personId}/projecten?peildatum=${today}`,
+      )
       .then(itemsArray)
       .catch(() => [] as unknown[]),
   ]);
@@ -908,7 +1373,8 @@ export async function webGetStudiewijzers(
 
 function sanitizeStudiewijzerDetail(detail: any): any {
   if (!detail) return detail;
-  if (typeof detail.Omschrijving === "string") detail.Omschrijving = sanitizeHtml(detail.Omschrijving);
+  if (typeof detail.Omschrijving === "string")
+    detail.Omschrijving = sanitizeHtml(detail.Omschrijving);
   const items = detail.Onderdelen?.Items;
   if (Array.isArray(items)) {
     for (const onderdeel of items) {
@@ -928,7 +1394,11 @@ export async function webGetStudiewijzerDetail(
   isProject: boolean,
 ): Promise<any> {
   const base = isProject ? "projecten" : "studiewijzers";
-  const detail = await be.magister<any>(tokens, "GET", `leerlingen/${personId}/${base}/${id}`);
+  const detail = await be.magister<any>(
+    tokens,
+    "GET",
+    `leerlingen/${personId}/${base}/${id}`,
+  );
   return sanitizeStudiewijzerDetail(detail);
 }
 

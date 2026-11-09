@@ -136,6 +136,10 @@ pub struct AssignmentAttachment {
     pub unique_id: Option<String>,
     #[serde(rename = "BronSoort")]
     pub bron_soort: i32,
+    /// Download links. Without this field serde dropped them, so the frontend
+    /// had nothing to download a handed-in or feedback attachment with.
+    #[serde(rename = "Links", default)]
+    pub links: Option<Vec<AssignmentLink>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

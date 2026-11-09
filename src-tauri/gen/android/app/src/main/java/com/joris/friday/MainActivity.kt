@@ -9,9 +9,11 @@ import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
 import android.provider.Settings
+import android.util.Log
 import android.webkit.WebView
 import android.Manifest
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.work.Constraints
@@ -19,6 +21,7 @@ import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
+import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
 class MainActivity : TauriActivity() {
@@ -54,6 +57,67 @@ class MainActivity : TauriActivity() {
             pendingTap = null
             return tap
         }
+
+        // Answer of the folder picker ("Map kiezen" in Settings): null until the
+        // user has chosen or cancelled. Read once by the web app through
+        // FridayBridge.takePickedFolder().
+        @Volatile
+        private var pickedFolder: String? = null
+
+        @JvmStatic
+        fun takePickedFolder(): String? {
+            val answer = pickedFolder
+            pickedFolder = null
+            return answer
+        }
+    }
+
+    // Must be registered before the activity is STARTED, hence a property
+    // initializer rather than something created on demand.
+    private val folderPicker = registerForActivityResult(
+        ActivityResultContracts.OpenDocumentTree()
+    ) { uri: Uri? -> handleFolderPicked(uri) }
+
+    /** Called from the WebView's JS thread, so hop to the UI thread first. */
+    fun launchFolderPicker() {
+        pickedFolder = null
+        runOnUiThread {
+            try {
+                folderPicker.launch(null)
+            } catch (e: Exception) {
+                Log.e("FridayFolder", "Could not open the folder picker", e)
+                pickedFolder = "ERROR:" + (e.message ?: e.javaClass.simpleName)
+            }
+        }
+    }
+
+    private fun handleFolderPicked(uri: Uri?) {
+        if (uri == null) {
+            pickedFolder = "CANCELLED"
+            return
+        }
+        val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+        try {
+            // Keep access after a restart, and let go of folders chosen earlier so
+            // we do not run into Android's cap on persisted permissions.
+            contentResolver.takePersistableUriPermission(uri, flags)
+            for (granted in contentResolver.persistedUriPermissions) {
+                if (granted.uri != uri) {
+                    try {
+                        contentResolver.releasePersistableUriPermission(granted.uri, flags)
+                    } catch (ignored: Exception) {
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("FridayFolder", "Could not persist folder permission", e)
+            pickedFolder = "ERROR:" + (e.message ?: e.javaClass.simpleName)
+            return
+        }
+        pickedFolder = JSONObject()
+            .put("uri", uri.toString())
+            .put("name", ShareHelper.folderLabel(uri))
+            .toString()
     }
 
     private fun rememberNotificationTap(intent: Intent?) {
@@ -65,7 +129,7 @@ class MainActivity : TauriActivity() {
 
     // Lets the web app ask whether it was opened from a notification.
     override fun onWebViewCreate(webView: WebView) {
-        webView.addJavascriptInterface(FridayBridge(applicationContext), "FridayNative")
+        webView.addJavascriptInterface(FridayBridge(applicationContext, this), "FridayNative")
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {

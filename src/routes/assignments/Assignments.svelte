@@ -4,18 +4,43 @@
   import {
     getAssignments,
     getAssignmentDetail,
+    getAssignmentVersion,
+    fetchAssignmentVersionRaw,
+    getSchoolyears,
     formatDate,
     handInAssignment,
     uploadAssignmentAttachment,
     formatTeacherName,
     downloadFile,
-    isWebBuild,
   } from "$lib/api";
-  import { formatDateFull } from "$lib/format";
   import { cacheGet, cacheRefresh } from "$lib/cache";
+  import { pickDownloadHref, describeDownload } from "$lib/attachments";
+  import {
+    sortSchoolyears,
+    currentSchoolyear,
+    schoolyearLabel,
+  } from "$lib/schoolyears";
+  import {
+    getAssignmentStatus,
+    isOverdue,
+    canHandIn,
+    filterAssignments,
+    vakOptions,
+    sortVersions,
+    latestVersion,
+    selfHref,
+    versionHasStudentContent,
+    versionHasTeacherContent,
+    validateHandIn,
+    buildHandInBody,
+    attachmentLabel,
+    htmlHasContent,
+    type StatusFilter,
+    type SortMode,
+    type HandInFile,
+  } from "$lib/assignments";
   import { onMount, untrack } from "svelte";
-  import { fade, fly, slide } from "svelte/transition";
-  import { open } from "@tauri-apps/plugin-dialog";
+  import { fade, fly } from "svelte/transition";
   import RichTextEditor from "$lib/components/RichTextEditor.svelte";
   import Button from "$lib/components/Button.svelte";
   import Chip from "$lib/components/Chip.svelte";
@@ -23,27 +48,48 @@
   import type {
     Assignment,
     AssignmentAttachment,
-    AssignmentLink,
     AssignmentVersion,
-    Docent,
+    Schoolyear,
   } from "$lib/types";
 
+  /** One version of the open assignment: the link item plus its loaded content. */
+  type VersionView = {
+    nav: AssignmentVersion;
+    data: AssignmentVersion | null;
+    failed: boolean;
+  };
+
   let assignments = $state<Assignment[]>([]);
+  let schoolyears = $state<Schoolyear[]>([]);
   let selectedAssignment = $state<Assignment | null>(null);
+  let versions = $state<VersionView[]>([]);
   let loadingList = $state(true);
   let loadingDetail = $state(false);
-  let filter = $state<"all" | "open" | "submitted" | "graded" | "overdue">(
-    "all",
-  );
+  let loadingVersions = $state(false);
+  let listError = $state<string | null>(null);
+  let detailError = $state<string | null>(null);
 
+  // List filters. `yearBegin === null` means "all school years".
+  let statusFilter = $state<StatusFilter>("all");
+  let vakFilter = $state<string | null>(null);
+  let sortMode = $state<SortMode>("deadline-desc");
+  let yearBegin = $state<string | null>(null);
+  let yearInitialised = false;
+
+  // Hand-in form
   let submissionText = $state("");
-  let attachments = $state<
-    { id: number; storageId: string; name: string; path: string }[]
-  >([]);
+  let editorKey = $state(0);
+  let attachments = $state<(HandInFile & { id: number })[]>([]);
   let isSubmitting = $state(false);
   let uploadLoading = $state(false);
+  let submitError = $state<string | null>(null);
+  let submitSuccess = $state<string | null>(null);
+  let fileInput = $state<HTMLInputElement | null>(null);
+
   let downloadingFile = $state<string | null>(null);
   let isMobile = $state(false);
+  // Ignore answers of a detail load that was overtaken by a newer click.
+  let detailToken = 0;
 
   onMount(async () => {
     const mq = window.matchMedia("(max-width: 767px)");
@@ -59,6 +105,7 @@
     const pid = get(personId);
     if (!pid) return;
     if (assignments.length === 0) loadingList = true;
+    listError = null;
     try {
       const fetcher = async () => {
         const start = "2013-01-01";
@@ -73,8 +120,29 @@
         : await cacheGet(`assignments_${pid}`, fetcher, 5 * 60 * 1000);
     } catch (e) {
       console.error("Error loading assignments:", e);
+      listError = `Opdrachten laden mislukt: ${e instanceof Error ? e.message : e}`;
     } finally {
       loadingList = false;
+    }
+    void loadSchoolyears(pid);
+  }
+
+  // The school-year selector is a convenience: when it cannot load, the list
+  // still works (it just shows every year).
+  async function loadSchoolyears(pid: number) {
+    try {
+      const years = await getSchoolyears(
+        pid,
+        "2013-01-01",
+        formatDate(new Date()),
+      );
+      schoolyears = sortSchoolyears(years);
+      if (!yearInitialised && schoolyears.length > 0) {
+        yearInitialised = true;
+        yearBegin = currentSchoolyear(schoolyears)?.begin ?? null;
+      }
+    } catch (e) {
+      console.warn("Schooljaren laden mislukt:", e);
     }
   }
 
@@ -89,15 +157,6 @@
     if (get(personId) !== null) untrack(() => loadAssignments(true));
   });
 
-  function getStatus(a: Assignment) {
-    if (a.Afgesloten) return { label: "Afgesloten", key: "closed" };
-    if (a.BeoordeeldOp) return { label: "Beoordeeld", key: "graded" };
-    if (a.IngeleverdOp) return { label: "Ingeleverd", key: "submitted" };
-    if (isOverdue(a)) return { label: "Te laat", key: "overdue" };
-    if (a.MagInleveren) return { label: "In te leveren", key: "open" };
-    return { label: "Openstaand", key: "open" };
-  }
-
   function getStatusStyle(key: string) {
     if (key === "open")
       return "bg-amber-500/15 text-amber-400 border-amber-500/25";
@@ -110,75 +169,173 @@
     return "bg-surface-700/60 text-gray-500 border-surface-600/30";
   }
 
+  const selectedYear = $derived(
+    yearBegin ? (schoolyears.find((y) => y.begin === yearBegin) ?? null) : null,
+  );
+  const yearRange = $derived(
+    selectedYear ? { begin: selectedYear.begin, einde: selectedYear.einde } : null,
+  );
+  // Everything except the status chip, so the chip counts match the list.
+  const baseList = $derived(
+    filterAssignments(assignments, {
+      status: "all",
+      vak: vakFilter,
+      year: yearRange,
+      sort: sortMode,
+    }),
+  );
   const filteredAssignments = $derived(
-    filter === "all"
-      ? assignments
-      : assignments.filter((a) => {
-          const s = getStatus(a).key;
-          if (filter === "open") return s === "open";
-          if (filter === "submitted") return s === "submitted";
-          if (filter === "graded") return s === "graded";
-          if (filter === "overdue") return s === "overdue";
-          return true;
-        }),
+    statusFilter === "all"
+      ? baseList
+      : baseList.filter((a) => getAssignmentStatus(a).key === statusFilter),
+  );
+  const statusCounts = $derived({
+    all: baseList.length,
+    open: baseList.filter((a) => getAssignmentStatus(a).key === "open").length,
+    overdue: baseList.filter((a) => getAssignmentStatus(a).key === "overdue")
+      .length,
+    submitted: baseList.filter((a) => getAssignmentStatus(a).key === "submitted")
+      .length,
+    graded: baseList.filter((a) => getAssignmentStatus(a).key === "graded")
+      .length,
+  });
+  const vaks = $derived(
+    vakOptions(
+      filterAssignments(assignments, {
+        status: "all",
+        vak: null,
+        year: yearRange,
+        sort: "title",
+      }),
+    ),
+  );
+  // A subject that does not exist in the chosen year would hide everything.
+  $effect(() => {
+    if (vakFilter !== null && !vaks.includes(vakFilter)) vakFilter = null;
+  });
+
+  const timeline = $derived(
+    versions.filter(
+      (v) =>
+        v.failed ||
+        (v.data && (versionHasStudentContent(v.data) || versionHasTeacherContent(v.data))),
+    ),
   );
 
-  async function selectAssignment(assignment: Assignment) {
-    if (selectedAssignment?.Id === assignment.Id) return;
-    loadingDetail = true;
+  function resetForm() {
     submissionText = "";
     attachments = [];
+    submitError = null;
+    editorKey += 1;
+  }
+
+  async function selectAssignment(assignment: Assignment, force = false) {
+    if (!force && selectedAssignment?.Id === assignment.Id) return;
+    const token = ++detailToken;
+    loadingDetail = true;
+    detailError = null;
+    submitSuccess = null;
+    versions = [];
+    loadingVersions = false;
+    if (selectedAssignment?.Id !== assignment.Id) resetForm();
     try {
-      const selfLink = assignment.Links?.find(
-        (l: AssignmentLink) => l.Rel === "Self",
-      )?.Href;
+      const selfLink = selfHref(assignment.Links);
+      let detail: Assignment = assignment;
       if (selfLink) {
-        selectedAssignment = await getAssignmentDetail(selfLink);
-      } else {
-        selectedAssignment = assignment;
+        try {
+          detail = await getAssignmentDetail(selfLink);
+        } catch (e) {
+          console.error(e);
+          detailError = `Details laden mislukt: ${e instanceof Error ? e.message : e}`;
+        }
       }
-    } catch (e) {
-      console.error(e);
-      selectedAssignment = assignment;
-    } finally {
+      if (token !== detailToken) return;
+      selectedAssignment = detail;
       loadingDetail = false;
+      await loadVersions(detail, token);
+    } finally {
+      if (token === detailToken) loadingDetail = false;
     }
   }
 
-  async function handlePickFile() {
-    // Web: native file picker (Tauri dialog has no web equivalent).
-    if (isWebBuild()) {
-      webFileInput?.click();
+  // The assignment only lists its versions as links; fetch each one to get the
+  // student's comment/attachments and the teacher's feedback and grade.
+  async function loadVersions(detail: Assignment, token: number) {
+    const navItems = sortVersions(detail.VersieNavigatieItems);
+    loadingVersions = navItems.length > 0;
+    const settled = await Promise.all(
+      navItems.map(async (nav): Promise<VersionView> => {
+        const href = selfHref(nav.Links);
+        if (!href) return { nav, data: null, failed: true };
+        try {
+          return { nav, data: await getAssignmentVersion(href), failed: false };
+        } catch (e) {
+          console.error(`Versie ${nav.VersieNummer} laden mislukt:`, e);
+          return { nav, data: null, failed: true };
+        }
+      }),
+    );
+    if (token !== detailToken) return;
+    versions = settled;
+    loadingVersions = false;
+  }
+
+  // ── Attachments ──────────────────────────────────────────────────────────
+
+  async function handleDownload(bijlage: AssignmentAttachment) {
+    if (downloadingFile) return;
+    const url = pickDownloadHref(bijlage.Links, bijlage.Url);
+    if (!url) {
+      alert("Deze bijlage heeft geen downloadlink.");
       return;
     }
+    downloadingFile = bijlage.Naam;
     try {
-      const selected = await open({
-        multiple: true,
-        filters: [
-          {
-            name: "Documenten",
-            extensions: ["pdf", "doc", "docx", "jpg", "png", "txt", "zip"],
-          },
-        ],
-      });
-      if (Array.isArray(selected)) {
-        uploadLoading = true;
-        for (const path of selected) {
-          const fileName = path.split(/[/\\]/).pop() || "Onbekend";
-          try {
-            const [id, storageId] = await uploadAssignmentAttachment(path);
-            attachments = [
-              ...attachments,
-              { id, storageId, name: fileName, path },
-            ];
-          } catch (e) {
-            console.error(`Upload failed for ${fileName}:`, e);
-          }
-        }
-        uploadLoading = false;
-      }
+      const downloadDir = get(userSettings).downloadDir || "";
+      const outcome = await downloadFile(url, bijlage.Naam, downloadDir);
+      const note = describeDownload(outcome);
+      if (note) alert(note);
     } catch (e) {
-      console.error(e);
+      alert(`Download mislukt: ${e instanceof Error ? e.message : e}`);
+    } finally {
+      downloadingFile = null;
+    }
+  }
+
+  // One file picker for web, desktop and Android: an <input type="file">.
+  // (The native dialog only returns content:// URIs on Android, which the
+  // upload could not read — uploads failed there without a word.)
+  function handlePickFile() {
+    fileInput?.click();
+  }
+
+  async function handleFilesPicked() {
+    const files = fileInput ? Array.from(fileInput.files ?? []) : [];
+    if (files.length === 0) return;
+    uploadLoading = true;
+    submitError = null;
+    const failed: string[] = [];
+    for (const file of files) {
+      try {
+        const [id, storageId] = await uploadAssignmentAttachment(file);
+        attachments = [
+          ...attachments,
+          {
+            id,
+            storageId,
+            name: file.name,
+            contentType: file.type || "application/octet-stream",
+          },
+        ];
+      } catch (e) {
+        console.error(`Upload failed for ${file.name}:`, e);
+        failed.push(`${file.name} (${e instanceof Error ? e.message : e})`);
+      }
+    }
+    uploadLoading = false;
+    if (fileInput) fileInput.value = "";
+    if (failed.length > 0) {
+      submitError = `Uploaden mislukt voor: ${failed.join(", ")}`;
     }
   }
 
@@ -186,112 +343,114 @@
     attachments = attachments.filter((_, i) => i !== idx);
   }
 
-  // Web file-picker backing store (hidden <input type="file"> below).
-  let webFileInput = $state<HTMLInputElement | null>(null);
-
-  async function handleWebFilesPicked() {
-    const files = webFileInput?.files;
-    if (!files || files.length === 0) return;
-    uploadLoading = true;
-    for (const file of Array.from(files)) {
-      try {
-        const [id, storageId] = await uploadAssignmentAttachment(file);
-        attachments = [
-          ...attachments,
-          { id, storageId, name: file.name, path: file.name },
-        ];
-      } catch (e) {
-        console.error(`Upload failed for ${file.name}:`, e);
-      }
-    }
-    uploadLoading = false;
-    if (webFileInput) webFileInput.value = "";
-  }
-
-  async function handleDownload(bijlage: AssignmentAttachment) {
-    if (downloadingFile) return;
-    try {
-      const url =
-        bijlage.Links?.find((l: AssignmentLink) => l.Rel === "Self")?.Href ??
-        bijlage.Url;
-      if (!url) return;
-      downloadingFile = bijlage.Naam;
-      const downloadDir = get(userSettings).downloadDir || "";
-      const path = await downloadFile(url, bijlage.Naam, downloadDir);
-      alert(`Bestand gedownload naar: ${path}`);
-    } catch (e) {
-      console.error("Download mislukt:", e);
-    } finally {
-      downloadingFile = null;
-    }
-  }
+  // ── Handing in ───────────────────────────────────────────────────────────
 
   async function handleSubmit() {
-    if (!selectedAssignment || isSubmitting) return;
-    const lastVersion = selectedAssignment.VersieNavigatieItems?.[0];
-    const selfUrl = lastVersion?.Links?.find(
-      (l: AssignmentLink) => l.Rel === "Self",
-    )?.Href;
-    if (!selfUrl || !lastVersion) {
-      alert("Geen inlever-link gevonden voor deze opdracht.");
+    if (!selectedAssignment || isSubmitting || uploadLoading) return;
+    submitError = null;
+    submitSuccess = null;
+
+    const problem = validateHandIn({
+      comment: submissionText,
+      files: attachments,
+    });
+    if (problem) {
+      submitError = problem;
       return;
     }
+
+    // Hand in on the newest version (highest number), not "the first in the list".
+    const latest = latestVersion(selectedAssignment.VersieNavigatieItems);
+    const href = selfHref(latest?.Links);
+    if (!latest || !href) {
+      submitError = "Geen inlever-link gevonden voor deze opdracht.";
+      return;
+    }
+
     isSubmitting = true;
     try {
-      const submissionBody = {
-        Id: lastVersion.Id,
-        Vak: lastVersion.Vak,
-        Status: 1,
-        OpdrachtId: lastVersion.OpdrachtId,
-        LeerlingOpmerking: submissionText,
-        DocentOpmerking: null,
-        InleverenVoor: lastVersion.InleverenVoor,
-        IngeleverdOp: new Date().toISOString(),
-        GestartOp: null,
-        Beoordeling: null,
-        BeoordeeldOp: null,
-        VersieNummer: lastVersion.VersieNummer,
-        IsTeLaat: false,
-        Omschrijving: lastVersion.Omschrijving,
-        LeerlingBijlagen: attachments.map((a) => ({
-          Id: 0,
-          Naam: a.name,
-          ContentType: "",
-          Datum: null,
-          Grootte: 0,
-          Url: "",
-          UniqueId: a.storageId,
-          BronSoort: 1,
-          Links: null,
-        })),
-      };
+      // Post back the version as Magister has it right now, with our comment
+      // and files filled in (see buildHandInBody).
+      const fresh = await fetchAssignmentVersionRaw(href);
+      const body = buildHandInBody(fresh, {
+        comment: submissionText,
+        files: attachments,
+      });
       await handInAssignment(
-        selfUrl,
+        href,
         selectedAssignment.Id,
-        JSON.stringify(submissionBody),
+        JSON.stringify(body),
       );
+      const id = selectedAssignment.Id;
+      resetForm();
       await loadAssignments(true);
-      await selectAssignment(
-        assignments.find((a) => a.Id === selectedAssignment!.Id)!,
-      );
-      submissionText = "";
-      attachments = [];
+      const refreshed = assignments.find((a) => a.Id === id);
+      if (refreshed) await selectAssignment(refreshed, true);
+      // After the re-select: selecting clears any earlier message.
+      submitSuccess = "Ingeleverd!";
     } catch (e) {
       console.error(e);
-      alert("Inleveren mislukt: " + e);
+      submitError = `Inleveren mislukt: ${e instanceof Error ? e.message : e}`;
     } finally {
       isSubmitting = false;
     }
   }
 
-  function isOverdue(a: Assignment) {
-    if (a.IsTeLaat === true) return true;
-    if (a.IsTeLaat !== undefined && a.IsTeLaat !== null) return false;
-    return (
-      !a.IngeleverdOp && !a.Afgesloten && new Date(a.InleverenVoor) < new Date()
-    );
+  function formatWhen(iso: string | null | undefined) {
+    if (!iso) return "";
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return "";
+    return d.toLocaleDateString("nl-NL", {
+      day: "numeric",
+      month: "long",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
   }
 </script>
+
+{#snippet attachmentList(files: AssignmentAttachment[], tone: "blue" | "emerald")}
+  <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+    {#each files as file}
+      <button
+        onclick={() => handleDownload(file)}
+        disabled={downloadingFile != null}
+        class="glass p-3 rounded-m3-md flex items-center justify-between hover:bg-surface-800/40 transition-colors group cursor-pointer w-full text-left disabled:opacity-50"
+      >
+        <div class="flex items-center gap-3 overflow-hidden">
+          <div
+            class="w-8 h-8 rounded-m3-sm flex items-center justify-center shrink-0 border {tone ===
+            'blue'
+              ? 'bg-blue-500/15 border-blue-500/20 text-blue-400'
+              : 'bg-emerald-500/15 border-emerald-500/20 text-emerald-400'}"
+          >
+            {#if downloadingFile === file.Naam}
+              <div
+                class="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin"
+              ></div>
+            {:else}
+              <svg
+                class="w-4 h-4"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                ><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline
+                  points="7 10 12 15 17 10"
+                /><line x1="12" y1="15" x2="12" y2="3" /></svg
+              >
+            {/if}
+          </div>
+          <span class="text-body-small text-gray-200 truncate"
+            >{attachmentLabel(file)}</span
+          >
+        </div>
+      </button>
+    {/each}
+  </div>
+{/snippet}
 
 <div class="flex flex-col bg-surface-950 min-h-full">
   <!-- Header row: title + refresh only -->
@@ -339,15 +498,58 @@
       </IconButton>
     </div>
 
-    <!-- Filter sub-row -->
+    <!-- Filter rows -->
+    <div class="flex items-center gap-2 px-4 pb-2 overflow-x-auto no-scrollbar">
+      {#if schoolyears.length > 0}
+        <select
+          aria-label="Schooljaar"
+          value={yearBegin ?? ""}
+          onchange={(e) => {
+            const v = (e.currentTarget as HTMLSelectElement).value;
+            yearBegin = v === "" ? null : v;
+          }}
+          class="bg-surface-800 border border-white/10 rounded-m3-sm h-8 px-2 text-label-large text-gray-200 focus:outline-none focus:border-primary-500 shrink-0"
+        >
+          <option value="">Alle schooljaren</option>
+          {#each schoolyears as y}
+            <option value={y.begin}>{schoolyearLabel(y)}</option>
+          {/each}
+        </select>
+      {/if}
+      {#if vaks.length > 0}
+        <select
+          aria-label="Vak"
+          value={vakFilter ?? ""}
+          onchange={(e) => {
+            const v = (e.currentTarget as HTMLSelectElement).value;
+            vakFilter = v === "" ? null : v;
+          }}
+          class="bg-surface-800 border border-white/10 rounded-m3-sm h-8 px-2 text-label-large text-gray-200 focus:outline-none focus:border-primary-500 shrink-0 max-w-[10rem]"
+        >
+          <option value="">Alle vakken</option>
+          {#each vaks as v}
+            <option value={v}>{v}</option>
+          {/each}
+        </select>
+      {/if}
+      <select
+        aria-label="Sorteren"
+        bind:value={sortMode}
+        class="bg-surface-800 border border-white/10 rounded-m3-sm h-8 px-2 text-label-large text-gray-200 focus:outline-none focus:border-primary-500 shrink-0"
+      >
+        <option value="deadline-desc">Deadline (nieuwste)</option>
+        <option value="deadline-asc">Deadline (oudste)</option>
+        <option value="title">Titel (A-Z)</option>
+      </select>
+    </div>
     <div
       class="flex items-center gap-1.5 px-4 pb-3 overflow-x-auto no-scrollbar"
     >
-      {#each [{ id: "all", label: "Alle", count: assignments.length }, { id: "open", label: "Open", count: assignments.filter((a) => getStatus(a).key === "open").length }, { id: "overdue", label: "Te laat", count: assignments.filter((a) => getStatus(a).key === "overdue").length }, { id: "submitted", label: "Ingeleverd", count: assignments.filter((a) => getStatus(a).key === "submitted").length }, { id: "graded", label: "Beoordeeld", count: assignments.filter((a) => getStatus(a).key === "graded").length }] as f}
+      {#each [{ id: "all", label: "Alle", count: statusCounts.all }, { id: "open", label: "Open", count: statusCounts.open }, { id: "overdue", label: "Te laat", count: statusCounts.overdue }, { id: "submitted", label: "Ingeleverd", count: statusCounts.submitted }, { id: "graded", label: "Beoordeeld", count: statusCounts.graded }] as f}
         <Chip
           variant="filter"
-          selected={filter === f.id}
-          onclick={() => (filter = f.id as any)}
+          selected={statusFilter === f.id}
+          onclick={() => (statusFilter = f.id as StatusFilter)}
         >
           {f.label}
           {#if f.count > 0}
@@ -385,12 +587,21 @@
             </div>
           {/each}
         </div>
+      {:else if listError && assignments.length === 0}
+        <div
+          class="flex-1 flex flex-col items-center justify-center p-8 text-center gap-3"
+        >
+          <p class="text-red-400 text-body-medium">{listError}</p>
+          <Button variant="tonal" onclick={() => loadAssignments(true)}
+            >Opnieuw proberen</Button
+          >
+        </div>
       {:else if filteredAssignments.length === 0}
         <div
-          class="flex-1 flex flex-col items-center justify-center p-8 text-center"
+          class="flex-1 flex flex-col items-center justify-center p-8 text-center gap-3"
         >
           <svg
-            class="w-10 h-10 text-gray-700 mb-4"
+            class="w-10 h-10 text-gray-700"
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"
@@ -402,11 +613,16 @@
             /><polyline points="14 2 14 8 20 8" /></svg
           >
           <p class="text-gray-600 text-body-medium">Geen opdrachten</p>
+          {#if yearBegin !== null && assignments.length > 0}
+            <Button variant="text" onclick={() => (yearBegin = null)}
+              >Toon alle schooljaren</Button
+            >
+          {/if}
         </div>
       {:else}
         <div class="flex-1 overflow-y-auto p-3 space-y-2 custom-scrollbar">
-          {#each filteredAssignments as assignment, i}
-            {@const status = getStatus(assignment)}
+          {#each filteredAssignments as assignment, i (assignment.Id)}
+            {@const status = getAssignmentStatus(assignment)}
             <button
               onclick={() => selectAssignment(assignment)}
               style="--i: {i}"
@@ -438,28 +654,10 @@
                 <span class={isOverdue(assignment) ? "text-red-400" : ""}>
                   {new Date(assignment.InleverenVoor).toLocaleDateString(
                     "nl-NL",
-                    { day: "numeric", month: "short" },
+                    { day: "numeric", month: "short", year: "numeric" },
                   )}
                 </span>
               </div>
-              {#if isOverdue(assignment) && status.key !== "overdue"}
-                <div class="mt-1.5 flex items-center gap-1 text-red-400">
-                  <svg
-                    class="w-3 h-3"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2.5"
-                    ><circle cx="12" cy="12" r="10" /><line
-                      x1="12"
-                      y1="8"
-                      x2="12"
-                      y2="12"
-                    /><line x1="12" y1="16" x2="12.01" y2="16" /></svg
-                  >
-                  <span class="text-label-small">Te laat</span>
-                </div>
-              {/if}
             </button>
           {/each}
         </div>
@@ -473,9 +671,8 @@
         : 'block'} flex-1 overflow-y-auto bg-surface-950 p-4 md:p-8 custom-scrollbar relative"
     >
       {#if loadingDetail}
-        <div class="absolute inset-0 z-20 overflow-hidden custom-scrollbar">
+        <div class="absolute inset-0 z-20 overflow-hidden custom-scrollbar bg-surface-950">
           <div class="p-4 md:p-8 max-w-4xl mx-auto space-y-8">
-            <!-- Title skeleton -->
             <div class="space-y-4">
               <div class="flex items-center gap-2">
                 <div class="h-5 skeleton-shimmer rounded-m3-sm w-20"></div>
@@ -483,7 +680,6 @@
               </div>
               <div class="h-8 skeleton-shimmer rounded-full w-3/4"></div>
               <div class="h-4 skeleton-shimmer rounded-full w-1/3"></div>
-              <!-- Info cards skeleton -->
               <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 {#each Array(4) as _}
                   <div class="glass p-3 rounded-m3-sm">
@@ -495,24 +691,25 @@
                 {/each}
               </div>
             </div>
-            <!-- Description skeleton -->
-            <div class="glass rounded-m3-md p-6">
-              <div class="h-4 skeleton-shimmer rounded-full w-1/4 mb-4"></div>
-              <div class="space-y-3">
-                <div class="h-3 skeleton-shimmer rounded-full w-full"></div>
-                <div class="h-3 skeleton-shimmer rounded-full w-5/6"></div>
-                <div class="h-3 skeleton-shimmer rounded-full w-4/6"></div>
-              </div>
-            </div>
           </div>
         </div>
       {/if}
 
       {#if selectedAssignment}
+        {@const sel = selectedAssignment}
+        {@const status = getAssignmentStatus(sel)}
         <div
           in:fly={{ y: 20, duration: 350 }}
           class="max-w-4xl mx-auto space-y-8 pb-20"
         >
+          {#if detailError}
+            <p
+              class="text-body-small text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-m3-sm px-3 py-2"
+            >
+              {detailError}
+            </p>
+          {/if}
+
           <!-- Title block -->
           <div class="space-y-4">
             <div
@@ -522,64 +719,42 @@
                 <div class="flex items-center gap-2 mb-2 flex-wrap">
                   <span
                     class="inline-flex items-center gap-1 whitespace-nowrap px-2.5 py-1 rounded-m3-sm text-label-small border {getStatusStyle(
-                      getStatus(selectedAssignment).key,
+                      status.key,
                     )}"
                   >
-                    {#if getStatus(selectedAssignment).key === "overdue"}
-                      <svg
-                        class="w-3 h-3"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="2.5"
-                        ><circle cx="12" cy="12" r="10" /><line
-                          x1="12"
-                          y1="8"
-                          x2="12"
-                          y2="12"
-                        /><line x1="12" y1="16" x2="12.01" y2="16" /></svg
-                      >
-                    {/if}
-                    {getStatus(selectedAssignment).label}
+                    {status.label}
                   </span>
-                  {#if isOverdue(selectedAssignment) && getStatus(selectedAssignment).key !== "overdue"}
+                  {#if isOverdue(sel) && status.key !== "overdue"}
                     <span
                       class="inline-flex items-center gap-1 whitespace-nowrap px-2.5 py-1 rounded-m3-sm text-label-small bg-red-500/15 text-red-400 border border-red-500/25"
                     >
-                      <svg
-                        class="w-3 h-3"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="2.5"
-                        ><circle cx="12" cy="12" r="10" /><line
-                          x1="12"
-                          y1="8"
-                          x2="12"
-                          y2="12"
-                        /><line x1="12" y1="16" x2="12.01" y2="16" /></svg
-                      >
                       Te laat
+                    </span>
+                  {/if}
+                  {#if sel.OpnieuwInleveren}
+                    <span
+                      class="inline-flex items-center gap-1 whitespace-nowrap px-2.5 py-1 rounded-m3-sm text-label-small bg-amber-500/15 text-amber-400 border border-amber-500/25"
+                    >
+                      Opnieuw inleveren gevraagd
                     </span>
                   {/if}
                 </div>
                 <h2 class="text-headline-medium text-white leading-tight">
-                  {selectedAssignment.Titel}
+                  {sel.Titel}
                 </h2>
                 <p class="text-gray-400 mt-1 text-body-medium">
-                  {selectedAssignment.Vak ?? "Geen vak opgegeven"}
+                  {sel.Vak ?? "Algemeen"}
                 </p>
               </div>
-
-              {#if selectedAssignment.Beoordeling}
+              {#if sel.Beoordeling}
                 <div
                   class="glass p-4 rounded-m3-md flex flex-col items-center justify-center min-w-[90px] border-emerald-500/30"
                 >
                   <span class="text-label-small text-emerald-400 mb-1"
-                    >Cijfer</span
+                    >Beoordeling</span
                   >
                   <span class="text-headline-large text-emerald-400"
-                    >{selectedAssignment.Beoordeling}</span
+                    >{sel.Beoordeling}</span
                   >
                 </div>
               {/if}
@@ -587,68 +762,44 @@
 
             <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <div class="glass p-3 rounded-m3-sm">
-                <div class="flex items-center gap-1.5 mb-1">
-                  <svg
-                    class="w-3 h-3 text-gray-500"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                    ><circle cx="12" cy="12" r="10" /><path
-                      d="M12 6v6l4 2"
-                    /></svg
-                  >
-                  <p class="text-label-small text-gray-500">Deadline</p>
-                </div>
+                <p class="text-label-small text-gray-500 mb-1">Deadline</p>
                 <p class="text-body-small text-gray-200">
-                  {formatDateFull(selectedAssignment.InleverenVoor)}
+                  {formatWhen(sel.InleverenVoor) || "-"}
                 </p>
               </div>
-              {#if selectedAssignment.IngeleverdOp}
+              {#if sel.IngeleverdOp}
                 <div class="glass p-3 rounded-m3-sm border-blue-500/20">
                   <p class="text-label-small text-blue-400/80 mb-1">
                     Ingeleverd op
                   </p>
                   <p class="text-body-small text-gray-200">
-                    {formatDateFull(selectedAssignment.IngeleverdOp)}
+                    {formatWhen(sel.IngeleverdOp)}
                   </p>
                 </div>
               {/if}
-              {#if selectedAssignment.BeoordeeldOp}
+              {#if sel.BeoordeeldOp}
                 <div class="glass p-3 rounded-m3-sm border-emerald-500/20">
                   <p class="text-label-small text-emerald-400/80 mb-1">
                     Beoordeeld op
                   </p>
                   <p class="text-body-small text-gray-200">
-                    {formatDateFull(selectedAssignment.BeoordeeldOp)}
+                    {formatWhen(sel.BeoordeeldOp)}
                   </p>
                 </div>
               {/if}
               <div class="glass p-3 rounded-m3-sm">
-                <div class="flex items-center gap-1.5 mb-1">
-                  <svg
-                    class="w-3 h-3 text-gray-500"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                    ><path
-                      d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"
-                    /><circle cx="12" cy="7" r="4" /></svg
-                  >
-                  <p class="text-label-small text-gray-500">Docent</p>
-                </div>
+                <p class="text-label-small text-gray-500 mb-1">Docent</p>
                 <p class="text-body-small text-gray-200 truncate">
-                  {selectedAssignment.Docenten?.map((d: Docent) =>
-                    formatTeacherName(d.Naam),
-                  ).join(", ") || "N.v.t."}
+                  {sel.Docenten?.map((d) => formatTeacherName(d.Naam)).join(
+                    ", ",
+                  ) || "N.v.t."}
                 </p>
               </div>
             </div>
           </div>
 
           <!-- Description -->
-          {#if selectedAssignment.Omschrijving}
+          {#if sel.Omschrijving}
             <div class="glass rounded-m3-md p-6 bg-surface-900/40">
               <h3
                 class="text-title-small text-gray-100 mb-4 flex items-center gap-2"
@@ -659,301 +810,199 @@
               <div
                 class="prose prose-invert prose-sm max-w-none text-gray-300 leading-relaxed"
               >
-                {@html selectedAssignment.Omschrijving}
+                {@html sel.Omschrijving}
               </div>
             </div>
           {/if}
 
           <!-- Teacher attachments -->
-          {#if selectedAssignment.Bijlagen?.length}
+          {#if sel.Bijlagen?.length}
             <div class="space-y-3">
-              <h3
-                class="text-title-small text-gray-300 flex items-center gap-2"
-              >
-                <svg
-                  class="w-4 h-4 text-blue-400"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                  ><path
-                    d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"
-                  /></svg
-                >
-                Bijlagen van docent
-              </h3>
-              <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {#each selectedAssignment.Bijlagen as file}
-                  <button
-                    onclick={() => handleDownload(file)}
-                    disabled={downloadingFile != null}
-                    class="glass p-3 rounded-m3-md flex items-center justify-between hover:bg-surface-800/40 transition-colors group cursor-pointer w-full text-left disabled:opacity-50"
-                  >
-                    <div class="flex items-center gap-3 overflow-hidden">
-                      <div
-                        class="w-8 h-8 rounded-m3-sm bg-blue-500/15 border border-blue-500/20 flex items-center justify-center text-blue-400 shrink-0"
-                      >
-                        {#if downloadingFile === file.Naam}
-                          <div
-                            class="w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full animate-spin"
-                          ></div>
-                        {:else}
-                          <svg
-                            class="w-4 h-4"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            stroke-width="2"
-                            ><path
-                              d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"
-                            /><polyline points="14 2 14 8 20 8" /></svg
-                          >
-                        {/if}
-                      </div>
-                      <span class="text-body-medium text-gray-300 truncate"
-                        >{file.Naam}</span
-                      >
-                    </div>
-                    <svg
-                      class="w-4 h-4 text-gray-600 group-hover:text-primary-400 transition-colors shrink-0"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2"
-                      ><path
-                        d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"
-                      /><polyline points="7 10 12 15 17 10" /><line
-                        x1="12"
-                        x2="12"
-                        y1="15"
-                        y2="3"
-                      /></svg
-                    >
-                  </button>
-                {/each}
-              </div>
+              <h3 class="text-title-small text-gray-300">Bijlagen van docent</h3>
+              {@render attachmentList(sel.Bijlagen, "blue")}
             </div>
           {/if}
 
-          <!-- Submission -->
-          {#if selectedAssignment.MagInleveren || selectedAssignment.OpnieuwInleveren}
-            <div class="space-y-4 pt-4 border-t border-surface-800/50">
-              <div class="flex items-center justify-between">
-                <h3 class="text-title-large text-white">Inleveren</h3>
-                {#if isSubmitting}
-                  <div
-                    class="flex items-center gap-2 text-label-medium text-primary-400 animate-pulse"
-                  >
-                    <div
-                      class="w-2 h-2 rounded-full bg-primary-500 animate-pulse"
-                    ></div>
-                    Bezig...
-                  </div>
-                {/if}
-              </div>
+          <!-- Versions: what was handed in, and the teacher's answer -->
+          {#if loadingVersions}
+            <p class="text-label-small text-gray-500">Inleveringen laden...</p>
+          {/if}
+          {#if timeline.length > 0}
+            <div class="space-y-4">
+              <h3 class="text-title-small text-gray-300">Inleveringen</h3>
+              {#each timeline as v (v.nav.Id)}
+                <div class="space-y-3" in:fade={{ duration: 200 }}>
+                  <p class="text-label-small text-gray-500">
+                    Versie {v.nav.VersieNummer ?? v.data?.VersieNummer ?? ""}
+                  </p>
+                  {#if v.failed || !v.data}
+                    <p
+                      class="text-body-small text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-m3-sm px-3 py-2"
+                    >
+                      Deze versie kon niet worden geladen.
+                    </p>
+                  {:else}
+                    {#if versionHasStudentContent(v.data)}
+                      <div
+                        class="glass rounded-m3-md p-4 space-y-3 border-blue-500/20"
+                      >
+                        <div class="flex items-center justify-between gap-3">
+                          <p class="text-label-large text-blue-300">
+                            Jouw inlevering
+                          </p>
+                          <p class="text-label-small text-gray-500">
+                            {formatWhen(v.data.IngeleverdOp)}
+                          </p>
+                        </div>
+                        {#if htmlHasContent(v.data.LeerlingOpmerking)}
+                          <div
+                            class="prose prose-invert prose-sm max-w-none text-gray-300"
+                          >
+                            {@html v.data.LeerlingOpmerking}
+                          </div>
+                        {/if}
+                        {#if v.data.LeerlingBijlagen?.length}
+                          {@render attachmentList(v.data.LeerlingBijlagen, "blue")}
+                        {/if}
+                      </div>
+                    {/if}
+                    {#if versionHasTeacherContent(v.data)}
+                      <div
+                        class="glass rounded-m3-md p-4 space-y-3 border-emerald-500/20"
+                      >
+                        <div class="flex items-center justify-between gap-3">
+                          <p class="text-label-large text-emerald-300">
+                            Feedback van docent
+                          </p>
+                          <p class="text-label-small text-gray-500">
+                            {formatWhen(v.data.BeoordeeldOp)}
+                          </p>
+                        </div>
+                        {#if v.data.Beoordeling}
+                          <p class="text-title-medium text-emerald-400">
+                            Beoordeling: {v.data.Beoordeling}
+                          </p>
+                        {/if}
+                        {#if htmlHasContent(v.data.DocentOpmerking)}
+                          <div
+                            class="prose prose-invert prose-sm max-w-none text-gray-300"
+                          >
+                            {@html v.data.DocentOpmerking}
+                          </div>
+                        {/if}
+                        {#if v.data.FeedbackBijlagen?.length}
+                          {@render attachmentList(v.data.FeedbackBijlagen, "emerald")}
+                        {/if}
+                      </div>
+                    {/if}
+                  {/if}
+                </div>
+              {/each}
+            </div>
+          {/if}
 
+          <!-- Hand in -->
+          {#if canHandIn(sel)}
+            <div class="glass rounded-m3-md overflow-hidden">
+              <div class="px-5 py-4 border-b border-surface-800/50">
+                <h3 class="text-title-small text-gray-100">
+                  {sel.IngeleverdOp ? "Opnieuw inleveren" : "Inleveren"}
+                </h3>
+              </div>
               <div class="space-y-3">
-                <RichTextEditor
-                  content={submissionText}
-                  placeholder="Typ hier je opmerking voor de docent (met opmaak)..."
-                  onUpdate={(html) => (submissionText = html)}
-                />
+                {#key editorKey}
+                  <RichTextEditor
+                    content={submissionText}
+                    placeholder="Typ hier je opmerking voor de docent (met opmaak)..."
+                    onUpdate={(html) => (submissionText = html)}
+                  />
+                {/key}
 
                 {#if attachments.length > 0 || uploadLoading}
                   <div
                     class="px-5 py-3 bg-surface-900/50 border-t border-surface-800/50 space-y-2"
                   >
-                    <div class="flex items-center justify-between">
-                      <span class="text-label-medium text-gray-500"
-                        >Bijlagen ({attachments.length})</span
+                    {#each attachments as a, idx (a.storageId)}
+                      <div
+                        class="flex items-center justify-between gap-3 text-body-small text-gray-200"
                       >
-                      {#if uploadLoading}
-                        <div
-                          class="w-4 h-4 border-2 border-primary-500 border-t-transparent rounded-full animate-spin"
-                        ></div>
-                      {/if}
-                    </div>
-                    <div class="flex flex-wrap gap-2">
-                      {#each attachments as att, i}
-                        <div
-                          transition:slide={{ axis: "x" }}
-                          class="pl-3 pr-2 py-1.5 rounded-m3-sm bg-surface-800 border border-surface-700 flex items-center gap-2"
+                        <span class="truncate">{a.name}</span>
+                        <IconButton
+                          onclick={() => removeAttachment(idx)}
+                          aria-label="Bijlage verwijderen"
+                          title="Verwijderen"
                         >
                           <svg
-                            class="w-3 h-3 text-gray-500 shrink-0"
+                            class="w-4 h-4"
                             viewBox="0 0 24 24"
                             fill="none"
                             stroke="currentColor"
-                            stroke-width="2"
-                            ><path
-                              d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"
+                            stroke-width="2.5"
+                            stroke-linecap="round"
+                            ><line x1="18" y1="6" x2="6" y2="18" /><line
+                              x1="6"
+                              y1="6"
+                              x2="18"
+                              y2="18"
                             /></svg
                           >
-                          <span class="text-label-medium text-gray-300"
-                            >{att.name}</span
-                          >
-                          <IconButton
-                            onclick={() => removeAttachment(i)}
-                            class="w-6! h-6! bg-red-500/10! text-red-500! hover:bg-red-500! hover:text-white!"
-                            aria-label="Verwijder bijlage"
-                          >
-                            <svg
-                              class="w-3 h-3"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              stroke="currentColor"
-                              stroke-width="3"
-                              ><line x1="18" y1="6" x2="6" y2="18" /><line
-                                x1="6"
-                                y1="6"
-                                x2="18"
-                                y2="18"
-                              /></svg
-                            >
-                          </IconButton>
-                        </div>
-                      {/each}
-                    </div>
+                        </IconButton>
+                      </div>
+                    {/each}
+                    {#if uploadLoading}
+                      <p class="text-label-small text-gray-500">Uploaden...</p>
+                    {/if}
                   </div>
                 {/if}
 
-                <div class="flex items-center justify-between">
-                  <!-- Web file picker (hidden; opened via handlePickFile). -->
-                  {#if isWebBuild()}
-                    <input
-                      type="file"
-                      multiple
-                      class="hidden"
-                      bind:this={webFileInput}
-                      onchange={handleWebFilesPicked}
-                    />
-                  {/if}
+                {#if submitError}
+                  <p class="px-5 text-body-small text-red-400">{submitError}</p>
+                {/if}
+
+                <div
+                  class="px-5 pb-4 flex flex-wrap items-center justify-between gap-3"
+                >
+                  <input
+                    bind:this={fileInput}
+                    type="file"
+                    multiple
+                    class="hidden"
+                    onchange={handleFilesPicked}
+                  />
                   <Button
-                    variant="text"
+                    variant="tonal"
                     onclick={handlePickFile}
                     disabled={uploadLoading || isSubmitting}
-                    class="px-4"
                   >
-                    <svg
-                      class="w-4 h-4"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2"
-                      ><path
-                        d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"
-                      /></svg
-                    >
                     Bijlage toevoegen
                   </Button>
-
                   <Button
-                    variant="filled"
                     onclick={handleSubmit}
-                    disabled={isSubmitting ||
-                      uploadLoading ||
-                      (!submissionText.trim() && attachments.length === 0)}
-                    class="px-6"
+                    disabled={isSubmitting || uploadLoading}
                   >
-                    {#if isSubmitting}
-                      <div
-                        class="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin"
-                      ></div>
-                    {:else}
-                      <svg
-                        class="w-3.5 h-3.5"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="3"
-                        ><path d="m22 2-7 20-4-9-9-4Z" /><path
-                          d="M22 2 11 13"
-                        /></svg
-                      >
-                    {/if}
-                    Inleveren
+                    {isSubmitting
+                      ? "Bezig met inleveren..."
+                      : sel.IngeleverdOp
+                        ? "Opnieuw inleveren"
+                        : "Inleveren"}
                   </Button>
                 </div>
               </div>
             </div>
+          {:else if sel.Afgesloten}
+            <p class="text-body-small text-gray-500">
+              Deze opdracht is afgesloten; inleveren kan niet meer.
+            </p>
           {/if}
 
-          <!-- History -->
-          {#if (selectedAssignment.VersieNavigatieItems?.length ?? 0) > 1}
-            {@const versies = selectedAssignment.VersieNavigatieItems ?? []}
-            <div class="space-y-3">
-              <h3
-                class="text-title-small text-gray-500 flex items-center gap-2"
-              >
-                <svg
-                  class="w-4 h-4"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                  ><path d="M12 8v4l3 3" /><circle
-                    cx="12"
-                    cy="12"
-                    r="10"
-                  /></svg
-                >
-                Geschiedenis
-              </h3>
-              <div class="space-y-2">
-                {#each versies.slice(1) as version}
-                  <div
-                    class="glass p-4 rounded-m3-md flex items-center justify-between opacity-60 hover:opacity-100 transition-opacity"
-                  >
-                    <div class="flex items-center gap-4">
-                      <div
-                        class="w-9 h-9 rounded-full bg-surface-800 flex items-center justify-center text-xs font-black text-gray-500 border border-surface-700"
-                      >
-                        V{version.VersieNummer}
-                      </div>
-                      <div>
-                        <p class="text-title-small text-gray-200">
-                          {version.Omschrijving || "Ingeleverde versie"}
-                        </p>
-                        <p class="text-label-small text-gray-500">Ingeleverd</p>
-                      </div>
-                    </div>
-                    <Button variant="text" class="px-4">Bekijken</Button>
-                  </div>
-                {/each}
-              </div>
-            </div>
+          {#if submitSuccess}
+            <p class="text-body-small text-emerald-400">{submitSuccess}</p>
           {/if}
         </div>
-      {:else}
+      {:else if !loadingList && !loadingDetail}
         <div
-          class="h-full flex flex-col items-center justify-center text-center p-8 opacity-50"
+          class="hidden md:flex h-full flex-col items-center justify-center text-center"
         >
-          <div
-            class="w-20 h-20 rounded-full bg-surface-900 flex items-center justify-center mb-6 border border-surface-800 shadow-xl"
-          >
-            <svg
-              class="w-10 h-10 text-gray-600"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.5"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              ><path
-                d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"
-              /><polyline points="14 2 14 8 20 8" /><line
-                x1="16"
-                y1="13"
-                x2="8"
-                y2="13"
-              /><line x1="16" y1="17" x2="8" y2="17" /><line
-                x1="10"
-                y1="9"
-                x2="8"
-                y2="9"
-              /></svg
-            >
-          </div>
           <h3 class="text-headline-small text-white mb-2">
             Selecteer een opdracht
           </h3>

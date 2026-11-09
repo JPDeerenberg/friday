@@ -8,6 +8,7 @@ pub mod bronnen;
 pub mod calendar;
 pub mod diagnostics;
 pub mod export;
+pub mod files;
 pub mod grades;
 pub mod leermiddelen;
 pub mod messages;

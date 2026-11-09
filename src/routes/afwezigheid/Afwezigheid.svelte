@@ -2,6 +2,11 @@
   import { personId, resumedAt } from "$lib/stores";
   import { getAbsences, formatDate, getSchoolyears } from "$lib/api";
   import { cacheGet, cacheRefresh } from "$lib/cache";
+  import {
+    sortSchoolyears,
+    currentSchoolyear,
+    schoolyearLabel,
+  } from "$lib/schoolyears";
   import { onMount, untrack } from "svelte";
   import { fade, fly, slide } from "svelte/transition";
   import IconButton from "$lib/components/IconButton.svelte";
@@ -9,7 +14,11 @@
 
   let absences = $state<Absence[]>([]);
   let schoolyears = $state<Schoolyear[]>([]);
-  let selectedYearId = $state<number | null>(null);
+  // Keyed by the year's start date: `id` can be null, and two enrolments can share a year.
+  let selectedYearBegin = $state<string | null>(null);
+  let loadError = $state<string | null>(null);
+  // Ignore the answer of a load that a newer year choice has overtaken.
+  let loadToken = 0;
   let loading = $state(true);
   let initialLoading = $state(true);
 
@@ -20,20 +29,28 @@
     if (!$personId) return;
 
     try {
-      // Schoolyears rarely change within a session — 30 min TTL, cache-first so
-      // revisiting this page doesn't re-show a loading state every time.
-      schoolyears = await cacheGet(
-        `afwezigheid_schoolyears_${$personId}`,
-        () => getSchoolyears($personId as number),
-        30 * 60 * 1000,
-      );
-      schoolyears.sort(
-        (a, b) => new Date(b.begin).getTime() - new Date(a.begin).getTime(),
-      );
+      // Magister only returns the *current* enrolment unless a date range is
+      // given — that is why only the latest year used to be selectable. Ask for
+      // everything since 2013, like the Grades page. Schoolyears rarely change
+      // within a session — 30 min TTL, cache-first so revisiting this page
+      // doesn't re-show a loading state every time.
+      const pid = $personId as number;
+      try {
+        schoolyears = sortSchoolyears(
+          await cacheGet(
+            `afwezigheid_schoolyears_all_${pid}`,
+            () => getSchoolyears(pid, "2013-01-01", formatDate(new Date())),
+            30 * 60 * 1000,
+          ),
+        );
+      } catch (e) {
+        // Without school years the page still works: it shows the last 12 months.
+        console.warn("Schooljaren laden mislukt:", e);
+      }
 
-      if (schoolyears.length > 0) {
-        const currentYear = schoolyears[0];
-        selectedYearId = currentYear.id;
+      const currentYear = currentSchoolyear(schoolyears);
+      if (currentYear) {
+        selectedYearBegin = currentYear.begin;
         van = currentYear.begin.split("T")[0];
         tot = currentYear.einde.split("T")[0];
       } else {
@@ -69,6 +86,8 @@
     );
     if (!$personId) return;
     if (force) loading = true;
+    loadError = null;
+    const token = ++loadToken;
     try {
       // Cache-first, keyed per person+date-range so switching schoolyears in the
       // selector can't serve another year's cached absences. cacheGet resolves
@@ -85,6 +104,7 @@
             () => getAbsences($personId as number, van, tot),
             5 * 60 * 1000,
           );
+      if (token !== loadToken) return;
       absences = raw.sort((a, b) => {
         const dateA = a.Start ? new Date(a.Start).getTime() : 0;
         const dateB = b.Start ? new Date(b.Start).getTime() : 0;
@@ -92,18 +112,24 @@
       });
     } catch (e) {
       console.error("Error loading absences:", e);
+      if (token === loadToken) {
+        loadError = `Absenties laden mislukt: ${e instanceof Error ? e.message : e}`;
+      }
     } finally {
-      loading = false;
+      if (token === loadToken) loading = false;
     }
   }
 
   function handleYearChange(e: Event) {
-    const id = parseInt((e.target as HTMLSelectElement).value);
-    const year = schoolyears.find((y) => y.id === id);
+    const begin = (e.target as HTMLSelectElement).value;
+    const year = schoolyears.find((y) => y.begin === begin);
     if (year) {
-      selectedYearId = id;
+      selectedYearBegin = begin;
       van = year.begin.split("T")[0];
       tot = year.einde.split("T")[0];
+      // Do not keep showing the previous year while the new one loads.
+      loading = true;
+      absences = [];
       loadAbsences();
     }
   }
@@ -192,6 +218,19 @@
         >
           Absenties
         </h1>
+        <div class="flex items-center gap-2 min-w-0">
+          {#if schoolyears.length > 1}
+            <select
+              aria-label="Schooljaar"
+              value={selectedYearBegin ?? ""}
+              onchange={handleYearChange}
+              class="bg-surface-800 border border-white/10 rounded-xl px-3 py-1.5 text-xs text-gray-300 focus:outline-none focus:border-primary-500 font-bold min-w-0"
+            >
+              {#each schoolyears as y (y.begin)}
+                <option value={y.begin}>{schoolyearLabel(y)}</option>
+              {/each}
+            </select>
+          {/if}
         <IconButton
           onclick={() => loadAbsences(true)}
           class="hover:rotate-180 duration-700"
@@ -210,6 +249,7 @@
             /></svg
           >
         </IconButton>
+        </div>
       </div>
     </div>
   </header>
@@ -240,6 +280,14 @@
           </div>
         {/each}
       </div>
+
+      {#if loadError}
+        <p
+          class="text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-2xl px-4 py-3"
+        >
+          {loadError}
+        </p>
+      {/if}
 
       {#if loading && initialLoading}
         <div class="flex flex-col items-center justify-center py-32 gap-4">

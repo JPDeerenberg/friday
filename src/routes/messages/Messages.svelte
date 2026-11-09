@@ -62,6 +62,7 @@
   let composeContacts = $state<Contact[]>([]);
   let composeRecipients = $state<Recipient[]>([]);
   let composeSending = $state(false);
+  let composeError = $state<string | null>(null);
 
   onMount(async () => {
     try {
@@ -203,6 +204,7 @@
   async function doSend() {
     if (composeRecipients.length === 0 || !composeSubject.trim()) return;
     composeSending = true;
+    composeError = null;
     try {
       await sendMessage({
         recipients: composeRecipients.map((r) => r.id),
@@ -220,7 +222,9 @@
       composeRecipients = [];
       await loadMessages(true);
     } catch (e) {
+      // Used to be console-only: a failed send looked like a dead button.
       console.error("Send failed:", e);
+      composeError = `Versturen mislukt: ${e instanceof Error ? e.message : e}`;
     }
     composeSending = false;
   }
@@ -922,12 +926,22 @@
       </div>
 
       <!-- Sticky action footer — always visible above keyboard -->
+      {#if composeError}
+        <p
+          class="shrink-0 px-5 py-2 text-body-small text-red-400 bg-surface-900 border-t border-surface-800"
+        >
+          {composeError}
+        </p>
+      {/if}
       <div
         class="shrink-0 border-t border-surface-800 px-5 py-4 bg-surface-900 flex gap-3"
       >
         <Button
           variant="tonal"
-          onclick={() => (showCompose = false)}
+          onclick={() => {
+            showCompose = false;
+            composeError = null;
+          }}
           class="flex-1"
         >
           Annuleren

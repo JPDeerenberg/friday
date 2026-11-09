@@ -69,6 +69,12 @@
   import { fade, fly, slide } from "svelte/transition";
   import { onMount, onDestroy } from "svelte";
   import { open } from "@tauri-apps/plugin-dialog";
+  import {
+    getNativeFolderBridge,
+    pickFolderViaBridge,
+    isAndroidWebView,
+    folderLabelFromUri,
+  } from "$lib/folder-picker";
 
   let isMobile = $state(false);
   let testingNotification = $state<string | null>(null);
@@ -174,6 +180,7 @@
   }
   let logClearResult = $state<string | null>(null);
   let pickingDir = $state(false);
+  let dirError = $state<string | null>(null);
 
   // --- AI config state ---
   let aiApiKey = $state("");
@@ -643,17 +650,22 @@
     exportResult = null;
     addLog("info", "Exporteren gestart...");
     try {
-      const result = await exportAllData();
+      const result = await exportAllData($userSettings.downloadDir || "");
       if (result.success) {
+        // Warnings (e.g. "cijfers: ...") used to be dropped here, so a partial
+        // export looked like a complete one. Always show them.
+        const warning = result.error ? `\n⚠️ ${result.error}` : "";
         if (isMobile) {
           const zipFile = result.files[0] ?? "friday-export.zip";
-          exportResult = `✅ 1 zip-bestand gedeeld: ${zipFile}`;
-          addLog("info", `Export voltooid: ${zipFile} gedeeld`);
+          const where = result.location ? ` in ${result.location}` : " gedeeld";
+          exportResult = `✅ 1 zip-bestand${where}: ${zipFile}${warning}`;
+          addLog("info", `Export voltooid: ${zipFile}${where}`);
         } else {
           const fileList = result.files.join(", ");
-          exportResult = `✅ ${result.files.length} bestanden geëxporteerd: ${fileList}`;
+          exportResult = `✅ ${result.files.length} bestanden geëxporteerd: ${fileList}${warning}`;
           addLog("info", `Export voltooid: ${result.files.length} bestanden`);
         }
+        if (result.error) addLog("warn", `Export met waarschuwingen: ${result.error}`);
       } else {
         exportResult = `❌ Fout: ${result.error ?? "Onbekende fout"}`;
         addLog("error", `Export mislukt: ${result.error}`);
@@ -671,7 +683,7 @@
     logExportResult = null;
     addLog("info", "Logbestand exporteren gestart...");
     try {
-      const result = await exportDebugLog();
+      const result = await exportDebugLog($userSettings.downloadDir || "");
       if (result.success) {
         logExportResult = isMobile
           ? `✅ Logbestand gedeeld: ${result.file_name}`
@@ -720,7 +732,25 @@
 
   async function pickDownloadDir() {
     pickingDir = true;
+    dirError = null;
     try {
+      // Android: the dialog plugin cannot pick a folder there, so the app has
+      // its own picker (see FridayBridge.pickFolder). The chosen folder is
+      // stored as a content:// URI and downloads/exports are saved into it.
+      const bridge = getNativeFolderBridge();
+      if (bridge) {
+        const folder = await pickFolderViaBridge(bridge);
+        if (folder) {
+          userSettings.update((s) => ({ ...s, downloadDir: folder.uri }));
+          addLog("info", `Downloadmap gekozen: ${folder.name}`);
+        }
+        return;
+      }
+      if (isAndroidWebView()) {
+        dirError =
+          "Deze versie van de app kan nog geen map kiezen. Werk de app bij en probeer het opnieuw.";
+        return;
+      }
       const selected = await open({
         directory: true,
         multiple: false,
@@ -731,12 +761,15 @@
       }
     } catch (e) {
       console.error("Map kiezen mislukt:", e);
+      dirError = `Map kiezen mislukt: ${e instanceof Error ? e.message : e}`;
+      addLog("error", `Map kiezen mislukt: ${e}`);
     } finally {
       pickingDir = false;
     }
   }
 
   function clearDownloadDir() {
+    dirError = null;
     userSettings.update((s) => ({ ...s, downloadDir: "" }));
   }
 
@@ -1433,7 +1466,7 @@
           id: "downloadDir",
           label: "Downloadmap",
           description:
-            "Kies waar gedownloade bestanden worden opgeslagen. Leeg = systeemstandaard.",
+            "Kies waar gedownloade bestanden en exports worden opgeslagen. Leeg = systeemstandaard (op Android: Download/Friday).",
           type: "download-dir",
           hideOnWeb: true,
         },
@@ -2570,7 +2603,7 @@
                             </Button>
                             {#if setting.id === "exportAll" && exportResult}
                               <p
-                                class="text-label-small text-gray-400 font-mono mt-2 text-right max-w-[200px] leading-relaxed"
+                                class="text-label-small text-gray-400 font-mono mt-2 text-right max-w-[260px] leading-relaxed whitespace-pre-line break-words"
                               >
                                 {exportResult}
                               </p>
@@ -2644,12 +2677,19 @@
                                 {pickingDir ? "⏳ ..." : "Map Kiezen"}
                               </Button>
                             </div>
+                            {#if dirError}
+                              <p
+                                class="text-label-small text-red-400 mt-2 text-right max-w-[260px] leading-relaxed"
+                              >
+                                {dirError}
+                              </p>
+                            {/if}
                             {#if $userSettings.downloadDir}
                               <p
                                 class="text-label-small text-gray-500 font-mono mt-2 text-right max-w-[200px] truncate leading-relaxed"
-                                title={$userSettings.downloadDir}
+                                title={folderLabelFromUri($userSettings.downloadDir)}
                               >
-                                {$userSettings.downloadDir}
+                                {folderLabelFromUri($userSettings.downloadDir)}
                               </p>
                             {:else}
                               <p

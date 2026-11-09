@@ -29,10 +29,14 @@ import {
   restoreHiddenGrades,
 } from "./hidden-grades.ts";
 import type { SessionTokens } from "./backend.ts";
+import type { DownloadOutcome } from "./attachments.ts";
+
+export type { DownloadOutcome } from "./attachments.ts";
 import type {
   Absence,
   Account,
   Assignment,
+  AssignmentVersion,
   CalendarEvent,
   Contact,
   Grade,
@@ -87,6 +91,15 @@ function sanitizeAssignment(a: Assignment): Assignment {
     a.Omschrijving = sanitizeHtml(a.Omschrijving);
   }
   return a;
+}
+
+function sanitizeAssignmentVersion(v: AssignmentVersion): AssignmentVersion {
+  if (!v) return v;
+  const out = { ...v };
+  for (const key of ["LeerlingOpmerking", "DocentOpmerking", "Omschrijving"] as const) {
+    if (typeof out[key] === "string") out[key] = sanitizeHtml(out[key] as string);
+  }
+  return out;
 }
 
 function sanitizeActivity(a: any): any {
@@ -326,7 +339,7 @@ async function downloadFileLive(
   url: string,
   filename: string,
   downloadDir?: string,
-): Promise<string> {
+): Promise<DownloadOutcome & { path: string }> {
   if (isWebBuild()) {
     // Browser: save via object URL + anchor click instead of a disk path.
     void downloadDir;
@@ -336,22 +349,15 @@ async function downloadFileLive(
         await wtokens(),
         url,
       );
-      const objectUrl = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = objectUrl;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(objectUrl), 10_000);
-      return filename;
+      saveBlobAs(blob, filename);
+      return { path: filename, location: filename, opened: false, inBrowser: true };
     } catch (e) {
       // Redirect pages (publisher SSO) aren't files: open in a tab instead.
       const msg = e instanceof Error ? e.message : String(e);
       const marker = "OPEN_IN_BROWSER:";
       if (msg.startsWith(marker)) {
         window.open(msg.slice(marker.length), "_blank", "noopener,noreferrer");
-        return filename;
+        return { path: filename, location: filename, opened: false, inBrowser: true };
       }
       throw e;
     }
@@ -675,6 +681,28 @@ async function getAssignmentDetailLive(selfUrl: string): Promise<Assignment> {
   return sanitizeAssignment(assignment);
 }
 
+async function getAssignmentVersionLive(selfUrl: string): Promise<AssignmentVersion> {
+  if (isWebBuild())
+    return tierB.webGetAssignmentVersion(sessionTierA(), await wtokens(), selfUrl);
+  const version = (await invoke("get_assignment_version", {
+    selfUrl,
+  })) as AssignmentVersion;
+  return sanitizeAssignmentVersion(version);
+}
+
+/**
+ * The version exactly as Magister sends it, fresh (never from the offline
+ * cache, never sanitized). A hand-in posts this record back with the comment and
+ * files filled in, so it must not be altered or stale.
+ */
+export async function fetchAssignmentVersionRaw(
+  selfUrl: string,
+): Promise<AssignmentVersion> {
+  if (isWebBuild())
+    return tierB.webGetAssignmentVersionRaw(sessionTierA(), await wtokens(), selfUrl);
+  return (await invoke("get_assignment_version", { selfUrl })) as AssignmentVersion;
+}
+
 export async function handInAssignment(
   selfUrl: string,
   opdrachtId: number,
@@ -691,19 +719,29 @@ export async function handInAssignment(
   return invoke("hand_in_assignment", { selfUrl, opdrachtId, versionJson });
 }
 
+/**
+ * Uploads a file for an assignment (or message) and returns [id, storageId].
+ *
+ * Pass a `File` from an `<input type="file">` — it works everywhere, including
+ * Android, where the native file dialog only returns `content://` URIs that
+ * the Rust side cannot open. A path string is still accepted on desktop.
+ */
 export async function uploadAssignmentAttachment(
   file: File | string,
 ): Promise<[number, string]> {
   if (typeof file !== "string") {
-    if (!isWebBuild())
-      throw new Error(
-        "Bestandsobjecten worden alleen in de webversie ondersteund.",
+    if (isWebBuild())
+      return tierB.webUploadAssignmentAttachment(
+        sessionTierA(),
+        await wtokens(),
+        file,
       );
-    return tierB.webUploadAssignmentAttachment(
-      sessionTierA(),
-      await wtokens(),
-      file,
-    );
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const headers: Record<string, string> = {
+      "x-file-name": encodeURIComponent(file.name),
+    };
+    if (file.type) headers["x-content-type"] = file.type;
+    return invoke("upload_assignment_attachment_bytes", bytes, { headers });
   }
   if (isWebBuild()) {
     throw new Error(
@@ -711,6 +749,42 @@ export async function uploadAssignmentAttachment(
     );
   }
   return invoke("upload_assignment_attachment", { filePath: file });
+}
+
+/** Sign up for one element of an activity (`subscriptionsUrl` = its `Subscriptions` link). */
+export async function subscribeActivityElement(
+  personId: number,
+  activityId: number,
+  elementId: number,
+  subscriptionsUrl: string,
+): Promise<void> {
+  if (isWebBuild())
+    return tierB.webSubscribeActivityElement(
+      sessionTierA(),
+      await wtokens(),
+      personId,
+      activityId,
+      elementId,
+      subscriptionsUrl,
+    );
+  return invoke("subscribe_activity_element", {
+    personId,
+    activityId,
+    elementId,
+    subscriptionsUrl,
+  });
+}
+
+export async function unsubscribeActivityElement(
+  subscriptionsUrl: string,
+): Promise<void> {
+  if (isWebBuild())
+    return tierB.webUnsubscribeActivityElement(
+      sessionTierA(),
+      await wtokens(),
+      subscriptionsUrl,
+    );
+  return invoke("unsubscribe_activity_element", { subscriptionsUrl });
 }
 
 // === Leermiddelen ===
@@ -1026,9 +1100,15 @@ export interface ExportResult {
   success: boolean;
   files: string[];
   error: string | null;
+  /** Where the export was saved when the app knows (Android), e.g. "Download/Friday". */
+  location?: string | null;
 }
 
-export async function exportAllData(): Promise<ExportResult> {
+/**
+ * `downloadDir` is the folder from Settings > Downloadmap. Only Android uses it
+ * (as a folder-picker URI); desktop asks for a folder every time.
+ */
+export async function exportAllData(downloadDir?: string): Promise<ExportResult> {
   if (isWebBuild()) {
     // Browsers can't write a folder of files: same 9 categories as one JSON
     // download instead (see webExportAllData, mirrors export.rs).
@@ -1054,7 +1134,7 @@ export async function exportAllData(): Promise<ExportResult> {
           : null,
     };
   }
-  return invoke("export_all_data");
+  return invoke("export_all_data", { downloadDir: downloadDir || "" });
 }
 
 // === Diagnostics ===
@@ -1064,8 +1144,8 @@ export interface LogExportResult {
   error: string | null;
 }
 
-export async function exportDebugLog(): Promise<LogExportResult> {
-  return invoke("export_debug_log");
+export async function exportDebugLog(downloadDir?: string): Promise<LogExportResult> {
+  return invoke("export_debug_log", { downloadDir: downloadDir || "" });
 }
 
 export interface LogClearResult {
@@ -1260,6 +1340,10 @@ export const getAssignmentDetail = offlineRead(
   getAssignmentDetailLive,
   (selfUrl: string) => `assignment:${selfUrl}`,
 );
+export const getAssignmentVersion = offlineRead(
+  getAssignmentVersionLive,
+  (selfUrl: string) => `assignment-version:${selfUrl}`,
+);
 export const getLeermiddelen = offlineRead(
   getLeermiddelenLive,
   (pid: number) => `leermiddelen:${pid}`,
@@ -1369,8 +1453,9 @@ export async function downloadFile(
   url: string,
   filename: string,
   downloadDir?: string,
-): Promise<string> {
+): Promise<DownloadOutcome> {
   if (isWebBuild()) {
+    const inBrowser = { location: filename, opened: false, inBrowser: true };
     try {
       const blob = await tierB.webDownloadFile(
         sessionTierA(),
@@ -1379,29 +1464,30 @@ export async function downloadFile(
       );
       void saveFile(url, blob, filename);
       saveBlobAs(blob, filename);
-      return filename;
+      return inBrowser;
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       const marker = "OPEN_IN_BROWSER:";
       if (msg.startsWith(marker)) {
         window.open(msg.slice(marker.length), "_blank", "noopener,noreferrer");
-        return filename;
+        return inBrowser;
       }
       const saved = await loadFile(url);
       if (saved) {
         saveBlobAs(saved.blob, filename);
-        return filename;
+        return inBrowser;
       }
       throw e;
     }
   }
   try {
-    const path = await downloadFileLive(url, filename, downloadDir);
-    void saveDownloadedPath(url, path);
-    return path;
+    const result = await downloadFileLive(url, filename, downloadDir);
+    // Remember where it went so it can be pointed out again when offline.
+    void saveDownloadedPath(url, result.location);
+    return { location: result.location, opened: result.opened };
   } catch (e) {
-    const path = await loadDownloadedPath(url);
-    if (path) return path;
+    const earlier = await loadDownloadedPath(url);
+    if (earlier) return { location: earlier, opened: false, earlier: true };
     throw e;
   }
 }

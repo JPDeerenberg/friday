@@ -27,6 +27,9 @@ pub fn run() {
     let mut builder = tauri::Builder::default()
         .plugin(
             tauri_plugin_log::Builder::new()
+                // `Builder::new()` already comes with a Stdout and a LogDir target;
+                // adding ours on top wrote every line twice (and to the log file twice).
+                .clear_targets()
                 .target(tauri_plugin_log::Target::new(
                     tauri_plugin_log::TargetKind::Stdout,
                 ))
@@ -145,14 +148,18 @@ pub fn run() {
             // Assignments
             commands::assignments::get_assignments,
             commands::assignments::get_assignment_detail,
+            commands::assignments::get_assignment_version,
             commands::assignments::hand_in_assignment,
             commands::assignments::upload_assignment_attachment,
+            commands::assignments::upload_assignment_attachment_bytes,
             // Leermiddelen
             commands::leermiddelen::get_leermiddelen,
             commands::leermiddelen::get_leermiddel_launch_url,
             // Activities
             commands::activities::get_activities,
             commands::activities::get_activity_elements,
+            commands::activities::subscribe_activity_element,
+            commands::activities::unsubscribe_activity_element,
             // Bronnen
             commands::bronnen::get_bronnen,
             commands::bronnen::get_external_bron_sources,

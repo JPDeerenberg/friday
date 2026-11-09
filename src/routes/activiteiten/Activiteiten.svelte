@@ -1,6 +1,17 @@
 <script lang="ts">
   import { personId, resumedAt } from "$lib/stores";
-  import { getActivities, getActivityElements } from "$lib/api";
+  import {
+    getActivities,
+    getActivityElements,
+    subscribeActivityElement,
+    unsubscribeActivityElement,
+  } from "$lib/api";
+  import {
+    subscriptionsHref,
+    canSubscribe,
+    canUnsubscribe,
+    withSubscription,
+  } from "$lib/activities";
   import { cacheGet, cacheRefresh } from "$lib/cache";
   import { onMount, untrack } from "svelte";
   import { fade, fly, slide } from "svelte/transition";
@@ -69,6 +80,67 @@
   function goBack() {
     selectedActivity = null;
     elements = [];
+    elementError = null;
+  }
+
+  // Signing up / out. The button used to have no handler at all.
+  let busyElementId = $state<number | null>(null);
+  let elementError = $state<{ id: number; message: string } | null>(null);
+
+  async function toggleSubscription(element: any, subscribe: boolean) {
+    if (busyElementId !== null || !selectedActivity) return;
+    const verb = subscribe ? "Inschrijven" : "Uitschrijven";
+    const href = subscriptionsHref(element.Links);
+    if (!href) {
+      elementError = {
+        id: element.Id,
+        message: `${verb} mislukt: geen inschrijf-link gevonden.`,
+      };
+      return;
+    }
+    busyElementId = element.Id;
+    elementError = null;
+    const activityId = selectedActivity.Id as number;
+    const pid = $personId as number;
+    try {
+      if (subscribe) {
+        await subscribeActivityElement(pid, activityId, element.Id, href);
+      } else {
+        await unsubscribeActivityElement(href);
+      }
+      // Show the result right away, then confirm it with the server's numbers.
+      elements = elements.map((e) =>
+        e.Id === element.Id ? withSubscription(e, subscribe) : e,
+      );
+      await refreshAfterChange(pid, activityId);
+    } catch (e) {
+      console.error(`${verb} mislukt:`, e);
+      elementError = {
+        id: element.Id,
+        message: `${verb} mislukt: ${e instanceof Error ? e.message : e}`,
+      };
+    } finally {
+      busyElementId = null;
+    }
+  }
+
+  async function refreshAfterChange(pid: number, activityId: number) {
+    try {
+      elements = await getActivityElements(pid, activityId);
+    } catch (e) {
+      console.warn("Onderdelen vernieuwen mislukt:", e);
+    }
+    try {
+      activities = await cacheRefresh(
+        `activiteiten_${pid}`,
+        () => getActivities(pid),
+        5 * 60 * 1000,
+      );
+      const fresh = activities.find((a) => a.Id === activityId);
+      if (fresh && selectedActivity?.Id === activityId) selectedActivity = fresh;
+    } catch (e) {
+      console.warn("Activiteiten vernieuwen mislukt:", e);
+    }
   }
 </script>
 
@@ -336,10 +408,29 @@
                         {/if}
                       </div>
 
-                      {#if element.IsOpInTeSchrijven && !element.IsIngeschreven}
-                        <Button variant="filled" class="px-8">
-                          Inschrijven
+                      {#if canSubscribe(element)}
+                        <Button
+                          variant="filled"
+                          class="px-8"
+                          disabled={busyElementId !== null}
+                          onclick={() => toggleSubscription(element, true)}
+                        >
+                          {busyElementId === element.Id ? "Bezig..." : "Inschrijven"}
                         </Button>
+                      {:else if canUnsubscribe(element)}
+                        <Button
+                          variant="tonal"
+                          class="px-8"
+                          disabled={busyElementId !== null}
+                          onclick={() => toggleSubscription(element, false)}
+                        >
+                          {busyElementId === element.Id ? "Bezig..." : "Uitschrijven"}
+                        </Button>
+                      {/if}
+                      {#if elementError && elementError.id === element.Id}
+                        <p class="text-label-small text-red-400 max-w-xs sm:text-right">
+                          {elementError.message}
+                        </p>
                       {/if}
                     </div>
                   </div>

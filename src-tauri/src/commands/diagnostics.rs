@@ -62,7 +62,13 @@ pub async fn clear_debug_logs(app: AppHandle) -> Result<LogClearResult, String> 
 /// leave a log trail the user can grab after the fact, straight from
 /// Settings, without needing a computer or USB debugging.
 #[tauri::command]
-pub async fn export_debug_log(app: AppHandle) -> Result<LogExportResult, String> {
+pub async fn export_debug_log(
+    app: AppHandle,
+    download_dir: Option<String>,
+) -> Result<LogExportResult, String> {
+    // Only Android saves into the folder chosen in Settings.
+    #[cfg(not(target_os = "android"))]
+    let _ = &download_dir;
     let log_dir = app
         .path()
         .app_log_dir()
@@ -166,8 +172,11 @@ pub async fn export_debug_log(app: AppHandle) -> Result<LogExportResult, String>
         .map_err(|e| format!("Kan zip niet finaliseren: {}", e))?;
 
     #[cfg(target_os = "android")]
-    crate::jni::share_downloaded_file(&zip_path)
-        .map_err(|e| format!("Kan logbestand niet delen: {}", e))?;
+    {
+        let tree = crate::commands::files::android_tree_uri(download_dir.as_deref());
+        crate::jni::share_downloaded_file(&zip_path, tree)
+            .map_err(|e| format!("Kan logbestand niet opslaan of delen: {}", e))?;
+    }
 
     Ok(LogExportResult {
         success: true,

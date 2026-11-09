@@ -1273,6 +1273,70 @@ impl MagisterClient {
 
         Err(ClientError::ApiError(status, text))
     }
+
+    /// Fetch the file behind a *resolved* download URL (the `location` returned
+    /// by `get_redirect_location`).
+    ///
+    /// Unlike `get_bytes` this only sends the Magister bearer token when the URL
+    /// is on the Magister host (see `bearer_allowed_for`); the usual target, a
+    /// pre-signed storage URL, must be fetched without an Authorization header.
+    pub async fn get_resolved_bytes(&mut self, url: &str) -> Result<Vec<u8>, ClientError> {
+        let token = self.ensure_valid_token().await?;
+        let mut req = self.http.get(url);
+        if bearer_allowed_for(&token.api_endpoint, url) {
+            req = req.header("Authorization", format!("Bearer {}", token.access_token));
+        }
+        let resp = req
+            .send()
+            .await
+            .map_err(|e| ClientError::RequestFailed(e.to_string()))?;
+
+        if !resp.status().is_success() {
+            let status = resp.status().as_u16();
+            let text = resp.text().await.unwrap_or_default();
+            log::error!(
+                "Download failed: URL={}, Status={}, Body={}",
+                redact_query(url),
+                status,
+                text.chars().take(300).collect::<String>()
+            );
+            return Err(ClientError::ApiError(status, text));
+        }
+        Ok(resp
+            .bytes()
+            .await
+            .map_err(|e| ClientError::ParseFailed(e.to_string()))?
+            .to_vec())
+    }
+}
+
+/// True when `url` points at the same host as the Magister API — the only place
+/// our bearer token may be sent. The "real" location of a downloaded file is
+/// normally a pre-signed Azure Blob Storage URL; sending a Magister token there
+/// makes Azure answer `401 InvalidAuthenticationInfo … Signature key not found`
+/// (it tries to validate our JWT as one of its own), and leaks the token to a
+/// third party besides.
+pub fn bearer_allowed_for(api_endpoint: &str, url: &str) -> bool {
+    let (Ok(api), Ok(target)) = (url::Url::parse(api_endpoint), url::Url::parse(url)) else {
+        return false;
+    };
+    match (api.host_str(), target.host_str()) {
+        (Some(a), Some(t)) => a.eq_ignore_ascii_case(t) && target.scheme() == api.scheme(),
+        _ => false,
+    }
+}
+
+/// `url` without its query string, for logging: pre-signed URLs carry a
+/// signature in the query that must not end up in the log.
+fn redact_query(url: &str) -> String {
+    match url::Url::parse(url) {
+        Ok(mut u) => {
+            u.set_query(None);
+            u.set_fragment(None);
+            u.to_string()
+        }
+        Err(_) => "<ongeldige url>".to_string(),
+    }
 }
 
 /// Thread-safe wrapper for the MagisterClient.
@@ -1673,5 +1737,36 @@ mod tests {
             "expected exactly 1 live refresh call, got {}",
             hits.len()
         );
+    }
+}
+
+#[cfg(test)]
+mod bearer_policy_tests {
+    use super::*;
+
+    #[test]
+    fn the_token_only_goes_to_the_magister_host() {
+        let api = "https://school.magister.net/api";
+        assert!(bearer_allowed_for(api, "https://school.magister.net/api/personen/1/x"));
+        assert!(bearer_allowed_for(api, "https://SCHOOL.magister.net/other"));
+        // Pre-signed Azure Blob URL: must not get the token.
+        assert!(!bearer_allowed_for(
+            api,
+            "https://magisterfiles.blob.core.windows.net/c/f.pdf?sv=2023&sig=abc"
+        ));
+        // Look-alike hosts and downgrade attempts.
+        assert!(!bearer_allowed_for(api, "https://school.magister.net.evil.example/x"));
+        assert!(!bearer_allowed_for(api, "http://school.magister.net/x"));
+        assert!(!bearer_allowed_for(api, "not a url"));
+        assert!(!bearer_allowed_for("also not a url", "https://school.magister.net/x"));
+    }
+
+    #[test]
+    fn redact_query_drops_the_signature() {
+        assert_eq!(
+            redact_query("https://acct.blob.core.windows.net/c/f.pdf?sv=1&sig=SECRET#frag"),
+            "https://acct.blob.core.windows.net/c/f.pdf"
+        );
+        assert_eq!(redact_query("???"), "<ongeldige url>");
     }
 }

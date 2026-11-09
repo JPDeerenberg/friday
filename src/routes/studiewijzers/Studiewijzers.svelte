@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { personId, resumedAt } from "$lib/stores";
+  import { personId, resumedAt, userSettings } from "$lib/stores";
+  import { openBron } from "$lib/bron-actions";
   import {
     getStudiewijzers,
     getStudiewijzerDetail,
@@ -8,6 +9,20 @@
   import { getFileIcon } from "$lib/icons";
   import { cacheGet, cacheRefresh } from "$lib/cache";
   import { onMount, untrack } from "svelte";
+
+  // One open/download at a time; the button used to be a dead link.
+  let openingBron = $state<string | null>(null);
+  async function handleOpenBron(bron: any) {
+    if (openingBron !== null) return;
+    openingBron = bron.Naam;
+    try {
+      await openBron(bron, get(userSettings).downloadDir || "");
+    } catch (e) {
+      alert(`Openen mislukt: ${e instanceof Error ? e.message : e}`);
+    } finally {
+      openingBron = null;
+    }
+  }
   import { get } from "svelte/store";
   import { fade, fly, slide } from "svelte/transition";
   import Button from "$lib/components/Button.svelte";
@@ -438,12 +453,14 @@
                             >{bron.Naam}</span
                           >
                         </div>
-                        <a
-                          href={bron.Links?.find(
-                            (l: any) => l.Rel === "content",
-                          )?.Href}
-                          target="_blank"
-                          class="w-12 h-12 rounded-full bg-primary-500/10 hover:bg-primary-500 text-primary-400 hover:text-white transition-all active:scale-90 flex items-center justify-center border border-primary-500/20 shadow-lg shadow-primary-500/5 group/btn"
+                        <button
+                          type="button"
+                          onclick={() => handleOpenBron(bron)}
+                          disabled={openingBron !== null}
+                          aria-label={bron.BronSoort === 3
+                            ? "Openen"
+                            : "Download"}
+                          class="w-12 h-12 rounded-full bg-primary-500/10 hover:bg-primary-500 text-primary-400 hover:text-white transition-all active:scale-90 flex items-center justify-center border border-primary-500/20 shadow-lg shadow-primary-500/5 group/btn disabled:opacity-50"
                         >
                           {#if bron.BronSoort === 3}
                             <svg
@@ -473,7 +490,7 @@
                               /></svg
                             >
                           {/if}
-                        </a>
+                        </button>
                       </div>
                     {/each}
                   </div>

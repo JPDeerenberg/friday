@@ -10,7 +10,26 @@ import org.json.JSONObject
  * notification, and what that notification was about. Exposed to the webview as
  * `window.FridayNative` (see MainActivity.onWebViewCreate).
  */
-class FridayBridge(private val appContext: Context) {
+class FridayBridge(private val appContext: Context, private val activity: MainActivity) {
+
+    /**
+     * Opens Android's folder picker (Storage Access Framework). The answer is
+     * delivered asynchronously: the web app polls [takePickedFolder] afterwards.
+     */
+    @JavascriptInterface
+    fun pickFolder() {
+        activity.launchFolderPicker()
+    }
+
+    /**
+     * "" while the picker is still open, "CANCELLED" when the user backed out,
+     * `{"uri":"content://…","name":"Download/Friday"}` after a successful pick
+     * or `ERROR:<reason>`. Returns each answer only once.
+     */
+    @JavascriptInterface
+    fun takePickedFolder(): String {
+        return MainActivity.takePickedFolder() ?: ""
+    }
 
     /**
      * Returns "" when the app was not opened through a notification. Otherwise

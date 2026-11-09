@@ -172,10 +172,26 @@ pub async fn get_absences(
     Ok(res.items)
 }
 
+/// What `download_file` tells the frontend.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct DownloadResult {
+    /// Where the file was written by this command (desktop: the final file; Android:
+    /// the private staging copy, which is moved to a user-reachable place afterwards).
+    pub path: String,
+    /// Human-readable place the user can find the file, e.g. `Download/Friday`.
+    pub location: String,
+    /// An app/chooser to view the file was launched (Android).
+    pub opened: bool,
+}
+
 /// Download an attachment to disk. Magister's `Self`/`Contents`/`download`
 /// links are *indirection* links, not the file bytes — resolve them to a real,
 /// short-lived content URL first (same two-call sequence as
 /// `get_leermiddel_launch_url`), then fetch the bytes from that URL.
+///
+/// Desktop: saved in the chosen download folder (or the system Downloads).
+/// Android: saved in the folder picked under Settings > Downloadmap (or
+/// `Download/Friday`) and offered to the user in an "Open bestand" chooser.
 #[tauri::command]
 pub async fn download_file(
     client: State<'_, SharedClient>,
@@ -183,14 +199,15 @@ pub async fn download_file(
     url: String,
     filename: String,
     download_dir: Option<String>,
-) -> Result<String, String> {
+) -> Result<DownloadResult, String> {
     use std::io::Write;
     let mut c = client.lock().await;
 
     #[cfg(desktop)]
     let _ = &app;
-    #[cfg(mobile)]
-    let _ = &download_dir;
+
+    // Attachment names come from the server: never trust them as a path.
+    let filename = crate::commands::files::safe_file_name(&filename, "bijlage");
 
     // Resolve the indirection link to the real content URL before fetching bytes.
     let url = url.replace("/api/", "");
@@ -199,11 +216,12 @@ pub async fn download_file(
         .await
         .map_err(|e: crate::client::ClientError| format!("Failed to resolve download link: {}", e))?;
 
+    // The resolved URL is usually a pre-signed storage URL: no bearer token there
+    // (see `get_resolved_bytes`).
     let bytes = c
-        .get_bytes(&resolved)
+        .get_resolved_bytes(&resolved)
         .await
-        .map_err(|e: crate::client::ClientError| e.to_string())?
-        .ok_or_else(|| "File not found".to_string())?;
+        .map_err(|e: crate::client::ClientError| format!("Download mislukt: {}", e))?;
 
     // On mobile there is no user-facing Downloads folder (Android scoped storage) —
     // write to an app-private cache path instead; the file is handed to the OS below.
@@ -241,14 +259,32 @@ pub async fn download_file(
     let save_path = save_dir.join(&filename);
     let mut file = std::fs::File::create(&save_path).map_err(|e: std::io::Error| e.to_string())?;
     file.write_all(&bytes).map_err(|e: std::io::Error| e.to_string())?;
+    drop(file);
 
-    // Hand the file to the OS via the FileProvider so the user sees a share/open
-    // sheet instead of it landing in an invisible location.
+    // Hand the file to the OS: save it where the user can find it (the folder from
+    // Settings, or Download/Friday) and show an "Open bestand" chooser. A failure here
+    // is reported instead of swallowed — before, the user just saw nothing happen.
     #[cfg(target_os = "android")]
-    crate::jni::share_downloaded_file(&save_path)
-        .map_err(|e| format!("Failed to share downloaded file: {}", e))?;
+    {
+        let tree = crate::commands::files::android_tree_uri(download_dir.as_deref());
+        let outcome = crate::jni::share_downloaded_file(&save_path, tree)
+            .map_err(|e| format!("Kon het bestand niet opslaan of openen: {}", e))?;
+        return Ok(DownloadResult {
+            path: save_path.to_string_lossy().to_string(),
+            location: outcome.location,
+            opened: outcome.opened,
+        });
+    }
 
-    Ok(save_path.to_string_lossy().to_string())
+    #[cfg(not(target_os = "android"))]
+    {
+        let path = save_path.to_string_lossy().to_string();
+        Ok(DownloadResult {
+            location: path.clone(),
+            path,
+            opened: false,
+        })
+    }
 }
 
 #[cfg(test)]
@@ -309,11 +345,85 @@ mod tests {
         assert_eq!(resolved, format!("{}/contents/file", mock_server.uri()));
 
         let bytes = client
-            .get_bytes(&resolved)
+            .get_resolved_bytes(&resolved)
             .await
-            .expect("should fetch bytes from the resolved URL")
-            .expect("bytes should be present");
+            .expect("should fetch bytes from the resolved URL");
         assert_eq!(bytes, b"%PDF-1.4 real content".to_vec());
+    }
+
+    /// Regression: the resolved URL is normally a pre-signed Azure Blob URL. Sending
+    /// the Magister bearer token there made Azure answer
+    /// `401 InvalidAuthenticationInfo: Signature key not found`. On a foreign host the
+    /// file must be fetched with no Authorization header at all.
+    #[tokio::test]
+    async fn test_resolved_download_sends_no_token_to_a_foreign_host() {
+        use wiremock::matchers::header_exists;
+        let storage = MockServer::start().await;
+
+        // Any request carrying an Authorization header is rejected like Azure does...
+        Mock::given(method("GET"))
+            .and(path("/blob/file.pdf"))
+            .and(header_exists("Authorization"))
+            .respond_with(ResponseTemplate::new(401).set_body_string(
+                "<Error><Code>InvalidAuthenticationInfo</Code></Error>",
+            ))
+            .with_priority(1)
+            .mount(&storage)
+            .await;
+        // ...and one without it gets the file.
+        Mock::given(method("GET"))
+            .and(path("/blob/file.pdf"))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(b"%PDF real".to_vec()))
+            .with_priority(5)
+            .mount(&storage)
+            .await;
+
+        let mut client = MagisterClient::new();
+        // The Magister API lives elsewhere than the storage server.
+        client.token_set = Some(token_set("https://school.magister.net/api"));
+
+        let bytes = client
+            .get_resolved_bytes(&format!("{}/blob/file.pdf?sig=abc", storage.uri()))
+            .await
+            .expect("foreign host must be fetched without a bearer token");
+        assert_eq!(bytes, b"%PDF real".to_vec());
+    }
+
+    /// When Magister itself serves the file, the token is still sent.
+    #[tokio::test]
+    async fn test_resolved_download_keeps_the_token_on_the_magister_host() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/contents/file"))
+            .and(header("Authorization", "Bearer mock_access_token"))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(b"own host".to_vec()))
+            .mount(&server)
+            .await;
+
+        let mut client = MagisterClient::new();
+        client.token_set = Some(token_set(&server.uri()));
+        let bytes = client
+            .get_resolved_bytes(&format!("{}/contents/file", server.uri()))
+            .await
+            .expect("same-host download keeps the bearer token");
+        assert_eq!(bytes, b"own host".to_vec());
+    }
+
+    #[tokio::test]
+    async fn test_resolved_download_reports_http_errors() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/gone"))
+            .respond_with(ResponseTemplate::new(404).set_body_string("nope"))
+            .mount(&server)
+            .await;
+        let mut client = MagisterClient::new();
+        client.token_set = Some(token_set(&server.uri()));
+        let err = client
+            .get_resolved_bytes(&format!("{}/gone", server.uri()))
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("404"), "got: {err}");
     }
 }
 

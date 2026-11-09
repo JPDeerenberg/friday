@@ -451,7 +451,10 @@ pub extern "system" fn Java_com_joris_friday_SyncStateManager_syncPreferencesFro
 // In practice this runs well after startup (the user has to be logged in and browsing
 // to trigger a download), so the race is unlikely — but "unlikely" isn't a guarantee,
 // so it waits the same way every other ndk-context consumer does.
-pub fn share_downloaded_file(file_path: &std::path::Path) -> Result<(), String> {
+pub fn share_downloaded_file(
+    file_path: &std::path::Path,
+    tree_uri: Option<&str>,
+) -> Result<crate::commands::files::ShareOutcome, String> {
     use jni::objects::JValue;
     use jni::JavaVM;
 
@@ -505,28 +508,51 @@ pub fn share_downloaded_file(file_path: &std::path::Path) -> Result<(), String> 
         }
     };
 
-    if let Err(e) = env.call_static_method(
+    let j_tree = match env.new_string(tree_uri.unwrap_or("")) {
+        Ok(s) => s,
+        Err(e) => {
+            let _ = env.exception_clear();
+            return Err(e.to_string());
+        }
+    };
+
+    let result = env.call_static_method(
         &class,
         "shareFile",
-        "(Landroid/content/Context;Ljava/lang/String;Ljava/lang/String;)V",
+        "(Landroid/content/Context;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
         &[
             JValue::from(&context),
             JValue::from(&j_path),
             JValue::from(&j_mime),
+            JValue::from(&j_tree),
         ],
-    ) {
-        // A Java-side throw also leaves a pending exception behind — clear it
-        // for the same reason as above: never let it kill the process.
-        let _ = env.exception_clear();
-        return Err(e.to_string());
-    }
+    );
+    let value = match result {
+        Ok(v) => v,
+        Err(e) => {
+            // A Java-side throw also leaves a pending exception behind — clear it
+            // for the same reason as above: never let it kill the process.
+            let _ = env.exception_clear();
+            return Err(e.to_string());
+        }
+    };
 
     if let Ok(true) = env.exception_check() {
         let _ = env.exception_clear();
         return Err("Android share call threw an exception".to_string());
     }
 
-    Ok(())
+    // ShareHelper answers with `STATUS|detail` (see commands::files).
+    let obj = value.l().map_err(|e| e.to_string())?;
+    if obj.is_null() {
+        return Err("Android gaf geen antwoord terug".to_string());
+    }
+    let raw: String = env
+        .get_string(&jni::objects::JString::from(obj))
+        .map_err(|e| e.to_string())?
+        .into();
+    log::info!("ShareHelper answered: {}", raw);
+    crate::commands::files::parse_share_status(&raw)
 }
 
 #[cfg(target_os = "android")]

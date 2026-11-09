@@ -17,6 +17,7 @@
   import IconButton from "$lib/components/IconButton.svelte";
   import DropdownMenu from "$lib/components/DropdownMenu.svelte";
   import { on } from "svelte/events";
+  import { pickDownloadHref, describeDownload } from "$lib/attachments";
   import { onMount, untrack } from "svelte";
   import { fade, fly, slide, scale } from "svelte/transition";
   import type { CalendarAttachment, CalendarEvent, Link } from "$lib/types";
@@ -405,15 +406,22 @@
 
   async function handleDownload(bijlage: CalendarAttachment) {
     if (downloadingFile) return;
+    // `Self` alone is often just the attachment's metadata; take the real
+    // download link (see pickDownloadHref). Before, a missing `Self` link made
+    // this return without a word.
+    const url = pickDownloadHref(bijlage.Links);
+    if (!url) {
+      alert("Deze bijlage heeft geen downloadlink.");
+      return;
+    }
+    downloadingFile = bijlage.Naam;
     try {
-      const url = bijlage.Links?.find((l: Link) => l.Rel === "Self")?.Href;
-      if (!url) return;
-      downloadingFile = bijlage.Naam;
       const downloadDir = $userSettings.downloadDir || "";
-      const path = await downloadFile(url, bijlage.Naam, downloadDir);
-      alert(`Bestand gedownload naar: ${path}`);
+      const outcome = await downloadFile(url, bijlage.Naam, downloadDir);
+      const note = describeDownload(outcome);
+      if (note) alert(note);
     } catch (e) {
-      alert(`Download mislukt: ${e}`);
+      alert(`Download mislukt: ${e instanceof Error ? e.message : e}`);
     } finally {
       downloadingFile = null;
     }
@@ -616,7 +624,9 @@
   });
 
   // ===== Week view (desktop grid) =====
-  const PX_PER_HOUR = 72;
+  // 96px/hour so a 30-min lesson renders ~48px tall — enough for the subject
+  // line plus the time row. At 72px/hour short lessons were 33px and unreadable.
+  const PX_PER_HOUR = 96;
 
   function minutesOf(iso: string | null | undefined): number | null {
     if (!iso) return null;
@@ -744,9 +754,12 @@
   function appHeightPx(a: DayAppointment): number {
     const s = minutesOf(a.Start);
     const e = minutesOf(a.Einde);
-    if (s === null) return 26;
+    if (s === null) return 40;
     const dur = (e !== null ? e : s + 50) - s;
-    return Math.max(24, Math.round((dur / 60) * PX_PER_HOUR) - 3);
+    // Minimum 44px so even very short (15–30 min) lessons stay readable;
+    // the extra height may slightly overlap the next block's gap, which is
+    // acceptable versus an unreadable sliver.
+    return Math.max(44, Math.round((dur / 60) * PX_PER_HOUR) - 3);
   }
 
   const weekAppCount = $derived(
