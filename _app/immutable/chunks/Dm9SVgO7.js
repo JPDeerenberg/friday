@@ -1,0 +1,1 @@
+import{Pn as e}from"./Bwjf1eCC.js";import"./B0OLk_jV.js";var t;(function(e){e.Nsis=`nsis`,e.Msi=`msi`,e.Deb=`deb`,e.Rpm=`rpm`,e.AppImage=`appimage`,e.App=`app`})(t||={});async function n(){return e(`plugin:app|version`)}export{n as getVersion};
