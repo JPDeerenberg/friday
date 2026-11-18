@@ -1,13 +1,14 @@
 <script lang="ts">
   import type { AiScheduleItem } from "$lib/ai-schedule-types";
   import DurationUrgencyInput from "./DurationUrgencyInput.svelte";
+  import Icon from "$lib/components/Icon.svelte";
 
   let {
     item,
     onComplete,
     onDismiss,
     onDelete,
-    onUpdate
+    onUpdate,
   }: {
     item: AiScheduleItem;
     onComplete: (id: string) => void;
@@ -26,7 +27,8 @@
     if (u >= 5) return "border-red-500/40 bg-red-500/10 text-red-400";
     if (u >= 4) return "border-orange-500/40 bg-orange-500/10 text-orange-400";
     if (u >= 3) return "border-amber-500/40 bg-amber-500/10 text-amber-400";
-    if (u >= 2) return "border-primary-500/30 bg-primary-500/10 text-primary-300";
+    if (u >= 2)
+      return "border-primary-500/30 bg-primary-500/10 text-primary-300";
     return "border-white/10 bg-surface-800 text-gray-400";
   }
 
@@ -38,7 +40,7 @@
       custom: "Eigen",
       break: "Pauze",
       free_time: "Vrij",
-      sleep: "Slaap"
+      sleep: "Slaap",
     };
     return map[t] ?? t;
   }
@@ -46,7 +48,10 @@
   function formatTime(iso: string): string {
     try {
       const d = new Date(iso);
-      return d.toLocaleTimeString("nl-NL", { hour: "2-digit", minute: "2-digit" });
+      return d.toLocaleTimeString("nl-NL", {
+        hour: "2-digit",
+        minute: "2-digit",
+      });
     } catch {
       return iso.slice(11, 16);
     }
@@ -56,30 +61,57 @@
     return `${formatTime(item.start)} – ${formatTime(item.end)}`;
   }
 
-  let isFreeOrSleep = $derived(item.item_type === "free_time" || item.item_type === "sleep");
+  let isFreeOrSleep = $derived(
+    item.item_type === "free_time" || item.item_type === "sleep",
+  );
 </script>
 
-<div class="glass p-4 rounded-m3-md border-white/5 space-y-3 hover:bg-surface-800/40 transition-colors {item.status === 'completed' ? 'opacity-60' : ''} {item.status === 'dismissed' ? 'opacity-40 border-dashed' : ''}">
+<div
+  class="glass p-4 rounded-m3-md border-white/5 space-y-3 hover:bg-surface-800/40 transition-colors {item.status ===
+  'completed'
+    ? 'opacity-60'
+    : ''} {item.status === 'dismissed' ? 'opacity-40 border-dashed' : ''}"
+>
   <div class="flex items-start justify-between gap-3">
     <div class="flex-1 min-w-0">
       <div class="flex items-center gap-2 flex-wrap">
         <h3 class="text-title-small text-white truncate">{item.title}</h3>
-        <span class="text-label-small px-2 py-0.5 rounded-full border {urgencyColor(item.urgency)}">U{item.urgency}</span>
-        <span class="text-label-small px-2 py-0.5 rounded-full bg-surface-800 border border-white/5 text-gray-500">{typeLabel(item.item_type)}</span>
+        <span
+          class="text-label-small px-2 py-0.5 rounded-full border {urgencyColor(
+            item.urgency,
+          )}">U{item.urgency}</span
+        >
+        <span
+          class="text-label-small px-2 py-0.5 rounded-full bg-surface-800 border border-white/5 text-gray-500"
+          >{typeLabel(item.item_type)}</span
+        >
         {#if item.source === "ai_chat"}
-          <span class="text-label-small px-1.5 py-0.5 rounded bg-primary-500/15 text-primary-300 border border-primary-500/20">AI</span>
+          <span
+            class="text-label-small px-1.5 py-0.5 rounded bg-primary-500/15 text-primary-300 border border-primary-500/20"
+            >AI</span
+          >
         {:else}
-          <span class="text-label-small px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300 border border-amber-500/20">Jij</span>
+          <span
+            class="text-label-small px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300 border border-amber-500/20"
+            >Jij</span
+          >
         {/if}
         {#if item.status !== "planned"}
-          <span class="text-label-small px-2 py-0.5 rounded-full bg-surface-700 text-gray-300 capitalize">{item.status.replace("_", " ")}</span>
+          <span
+            class="text-label-small px-2 py-0.5 rounded-full bg-surface-700 text-gray-300 capitalize"
+            >{item.status.replace("_", " ")}</span
+          >
         {/if}
       </div>
       {#if item.description}
-        <p class="text-body-small text-gray-400 mt-1 line-clamp-2">{item.description}</p>
+        <p class="text-body-small text-gray-400 mt-1 line-clamp-2">
+          {item.description}
+        </p>
       {/if}
       <p class="text-label-small text-gray-500 mt-1 flex items-center gap-2">
-        <span>🕒 {timeRange()}</span>
+        <span class="inline-flex items-center gap-1"
+          ><Icon name="clock" size={11} /> {timeRange()}</span
+        >
         {#if item.related_subject}
           <span>· {item.related_subject}</span>
         {/if}
@@ -102,14 +134,14 @@
           estimated_minutes: minutes,
           urgency,
           duration_source: "user_entered",
-          updated_at: new Date().toISOString()
+          updated_at: new Date().toISOString(),
         };
         // Adjust end time if duration changed: keep start, recompute end
         try {
           const s = new Date(item.start);
           const e = new Date(s.getTime() + minutes * 60000);
           const pad = (n: number) => String(n).padStart(2, "0");
-          updated.end = `${e.getFullYear()}-${pad(e.getMonth()+1)}-${pad(e.getDate())}T${pad(e.getHours())}:${pad(e.getMinutes())}:${pad(e.getSeconds())}`;
+          updated.end = `${e.getFullYear()}-${pad(e.getMonth() + 1)}-${pad(e.getDate())}T${pad(e.getHours())}:${pad(e.getMinutes())}:${pad(e.getSeconds())}`;
         } catch {}
         onUpdate(updated);
         editing = false;
@@ -140,7 +172,11 @@
         {editing ? "Annuleer" : "Wijzig"}
       </button>
     {:else}
-      <span class="text-label-small text-gray-600 italic">{item.item_type === "sleep" ? "Slaap — vaste rusttijd" : "Vrije tijd — nog te plannen"}</span>
+      <span class="text-label-small text-gray-600 italic"
+        >{item.item_type === "sleep"
+          ? "Slaap — vaste rusttijd"
+          : "Vrije tijd — nog te plannen"}</span
+      >
     {/if}
     <button
       onclick={() => onDelete(item.id)}

@@ -15,6 +15,7 @@
     polyPoints,
     type CardData,
   } from "$lib/cards";
+  import Icon from "$lib/components/Icon.svelte";
   import { tilt } from "$lib/tilt";
 
   let {
@@ -202,7 +203,9 @@
 
         <div class="head">
           <span class="subject">{card.subject}</span>
-          <span class="emoji" aria-hidden="true">{card.emoji}</span>
+          <span class="subject-icon"
+            ><Icon name={card.icon} size={18} strokeWidth={1.8} /></span
+          >
         </div>
 
         <div class="center">
@@ -215,7 +218,7 @@
             <div class="stamps">
               {#each card.stamps as st}
                 <span class="stamp"
-                  ><span aria-hidden="true">{STAMP_META[st].icon}</span>
+                  ><Icon name={STAMP_META[st].icon} size={12} />
                   {STAMP_META[st].label}</span
                 >
               {/each}
@@ -244,7 +247,9 @@
       <!-- ============ BACK ============ -->
       <div class="face back">
         <div class="back-pattern"></div>
-        <div class="back-emoji" aria-hidden="true">{card.emoji}</div>
+        <div class="back-icon">
+          <Icon name={card.icon} size={38} strokeWidth={1.5} />
+        </div>
         <div class="back-q">?</div>
         <div class="back-label">{card.subject}</div>
         <div class="shineback"></div>
@@ -426,7 +431,7 @@
     text-shadow: 0 0.08em 0.4em rgba(0, 0, 0, 0.6);
     overflow-wrap: anywhere;
   }
-  .emoji {
+  .subject-icon {
     display: grid;
     place-items: center;
     width: 2.5em;
@@ -542,13 +547,13 @@
       transparent 0.45em 1.1em
     );
   }
-  .back-emoji {
+  .back-icon {
     position: absolute;
     top: 1.2em;
     right: 1.3em;
-    font-size: 2.4em;
+    display: flex;
     opacity: 0.35;
-    filter: saturate(0.6);
+    color: var(--c1, white);
   }
   .back-q {
     position: relative;

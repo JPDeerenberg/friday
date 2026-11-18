@@ -30,6 +30,7 @@ import {
 } from "./hidden-grades.ts";
 import type { SessionTokens } from "./backend.ts";
 import type { DownloadOutcome } from "./attachments.ts";
+import { registerTeacherNames } from "./teachers.ts";
 
 export type { DownloadOutcome } from "./attachments.ts";
 import type {
@@ -1237,10 +1238,12 @@ export function calendarTypeName(type: number): string {
   return names[type] ?? "Onbekend";
 }
 
-export function formatTeacherName(name: string | undefined | null): string {
-  if (!name) return "";
-  return name.replace(/\s*\([^)]+\)/g, "").trim();
-}
+/**
+ * Teacher name for display: the student's own rename if there is one, otherwise
+ * the name without Magister's code ("J. Jansen (JAN)" -> "J. Jansen").
+ * `displayTeacherName` keeps the raw name when there is no rename.
+ */
+export { formatTeacherName, displayTeacherName } from "./teachers.ts";
 
 // ═══════════════════════════════════════════════════════════════════
 // Offline-opslag: elke leesactie hieronder bewaart zijn resultaat en valt
@@ -1300,7 +1303,10 @@ export function getGrades(
       schoolyearId,
       await getGradesLive(personId, schoolyearId, einde),
     ),
-  );
+  ).then((grades) => {
+    registerTeacherNames(grades.map((g) => g.Docent));
+    return grades;
+  });
 }
 
 /** Een verborgen cijfer definitief laten vallen (ook uit de offline kopie). */
@@ -1407,6 +1413,10 @@ export function getCalendarEvents(
     fetcher: () => getCalendarEventsLive(personId, start, end),
     idOf: (e) => e.Id,
     dateOf: (e) => e.Start,
+  }).then((events) => {
+    // Note the teachers so they can be renamed in Settings.
+    registerTeacherNames(events.flatMap((e) => (e.Docenten ?? []).map((d) => d.Naam)));
+    return events;
   });
 }
 
@@ -1440,6 +1450,9 @@ export function getAssignments(
     fetcher: () => getAssignmentsLive(personId, start, end),
     idOf: (a) => a.Id,
     dateOf: (a) => a.InleverenVoor,
+  }).then((list) => {
+    registerTeacherNames(list.flatMap((a) => (a.Docenten ?? []).map((d) => d.Naam)));
+    return list;
   });
 }
 

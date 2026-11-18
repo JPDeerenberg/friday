@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { displayTeacherName } from "$lib/teachers";
   import {
     getMessageFolders,
     getMessages,
@@ -49,6 +50,7 @@
       list = list.filter(
         (m) =>
           (m.afzender?.naam ?? "").toLowerCase().includes(q) ||
+          displayTeacherName(m.afzender?.naam).toLowerCase().includes(q) ||
           (m.onderwerp ?? "").toLowerCase().includes(q),
       );
     }
@@ -574,7 +576,7 @@
                       ? 'text-gray-100'
                       : 'text-gray-300'} truncate"
                   >
-                    {msg.afzender?.naam ?? "Onbekend"}
+                    {displayTeacherName(msg.afzender?.naam) || "Onbekend"}
                   </p>
                 </div>
                 <span class="text-label-small text-gray-600 shrink-0"
@@ -636,16 +638,16 @@
             <div
               class="w-9 h-9 rounded-full bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center text-on-fill text-sm font-black shrink-0 shadow-lg shadow-primary-500/25"
             >
-              {selectedMessage.afzender?.naam?.[0]?.toUpperCase() ?? "?"}
+              {displayTeacherName(selectedMessage.afzender?.naam)?.[0]?.toUpperCase() ?? "?"}
             </div>
             <div>
               <p class="text-title-small text-gray-200">
-                {selectedMessage.afzender?.naam ?? "Onbekend"}
+                {displayTeacherName(selectedMessage.afzender?.naam) || "Onbekend"}
               </p>
               {#if selectedMessage.ontvangers?.length}
                 <p class="text-body-small text-gray-600">
                   Aan: {selectedMessage.ontvangers
-                    .map((r: any) => r.weergavenaam)
+                    .map((r: any) => displayTeacherName(r.weergavenaam))
                     .join(", ")}
                 </p>
               {/if}
@@ -736,16 +738,16 @@
               <div
                 class="w-8 h-8 rounded-full bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center text-on-fill text-xs font-black shrink-0"
               >
-                {selectedMessage.afzender?.naam?.[0]?.toUpperCase() ?? "?"}
+                {displayTeacherName(selectedMessage.afzender?.naam)?.[0]?.toUpperCase() ?? "?"}
               </div>
               <div>
                 <p class="text-title-small text-gray-200">
-                  {selectedMessage.afzender?.naam ?? "Onbekend"}
+                  {displayTeacherName(selectedMessage.afzender?.naam) || "Onbekend"}
                 </p>
                 {#if selectedMessage.ontvangers?.length}
                   <p class="text-body-small text-gray-600">
                     Aan: {selectedMessage.ontvangers
-                      .map((r: any) => r.weergavenaam)
+                      .map((r: any) => displayTeacherName(r.weergavenaam))
                       .join(", ")}
                   </p>
                 {/if}

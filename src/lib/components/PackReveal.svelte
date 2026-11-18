@@ -13,6 +13,8 @@
   import { fade, fly } from "svelte/transition";
   import { get } from "svelte/store";
   import GradeCardView from "$lib/components/GradeCardView.svelte";
+  import Icon from "$lib/components/Icon.svelte";
+  import type { IconName } from "$lib/icons";
   import {
     ACHIEVEMENTS,
     RARITY_META,
@@ -824,11 +826,11 @@
     hold: "Houd de kaart ingedrukt",
     tap: "Tik om te openen",
   };
-  const MODE_ICON: Record<Mode, string> = {
-    tear: "✂️",
-    scratch: "🪙",
-    hold: "⚡",
-    tap: "👆",
+  const MODE_ICON: Record<Mode, IconName> = {
+    tear: "scissors",
+    scratch: "coin",
+    hold: "zap",
+    tap: "pointer",
   };
 
   const best = $derived(cards[cards.length - 1]);
@@ -869,7 +871,9 @@
       <p class="count" class:hide={cinematic}>
         {#if preview}Voorbeeldpakket ·
         {/if}Kaart {index + 1} van {total}
-        <span class="modechip">{MODE_ICON[effMode]}</span>
+        <span class="modechip"
+          ><Icon name={MODE_ICON[effMode]} size={12} /></span
+        >
       </p>
 
       {#key index}
@@ -1034,7 +1038,7 @@
           {#each packAchievements as id (id)}
             {@const a = ACHIEVEMENTS.find((x) => x.id === id)}
             {#if a}<div class="ach">
-                <span>{a.icon}</span>
+                <span><Icon name={a.icon} size={22} /></span>
                 <div><b>{a.title}</b><small>{a.desc}</small></div>
               </div>{/if}
           {/each}
@@ -1077,7 +1081,7 @@
             in:fly={{ y: -24, duration: 320 }}
             out:fade={{ duration: 180 }}
           >
-            <span class="ti">{a.icon}</span>
+            <span class="ti"><Icon name={a.icon} size={22} /></span>
             <div><b>{a.title}</b><small>{a.desc}</small></div>
           </div>
         {/if}
@@ -1188,6 +1192,8 @@
     transition: opacity 0.4s;
   }
   .modechip {
+    display: inline-flex;
+    vertical-align: -0.15em;
     margin-left: 0.4rem;
     padding: 0.1rem 0.45rem;
     border-radius: 99px;
@@ -1782,7 +1788,8 @@
   }
   .ach span,
   .ti {
-    font-size: 1.5rem;
+    display: flex;
+    color: #fbbf24;
   }
   .ach b,
   .toast b {

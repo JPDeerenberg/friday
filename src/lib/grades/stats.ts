@@ -10,11 +10,13 @@ export interface GradeStats {
 
 /** Compute statistics for a set of valid grade values */
 export function computeStats(values: number[]): GradeStats {
-  if (values.length === 0) return { median: 0, stdDev: 0, min: 0, max: 0, range: 0, q1: 0, q3: 0 };
+  if (values.length === 0)
+    return { median: 0, stdDev: 0, min: 0, max: 0, range: 0, q1: 0, q3: 0 };
   const sorted = [...values].sort((a, b) => a - b);
   const n = sorted.length;
   const mid = Math.floor(n / 2);
-  const median = n % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+  const median =
+    n % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
   const mean = values.reduce((a, b) => a + b, 0) / n;
   const variance = values.reduce((sum, v) => sum + (v - mean) ** 2, 0) / n;
   const stdDev = Math.sqrt(variance);
@@ -35,9 +37,13 @@ export interface DistributionBucket {
 /** Distribution buckets [1-2, 2-3, ..., 9-10] */
 export function getDistribution(values: number[]): DistributionBucket[] {
   const buckets = [1, 2, 3, 4, 5, 6, 7, 8, 9];
-  return buckets.map(b => {
-    const count = values.filter(v => v >= b && v < b + 1).length;
-    return { label: `${b}-${b + 1}`, count, pct: values.length > 0 ? (count / values.length) * 100 : 0 };
+  return buckets.map((b) => {
+    const count = values.filter((v) => v >= b && v < b + 1).length;
+    return {
+      label: `${b}-${b + 1}`,
+      count,
+      pct: values.length > 0 ? (count / values.length) * 100 : 0,
+    };
   });
 }
 
@@ -56,12 +62,12 @@ export function getTrendDirection(values: number[]): number {
 }
 
 export function getTrendLabel(dir: number): string {
-  return dir === 1 ? 'Stijgend 📈' : dir === -1 ? 'Dalend 📉' : 'Stabiel ➡️';
+  return dir === 1 ? "Stijgend" : dir === -1 ? "Dalend" : "Stabiel";
 }
 
 /** Parse a grade string using the Dutch decimal separator into a number */
 export function getNumericValue(str: string): number {
-  return parseFloat(str.replace(',', '.'));
+  return parseFloat(str.replace(",", "."));
 }
 
 /** Check whether a numeric grade value meets the given (insufficient) threshold */

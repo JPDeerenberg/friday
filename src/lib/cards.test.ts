@@ -164,7 +164,7 @@ test("tally, streaks and achievements", () => {
     mode: "hold",
     seed: 1,
     hue: 200,
-    emoji: "x",
+    icon: "books",
     weight: 1,
     date: null,
     stamps: [],
@@ -209,9 +209,9 @@ test("generated art is deterministic and grows with rarity", () => {
 });
 
 test("subject themes", () => {
-  assert.equal(subjectTheme("Wiskunde B").emoji, "📐");
-  assert.equal(subjectTheme("Natuurkunde").emoji, "⚛️");
+  assert.equal(subjectTheme("Wiskunde B").icon, "ruler");
+  assert.equal(subjectTheme("Natuurkunde").icon, "atom");
   const unknown = subjectTheme("Iets geks");
-  assert.equal(unknown.emoji, "📚");
+  assert.equal(unknown.icon, "books");
   assert.equal(subjectTheme("Iets geks").hue, unknown.hue);
 });

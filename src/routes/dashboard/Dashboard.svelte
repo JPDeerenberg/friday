@@ -5,7 +5,6 @@
     userSettings,
     currentPage,
     resumedAt,
-    effectiveLetterRules,
   } from "$lib/stores";
   import { get } from "svelte/store";
   import { untrack } from "svelte";
@@ -17,10 +16,8 @@
     getMessageFolders,
     getAssignments,
     formatDate,
-    formatTeacherName,
     toggleCalendarEventDone,
   } from "$lib/api";
-  import { getSubjectIcon } from "$lib/icons";
   import { formatTime } from "$lib/format";
   import { cacheGet, cacheRefresh } from "$lib/cache";
   import {
@@ -28,17 +25,26 @@
     shouldRefresh,
     DASHBOARD_MIN_INTERVAL_MS,
   } from "$lib/singleflight";
-  import { fade, fly, scale } from "svelte/transition";
+  import { fade, fly } from "svelte/transition";
   import Button from "$lib/components/Button.svelte";
   import IconButton from "$lib/components/IconButton.svelte";
   import PendingGradesBanner from "$lib/components/PendingGradesBanner.svelte";
+  import NextLessonHero from "$lib/components/NextLessonHero.svelte";
+  import { displayTeacherName } from "$lib/teachers";
+  import TranslateButton from "$lib/components/TranslateButton.svelte";
+  import LevelCard from "$lib/components/LevelCard.svelte";
+  import QuickGradeSliders from "$lib/components/QuickGradeSliders.svelte";
+  import QuestsCard from "$lib/components/QuestsCard.svelte";
+  import FriendsCard from "$lib/components/FriendsCard.svelte";
+  import WrappedCard from "$lib/components/WrappedCard.svelte";
+  import WrappedStory from "$lib/components/WrappedStory.svelte";
+  import { recordQuestEvent } from "$lib/quests-store";
   import {
     gradePeek,
     gradeRevealState,
     openPackIntent,
     splitGrades,
   } from "$lib/grade-reveal";
-  import { parseGrade } from "$lib/grades/scale";
   import type { Assignment, CalendarEvent, Grade } from "$lib/types";
   import {
     computeWeekStats,
@@ -48,7 +54,8 @@
   } from "$lib/weekStats";
 
   // Svelte 5 State
-  let todayEvents = $state<CalendarEvent[]>([]);
+  let heroEvents = $state<CalendarEvent[]>([]);
+  let showWrapped = $state(false);
   // While grade reveal is on, every grade stays hidden until its card is opened
   // (see $lib/grade-reveal); the dashboard offers a banner instead. Opening a
   // pack happens on the grades page, where cards are built from the full list.
@@ -63,20 +70,16 @@
       $userSettings.lettersGetCards === true,
     ),
   );
-  const latestGrades = $derived(latestSplit.visible);
   const pendingGrades = $derived(latestSplit.hidden);
   function openPack() {
     openPackIntent.set(true);
     currentPage.set("grades");
   }
   let unreadCount = $state(0);
-  let upcomingAssignments = $state<Assignment[]>([]);
 
   // Section-specific loading states
   let loadingEvents = $state(true);
-  let loadingGrades = $state(true);
   let loadingMessages = $state(true);
-  let loadingAssignments = $state(true);
 
   let tomorrowEvents = $state<CalendarEvent[]>([]);
   let tomorrowAssignments = $state<Assignment[]>([]);
@@ -138,19 +141,17 @@
     const rangeStart = formatDate(lastMonday);
     const rangeEnd = formatDate(nextSunday);
     const result: {
-      todayEvents: CalendarEvent[];
+      heroEvents: CalendarEvent[];
       latestGrades: Grade[];
       unreadCount: number;
-      upcomingAssignments: Assignment[];
       tomorrowEvents: CalendarEvent[];
       tomorrowAssignments: Assignment[];
       nextSchoolDayDate: string;
       weekStats: WeekStats;
     } = {
-      todayEvents: [],
+      heroEvents: [],
       latestGrades: [],
       unreadCount: 0,
-      upcomingAssignments: [],
       tomorrowEvents: [],
       tomorrowAssignments: [],
       nextSchoolDayDate: tomorrowStr,
@@ -168,9 +169,9 @@
           allEvents = events
             .filter((e) => e.Status !== 4 && e.Status !== 5)
             .sort((a, b) => a.Start.localeCompare(b.Start));
-          result.todayEvents = allEvents.filter((e) =>
-            e.Start.startsWith(today),
-          );
+          // The "next lesson" card looks at the whole 3-week window, so it can
+          // move on to tomorrow by itself once today's lessons are over.
+          result.heroEvents = allEvents;
           result.weekStats = computeWeekStats(allEvents, now);
           // Next school day: first date >= tomorrow with events.
           const eventsByDate: Record<string, CalendarEvent[]> = {};
@@ -263,10 +264,6 @@
         try {
           const assignments = await getAssignments(pid, today, nextWeek);
           allAssignments = assignments;
-          result.upcomingAssignments = assignments
-            .filter((a) => !a.Afgesloten)
-            .sort((a, b) => a.InleverenVoor.localeCompare(b.InleverenVoor))
-            .slice(0, 3);
           result.tomorrowAssignments = assignments.filter(
             (a) => !a.Afgesloten && !a.IngeleverdOp,
           );
@@ -295,9 +292,7 @@
         return;
       }
       loadingEvents = true;
-      loadingGrades = true;
       loadingMessages = true;
-      loadingAssignments = true;
       loadingTomorrow = true;
       loadingWeekStats = true;
     }
@@ -315,10 +310,10 @@
             5 * 60 * 1000,
           );
 
-      todayEvents = data.todayEvents;
+      // `heroEvents` is missing in a copy cached by an older version.
+      heroEvents = data.heroEvents ?? [];
       allLatestGrades = data.latestGrades;
       unreadCount = data.unreadCount;
-      upcomingAssignments = data.upcomingAssignments;
       tomorrowEvents = data.tomorrowEvents;
       tomorrowAssignments = data.tomorrowAssignments;
       nextSchoolDayDate = data.nextSchoolDayDate;
@@ -326,9 +321,7 @@
       lastDashboardSuccessAt = Date.now();
     } finally {
       loadingEvents = false;
-      loadingGrades = false;
       loadingMessages = false;
-      loadingAssignments = false;
       loadingTomorrow = false;
       loadingWeekStats = false;
     }
@@ -478,7 +471,10 @@
       // Toggle the local Afgerond flag so UI updates immediately
       event.Afgerond = !event.Afgerond;
       // If marked as done, collapse the lesson
-      if (event.Afgerond) expandedLesson = null;
+      if (event.Afgerond) {
+        expandedLesson = null;
+        recordQuestEvent("homework_done");
+      }
     } catch (e) {
       console.error("Failed to toggle lesson done:", e);
     }
@@ -489,14 +485,6 @@
     return doc.body.textContent || "";
   }
 
-  function isVoldoende(grade: Grade): boolean {
-    // One shared parser: numbers as numbers, letters via the user's table.
-    // Letters the table does not call "onvoldoende" are never painted red.
-    const p = parseGrade(grade.CijferStr, $effectiveLetterRules);
-    if (p.kind === "letter" && p.status === "fail") return false;
-    if (p.value === null) return true;
-    return p.value >= ($userSettings.insufficientThreshold ?? 5.5);
-  }
 </script>
 
 <div
@@ -609,6 +597,29 @@
   </header>
 
   <main class="max-w-7xl mx-auto px-4 md:px-8 w-full py-8 pb-28">
+    <!-- The one thing students open the app for: where is my next lesson? -->
+    <section class="mb-6" in:fly={{ y: -10, duration: 500 }}>
+      <NextLessonHero events={heroEvents} loading={loadingEvents} />
+    </section>
+
+    <!-- Hidden grades: the card packs are the hook, so they stay on the home screen. -->
+    {#if revealEnabled && $gradePeek}
+      <button
+        type="button"
+        onclick={() => gradePeek.set(false)}
+        class="mb-6 w-full rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-2.5 text-left text-label-large text-amber-300 transition-colors hover:bg-amber-500/15"
+      >
+        Alle cijfers zichtbaar · tik om weer te verbergen
+      </button>
+    {:else if pendingGrades.length > 0}
+      <PendingGradesBanner
+        count={pendingGrades.length}
+        onopen={openPack}
+        onpeek={() => gradePeek.set(true)}
+        class="mb-6"
+      />
+    {/if}
+
     <!-- Pack for Tomorrow -->
     <section in:fly={{ y: -20, duration: 700 }} class="mb-14">
       <div
@@ -766,7 +777,7 @@
                         </span>
                         {#if event.Docenten?.[0]?.Naam}
                           <span class="text-label-small text-gray-600"
-                            >· {event.Docenten[0].Naam}</span
+                            >· {displayTeacherName(event.Docenten[0].Naam)}</span
                           >
                         {/if}
                       </div>
@@ -817,6 +828,7 @@
                         >
                           {stripHtml(hw.inhoud)}
                         </div>
+                        <TranslateButton source={hw.inhoud} />
                       {/if}
                       {#if hw.aantekening}
                         <div
@@ -1045,6 +1057,7 @@
                             >
                               {stripHtml(item.hw.inhoud)}
                             </div>
+                            <TranslateButton source={item.hw.inhoud} />
                           {/if}
                           {#each item.hw.assignments as a}
                             <div
@@ -1213,456 +1226,17 @@
       </div>
     </section>
 
-    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 md:gap-10">
-      <!-- Left Column: Schedule -->
-      <div class="lg:col-span-7 space-y-8">
-        <section in:fly={{ y: 30, duration: 800 }} class="space-y-3">
-          <div class="flex items-center justify-between px-1 mb-4">
-            <h2 class="text-headline-small text-white flex items-center gap-3">
-              <div
-                class="w-2 h-7 bg-primary-500 rounded-full shadow-[0_0_20px_rgba(200,100,255,0.6)] animate-pulse"
-              ></div>
-              Jouw Rooster
-            </h2>
-            <Button
-              variant="outlined"
-              onclick={() => currentPage.set("calendar")}
-              class="group/all"
-            >
-              Bekijk alles <svg
-                class="w-4 h-4 group-hover/all:translate-x-1 transition-transform"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="3"><path d="m9 18 6-6-6-6" /></svg
-              >
-            </Button>
-          </div>
-
-          <div
-            class="rounded-m3-md p-3 md:p-5 relative overflow-hidden group border border-white/10 elevation-2 min-h-[300px] flex flex-col"
-          >
-            <div
-              class="absolute inset-0 bg-gradient-to-br from-primary-500/8 via-transparent to-transparent opacity-60 group-hover:opacity-100 transition-opacity duration-700 pointer-events-none"
-            ></div>
-
-            {#if loadingEvents}
-              <div class="space-y-6 relative z-10 w-full p-4">
-                {#each Array(4) as _}
-                  <div
-                    class="flex items-center gap-7 p-6 rounded-m3-md bg-surface-900/30 animate-pulse border border-white/10"
-                  >
-                    <div class="w-20 h-20 rounded-m3-md bg-surface-800"></div>
-                    <div class="flex-1 space-y-3">
-                      <div class="h-6 bg-surface-800 rounded-full w-2/3"></div>
-                      <div
-                        class="h-4 bg-surface-800/50 rounded-full w-1/3"
-                      ></div>
-                    </div>
-                  </div>
-                {/each}
-              </div>
-            {:else if todayEvents.length === 0}
-              <div
-                class="flex-1 flex flex-col items-center justify-center text-center py-16"
-                in:fade
-              >
-                <svg
-                  class="w-12 h-12 text-gray-600 mb-4"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="1.5"
-                  ><path d="M8 2v4" /><path d="M16 2v4" /><rect
-                    width="18"
-                    height="18"
-                    x="3"
-                    y="4"
-                    rx="2"
-                  /><path d="M3 10h18" /></svg
-                >
-                <p class="text-white text-headline-small">Vrije dag!</p>
-                <p
-                  class="text-body-medium text-gray-500 mt-2 max-w-xs leading-relaxed"
-                >
-                  Geen geplande lessen vandaag.
-                </p>
-              </div>
-            {:else}
-              <div class="space-y-2 relative z-10 w-full">
-                {#each todayEvents as event, i (event.Id || i)}
-                  <button
-                    onclick={() => currentPage.set("calendar")}
-                    in:fly={{ x: -30, delay: i * 100, duration: 600 }}
-                    class="w-full flex flex-row items-center gap-4 md:gap-5 p-4 sm:p-5 rounded-m3-md bg-surface-800/60 border border-white/10 group/event transition-all hover:bg-surface-700/60 hover:border-primary-500/40 hover:scale-[1.01] active:scale-95 shadow-md"
-                  >
-                    <div
-                      class="flex flex-col items-center justify-center min-w-[60px] md:min-w-[75px] py-3 rounded-m3-sm bg-surface-900/80 border border-surface-700/60 group-hover/event:border-primary-500/50 transition-all shadow-md relative overflow-hidden shrink-0"
-                    >
-                      <div
-                        class="absolute inset-0 bg-primary-500/5 opacity-0 group-hover/event:opacity-100 transition-opacity"
-                      ></div>
-                      <span
-                        class="text-title-large text-primary-400 leading-none relative z-10"
-                        >{event.LesuurVan || "—"}</span
-                      >
-                      <span
-                        class="text-label-small text-gray-400 mt-1 relative z-10"
-                        >{formatTime(event.Start)}</span
-                      >
-                    </div>
-                    <div class="flex-1 min-w-0 text-left">
-                      <p
-                        class="text-title-medium text-white truncate group-hover/event:text-primary-400 transition-colors"
-                      >
-                        {event.Vakken?.[0]?.Naam ??
-                          event.Omschrijving ??
-                          "Afspraak"}
-                      </p>
-                      <div
-                        class="flex flex-wrap md:flex-nowrap items-center gap-2 md:gap-5 mt-2 md:mt-4"
-                      >
-                        <span
-                          class="flex items-center gap-1.5 text-label-medium text-gray-300 px-3 py-1.5 rounded-m3-full bg-surface-800/80 border border-white/8"
-                        >
-                          <svg
-                            class="w-3 md:w-3.5 h-3 md:h-3.5 text-primary-500 inline-block mr-1"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            stroke-width="3"
-                            ><path
-                              d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"
-                            /><circle cx="12" cy="10" r="3" /></svg
-                          >
-                          {event.Lokalen?.[0]?.Naam ?? "??"}
-                        </span>
-                        <span
-                          class="text-label-medium text-gray-400 truncate bg-white/6 px-2.5 py-1 rounded-m3-full border border-white/8"
-                          >{formatTeacherName(event.Docenten?.[0]?.Naam) ??
-                            "Geen docent"}</span
-                        >
-                      </div>
-                    </div>
-                    {#if event.Inhoud}
-                      <div
-                        class="w-10 h-10 md:w-14 md:h-14 rounded-full flex items-center justify-center bg-primary-500/10 text-primary-400 shrink-0 opacity-40 group-hover/event:opacity-100 transition-all border border-primary-500/20 group-hover/event:rotate-90 group-hover/event:scale-110 shadow-lg"
-                      >
-                        <svg
-                          class="w-5 h-5 md:w-7 md:h-7"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          stroke-width="3.5"><path d="M12 5v14M5 12h14" /></svg
-                        >
-                      </div>
-                    {/if}
-                  </button>
-                {/each}
-              </div>
-            {/if}
-          </div>
-        </section>
-
-        <!-- Middle Section: Recent Grades -->
-        <section
-          in:fly={{ y: 30, delay: 200, duration: 800 }}
-          class="space-y-4"
-        >
-          <div class="flex items-center justify-between px-1 mb-4">
-            <h2 class="text-headline-small text-white flex items-center gap-3">
-              <div
-                class="w-2 h-7 bg-accent-500 rounded-full shadow-[0_0_20px_rgba(200,100,255,0.6)]"
-              ></div>
-              Resultaten
-            </h2>
-            <Button
-              variant="outlined"
-              onclick={() => currentPage.set("grades")}
-              class="group/grades"
-            >
-              Alle cijfers <svg
-                class="w-3.5 h-3.5 md:w-4 md:h-4 group-hover/grades:translate-x-1 transition-transform"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="3"><path d="m9 18 6-6-6-6" /></svg
-              >
-            </Button>
-          </div>
-
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-5">
-            {#if loadingGrades}
-              {#each Array(4) as _}
-                <div
-                  class="p-4 md:p-5 rounded-m3-md glass animate-pulse border border-white/5 h-20 md:h-24 flex items-center gap-4"
-                >
-                  <div class="w-10 h-10 rounded-m3-sm bg-surface-800"></div>
-                  <div class="flex-1 space-y-2">
-                    <div class="h-4 bg-surface-800 rounded-full w-2/3"></div>
-                    <div class="h-3 bg-surface-800/50 rounded-full w-1/3"></div>
-                  </div>
-                </div>
-              {/each}
-            {:else}
-              {#if revealEnabled && $gradePeek}
-                <button
-                  type="button"
-                  onclick={() => gradePeek.set(false)}
-                  class="sm:col-span-2 w-full rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-2.5 text-left text-label-large text-amber-300 transition-colors hover:bg-amber-500/15"
-                >
-                  Alle cijfers zichtbaar · tik om weer te verbergen
-                </button>
-              {:else if pendingGrades.length > 0}
-                <PendingGradesBanner
-                  count={pendingGrades.length}
-                  onopen={openPack}
-                  onpeek={() => gradePeek.set(true)}
-                  class="sm:col-span-2"
-                />
-              {/if}
-              {#each latestGrades as grade, i (grade.CijferId || i)}
-                <button
-                  onclick={() => currentPage.set("grades")}
-                  in:scale={{ delay: i * 120, duration: 600, start: 0.9 }}
-                  class="flex items-center gap-3 p-4 md:p-5 rounded-m3-md glass border border-white/5 hover:scale-[1.03] hover:border-accent-500/40 transition-all group/grade active:scale-95 shadow-lg relative overflow-hidden w-full text-left"
-                >
-                  <div
-                    class="absolute -right-4 -bottom-4 w-20 h-20 bg-accent-500/5 blur-2xl rounded-full group-hover/grade:bg-accent-500/15 transition-all duration-700"
-                  ></div>
-                  <!-- Subject icon -->
-                  <div
-                    class="w-10 h-10 rounded-m3-sm bg-surface-900 border border-surface-700/40 flex items-center justify-center text-primary-400 shrink-0 group-hover/grade:border-accent-500/60 transition-all duration-500 group-hover/grade:rotate-6 group-hover/grade:scale-110 relative z-10"
-                  >
-                    {@html getSubjectIcon(grade.Vak?.Omschrijving ?? "")}
-                  </div>
-                  <!-- Subject info -->
-                  <div class="min-w-0 flex-1 relative z-10">
-                    <p
-                      class="text-title-small text-gray-100 truncate leading-tight group-hover/grade:text-accent-400 transition-colors"
-                    >
-                      {grade.Vak?.Omschrijving ?? "Onbekend"}
-                    </p>
-                    <p class="text-label-small text-gray-500 mt-1 truncate">
-                      {formatDate(grade.DatumIngevoerd || "")}
-                    </p>
-                  </div>
-                  <!-- Grade number -->
-                  <div class="shrink-0 relative z-10">
-                    <span
-                      class="text-headline-large leading-none transition-transform group-hover/grade:scale-110 block {$userSettings.highlightFailing &&
-                      isVoldoende(grade)!
-                        ? 'text-red-400'
-                        : 'text-accent-300'}"
-                    >
-                      {grade.CijferStr}
-                    </span>
-                  </div>
-                </button>
-              {:else}
-                {#if pendingGrades.length === 0}
-                  <div
-                    class="sm:col-span-2 py-10 rounded-m3-md flex flex-col items-center justify-center text-center border border-dashed border-white/15 bg-surface-800/30"
-                    in:fade
-                  >
-                    <svg
-                      class="w-10 h-10 text-gray-600 mb-3"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="1.5"
-                      ><path
-                        d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"
-                      /><rect x="9" y="3" width="6" height="4" rx="1" /></svg
-                    >
-                    <p class="text-title-small text-gray-400">
-                      Nog geen cijfers
-                    </p>
-                    <Button
-                      variant="text"
-                      onclick={() => currentPage.set("grades")}
-                      class="mt-3"
-                    >
-                      Bekijk cijferpagina <svg
-                        class="w-3 h-3"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="3"><path d="m9 18 6-6-6-6" /></svg
-                      >
-                    </Button>
-                  </div>
-                {/if}
-              {/each}
-            {/if}
-          </div>
-        </section>
-      </div>
-
-      <div class="lg:col-span-5 space-y-6 md:space-y-8">
-        <section
-          in:fly={{ x: 30, delay: 400, duration: 800 }}
-          class="space-y-6 md:space-y-10"
-        >
-          <h2
-            class="text-headline-small text-white flex items-center gap-3 px-1"
-          >
-            <div
-              class="w-2 h-7 bg-red-500 rounded-full shadow-[0_0_20px_rgba(239,68,68,0.6)] animate-pulse"
-            ></div>
-            Deadlines
-          </h2>
-
-          <div
-            class="glass rounded-m3-md p-4 md:p-8 shadow-2xl md:shadow-3xl relative overflow-hidden group border-white/5 flex flex-col min-h-[350px] md:min-h-[450px]"
-          >
-            <div
-              class="absolute inset-0 bg-gradient-to-br from-red-500/10 via-transparent to-transparent opacity-40 group-hover:opacity-60 transition-opacity duration-700"
-            ></div>
-
-            {#if loadingAssignments}
-              <div
-                class="space-y-4 md:space-y-6 relative z-10 w-full p-2 md:p-4"
-              >
-                {#each Array(3) as _}
-                  <div
-                    class="p-6 md:p-8 rounded-m3-md bg-surface-900/30 animate-pulse border border-white/10 h-24 md:h-32"
-                  ></div>
-                {/each}
-              </div>
-            {:else if upcomingAssignments.length === 0}
-              <div
-                class="flex-1 flex flex-col items-center justify-center text-center opacity-70 py-16 md:py-24 px-4 md:px-8"
-                in:fade
-              >
-                <div
-                  class="w-24 h-24 md:w-36 md:h-36 rounded-m3-lg bg-surface-900/80 flex items-center justify-center mb-6 md:mb-10 text-gray-500 border border-white/10 shadow-2xl md:shadow-3xl group-hover:scale-110 transition-all duration-700 relative"
-                >
-                  <div
-                    class="absolute inset-0 bg-emerald-500/5 blur-3xl rounded-full animate-pulse"
-                  ></div>
-                  <svg
-                    class="w-10 h-10 md:w-16 md:h-16 text-emerald-500"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2.5"
-                    ><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" /><polyline
-                      points="22 4 12 14.01 9 11.01"
-                    /></svg
-                  >
-                </div>
-                <p class="text-headline-small text-emerald-400/80 mb-4">
-                  Helemaal Bij!
-                </p>
-              </div>
-            {:else}
-              <div
-                class="space-y-4 md:space-y-6 mb-8 md:mb-12 relative z-10 p-1 md:p-2"
-              >
-                {#each upcomingAssignments as assignment, i (assignment.Id || i)}
-                  <button
-                    onclick={() => currentPage.set("assignments")}
-                    in:fly={{ x: 30, delay: i * 150, duration: 600 }}
-                    class="w-full p-5 md:p-8 rounded-m3-md bg-surface-900/50 border border-white/5 group/assign transition-all hover:bg-surface-800/90 hover:border-red-500/40 text-left shadow-xl md:shadow-2xl overflow-hidden relative active:scale-95 hover:scale-[1.02] flex flex-col sm:flex-row justify-between sm:items-center gap-4 sm:gap-8"
-                  >
-                    <div
-                      class="absolute -right-3 -top-3 w-16 h-16 md:w-20 md:h-20 bg-red-500/10 blur-2xl rounded-full group-hover/assign:bg-red-500/20 transition-all duration-700"
-                    ></div>
-                    <div class="min-w-0 relative z-10">
-                      <p
-                        class="text-title-large text-gray-100 truncate group-hover/assign:text-red-400 transition-colors leading-tight"
-                      >
-                        {assignment.Titel}
-                      </p>
-                      <p
-                        class="text-label-small text-gray-500 mt-2 md:mt-3.5 bg-red-500/5 px-2 py-1 rounded-m3-xs inline-block"
-                      >
-                        {assignment.Vak ?? "Algemeen"}
-                      </p>
-                    </div>
-                    <div
-                      class="align-self-start sm:align-self-auto shrink-0 px-3 md:px-5 py-2 md:py-3 rounded-m3-full bg-red-500/15 border border-red-500/30 text-label-medium text-red-500 shadow-xl group-hover/assign:scale-110 group-hover/assign:-rotate-2 transition-all relative z-10"
-                    >
-                      {new Date(assignment.InleverenVoor).toLocaleDateString(
-                        "nl-NL",
-                        { day: "numeric", month: "short" },
-                      )}
-                    </div>
-                  </button>
-                {/each}
-              </div>
-            {/if}
-
-            <Button
-              variant="filled"
-              onclick={() => currentPage.set("assignments")}
-              class="w-full py-6 rounded-m3-full group/btn mt-auto"
-            >
-              Open Portaal <svg
-                class="w-5 h-5 animate-bounce-horizontal"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="3"><path d="M5 12h14M12 5l7 7-7 7" /></svg
-              >
-            </Button>
-          </div>
-        </section>
-
-        <!-- Motivation card -->
-        <section
-          in:fly={{ x: 30, delay: 600, duration: 800 }}
-          class="glass rounded-m3-md p-12 relative overflow-hidden bg-gradient-to-br from-primary-950/60 via-surface-950 to-accent-950/60 border-l-[6px] border-primary-500/50 shadow-3xl group"
-        >
-          <div
-            class="relative z-20 flex flex-col items-center justify-center text-center py-6"
-          >
-            <div
-              class="w-24 h-24 rounded-m3-lg bg-primary-500/20 flex items-center justify-center mb-10 group-hover:rotate-12 group-hover:scale-110 transition-all duration-700 shadow-3xl border border-primary-500/30 relative"
-            >
-              <div
-                class="absolute inset-0 bg-primary-400/20 blur-2xl animate-pulse"
-              ></div>
-              <svg
-                class="w-12 h-12 text-primary-400 relative z-10"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                ><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6" /><path
-                  d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"
-                /><path d="M4 22h16" /><path
-                  d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"
-                /><path
-                  d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"
-                /><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z" /></svg
-              >
-            </div>
-            <h3
-              class="text-display-small text-white mb-6 leading-none animate-float"
-            >
-              Investeer in jezelf!
-            </h3>
-            <p
-              class="text-body-medium text-primary-200/80 max-w-[320px] leading-loose opacity-90"
-            >
-              Jouw inzet bepaalt de uitkomst. Maak er een legendarische dag van!
-            </p>
-          </div>
-          <!-- Decorative layers for absolute premium feel -->
-          <div
-            class="absolute -top-32 -right-32 w-80 h-80 bg-primary-500/20 blur-[120px] rounded-full animate-pulse-slow"
-          ></div>
-          <div
-            class="absolute -bottom-32 -left-32 w-80 h-80 bg-accent-500/20 blur-[120px] rounded-full animate-pulse-slow-reverse"
-          ></div>
-          <div
-            class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full h-full bg-grid-white/[0.02] mask-radial-gradient"
-          ></div>
-        </section>
-      </div>
-    </div>
+    <!-- Things to play with -->
+    <section class="mb-10 grid grid-cols-1 gap-4 md:grid-cols-2">
+      <LevelCard />
+      <QuickGradeSliders />
+      <QuestsCard />
+      <FriendsCard events={heroEvents} />
+      <div class="md:col-span-2"><WrappedCard onopen={() => (showWrapped = true)} /></div>
+    </section>
+    {#if showWrapped}
+      <WrappedStory onclose={() => (showWrapped = false)} />
+    {/if}
   </main>
 </div>
 
@@ -1698,61 +1272,9 @@
     animation: header-pulse 10s ease-in-out infinite;
   }
 
-  @keyframes pulse-slow {
-    0%,
-    100% {
-      transform: scale(1);
-      opacity: 0.3;
-    }
-    50% {
-      transform: scale(1.2);
-      opacity: 0.5;
-    }
-  }
-  .animate-pulse-slow {
-    animation: pulse-slow 15s ease-in-out infinite;
-  }
 
-  @keyframes pulse-slow-reverse {
-    0%,
-    100% {
-      transform: scale(1.2);
-      opacity: 0.5;
-    }
-    50% {
-      transform: scale(1);
-      opacity: 0.3;
-    }
-  }
-  .animate-pulse-slow-reverse {
-    animation: pulse-slow-reverse 15s ease-in-out infinite;
-  }
 
-  @keyframes bounce-horizontal {
-    0%,
-    100% {
-      transform: translateX(0);
-    }
-    50% {
-      transform: translateX(6px);
-    }
-  }
-  .animate-bounce-horizontal {
-    animation: bounce-horizontal 1.5s infinite;
-  }
 
-  @keyframes float {
-    0%,
-    100% {
-      transform: translateY(0);
-    }
-    50% {
-      transform: translateY(-10px);
-    }
-  }
-  .animate-float {
-    animation: float 6s ease-in-out infinite;
-  }
 
   .glass {
     background: color-mix(in oklch, var(--color-surface-900), transparent 40%);
@@ -1769,11 +1291,5 @@
     overflow-x: hidden;
   }
 
-  .shadow-3xl {
-    box-shadow: 0 40px 100px -20px rgba(0, 0, 0, 0.7);
-  }
 
-  .mask-radial-gradient {
-    mask-image: radial-gradient(circle at center, black, transparent 80%);
-  }
 </style>

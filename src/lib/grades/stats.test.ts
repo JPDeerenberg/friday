@@ -55,9 +55,9 @@ test('getTrendDirection detects improving, declining and stable trends', () => {
 });
 
 test('getTrendLabel maps directions to labels', () => {
-  assert.strictEqual(getTrendLabel(1), 'Stijgend 📈');
-  assert.strictEqual(getTrendLabel(-1), 'Dalend 📉');
-  assert.strictEqual(getTrendLabel(0), 'Stabiel ➡️');
+  assert.strictEqual(getTrendLabel(1), 'Stijgend');
+  assert.strictEqual(getTrendLabel(-1), 'Dalend');
+  assert.strictEqual(getTrendLabel(0), 'Stabiel');
 });
 
 test('isPassing compares a grade against the threshold', () => {

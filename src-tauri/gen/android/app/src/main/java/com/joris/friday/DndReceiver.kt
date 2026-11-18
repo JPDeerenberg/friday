@@ -54,7 +54,7 @@ class DndReceiver : BroadcastReceiver() {
                 // Safety timeout: always turn off regardless of who set it
                 // This prevents DND from being stuck on indefinitely due to a bug
                 if (DndScheduler.didFridaySetDnd(context)) {
-                    Log.w("FridayDndReceiver", "⚠️ SAFETY TIMEOUT — forcing DND off (was set by Friday)")
+                    Log.w("FridayDndReceiver", "SAFETY TIMEOUT — forcing DND off (was set by Friday)")
                     NotificationHelper.updateDndStatus(context, false)
                     DndScheduler.setFridayDndFlag(context, false)
                 } else {

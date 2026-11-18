@@ -6,16 +6,32 @@
    */
   import { fade, fly } from "svelte/transition";
   import GradeCardView from "$lib/components/GradeCardView.svelte";
+  import Icon from "$lib/components/Icon.svelte";
   import {
     ACHIEVEMENTS,
     RARITIES,
     RARITY_META,
     STAMP_META,
     achievementProgress,
+    careerInfo,
     countCompleteSets,
     levelInfo,
+    seasonLabel,
+    seasonXp,
+    seasonsOf,
     type CardData,
+    type Rarity,
+    type Stamp,
   } from "$lib/cards";
+  import {
+    DEFAULT_FILTERS,
+    activeFilterCount,
+    filterAndSort,
+    subjectsOf,
+    type CatalogFilters,
+    type CatalogSort,
+    type CatalogStatus,
+  } from "$lib/card-catalog";
   import { gradeRevealState, toggleShowcase } from "$lib/grade-reveal";
 
   let {
@@ -38,7 +54,16 @@
 
   const openedSet = $derived(new Set($gradeRevealState.opened));
   const tally = $derived($gradeRevealState.tally);
-  const li = $derived(levelInfo(tally.xp));
+  // Levels are per school year ("seizoen"), so a student with one more year of
+  // history is not unreachably far ahead. All-time XP lives on as the career rank.
+  const seasons = $derived(seasonsOf(cards));
+  let season = $state<string | null>(null);
+  const activeSeason = $derived(
+    season && seasons.includes(season) ? season : seasons[0],
+  );
+  const seasonPoints = $derived(seasonXp(cards, openedSet, activeSeason));
+  const li = $derived(levelInfo(seasonPoints));
+  const career = $derived(careerInfo(tally.xp));
   const completeSets = $derived(countCompleteSets(cards, openedSet));
 
   const bySubject = $derived.by(() => {
@@ -95,6 +120,33 @@
 
   let detail = $state<CardData | null>(null);
 
+  // "Alle kaarten": the complete list with filters.
+  let view = $state<"vak" | "alle">("vak");
+  let filters = $state<CatalogFilters>({ ...DEFAULT_FILTERS });
+  const filterCount = $derived(activeFilterCount(filters));
+  const catalog = $derived(filterAndSort(cards, openedSet, filters));
+  const subjectNames = $derived(subjectsOf(cards));
+  const SORTS: { id: CatalogSort; label: string }[] = [
+    { id: "newest", label: "Nieuwste" },
+    { id: "oldest", label: "Oudste" },
+    { id: "rarity", label: "Zeldzaamheid" },
+    { id: "value", label: "Hoogste cijfer" },
+    { id: "subject", label: "Vak A–Z" },
+  ];
+  const STATUSES: { id: CatalogStatus; label: string }[] = [
+    { id: "all", label: "Alles" },
+    { id: "opened", label: "Geopend" },
+    { id: "hidden", label: "Verborgen" },
+  ];
+  function toggleRarity(r: Rarity) {
+    filters.rarities = filters.rarities.includes(r)
+      ? filters.rarities.filter((x) => x !== r)
+      : [...filters.rarities, r];
+  }
+  function resetFilters() {
+    filters = { ...DEFAULT_FILTERS, sort: filters.sort };
+  }
+
   /** Page-turn transition between subjects. */
   function pageFlip(
     _node: Element,
@@ -118,7 +170,9 @@
   <section class="hero glass-ish rounded-3xl p-5 space-y-4">
     <div class="flex items-center justify-between gap-3">
       <div class="min-w-0">
-        <p class="text-label-medium text-gray-400">Level {li.level}</p>
+        <p class="text-label-medium text-gray-400">
+          Level {li.level} · seizoen {seasonLabel(activeSeason)}
+        </p>
         <h2 class="text-headline-small text-white truncate">{li.title}</h2>
       </div>
       <div class="lvlbadge" aria-hidden="true">{li.level}</div>
@@ -129,15 +183,50 @@
         class="mt-1 flex justify-between text-label-small text-gray-500 tabular-nums"
       >
         <span>{li.into} / {li.need} XP</span>
-        <span>{tally.xp} XP totaal</span>
+        <span>{seasonPoints} XP dit seizoen</span>
       </div>
+      <p class="mt-1 text-label-small text-gray-500">
+        Levels starten elk schooljaar opnieuw, zodat iedereen gelijk begint.
+      </p>
+    </div>
+    {#if seasons.length > 1}
+      <div class="seasons no-scrollbar" role="tablist" aria-label="Seizoen">
+        {#each seasons as sn}
+          <button
+            type="button"
+            role="tab"
+            aria-selected={sn === activeSeason}
+            class="tab"
+            class:on={sn === activeSeason}
+            onclick={() => (season = sn)}>{seasonLabel(sn)}</button
+          >
+        {/each}
+      </div>
+    {/if}
+    <div class="career" title="Alle XP van alle schooljaren samen">
+      <span
+        class="text-label-medium text-gray-300 inline-flex items-center gap-1.5"
+      >
+        <Icon name="trophy" size={14} class="text-amber-300" /> Carrière:
+        <b class="text-white">{career.rank}</b>
+      </span>
+      <span class="text-label-small text-gray-500 tabular-nums">
+        {career.xp} XP{career.nextAt !== null
+          ? ` · nog ${career.nextAt - career.xp} tot de volgende rang`
+          : ""}
+      </span>
     </div>
     <div class="flex flex-wrap gap-2">
-      <span class="chip">🎴 {tally.total} / {cards.length} geopend</span>
+      <span class="chip"
+        ><Icon name="cards" size={13} />
+        {tally.total} / {cards.length} geopend</span
+      >
       {#if tally.bestStreak > 1}<span class="chip"
-          >📈 beste reeks {tally.bestStreak}</span
+          ><Icon name="trend-up" size={13} /> beste reeks {tally.bestStreak}</span
         >{/if}
-      {#if tally.shiny > 0}<span class="chip">✨ {tally.shiny} shiny</span>{/if}
+      {#if tally.shiny > 0}<span class="chip"
+          ><Icon name="sparkles" size={13} /> {tally.shiny} shiny</span
+        >{/if}
       {#each RARITIES as r}
         {#if tally.byRarity[r] > 0}
           <span class="chip" style="--c:{RARITY_META[r].color}">
@@ -149,7 +238,7 @@
     </div>
     {#if hiddenCount > 0}
       <button type="button" class="packbtn" onclick={onpack}>
-        <span class="packicon" aria-hidden="true">🎁</span>
+        <span class="packicon"><Icon name="gift" size={26} /></span>
         <span class="flex-1 text-left">
           <b class="block">Open pakket</b>
           <small class="block opacity-80"
@@ -187,9 +276,130 @@
 
   <!-- ======= binder ======= -->
   <section class="space-y-3">
-    <h3 class="text-label-large text-gray-400 px-1">Verzameling</h3>
+    <div class="flex items-center justify-between gap-3 px-1">
+      <h3 class="text-label-large text-gray-400">Verzameling</h3>
+      {#if cards.length > 0}
+        <div class="seg" role="tablist" aria-label="Weergave">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={view === "vak"}
+            class:on={view === "vak"}
+            onclick={() => (view = "vak")}>Per vak</button
+          >
+          <button
+            type="button"
+            role="tab"
+            aria-selected={view === "alle"}
+            class:on={view === "alle"}
+            onclick={() => (view = "alle")}>Alle kaarten</button
+          >
+        </div>
+      {/if}
+    </div>
     {#if bySubject.length === 0}
       <p class="text-body-medium text-gray-500 px-1">Nog geen kaarten.</p>
+    {:else if view === "alle"}
+      <div class="filters">
+        <div class="frow no-scrollbar">
+          {#each RARITIES as r}
+            <button
+              type="button"
+              class="fchip"
+              class:on={filters.rarities.includes(r)}
+              style="--c:{RARITY_META[r].color}"
+              aria-pressed={filters.rarities.includes(r)}
+              onclick={() => toggleRarity(r)}
+              ><i class="dot"></i>{RARITY_META[r].label}</button
+            >
+          {/each}
+          <button
+            type="button"
+            class="fchip"
+            class:on={filters.shinyOnly}
+            aria-pressed={filters.shinyOnly}
+            onclick={() => (filters.shinyOnly = !filters.shinyOnly)}
+            ><Icon name="sparkles" size={13} /> Shiny</button
+          >
+        </div>
+        <div class="frow no-scrollbar">
+          {#each STATUSES as st}
+            <button
+              type="button"
+              class="fchip"
+              class:on={filters.status === st.id}
+              aria-pressed={filters.status === st.id}
+              onclick={() => (filters.status = st.id)}>{st.label}</button
+            >
+          {/each}
+        </div>
+        <div class="selects">
+          <select bind:value={filters.subject} aria-label="Vak">
+            <option value={null}>Alle vakken</option>
+            {#each subjectNames as sn}<option value={sn}>{sn}</option>{/each}
+          </select>
+          {#if seasons.length > 1}
+            <select bind:value={filters.season} aria-label="Schooljaar">
+              <option value={null}>Alle schooljaren</option>
+              {#each seasons as sn}<option value={sn}>{seasonLabel(sn)}</option
+                >{/each}
+            </select>
+          {/if}
+          <select bind:value={filters.stamp} aria-label="Stempel">
+            <option value={null}>Alle stempels</option>
+            {#each Object.entries(STAMP_META) as [id, meta]}
+              <option value={id as Stamp}>{meta.label}</option>
+            {/each}
+          </select>
+          <select bind:value={filters.sort} aria-label="Sorteren">
+            {#each SORTS as so}<option value={so.id}>{so.label}</option>{/each}
+          </select>
+        </div>
+        <div class="fcount">
+          <span class="tabular-nums"
+            >{catalog.length} van {cards.length} kaarten</span
+          >
+          {#if filterCount > 0}
+            <button type="button" class="reset" onclick={resetFilters}
+              >Wis filters ({filterCount})</button
+            >
+          {/if}
+        </div>
+        {#if filters.rarities.length > 0 || filters.shinyOnly || filters.stamp}
+          <p class="text-label-small text-gray-500">
+            Verborgen kaarten tonen we hier niet: open ze eerst.
+          </p>
+        {/if}
+      </div>
+      {#if catalog.length === 0}
+        <p class="text-body-medium text-gray-500 px-1">
+          Geen kaarten met deze filters.
+        </p>
+      {:else}
+        <div class="grid" bind:clientWidth={gridW}>
+          {#each catalog as c (c.id)}
+            {@const isOpen = openedSet.has(c.id)}
+            <button
+              type="button"
+              class="tile"
+              onclick={() => tileTap(c)}
+              aria-label={isOpen
+                ? `${c.subject} ${c.value}`
+                : `Verborgen cijfer ${c.subject}, tik om te openen`}
+            >
+              <GradeCardView
+                card={c}
+                scale={tileScale}
+                faceDown={!isOpen}
+                calm={calm || true}
+                {lite}
+                animateFlip={false}
+              />
+              {#if !isOpen}<span class="tap">Tik</span>{/if}
+            </button>
+          {/each}
+        </div>
+      {/if}
     {:else}
       <div class="tabs no-scrollbar" role="tablist">
         {#each bySubject as [name, list]}
@@ -253,7 +463,7 @@
     <div class="achgrid">
       {#each achievementRows as { a, p, at } (a.id)}
         <div class="ach" class:done={p.done}>
-          <span class="icon" aria-hidden="true">{a.icon}</span>
+          <span class="icon"><Icon name={a.icon} size={22} /></span>
           <div class="min-w-0 flex-1">
             <b class="block truncate">{a.title}</b>
             <small class="block text-gray-400">{a.desc}</small>
@@ -320,7 +530,8 @@
       {#if d.stamps.length}
         <div class="stamps">
           {#each d.stamps as st}<span
-              >{STAMP_META[st].icon} {STAMP_META[st].label}</span
+              ><Icon name={STAMP_META[st].icon} size={12} />
+              {STAMP_META[st].label}</span
             >{/each}
         </div>
       {/if}
@@ -419,7 +630,8 @@
     filter: brightness(1.05);
   }
   .packicon {
-    font-size: 1.7rem;
+    display: flex;
+    color: #7c2d12;
     animation: wiggle 2.4s ease-in-out infinite;
   }
   .slot {
@@ -575,8 +787,8 @@
     font-size: 0.72rem;
   }
   .ach .icon {
-    font-size: 1.6rem;
-    filter: grayscale(1);
+    display: flex;
+    color: #9ca3af;
     opacity: 0.45;
   }
   .ach.done {
@@ -589,7 +801,7 @@
     box-shadow: 0 0 22px -10px rgba(251, 191, 36, 0.6);
   }
   .ach.done .icon {
-    filter: none;
+    color: #fbbf24;
     opacity: 1;
   }
   .mini {
@@ -694,5 +906,99 @@
     .tap {
       animation: none;
     }
+  }
+
+  .seasons {
+    display: flex;
+    gap: 0.4rem;
+    overflow-x: auto;
+  }
+  .career {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.25rem 0.75rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+    padding-top: 0.6rem;
+  }
+  .seg {
+    display: inline-flex;
+    border-radius: 99px;
+    padding: 0.15rem;
+    background: rgba(255, 255, 255, 0.06);
+  }
+  .seg button {
+    padding: 0.3rem 0.8rem;
+    border-radius: 99px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: #9ca3af;
+  }
+  .seg button.on {
+    color: white;
+    background: rgba(255, 255, 255, 0.14);
+  }
+  .filters {
+    display: flex;
+    flex-direction: column;
+    gap: 0.55rem;
+  }
+  .frow {
+    display: flex;
+    gap: 0.4rem;
+    overflow-x: auto;
+    padding-bottom: 0.1rem;
+  }
+  .fchip {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.35rem 0.75rem;
+    border-radius: 99px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: #9ca3af;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid transparent;
+    white-space: nowrap;
+  }
+  .fchip .dot {
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 99px;
+    background: var(--c, #9ca3af);
+  }
+  .fchip.on {
+    color: white;
+    border-color: var(--c, rgba(255, 255, 255, 0.4));
+    background: rgba(255, 255, 255, 0.12);
+  }
+  .selects {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.4rem;
+  }
+  .selects select {
+    min-width: 0;
+    padding: 0.45rem 0.6rem;
+    border-radius: 0.75rem;
+    font-size: 0.8rem;
+    color: #e5e7eb;
+    background: rgba(255, 255, 255, 0.07);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+  .fcount {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 0.78rem;
+    color: #9ca3af;
+  }
+  .reset {
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: #c4b5fd;
   }
 </style>

@@ -20,6 +20,7 @@
     studiewijzers: () => import('./studiewijzers/Studiewijzers.svelte'),
     activiteiten: () => import('./activiteiten/Activiteiten.svelte'),
     'ai-schedule': () => import('./ai-schedule/AiSchedule.svelte'),
+    friends: () => import('./friends/Friends.svelte'),
     profile: () => import('./profile/Profile.svelte'),
     settings: () => import('./settings/Settings.svelte'),
   };

@@ -47,6 +47,8 @@
   } from "$lib/grades/scenarios";
   import { schoolAverages, compareWithSchool } from "$lib/grades/compare";
   import { evaluateCompensation } from "$lib/grades/compensation";
+  import MinpuntenChip from "$lib/components/MinpuntenChip.svelte";
+  import { recordQuestEvent } from "$lib/quests-store";
   import {
     isSchoolexamenGrade,
     seReason,
@@ -73,6 +75,7 @@
   import Button from "$lib/components/Button.svelte";
   import Chip from "$lib/components/Chip.svelte";
   import IconButton from "$lib/components/IconButton.svelte";
+  import Icon from "$lib/components/Icon.svelte";
   import Switch from "$lib/components/Switch.svelte";
   import PackReveal from "$lib/components/PackReveal.svelte";
   import CardAlbum from "$lib/components/CardAlbum.svelte";
@@ -1123,6 +1126,13 @@
             </svg>
           </IconButton>
         {/if}
+        {#if $userSettings.showMinpunten !== false}
+          <MinpuntenChip
+            result={compensationList.result}
+            passGrade={$userSettings.compensation.passGrade}
+            decimals={$userSettings.decimalPoints ?? 1}
+          />
+        {/if}
       </div>
       <div class="flex flex-wrap items-center gap-2 justify-end flex-1 min-w-0">
         {#each schoolyears as year}
@@ -1489,7 +1499,7 @@
             <option value="hoogste">Hoogste Gemiddelde</option>
             <option value="laagste">Laagste Gemiddelde</option>
             <option value="meeste">Meeste Cijfers</option>
-            <option value="trend">Trend 📈</option>
+            <option value="trend">Trend</option>
           </select>
         </div>
 
@@ -1542,7 +1552,10 @@
                           class="text-[9px] {trendDir > 0
                             ? 'text-emerald-400'
                             : 'text-red-400'} font-black"
-                          >{trendDir > 0 ? "📈" : "📉"}</span
+                          ><Icon
+                            name={trendDir > 0 ? "trend-up" : "trend-down"}
+                            size={12}
+                          /></span
                         >
                       {/if}
                       {#if minForPass && !isVoldoende(subject.avg)}
@@ -2426,7 +2439,7 @@
           <div class="grid grid-cols-2 gap-3">
             <div class="glass rounded-3xl p-5 border border-emerald-500/20">
               <div class="flex items-center gap-2 mb-3">
-                <span class="text-lg">🏆</span>
+                <Icon name="trophy" size={18} class="text-emerald-400" />
                 <h3
                   class="text-[10px] font-black text-emerald-400 uppercase tracking-widest"
                 >
@@ -2444,7 +2457,7 @@
             </div>
             <div class="glass rounded-3xl p-5 border border-red-500/20">
               <div class="flex items-center gap-2 mb-3">
-                <span class="text-lg">⚠️</span>
+                <Icon name="alert" size={18} class="text-red-400" />
                 <h3
                   class="text-[10px] font-black text-red-400 uppercase tracking-widest"
                 >
@@ -2480,7 +2493,11 @@
                     class="flex items-center justify-between p-3 rounded-xl bg-surface-800/50 border border-white/5"
                   >
                     <div class="flex items-center gap-3">
-                      <span class="text-lg">{dir > 0 ? "📈" : "📉"}</span>
+                      <Icon
+                        name={dir > 0 ? "trend-up" : "trend-down"}
+                        size={18}
+                        class={dir > 0 ? "text-emerald-400" : "text-red-400"}
+                      />
                       <div>
                         <p class="text-sm font-bold text-gray-200">
                           {subject.name}
@@ -3164,9 +3181,13 @@
                                       : 'text-emerald-400'
                                     : 'text-red-400'}"
                                 >
-                                  {needed >= 1
-                                    ? needed.toFixed(1)
-                                    : "✅ Gehaald"}
+                                  {#if needed >= 1}
+                                    {needed.toFixed(1)}
+                                  {:else}
+                                    <span class="inline-flex items-center gap-1"
+                                      ><Icon name="check" size={13} /> Gehaald</span
+                                    >
+                                  {/if}
                                 </span>
                               </div>
                             {/if}
@@ -3297,7 +3318,7 @@
                               return n <= 10
                                 ? n >= 1
                                   ? n.toFixed(1)
-                                  : "✅"
+                                  : "Gehaald"
                                 : "Onmogelijk";
                             })()}
                           </span>
@@ -3333,9 +3354,13 @@
                                       : 'text-emerald-400'
                                     : 'text-emerald-400'}"
                                 >
-                                  {needed >= 1
-                                    ? `Cijfer ${needed.toFixed(1)} nodig`
-                                    : "✅ al gehaald"}
+                                  {#if needed >= 1}
+                                    Cijfer {needed.toFixed(1)} nodig
+                                  {:else}
+                                    <span class="inline-flex items-center gap-1"
+                                      ><Icon name="check" size={13} /> al gehaald</span
+                                    >
+                                  {/if}
                                 </span>
                               </div>
                             {/if}
@@ -4312,6 +4337,7 @@
     collection={cardList}
     intensity={cardIntensity}
     sound={$userSettings.cardSound === true}
+    onrevealed={() => recordQuestEvent("pack_opened")}
     onclose={() => (revealQueue = null)}
   />
 {/if}

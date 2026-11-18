@@ -42,6 +42,7 @@
   import { onMount, untrack } from "svelte";
   import { fade, fly } from "svelte/transition";
   import RichTextEditor from "$lib/components/RichTextEditor.svelte";
+  import TranslateButton from "$lib/components/TranslateButton.svelte";
   import Button from "$lib/components/Button.svelte";
   import Chip from "$lib/components/Chip.svelte";
   import IconButton from "$lib/components/IconButton.svelte";
@@ -812,6 +813,7 @@
               >
                 {@html sel.Omschrijving}
               </div>
+              <TranslateButton source={sel.Omschrijving} />
             </div>
           {/if}
 

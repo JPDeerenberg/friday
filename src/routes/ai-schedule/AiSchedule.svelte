@@ -1,8 +1,10 @@
 <script lang="ts">
   import { onMount, untrack } from "svelte";
+  import { Moon } from "@lucide/svelte";
   import { personId, userSettings, resumedAt } from "$lib/stores";
   import { get } from "svelte/store";
   import { formatTime } from "$lib/format";
+  import { displayTeacherName } from "$lib/teachers";
   import * as schedApi from "$lib/ai-schedule";
   import type { AiScheduleItem } from "$lib/ai-schedule-types";
   import type { CalendarEvent } from "$lib/types";
@@ -1664,7 +1666,7 @@
                 {#if app.Docenten?.[0] && !$userSettings.compactView}
                   <span
                     class="text-label-small text-gray-500 shrink-0 bg-surface-900/60 px-1.5 py-0.5 rounded-m3-sm border border-white/5"
-                    >{app.Docenten[0].Naam}</span
+                    >{displayTeacherName(app.Docenten[0].Naam)}</span
                   >
                 {/if}
               </div>
@@ -1703,8 +1705,9 @@
                 <div class="h-3 w-0.5 bg-indigo-500/40"></div>
               </div>
               <div class="flex-1 flex items-center gap-2">
-                <span class="text-label-small text-indigo-300/80"
-                  >🌙 Slaap {formatTime(item.start)} – {formatTime(
+                <span
+                  class="text-label-small text-indigo-300/80 inline-flex items-center gap-1"
+                  ><Moon size={12} /> Slaap {formatTime(item.start)} – {formatTime(
                     item.end,
                   )}</span
                 >

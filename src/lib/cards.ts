@@ -11,6 +11,7 @@
  * stays importable from plain Node tests.
  */
 import type { Grade } from "$lib/types";
+import type { IconName } from "$lib/icons";
 
 export type Rarity =
   | "gewoon"
@@ -89,12 +90,12 @@ export const RARITY_META: Record<Rarity, RarityMeta> = {
 
 export const RARITIES = Object.keys(RARITY_META) as Rarity[];
 
-export const STAMP_META: Record<Stamp, { label: string; icon: string }> = {
-  boss: { label: "Boss-toets", icon: "👑" },
-  clutch: { label: "Clutch", icon: "🎯" },
-  pb: { label: "Record", icon: "🏆" },
-  comeback: { label: "Comeback", icon: "🔥" },
-  first: { label: "1e editie", icon: "✨" },
+export const STAMP_META: Record<Stamp, { label: string; icon: IconName }> = {
+  boss: { label: "Boss-toets", icon: "crown" },
+  clutch: { label: "Clutch", icon: "target" },
+  pb: { label: "Record", icon: "trophy" },
+  comeback: { label: "Comeback", icon: "flame" },
+  first: { label: "1e editie", icon: "sparkles" },
 };
 
 export interface CardData {
@@ -110,7 +111,7 @@ export interface CardData {
   mode: OpenMode;
   seed: number;
   hue: number;
-  emoji: string;
+  icon: IconName;
   weight: number | null;
   date: string | null;
   stamps: Stamp[];
@@ -186,34 +187,40 @@ export function compareForPack(a: CardData, b: CardData): number {
 
 // ---------------------------------------------------------------- subject theme
 
-const THEMES: Array<[RegExp, { hue: number; emoji: string }]> = [
-  [/wiskunde|rekenen|statistiek/i, { hue: 215, emoji: "📐" }],
-  [/natuurkunde|nask|fysica/i, { hue: 190, emoji: "⚛️" }],
-  [/scheikunde|chemie/i, { hue: 150, emoji: "🧪" }],
-  [/biologie|levende natuur/i, { hue: 105, emoji: "🧬" }],
-  [/nederlands|\bned\b/i, { hue: 5, emoji: "📖" }],
-  [/engels|english/i, { hue: 345, emoji: "💬" }],
+const THEMES: Array<[RegExp, { hue: number; icon: IconName }]> = [
+  [/wiskunde|rekenen|statistiek/i, { hue: 215, icon: "ruler" }],
+  [/natuurkunde|nask|fysica/i, { hue: 190, icon: "atom" }],
+  [/scheikunde|chemie/i, { hue: 150, icon: "flask" }],
+  [/biologie|levende natuur/i, { hue: 105, icon: "dna" }],
+  [/nederlands|\bned\b/i, { hue: 5, icon: "book" }],
+  [/engels|english/i, { hue: 345, icon: "message" }],
   [
     /frans|duits|spaans|latijn|grieks|chinees|italiaans|russisch/i,
-    { hue: 28, emoji: "🗣️" },
+    { hue: 28, icon: "languages" },
   ],
-  [/geschiedenis|maatschappij|burgerschap/i, { hue: 38, emoji: "🏛️" }],
-  [/aardrijkskunde|geografie/i, { hue: 170, emoji: "🌍" }],
-  [/economie|bedrijfs|management/i, { hue: 50, emoji: "💶" }],
-  [/kunst|tekenen|ckv|handvaardigheid|beeldend/i, { hue: 315, emoji: "🎨" }],
-  [/muziek/i, { hue: 290, emoji: "🎵" }],
+  [/geschiedenis|maatschappij|burgerschap/i, { hue: 38, icon: "landmark" }],
+  [/aardrijkskunde|geografie/i, { hue: 170, icon: "globe" }],
+  [/economie|bedrijfs|management/i, { hue: 50, icon: "banknote" }],
+  [
+    /kunst|tekenen|ckv|handvaardigheid|beeldend/i,
+    { hue: 315, icon: "palette" },
+  ],
+  [/muziek/i, { hue: 290, icon: "music" }],
   [
     /informatica|programmeren|ict|techniek|technologie/i,
-    { hue: 255, emoji: "💻" },
+    { hue: 255, icon: "laptop" },
   ],
-  [/lichamelijke|gymnastiek|\blo\b|sport/i, { hue: 15, emoji: "⚽" }],
-  [/filosofie|levensbeschouwing|godsdienst/i, { hue: 270, emoji: "🧠" }],
-  [/mentor|loopbaan|studie/i, { hue: 200, emoji: "🧭" }],
+  [/lichamelijke|gymnastiek|\blo\b|sport/i, { hue: 15, icon: "sport" }],
+  [/filosofie|levensbeschouwing|godsdienst/i, { hue: 270, icon: "brain" }],
+  [/mentor|loopbaan|studie/i, { hue: 200, icon: "compass" }],
 ];
 
-export function subjectTheme(subject: string): { hue: number; emoji: string } {
+export function subjectTheme(subject: string): {
+  hue: number;
+  icon: IconName;
+} {
   for (const [re, theme] of THEMES) if (re.test(subject)) return theme;
-  return { hue: hash32(`hue:${subject}`) % 360, emoji: "📚" };
+  return { hue: hash32(`hue:${subject}`) % 360, icon: "books" };
 }
 
 // ---------------------------------------------------------------- card building
@@ -283,7 +290,8 @@ export function buildCards(
   const bySubject = new Map<string, Grade[]>();
   for (const g of grades) {
     if (!g.CijferStr || g.CijferKolom?.KolomSoort !== 1) continue;
-    if (!opts.includeLetters && parseGradeNumber(g.CijferStr) === null) continue;
+    if (!opts.includeLetters && parseGradeNumber(g.CijferStr) === null)
+      continue;
     const key = subjectOf(g);
     if (!bySubject.has(key)) bySubject.set(key, []);
     bySubject.get(key)!.push(g);
@@ -320,7 +328,7 @@ export function buildCards(
         mode: openModeFor(g.CijferId),
         seed: hash32(`${g.CijferId}:${subject}`),
         hue: theme.hue,
-        emoji: theme.emoji,
+        icon: theme.icon,
         weight: g.Weging ?? null,
         date: g.DatumIngevoerd ?? null,
         stamps,
@@ -369,6 +377,92 @@ export function levelInfo(xp: number): LevelInfo {
     into: xp - start,
     need,
     pct: Math.min(1, (xp - start) / need),
+  };
+}
+
+// ---------------------------------------------------------------- seasons
+//
+// Levels are per *school year* ("season"), not for all time. With one all-time
+// level, a student who has played one more year is simply far ahead and nobody can
+// catch up. Every August everyone starts again at level 1; what carries over is
+// "career" progress, which is shown separately and is not a level to compare.
+
+/** The school year (Aug–Jul) a date falls in, as "2025-2026". Missing or invalid dates count as `now`. */
+export function seasonOf(
+  date: string | null | undefined,
+  now: Date = new Date(),
+): string {
+  let year = now.getFullYear();
+  let month = now.getMonth() + 1;
+  const m = /^(\d{4})-(\d{2})/.exec(date ?? "");
+  if (m) {
+    year = Number(m[1]);
+    month = Number(m[2]);
+  }
+  const start = month >= 8 ? year : year - 1;
+  return `${start}-${start + 1}`;
+}
+
+/** "2025/26" */
+export function seasonLabel(season: string): string {
+  const [a, b] = season.split("-");
+  return a && b ? `${a}/${b.slice(2)}` : season;
+}
+
+/** XP from opened cards in `season`. */
+export function seasonXp(
+  cards: Iterable<CardData>,
+  opened: ReadonlySet<number>,
+  season: string,
+  now: Date = new Date(),
+): number {
+  let xp = 0;
+  for (const c of cards) {
+    if (opened.has(c.id) && seasonOf(c.date, now) === season) xp += c.xp;
+  }
+  return xp;
+}
+
+/** Seasons that have cards, newest first; always includes the current one. */
+export function seasonsOf(
+  cards: Iterable<CardData>,
+  now: Date = new Date(),
+): string[] {
+  const set = new Set<string>([seasonOf(null, now)]);
+  for (const c of cards) set.add(seasonOf(c.date, now));
+  return [...set].sort().reverse();
+}
+
+export const CAREER_RANKS: ReadonlyArray<{ rank: string; at: number }> = [
+  { rank: "Nieuweling", at: 0 },
+  { rank: "Brons", at: 1000 },
+  { rank: "Zilver", at: 3000 },
+  { rank: "Goud", at: 6000 },
+  { rank: "Platina", at: 10000 },
+  { rank: "Diamant", at: 16000 },
+  { rank: "Legende", at: 25000 },
+];
+
+export interface CareerInfo {
+  rank: string;
+  xp: number;
+  /** XP at which the next rank starts, or null at the top. */
+  nextAt: number | null;
+  pct: number;
+}
+
+/** All-time progress. A rank, not a level: it is meant to be admired, not compared. */
+export function careerInfo(totalXp: number): CareerInfo {
+  const xp = Math.max(0, totalXp);
+  let i = 0;
+  while (i + 1 < CAREER_RANKS.length && xp >= CAREER_RANKS[i + 1].at) i++;
+  const cur = CAREER_RANKS[i];
+  const next = CAREER_RANKS[i + 1] ?? null;
+  return {
+    rank: cur.rank,
+    xp,
+    nextAt: next ? next.at : null,
+    pct: next ? Math.min(1, (xp - cur.at) / (next.at - cur.at)) : 1,
   };
 }
 
@@ -434,7 +528,7 @@ export interface Achievement {
   id: string;
   title: string;
   desc: string;
-  icon: string;
+  icon: IconName;
   target: number;
   value: (t: Tally, ctx: AchievementContext) => number;
 }
@@ -447,7 +541,7 @@ export const ACHIEVEMENTS: Achievement[] = [
     id: "first-pull",
     title: "Eerste pull",
     desc: "Open je eerste kaart",
-    icon: "🎴",
+    icon: "cards",
     target: 1,
     value: (t) => t.total,
   },
@@ -455,7 +549,7 @@ export const ACHIEVEMENTS: Achievement[] = [
     id: "pack-5",
     title: "Pakketje",
     desc: "Open 5 kaarten",
-    icon: "📦",
+    icon: "package",
     target: 5,
     value: (t) => t.total,
   },
@@ -463,7 +557,7 @@ export const ACHIEVEMENTS: Achievement[] = [
     id: "collector-25",
     title: "Verzamelaar",
     desc: "Open 25 kaarten",
-    icon: "🗂️",
+    icon: "archive",
     target: 25,
     value: (t) => t.total,
   },
@@ -471,7 +565,7 @@ export const ACHIEVEMENTS: Achievement[] = [
     id: "collector-100",
     title: "Archivaris",
     desc: "Open 100 kaarten",
-    icon: "🏛️",
+    icon: "landmark",
     target: 100,
     value: (t) => t.total,
   },
@@ -479,7 +573,7 @@ export const ACHIEVEMENTS: Achievement[] = [
     id: "rare",
     title: "Zeldzame vondst",
     desc: "Trek een Zeldzame kaart of beter",
-    icon: "💎",
+    icon: "gem",
     target: 1,
     value: (t) =>
       atLeast(t, ["zeldzaam", "episch", "legendarisch", "mythisch"]),
@@ -488,7 +582,7 @@ export const ACHIEVEMENTS: Achievement[] = [
     id: "epic",
     title: "Episch moment",
     desc: "Trek een Epische kaart of beter",
-    icon: "⚡",
+    icon: "zap",
     target: 1,
     value: (t) => atLeast(t, ["episch", "legendarisch", "mythisch"]),
   },
@@ -496,7 +590,7 @@ export const ACHIEVEMENTS: Achievement[] = [
     id: "legend",
     title: "Legendarisch!",
     desc: "Trek een Legendarische kaart",
-    icon: "🌟",
+    icon: "star",
     target: 1,
     value: (t) => atLeast(t, ["legendarisch", "mythisch"]),
   },
@@ -504,7 +598,7 @@ export const ACHIEVEMENTS: Achievement[] = [
     id: "myth",
     title: "Mythisch!!",
     desc: "Trek een Mythische kaart",
-    icon: "🌈",
+    icon: "rainbow",
     target: 1,
     value: (t) => t.byRarity.mythisch ?? 0,
   },
@@ -512,7 +606,7 @@ export const ACHIEVEMENTS: Achievement[] = [
     id: "glitch",
     title: "Glitch in de matrix",
     desc: "Trek een Glitch-kaart",
-    icon: "👾",
+    icon: "gamepad",
     target: 1,
     value: (t) => t.byRarity.glitch ?? 0,
   },
@@ -520,7 +614,7 @@ export const ACHIEVEMENTS: Achievement[] = [
     id: "shiny",
     title: "Shiny hunter",
     desc: "Trek een shiny kaart",
-    icon: "✨",
+    icon: "sparkles",
     target: 1,
     value: (t) => t.shiny,
   },
@@ -528,7 +622,7 @@ export const ACHIEVEMENTS: Achievement[] = [
     id: "comeback",
     title: "Comeback kid",
     desc: "3 comeback-kaarten",
-    icon: "🔥",
+    icon: "flame",
     target: 3,
     value: (t) => t.comebacks,
   },
@@ -536,7 +630,7 @@ export const ACHIEVEMENTS: Achievement[] = [
     id: "streak",
     title: "Op een rij",
     desc: "5 voldoendes achter elkaar geopend",
-    icon: "📈",
+    icon: "trend-up",
     target: 5,
     value: (t) => t.bestStreak,
   },
@@ -544,7 +638,7 @@ export const ACHIEVEMENTS: Achievement[] = [
     id: "subjects",
     title: "Vakkenvuller",
     desc: "Kaarten uit 5 verschillende vakken",
-    icon: "🧩",
+    icon: "puzzle",
     target: 5,
     value: (t) => t.subjects.length,
   },
@@ -552,7 +646,7 @@ export const ACHIEVEMENTS: Achievement[] = [
     id: "bosses",
     title: "Bossbeaters",
     desc: "3 boss-toetsen geopend",
-    icon: "👑",
+    icon: "crown",
     target: 3,
     value: (t) => t.bosses,
   },
@@ -560,7 +654,7 @@ export const ACHIEVEMENTS: Achievement[] = [
     id: "set",
     title: "Setje compleet",
     desc: "Open alle kaarten van één vak",
-    icon: "🏅",
+    icon: "medal",
     target: 1,
     value: (_t, ctx) => ctx.completeSets,
   },

@@ -67,6 +67,14 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="m6loapp" />
             </intent-filter>
+            <!-- Friend links: https://fridayapp.nl/#friend=… (QR scan or a shared link).
+                 Not auto-verified: Android offers "open with Friday" or the browser. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="fridayapp.nl" />
+            </intent-filter>
             <!-- DEEP LINK PLUGIN. AUTO-GENERATED. DO NOT REMOVE. -->
             <intent-filter >
                 <action android:name="android.intent.action.VIEW" />

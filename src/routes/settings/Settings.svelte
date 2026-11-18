@@ -60,7 +60,9 @@
   import Switch from "$lib/components/Switch.svelte";
   import LetterGradesEditor from "$lib/components/LetterGradesEditor.svelte";
   import CompensationEditor from "$lib/components/CompensationEditor.svelte";
+  import TeacherNamesEditor from "$lib/components/TeacherNamesEditor.svelte";
   import Button from "$lib/components/Button.svelte";
+  import Icon from "$lib/components/Icon.svelte";
   import Chip from "$lib/components/Chip.svelte";
   import IconButton from "$lib/components/IconButton.svelte";
   import PackReveal from "$lib/components/PackReveal.svelte";
@@ -133,8 +135,10 @@
   >([]);
   let exportBusy = $state(false);
   let exportResult = $state<string | null>(null);
+  let exportOk = $state(true);
   let logExportBusy = $state(false);
   let logExportResult = $state<string | null>(null);
+  let logExportOk = $state(true);
   let logClearBusy = $state(false);
   let offlineBusy = $state(false);
   let offlineMsg = $state<string | null>(null);
@@ -179,6 +183,7 @@
     offlineMsg = "Offline-opslag gewist.";
   }
   let logClearResult = $state<string | null>(null);
+  let logClearOk = $state(true);
   let pickingDir = $state(false);
   let dirError = $state<string | null>(null);
 
@@ -535,7 +540,7 @@
       debugInfo = JSON.parse(raw);
       addLog(
         "info",
-        `Debug info loaded. Token: ${debugInfo?.tokenFile?.exists ? "✅" : "❌"}`,
+        `Debug info loaded. Token: ${debugInfo?.tokenFile?.exists ? "aanwezig" : "ontbreekt"}`,
       );
     } catch (e) {
       addLog("error", `Failed to load debug info: ${e}`);
@@ -588,7 +593,7 @@
     addLog("info", "Triggering force sync...");
     try {
       await triggerSync();
-      addLog("info", "Force sync triggered ✅ — wachten op resultaat...");
+      addLog("info", "Force sync triggered — wachten op resultaat...");
       await new Promise((r) => setTimeout(r, 5000));
       addLog("info", "Auto-refresh na sync...");
       await loadDebugInfo();
@@ -654,24 +659,29 @@
       if (result.success) {
         // Warnings (e.g. "cijfers: ...") used to be dropped here, so a partial
         // export looked like a complete one. Always show them.
-        const warning = result.error ? `\n⚠️ ${result.error}` : "";
+        const warning = result.error ? `\nLet op: ${result.error}` : "";
         if (isMobile) {
           const zipFile = result.files[0] ?? "friday-export.zip";
           const where = result.location ? ` in ${result.location}` : " gedeeld";
-          exportResult = `✅ 1 zip-bestand${where}: ${zipFile}${warning}`;
+          exportOk = true;
+          exportResult = `1 zip-bestand${where}: ${zipFile}${warning}`;
           addLog("info", `Export voltooid: ${zipFile}${where}`);
         } else {
           const fileList = result.files.join(", ");
-          exportResult = `✅ ${result.files.length} bestanden geëxporteerd: ${fileList}${warning}`;
+          exportOk = true;
+          exportResult = `${result.files.length} bestanden geëxporteerd: ${fileList}${warning}`;
           addLog("info", `Export voltooid: ${result.files.length} bestanden`);
         }
-        if (result.error) addLog("warn", `Export met waarschuwingen: ${result.error}`);
+        if (result.error)
+          addLog("warn", `Export met waarschuwingen: ${result.error}`);
       } else {
-        exportResult = `❌ Fout: ${result.error ?? "Onbekende fout"}`;
+        exportOk = false;
+        exportResult = `Fout: ${result.error ?? "Onbekende fout"}`;
         addLog("error", `Export mislukt: ${result.error}`);
       }
     } catch (e) {
-      exportResult = `❌ Fout: ${e}`;
+      exportOk = false;
+      exportResult = `Fout: ${e}`;
       addLog("error", `Export mislukt: ${e}`);
     } finally {
       exportBusy = false;
@@ -685,17 +695,21 @@
     try {
       const result = await exportDebugLog($userSettings.downloadDir || "");
       if (result.success) {
+        logExportOk = true;
         logExportResult = isMobile
-          ? `✅ Logbestand gedeeld: ${result.file_name}`
-          : `✅ Logbestand geëxporteerd: ${result.file_name}`;
+          ? `Logbestand gedeeld: ${result.file_name}`
+          : `Logbestand geëxporteerd: ${result.file_name}`;
+        logExportOk = true;
         addLog("info", `Log-export voltooid: ${result.file_name}`);
       } else if (result.error) {
-        logExportResult = `❌ Fout: ${result.error}`;
+        logExportOk = false;
+        logExportResult = `Fout: ${result.error}`;
         addLog("error", `Log-export mislukt: ${result.error}`);
       }
       // else: user cancelled the folder picker on desktop — no message needed
     } catch (e) {
-      logExportResult = `❌ Fout: ${e}`;
+      logExportOk = false;
+      logExportResult = `Fout: ${e}`;
       addLog("error", `Log-export mislukt: ${e}`);
     } finally {
       logExportBusy = false;
@@ -716,14 +730,17 @@
     try {
       const result = await clearDebugLogs();
       if (result.success) {
-        logClearResult = `✅ ${result.cleared} logbestand(en) gewist — nieuwe logs beginnen schoon.`;
+        logClearOk = true;
+        logClearResult = `${result.cleared} logbestand(en) gewist — nieuwe logs beginnen schoon.`;
         addLog("info", `Logs gewist: ${result.cleared} bestand(en)`);
       } else if (result.error) {
-        logClearResult = `❌ Fout: ${result.error}`;
+        logClearOk = false;
+        logClearResult = `Fout: ${result.error}`;
         addLog("error", `Log-wissen mislukt: ${result.error}`);
       }
     } catch (e) {
-      logClearResult = `❌ Fout: ${e}`;
+      logClearOk = false;
+      logClearResult = `Fout: ${e}`;
       addLog("error", `Log-wissen mislukt: ${e}`);
     } finally {
       logClearBusy = false;
@@ -793,7 +810,7 @@
       );
       aiTestResult = null;
     } catch (e) {
-      aiTestResult = `❌ Opslaan mislukt: ${e}`;
+      aiTestResult = `Opslaan mislukt: ${e}`;
       aiTestSuccess = false;
     } finally {
       aiSaving = false;
@@ -817,15 +834,14 @@
       );
       const valid = await validateAiKey();
       if (valid) {
-        aiTestResult = "✅ Verbinding succesvol! AI is klaar voor gebruik.";
+        aiTestResult = "Verbinding succesvol! AI is klaar voor gebruik.";
         aiTestSuccess = true;
       } else {
-        aiTestResult =
-          "❌ Verbinding mislukt. Controleer je API-sleutel en URL.";
+        aiTestResult = "Verbinding mislukt. Controleer je API-sleutel en URL.";
         aiTestSuccess = false;
       }
     } catch (e) {
-      aiTestResult = `❌ Fout: ${e}`;
+      aiTestResult = `Fout: ${e}`;
       aiTestSuccess = false;
     } finally {
       aiTesting = false;
@@ -1064,6 +1080,12 @@
           type: "select",
           options: START_PAGE_OPTIONS,
         },
+        {
+          id: "teacherNames",
+          label: "Docentnamen",
+          description: "Geef docenten een eigen naam. Geldt overal in de app.",
+          type: "teachers-editor",
+        },
       ],
     },
     {
@@ -1122,6 +1144,13 @@
       id: "cijfers",
       title: "Cijfers",
       settings: [
+        {
+          id: "showMinpunten",
+          label: "Minpunten tonen",
+          description:
+            "Een klein knopje bovenaan je cijfers met je minpunten en waar je het snelst winst haalt.",
+          type: "toggle",
+        },
         {
           id: "roundedGraphs",
           label: "Afgeronde Grafieken",
@@ -1823,8 +1852,9 @@
                         <div
                           class="rounded-m3-md px-4 py-3 bg-amber-500/5 border border-amber-500/10 text-body-medium text-gray-400 leading-relaxed"
                         >
-                          <span class="text-label-medium text-amber-400"
-                            >⚠ Data-toegang uitgeschakeld</span
+                          <span
+                            class="text-label-medium text-amber-400 inline-flex items-center gap-1"
+                            ><Icon name="alert" size={13} /> Data-toegang uitgeschakeld</span
                           ><br />
                           De AI kan alleen algemene vragen beantwoorden zonder je
                           schoolgegevens te zien.
@@ -1839,7 +1869,11 @@
                           disabled={aiSaving}
                           class="flex-1"
                         >
-                          {aiSaving ? "⏳ Opslaan..." : "Opslaan"}
+                          {#if aiSaving}<Icon
+                              name="loader"
+                              size={14}
+                              class="animate-spin"
+                            /> Opslaan...{:else}Opslaan{/if}
                         </Button>
                         <Button
                           variant="tonal"
@@ -1847,17 +1881,26 @@
                           disabled={aiTesting || (!aiApiKey && !aiHasKey)}
                           class="flex-1 bg-emerald-500/10! text-emerald-400! border border-emerald-500/20! hover:bg-emerald-500/20!"
                         >
-                          {aiTesting ? "⏳ Testen..." : "Test verbinding"}
+                          {#if aiTesting}<Icon
+                              name="loader"
+                              size={14}
+                              class="animate-spin"
+                            /> Testen...{:else}Test verbinding{/if}
                         </Button>
                       </div>
 
                       {#if aiTestResult}
                         <div
-                          class="rounded-m3-md px-5 py-3 text-body-small {aiTestSuccess
+                          class="rounded-m3-md px-5 py-3 text-body-small flex items-start gap-2 {aiTestSuccess
                             ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400'
                             : 'bg-red-500/10 border border-red-500/20 text-red-400'}"
                         >
-                          {aiTestResult}
+                          <Icon
+                            name={aiTestSuccess ? "check-circle" : "x-circle"}
+                            size={14}
+                            class="mt-0.5"
+                          />
+                          <span>{aiTestResult}</span>
                         </div>
                       {/if}
                     </div>
@@ -2007,7 +2050,8 @@
                           class="rounded-m3-md border border-amber-500/20 bg-amber-500/5 px-4 py-3 text-body-medium leading-relaxed text-gray-300"
                         >
                           <span class="text-label-medium text-amber-400"
-                            >⚠ De AI heeft de notities net aangepast, herlaad</span
+                            ><Icon name="alert" size={13} /> De AI heeft de notities
+                            net aangepast, herlaad</span
                           ><br />
                           Jouw tekst staat er nog — er is niets verloren gegaan.
                           <div class="mt-2">
@@ -2064,7 +2108,11 @@
                           disabled={notesSaving || notesLoading}
                           class="flex-1"
                         >
-                          {notesSaving ? "⏳ Opslaan..." : "Opslaan"}
+                          {#if notesSaving}<Icon
+                              name="loader"
+                              size={14}
+                              class="animate-spin"
+                            /> Opslaan...{:else}Opslaan{/if}
                         </Button>
                         <Button
                           variant="tonal"
@@ -2463,7 +2511,8 @@
                         <div
                           class="glass p-5 rounded-m3-md border-white/5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-6 transition-all hover:bg-surface-800/40 {setting.type ===
                             'letters-editor' ||
-                          setting.type === 'compensation-editor'
+                          setting.type === 'compensation-editor' ||
+                          setting.type === 'teachers-editor'
                             ? 'sm:flex-wrap sm:items-start'
                             : ''}"
                         >
@@ -2530,6 +2579,10 @@
                             <div class="w-full sm:basis-full">
                               <CompensationEditor />
                             </div>
+                          {:else if setting.type === "teachers-editor"}
+                            <div class="w-full sm:basis-full">
+                              <TeacherNamesEditor />
+                            </div>
                           {:else if setting.type === "theme-picker"}
                             <ColorSwatchPicker
                               colors={themeColors}
@@ -2567,30 +2620,48 @@
                             >
                               {#if setting.id === "exportAll"}
                                 {#if exportBusy}
-                                  <span class="animate-pulse"
-                                    >⏳ Bezig met exporteren...</span
+                                  <span class="inline-flex items-center gap-1.5"
+                                    ><Icon
+                                      name="loader"
+                                      size={14}
+                                      class="animate-spin"
+                                    /> Bezig met exporteren...</span
                                   >
                                 {:else}
                                   Exporteren
                                 {/if}
                               {:else if setting.id === "exportLog"}
                                 {#if logExportBusy}
-                                  <span class="animate-pulse"
-                                    >⏳ Bezig met exporteren...</span
+                                  <span class="inline-flex items-center gap-1.5"
+                                    ><Icon
+                                      name="loader"
+                                      size={14}
+                                      class="animate-spin"
+                                    /> Bezig met exporteren...</span
                                   >
                                 {:else}
                                   Exporteren
                                 {/if}
                               {:else if setting.id === "clearLogs"}
                                 {#if logClearBusy}
-                                  <span class="animate-pulse"
-                                    >⏳ Bezig met wissen...</span
+                                  <span class="inline-flex items-center gap-1.5"
+                                    ><Icon
+                                      name="loader"
+                                      size={14}
+                                      class="animate-spin"
+                                    /> Bezig met wissen...</span
                                   >
                                 {:else}
                                   Wissen
                                 {/if}
                               {:else if isTestBusy(setting.id)}
-                                <span class="animate-pulse">⏳ Wachten...</span>
+                                <span class="inline-flex items-center gap-1.5"
+                                  ><Icon
+                                    name="loader"
+                                    size={14}
+                                    class="animate-spin"
+                                  /> Wachten...</span
+                                >
                               {:else if setting.id === "openDndSettings"}
                                 {dndActionLabel()}
                               {:else if setting.id === "previewGradeReveal"}
@@ -2605,21 +2676,43 @@
                               <p
                                 class="text-label-small text-gray-400 font-mono mt-2 text-right max-w-[260px] leading-relaxed whitespace-pre-line break-words"
                               >
-                                {exportResult}
+                                <Icon
+                                  name={exportOk ? "check-circle" : "x-circle"}
+                                  size={12}
+                                  class="inline align-[-0.15em] mr-1 {exportOk
+                                    ? 'text-emerald-400'
+                                    : 'text-red-400'}"
+                                />{exportResult}
                               </p>
                             {/if}
                             {#if setting.id === "exportLog" && logExportResult}
                               <p
                                 class="text-label-small text-gray-400 font-mono mt-2 text-right max-w-[200px] leading-relaxed"
                               >
-                                {logExportResult}
+                                <Icon
+                                  name={logExportOk
+                                    ? "check-circle"
+                                    : "x-circle"}
+                                  size={12}
+                                  class="inline align-[-0.15em] mr-1 {logExportOk
+                                    ? 'text-emerald-400'
+                                    : 'text-red-400'}"
+                                />{logExportResult}
                               </p>
                             {/if}
                             {#if setting.id === "clearLogs" && logClearResult}
                               <p
                                 class="text-label-small text-gray-400 font-mono mt-2 text-right max-w-[200px] leading-relaxed"
                               >
-                                {logClearResult}
+                                <Icon
+                                  name={logClearOk
+                                    ? "check-circle"
+                                    : "x-circle"}
+                                  size={12}
+                                  class="inline align-[-0.15em] mr-1 {logClearOk
+                                    ? 'text-emerald-400'
+                                    : 'text-red-400'}"
+                                />{logClearResult}
                               </p>
                             {/if}
                           {:else if setting.type === "offline-status"}
@@ -2646,7 +2739,11 @@
                                     !$personId}
                                   class="px-5"
                                 >
-                                  {offlineBusy ? "⏳ Bezig..." : "Nu opslaan"}
+                                  {#if offlineBusy}<Icon
+                                      name="loader"
+                                      size={14}
+                                      class="animate-spin"
+                                    /> Bezig...{:else}Nu opslaan{/if}
                                 </Button>
                               </div>
                               {#if offlineMsg}
@@ -2674,7 +2771,11 @@
                                 disabled={pickingDir}
                                 class="px-5"
                               >
-                                {pickingDir ? "⏳ ..." : "Map Kiezen"}
+                                {#if pickingDir}<Icon
+                                    name="loader"
+                                    size={14}
+                                    class="animate-spin"
+                                  />{:else}Map Kiezen{/if}
                               </Button>
                             </div>
                             {#if dirError}
@@ -2687,7 +2788,9 @@
                             {#if $userSettings.downloadDir}
                               <p
                                 class="text-label-small text-gray-500 font-mono mt-2 text-right max-w-[200px] truncate leading-relaxed"
-                                title={folderLabelFromUri($userSettings.downloadDir)}
+                                title={folderLabelFromUri(
+                                  $userSettings.downloadDir,
+                                )}
                               >
                                 {folderLabelFromUri($userSettings.downloadDir)}
                               </p>
@@ -3179,7 +3282,7 @@
                     class="shrink-0"
                   >
                     {$updateStatus.status === "checking"
-                      ? "⏳ Controleren…"
+                      ? "Controleren…"
                       : "Controleren"}
                   </Button>
                 </div>
@@ -3226,8 +3329,10 @@
                     </Button>
                   </div>
                 {:else if $updateStatus.status === "up-to-date"}
-                  <p class="text-body-small text-emerald-400">
-                    ✅ Je hebt de nieuwste versie.
+                  <p
+                    class="text-body-small text-emerald-400 inline-flex items-center gap-1.5"
+                  >
+                    <Icon name="check-circle" size={14} /> Je hebt de nieuwste versie.
                   </p>
                 {:else if $updateStatus.status === "error"}
                   <p class="text-body-small text-red-400">

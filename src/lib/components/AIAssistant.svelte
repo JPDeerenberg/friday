@@ -10,6 +10,8 @@
     type PendingActionInfo,
   } from "$lib/ai";
   import { classifyAiError, type AiErrorInfo } from "$lib/ai-errors";
+  import Icon from "$lib/components/Icon.svelte";
+  import type { IconName } from "$lib/icons";
   import {
     activityForTool,
     type LoopActivity,
@@ -234,7 +236,7 @@
 
   function greet() {
     const greeting =
-      "👋 Hoi! Ik ben Friday AI, jouw persoonlijke schoolassistent. Stel me vragen over je cijfers, opdrachten, planning of vraag om uitleg!";
+      "Hoi! Ik ben Friday AI, jouw persoonlijke schoolassistent. Stel me vragen over je cijfers, opdrachten, planning of vraag om uitleg!";
     messages = [
       {
         role: "assistant",
@@ -618,18 +620,18 @@
   const quickActions = [
     {
       label: "Dagoverzicht",
-      icon: "📋",
+      icon: "clipboard" as IconName,
       query:
         "Geef een kort dagoverzicht van wat ik vandaag heb op basis van mijn rooster.",
     },
     {
       label: "Studietips",
-      icon: "💡",
+      icon: "lightbulb" as IconName,
       query: "Geef me algemene studietips voor vandaag.",
     },
     {
       label: "Prioriteiten",
-      icon: "🎯",
+      icon: "target" as IconName,
       query:
         "Wat zijn mijn belangrijkste prioriteiten voor vandaag op basis van deadlines?",
     },
@@ -650,14 +652,11 @@
       await confirmPendingAction(action.action_id);
       const done =
         action.action_type === "send_message"
-          ? "✅ Bericht verzonden."
-          : "✅ Actie bevestigd en uitgevoerd.";
+          ? "Bericht verzonden."
+          : "Actie bevestigd en uitgevoerd.";
       messages = [...messages, { role: "assistant", content: done }];
     } catch (e) {
-      messages = [
-        ...messages,
-        { role: "assistant", content: "⚠️ " + String(e) },
-      ];
+      messages = [...messages, { role: "assistant", content: String(e) }];
     } finally {
       pendingActions = pendingActions.filter(
         (a) => a.action_id !== action.action_id,
@@ -675,7 +674,7 @@
       ...messages,
       {
         role: "assistant",
-        content: "❌ Actie geannuleerd — er is niets verzonden.",
+        content: "Actie geannuleerd — er is niets verzonden.",
       },
     ];
   }
@@ -981,8 +980,11 @@
                   <p class="whitespace-pre-wrap text-[13px]">{msg.content}</p>
                 {:else if msg.error}
                   <div>
-                    <p class="text-[13px] text-red-300">
-                      ⚠️ {msg.error.message}
+                    <p
+                      class="flex items-start gap-1.5 text-[13px] text-red-300"
+                    >
+                      <Icon name="alert" size={14} class="mt-0.5" />
+                      <span>{msg.error.message}</span>
                     </p>
                     {#if msg.error.detail}
                       <p class="mt-1 text-[11px] text-gray-500 break-words">
@@ -1017,9 +1019,10 @@
                 {:else}
                   {#if msg.stopped}
                     <p
-                      class="mb-1 text-[10px] font-bold uppercase tracking-widest text-amber-400"
+                      class="mb-1 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-amber-400"
                     >
-                      ⏹ Gestopt — gedeeltelijk antwoord
+                      <Icon name="stop" size={11} fill="currentColor" /> Gestopt —
+                      gedeeltelijk antwoord
                     </p>
                   {/if}
                   <MarkdownRenderer
@@ -1037,9 +1040,9 @@
                 class="max-w-[92%] w-full rounded-2xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-gray-200"
               >
                 <p
-                  class="text-[11px] font-black uppercase tracking-widest text-amber-400 mb-1"
+                  class="flex items-center gap-1.5 text-[11px] font-black uppercase tracking-widest text-amber-400 mb-1"
                 >
-                  ⚠️ Bevestiging vereist
+                  <Icon name="alert" size={12} /> Bevestiging vereist
                 </p>
                 <p class="text-[12px] text-gray-300 mb-2">
                   De AI wil namens jou {actionLabel(action.action_type)}. Er is
@@ -1195,7 +1198,7 @@
               disabled={isLoading}
               class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-surface-800/60 border border-white/5 text-[10px] font-bold text-gray-400 hover:text-white hover:bg-surface-700/60 hover:border-primary-500/30 transition-all active:scale-95 disabled:opacity-50"
             >
-              <span>{action.icon}</span>
+              <Icon name={action.icon} size={12} />
               <span>{action.label}</span>
             </button>
           {/each}
@@ -1213,7 +1216,7 @@
               }}
               class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-primary-500/10 border border-primary-500/20 text-[10px] font-bold text-primary-300 hover:bg-primary-500/20 transition-all active:scale-95"
             >
-              <span>📝</span>
+              <Icon name="notebook" size={12} />
               <span>Notitie bijgewerkt — bekijk AI Geheugen</span>
             </button>
           </div>
@@ -1234,7 +1237,7 @@
               }}
               class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-[10px] font-bold text-amber-300 hover:bg-amber-500/20 transition-all active:scale-95"
             >
-              <span>↩️</span>
+              <Icon name="undo" size={12} />
               <span>Plan gewijzigd — Ongedaan maken</span>
             </button>
           </div>

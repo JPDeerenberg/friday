@@ -47,6 +47,8 @@
   } from "$lib/offline";
   import { runOfflineSync } from "$lib/offline-sync";
   import CalendarChangesDialog from "$lib/components/CalendarChangesDialog.svelte";
+  import QuestToast from "$lib/components/QuestToast.svelte";
+  import { offerFriendLink } from "$lib/friends-store";
   import {
     calendarChangesPopup,
     consumeNotificationTap,
@@ -348,6 +350,29 @@
   });
 
   onMount(() => {
+    // Friend links (QR scan / WhatsApp): https://fridayapp.nl/#friend=… — hand them to
+    // the Friends page, which asks before adding anyone. The web app reads the URL
+    // itself; the Android/desktop app gets it through the deep-link plugin.
+    const openFriendLink = (url: string | null | undefined) => {
+      if (offerFriendLink(url)) {
+        currentPage.set("friends");
+        if (typeof history !== "undefined" && location.hash.includes("friend=")) {
+          history.replaceState(null, "", location.pathname + location.search);
+        }
+      }
+    };
+    openFriendLink(location.href);
+    const onHashChange = () => openFriendLink(location.href);
+    window.addEventListener("hashchange", onHashChange);
+    if (isTauri) {
+      import("@tauri-apps/plugin-deep-link")
+        .then(async (dl) => {
+          (await dl.getCurrent())?.forEach(openFriendLink);
+          await dl.onOpenUrl((urls) => urls.forEach(openFriendLink));
+        })
+        .catch((e) => console.warn("Deep links niet beschikbaar:", e));
+    }
+
     if (!isTauri) {
       // Warm-up (web only): Render's free tier sleeps after ~15 min idle and
       // answers 503 while waking (~30-60 s). Pinging /ping fire-and-forget
@@ -692,6 +717,11 @@
     {
       label: "Communicatie",
       items: [
+        {
+          id: "friends",
+          label: "Vrienden",
+          icon: `<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>`,
+        },
         {
           id: "messages",
           label: "Berichten",
@@ -1149,6 +1179,7 @@
 
     {#if $isLoggedIn}
       <CalendarChangesDialog />
+      <QuestToast />
     {/if}
 
     <!-- AI Assistant floating button (available on all pages when configured) -->

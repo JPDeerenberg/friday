@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Icon from "$lib/components/Icon.svelte";
   /** "N hidden grades — tap to open a pack" card, with a quick "show all". */
   let {
     count,
@@ -24,7 +25,7 @@
   >
     <span class="badge" aria-hidden="true">
       <span class="ping motion-reduce:hidden"></span>
-      <span class="relative">🎁</span>
+      <span class="relative"><Icon name="gift" size={16} /></span>
     </span>
     <span class="min-w-0 flex-1">
       <span class="block text-title-small text-white">

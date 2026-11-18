@@ -10,6 +10,7 @@ import {
   type GradeLike,
 } from "./grades/scale.ts";
 import { RETAKE_RULES, type RetakeRule } from "./grades/retake.ts";
+import { sanitizeAliases, setTeacherAliases, type TeacherAliases } from "./teachers.ts";
 import type { RoundingMode } from "./grades/rounding.ts";
 import {
   DEFAULT_COMPENSATION,
@@ -81,6 +82,7 @@ export const START_PAGE_OPTIONS = [
   { value: "activiteiten", label: "Activiteiten" },
   { value: "bronnen", label: "Bronnen" },
   { value: "ai-schedule", label: "Friday's Plan" },
+  { value: "friends", label: "Vrienden" },
 ];
 
 const START_PAGE_VALUES = START_PAGE_OPTIONS.map((o) => o.value);
@@ -164,6 +166,10 @@ export const DEFAULT_SETTINGS = {
   showBreakSeparator: false,
   breakThresholdMinutes: 20,
   downloadDir: "",
+  // Small "minpunten" pill on the grades page (calm wording, see grades/minpunten.ts).
+  showMinpunten: true,
+  // Teachers the student renamed (key = lower-case name without code). See teachers.ts.
+  teacherAliases: {} as TeacherAliases,
   // AI chat history (Phase 5): local only, never sent anywhere.
   saveAiChats: true,
   aiChatsRetentionDays: 90 as number | null, // 30 | 90 | null (forever)
@@ -235,6 +241,7 @@ export function loadSettings() {
         (parsed as any).restoreHiddenGrades !== false;
       merged.judgeRounded = merged.judgeRounded === true;
       merged.lettersGetCards = merged.lettersGetCards === true;
+      merged.teacherAliases = sanitizeAliases((parsed as any).teacherAliases);
       merged.compensationEnabled = merged.compensationEnabled === true;
       merged.compensation = sanitizeCompensation((parsed as any).compensation);
       merged.compensationExcluded = Array.isArray(
@@ -259,6 +266,11 @@ export function loadSettings() {
 }
 
 export const userSettings = writable(loadSettings());
+
+// Teacher renames are applied in plain functions (formatTeacherName), which cannot
+// read a store: keep that module's copy in step with the saved settings.
+setTeacherAliases(get(userSettings).teacherAliases);
+userSettings.subscribe((val) => setTeacherAliases(val.teacherAliases));
 
 export const currentPage = writable<string>(loadSettings().startPage);
 

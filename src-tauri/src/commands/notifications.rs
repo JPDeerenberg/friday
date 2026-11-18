@@ -633,11 +633,11 @@ pub fn get_debug_info(app: AppHandle) -> Result<String, String> {
         "platform": std::env::consts::OS,
         "version": env!("CARGO_PKG_VERSION"),
         "status": if token_exists && state_exists {
-            "✓ Ready (tokens found, state synchronized)"
+            "Ready (tokens found, state synchronized)"
         } else if token_exists {
-            "⚠ First sync pending (tokens found, no local state yet)"
+            "First sync pending (tokens found, no local state yet)"
         } else {
-            "✗ Not ready (no tokens - authentication required)"
+            "Not ready (no tokens - authentication required)"
         }
     });
 

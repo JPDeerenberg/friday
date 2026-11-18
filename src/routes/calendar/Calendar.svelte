@@ -18,6 +18,9 @@
   import DropdownMenu from "$lib/components/DropdownMenu.svelte";
   import { on } from "svelte/events";
   import { pickDownloadHref, describeDownload } from "$lib/attachments";
+  import { displayTeacherName } from "$lib/teachers";
+  import TranslateButton from "$lib/components/TranslateButton.svelte";
+  import { recordQuestEvent } from "$lib/quests-store";
   import { onMount, untrack } from "svelte";
   import { fade, fly, slide, scale } from "svelte/transition";
   import type { CalendarAttachment, CalendarEvent, Link } from "$lib/types";
@@ -139,6 +142,7 @@
   let localOverrides = $state<Record<string, string>>({});
 
   onMount(async () => {
+    recordQuestEvent("agenda_checked");
     const saved = localStorage.getItem("calendar_overrides");
     if (saved) {
       try {
@@ -579,6 +583,7 @@
 
       await toggleCalendarEventDone(target);
       target.Afgerond = !target.Afgerond;
+      if (target.Afgerond) recordQuestEvent("homework_done");
       appointments = [...appointments];
       if (selectedAppointment?.Id === target.Id) {
         selectedAppointment = {
@@ -1937,7 +1942,7 @@
                   <span
                     class="text-label-small text-gray-500 shrink-0 bg-surface-900/60 px-1.5 py-0.5 rounded-m3-sm border border-white/5"
                   >
-                    {app.Docenten[0].Naam}
+                    {displayTeacherName(app.Docenten[0].Naam)}
                   </span>
                 {/if}
               </div>
@@ -2216,7 +2221,7 @@
                   r="4"
                 /></svg
               >
-              {selectedAppointment.Docenten?.[0]?.Naam || "Geen docent"}
+              {displayTeacherName(selectedAppointment.Docenten?.[0]?.Naam) || "Geen docent"}
             </span>
             <span
               class="flex items-center gap-1.5 text-label-small text-gray-300 bg-surface-800/80 px-2 py-1 rounded-m3-sm border border-white/5"
@@ -2311,6 +2316,7 @@
                 : 'bg-surface-950 border border-white/5'}"
             >
               <HtmlRenderer html={selectedAppointment.Inhoud} />
+              <TranslateButton source={selectedAppointment.Inhoud} />
             </div>
           {:else}
             <p class="text-body-medium text-gray-600 px-1">
