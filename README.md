@@ -79,7 +79,7 @@ To move the Render region later you must recreate the service (Render forbids ch
 
 ## Local development
 
-Prerequisites: **Node 20+**, **pnpm 9+**, **stable Rust**. Android APKs additionally need the **Android SDK + JDK 17**.
+Prerequisites: **Node 22+**, **pnpm 9+**, **stable Rust**. Android APKs additionally need the **Android SDK + JDK 17**.
 
 ```bash
 pnpm install          # frontend deps (pnpm only — not npm/yarn)

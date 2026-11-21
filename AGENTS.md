@@ -23,7 +23,7 @@ cd crates/web-api && PORT=3000 cargo run   # stateless web API for web dev
 python3 scripts/security-report.py         # refresh dependabot-alerts.md from all GitHub security surfaces
 ```
 
-- Node 20+, pnpm 9+, stable Rust toolchain. Android builds need Android SDK + JDK 17.
+- Node 22+, pnpm 9+, stable Rust toolchain. Android builds need Android SDK + JDK 17.
 - `pnpm test` runs: `stores`, `web-tier-b`, `web-ai-tools`, `ai`, `web-planner`, `web-stores` (all `*.test.ts` via plain `node`, some with `test-hooks-register.ts` for DOM shims).
 - When everything is valid: bump version (`package.json` + `src-tauri/Cargo.toml` + `src-tauri/Cargo.lock`) and commit. `src-tauri/tauri.conf.json` version field is stale — leave it.
 
