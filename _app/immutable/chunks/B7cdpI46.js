@@ -1,0 +1,1 @@
+import{Rn as e}from"./BwA3mEMF.js";async function t(t,n){await e(`plugin:opener|open_url`,{url:t,with:n})}export{t};

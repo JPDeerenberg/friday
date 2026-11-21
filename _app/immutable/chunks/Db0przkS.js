@@ -1,0 +1,1 @@
+export{n as getCurrent,r as onOpenUrl}from"./Dz_Yu3Ud.js";

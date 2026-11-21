@@ -1,1 +1,0 @@
-import{Pn as e}from"./Bwjf1eCC.js";async function t(t,n){await e(`plugin:opener|open_url`,{url:t,with:n})}export{t};
