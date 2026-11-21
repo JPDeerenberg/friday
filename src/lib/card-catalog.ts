@@ -7,7 +7,7 @@
  * a face-down card sorts after the opened ones. Subject, school year and date are
  * already visible on a face-down tile, so those filters apply to every card.
  *
- * Pure and free of `$lib` runtime imports so it runs in plain Node tests.
+ * Pure and free of `#lib` runtime imports so it runs in plain Node tests.
  */
 import { RARITY_META, seasonOf, type CardData, type Rarity, type Stamp } from "./cards.ts";
 

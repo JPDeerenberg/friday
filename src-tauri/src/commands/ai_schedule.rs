@@ -7,7 +7,9 @@ use tauri::{AppHandle, State};
 use tokio::sync::RwLock;
 
 use crate::client::SharedClient;
-use crate::models::ai_schedule::{AiScheduleItem, AiScheduleStatus, DurationSource, MergedSchedule};
+use crate::models::ai_schedule::{
+    AiScheduleItem, AiScheduleStatus, DurationSource, MergedSchedule,
+};
 
 /// Managed state for AI schedule persistence.
 pub struct AiScheduleState {
@@ -62,7 +64,10 @@ impl AiScheduleState {
 }
 
 fn now_iso() -> String {
-    chrono::Local::now().naive_local().format("%Y-%m-%dT%H:%M:%S").to_string()
+    chrono::Local::now()
+        .naive_local()
+        .format("%Y-%m-%dT%H:%M:%S")
+        .to_string()
 }
 
 fn validate_item(item: &AiScheduleItem) -> Result<(), String> {
@@ -73,8 +78,10 @@ fn validate_item(item: &AiScheduleItem) -> Result<(), String> {
         return Err("Urgency moet tussen 1 en 5 zijn.".to_string());
     }
     // Validate start < end
-    let s = crate::ai::schedule::iso_to_naive(&item.start).ok_or("Ongeldige start datum (verwacht ISO 8601).".to_string())?;
-    let e = crate::ai::schedule::iso_to_naive(&item.end).ok_or("Ongeldige eind datum (verwacht ISO 8601).".to_string())?;
+    let s = crate::ai::schedule::iso_to_naive(&item.start)
+        .ok_or("Ongeldige start datum (verwacht ISO 8601).".to_string())?;
+    let e = crate::ai::schedule::iso_to_naive(&item.end)
+        .ok_or("Ongeldige eind datum (verwacht ISO 8601).".to_string())?;
     if e <= s {
         return Err("Eind moet na start liggen.".to_string());
     }
@@ -84,7 +91,12 @@ fn validate_item(item: &AiScheduleItem) -> Result<(), String> {
 /// Guardrail: no two plannable AI items may occupy the same time.
 /// FreeTime/Sleep are background fillers and are exempt (they get regenerated).
 /// Dismissed/Completed items are history and are exempt.
-pub(crate) fn find_overlap(existing: &[AiScheduleItem], start: &str, end: &str, ignore_id: Option<&str>) -> Option<String> {
+pub(crate) fn find_overlap(
+    existing: &[AiScheduleItem],
+    start: &str,
+    end: &str,
+    ignore_id: Option<&str>,
+) -> Option<String> {
     use crate::models::ai_schedule::AiScheduleItemType;
     for it in existing {
         if let Some(ign) = ignore_id {
@@ -92,7 +104,8 @@ pub(crate) fn find_overlap(existing: &[AiScheduleItem], start: &str, end: &str, 
                 continue;
             }
         }
-        if it.item_type == AiScheduleItemType::FreeTime || it.item_type == AiScheduleItemType::Sleep {
+        if it.item_type == AiScheduleItemType::FreeTime || it.item_type == AiScheduleItemType::Sleep
+        {
             continue;
         }
         if it.status == AiScheduleStatus::Dismissed || it.status == AiScheduleStatus::Completed {
@@ -104,7 +117,6 @@ pub(crate) fn find_overlap(existing: &[AiScheduleItem], start: &str, end: &str, 
     }
     None
 }
-
 
 /// Locked items for a window: Completed/Dismissed, InProgress, User source.
 /// Shared by the replan and the AI free-slot/guardrail paths.
@@ -134,7 +146,9 @@ pub(crate) fn locked_items_in_window(
             {
                 return false;
             }
-            if item.status == AiScheduleStatus::Completed || item.status == AiScheduleStatus::Dismissed {
+            if item.status == AiScheduleStatus::Completed
+                || item.status == AiScheduleStatus::Dismissed
+            {
                 return true;
             }
             if item.status == AiScheduleStatus::InProgress {
@@ -210,7 +224,12 @@ pub async fn create_ai_schedule_item(
                     && it.related_calendar_event_id == item.related_calendar_event_id;
                 if (same_assign || same_cal)
                     && it.status != AiScheduleStatus::Dismissed
-                    && crate::ai::schedule::intervals_overlap_str(&item.start, &item.end, &it.start, &it.end)
+                    && crate::ai::schedule::intervals_overlap_str(
+                        &item.start,
+                        &item.end,
+                        &it.start,
+                        &it.end,
+                    )
                 {
                     return Ok(it.clone());
                 }
@@ -248,7 +267,10 @@ pub async fn update_ai_schedule_item(
 ) -> Result<AiScheduleItem, String> {
     validate_item(&item)?;
     let mut items = state.items.write().await;
-    let idx = items.iter().position(|i| i.id == item.id).ok_or_else(|| format!("Item '{}' niet gevonden.", item.id))?;
+    let idx = items
+        .iter()
+        .position(|i| i.id == item.id)
+        .ok_or_else(|| format!("Item '{}' niet gevonden.", item.id))?;
     // Guardrail: moving/resizing onto another planned item is refused.
     if let Some(conflict) = find_overlap(&items, &item.start, &item.end, Some(&item.id)) {
         return Err(format!(
@@ -296,7 +318,10 @@ pub async fn complete_ai_schedule_item(
     id: String,
 ) -> Result<(), String> {
     let mut items = state.items.write().await;
-    let item = items.iter_mut().find(|i| i.id == id).ok_or_else(|| format!("Item '{}' niet gevonden.", id))?;
+    let item = items
+        .iter_mut()
+        .find(|i| i.id == id)
+        .ok_or_else(|| format!("Item '{}' niet gevonden.", id))?;
     item.status = AiScheduleStatus::Completed;
     let now = now_iso();
     item.completed_at = Some(now.clone());
@@ -312,7 +337,10 @@ pub async fn dismiss_ai_schedule_item(
     id: String,
 ) -> Result<(), String> {
     let mut items = state.items.write().await;
-    let item = items.iter_mut().find(|i| i.id == id).ok_or_else(|| format!("Item '{}' niet gevonden.", id))?;
+    let item = items
+        .iter_mut()
+        .find(|i| i.id == id)
+        .ok_or_else(|| format!("Item '{}' niet gevonden.", id))?;
     item.status = AiScheduleStatus::Dismissed;
     item.updated_at = now_iso();
     let snapshot = items.clone();
@@ -331,8 +359,10 @@ pub async fn get_merged_schedule(
     // Need to avoid holding lock across await that calls Magister client.
     // First, read AI items (clone) without holding across fetch.
     let ai_items: Vec<AiScheduleItem> = {
-        let s = crate::ai::schedule::iso_to_naive(&start).ok_or("Ongeldige start datum".to_string())?;
-        let e = crate::ai::schedule::iso_to_naive(&end).ok_or("Ongeldige eind datum".to_string())?;
+        let s =
+            crate::ai::schedule::iso_to_naive(&start).ok_or("Ongeldige start datum".to_string())?;
+        let e =
+            crate::ai::schedule::iso_to_naive(&end).ok_or("Ongeldige eind datum".to_string())?;
         let items = state.items.read().await;
         items
             .iter()
@@ -354,7 +384,10 @@ pub async fn get_merged_schedule(
     let magister_events = match fetch_magister_events(client, person_id, &start, &end).await {
         Ok(ev) => ev,
         Err(e) => {
-            log::warn!("get_merged_schedule: failed to fetch Magister events (using empty, error: {})", e);
+            log::warn!(
+                "get_merged_schedule: failed to fetch Magister events (using empty, error: {})",
+                e
+            );
             Vec::new()
         }
     };
@@ -371,10 +404,19 @@ async fn fetch_magister_events(
     start: &str,
     end: &str,
 ) -> Result<Vec<crate::models::calendar::CalendarEvent>, String> {
-    let start_date = if start.len() >= 10 { &start[0..10] } else { start };
+    let start_date = if start.len() >= 10 {
+        &start[0..10]
+    } else {
+        start
+    };
     let end_date = if end.len() >= 10 { &end[0..10] } else { end };
-    let events_url = format!("personen/{}/afspraken?tot={}&van={}", person_id, end_date, start_date);
-    let events_data = crate::client::get_with_shared(&client, &events_url).await.map_err(|e| e.to_string())?;
+    let events_url = format!(
+        "personen/{}/afspraken?tot={}&van={}",
+        person_id, end_date, start_date
+    );
+    let events_data = crate::client::get_with_shared(&client, &events_url)
+        .await
+        .map_err(|e| e.to_string())?;
     let events_resp: crate::models::calendar::CalendarEventsResponse =
         serde_json::from_value(events_data).map_err(|e| e.to_string())?;
 
@@ -388,17 +430,30 @@ pub(crate) async fn fetch_magister_events_inner(
     start: &str,
     end: &str,
 ) -> Result<Vec<crate::models::calendar::CalendarEvent>, String> {
-    let start_date = if start.len() >= 10 { &start[0..10] } else { start };
+    let start_date = if start.len() >= 10 {
+        &start[0..10]
+    } else {
+        start
+    };
     let end_date = if end.len() >= 10 { &end[0..10] } else { end };
     // `extract_upcoming_tests` looks up to 14 days past the planning window
     // so preparation can be scheduled *before* each test. Fetch lessons
     // across that same horizon, otherwise tests falling just outside the
     // window are never seen and get no study blocks (test-week planning gap).
     let fetch_end = crate::ai::schedule::iso_to_naive(end_date)
-        .map(|d| (d + chrono::Duration::days(14)).format("%Y-%m-%d").to_string())
+        .map(|d| {
+            (d + chrono::Duration::days(14))
+                .format("%Y-%m-%d")
+                .to_string()
+        })
         .unwrap_or_else(|| end_date.to_string());
-    let events_url = format!("personen/{}/afspraken?tot={}&van={}", person_id, fetch_end, start_date);
-    let events_data = crate::client::get_with_shared(&client, &events_url).await.map_err(|e| e.to_string())?;
+    let events_url = format!(
+        "personen/{}/afspraken?tot={}&van={}",
+        person_id, fetch_end, start_date
+    );
+    let events_data = crate::client::get_with_shared(&client, &events_url)
+        .await
+        .map_err(|e| e.to_string())?;
     let events_resp: crate::models::calendar::CalendarEventsResponse =
         serde_json::from_value(events_data).map_err(|e| e.to_string())?;
 
@@ -412,11 +467,24 @@ async fn fetch_assignments_inner(
     start: &str,
     end: &str,
 ) -> Result<Vec<Value>, String> {
-    let start_date = if start.len() >= 10 { &start[0..10] } else { start };
+    let start_date = if start.len() >= 10 {
+        &start[0..10]
+    } else {
+        start
+    };
     let end_date = if end.len() >= 10 { &end[0..10] } else { end };
-    let path = format!("personen/{}/opdrachten?van={}&tot={}", person_id, start_date, end_date);
-    let data = crate::client::get_with_shared(&client, &path).await.map_err(|e| e.to_string())?;
-    let items = data.get("Items").or_else(|| data.get("items")).cloned().unwrap_or(Value::Array(vec![]));
+    let path = format!(
+        "personen/{}/opdrachten?van={}&tot={}",
+        person_id, start_date, end_date
+    );
+    let data = crate::client::get_with_shared(&client, &path)
+        .await
+        .map_err(|e| e.to_string())?;
+    let items = data
+        .get("Items")
+        .or_else(|| data.get("items"))
+        .cloned()
+        .unwrap_or(Value::Array(vec![]));
     Ok(items.as_array().cloned().unwrap_or_default())
 }
 
@@ -453,30 +521,39 @@ pub async fn perform_update_inner(
     // window query misses assignments whose creation falls outside the
     // window but whose deadline is inside it — that's why planning only
     // ever produced sleep/free-time.
-    let (lessons, assignments_raw) = {
-        let lessons = fetch_magister_events_inner(client.clone(), person_id, &window_start_str, &window_end_str)
+    let (lessons, assignments_raw) =
+        {
+            let lessons = fetch_magister_events_inner(
+                client.clone(),
+                person_id,
+                &window_start_str,
+                &window_end_str,
+            )
             .await
             .unwrap_or_default();
 
-        let broad_end = (chrono::Local::now().date_naive() + chrono::Duration::days(365))
-            .format("%Y-%m-%d")
-            .to_string();
-        let assignments = match fetch_assignments_inner(client.clone(), person_id, "2013-01-01", &broad_end).await {
-            Ok(v) => v,
-            Err(e) => {
-                log::warn!("update_ai_schedule: assignments fetch failed: {}", e);
-                Vec::new()
-            }
+            let broad_end = (chrono::Local::now().date_naive() + chrono::Duration::days(365))
+                .format("%Y-%m-%d")
+                .to_string();
+            let assignments =
+                match fetch_assignments_inner(client.clone(), person_id, "2013-01-01", &broad_end)
+                    .await
+                {
+                    Ok(v) => v,
+                    Err(e) => {
+                        log::warn!("update_ai_schedule: assignments fetch failed: {}", e);
+                        Vec::new()
+                    }
+                };
+            log::info!(
+                "update_ai_schedule: {} lessons, {} raw assignments (window {}..{})",
+                lessons.len(),
+                assignments.len(),
+                window_start_str,
+                window_end_str
+            );
+            (lessons, assignments)
         };
-        log::info!(
-            "update_ai_schedule: {} lessons, {} raw assignments (window {}..{})",
-            lessons.len(),
-            assignments.len(),
-            window_start_str,
-            window_end_str
-        );
-        (lessons, assignments)
-    };
 
     // Determine locked items: Completed/Dismissed, or User source, or InProgress
     // Only Planned AI items are freely rearrangeable; FreeTime is always rearrangeable.
@@ -485,7 +562,8 @@ pub async fn perform_update_inner(
 
     // Build duration_map from existing items: assignment_id -> (minutes, source)
     // Use UserEntered durations where available, else SubjectAverage or previous AiEstimated
-    let mut duration_map: std::collections::HashMap<i64, (u32, DurationSource)> = std::collections::HashMap::new();
+    let mut duration_map: std::collections::HashMap<i64, (u32, DurationSource)> =
+        std::collections::HashMap::new();
     for item in &existing_items {
         if let (Some(aid), Some(mins), Some(src)) = (
             item.related_assignment_id,
@@ -501,7 +579,12 @@ pub async fn perform_update_inner(
         // Also handle items where duration was set via set_homework_duration (stored on item)
         // Items with related_assignment_id but no source yet: still use mins
         if let (Some(aid), Some(mins)) = (item.related_assignment_id, item.estimated_minutes) {
-            duration_map.entry(aid).or_insert((mins, item.duration_source.clone().unwrap_or(DurationSource::AiEstimated)));
+            duration_map.entry(aid).or_insert((
+                mins,
+                item.duration_source
+                    .clone()
+                    .unwrap_or(DurationSource::AiEstimated),
+            ));
         }
     }
 
@@ -511,7 +594,10 @@ pub async fn perform_update_inner(
     let assignment_inputs: Vec<crate::ai::schedule::AssignmentInput> = assignments_raw
         .iter()
         .filter_map(|v| {
-            let id = v.get("Id").or_else(|| v.get("id")).and_then(|x| x.as_i64())?;
+            let id = v
+                .get("Id")
+                .or_else(|| v.get("id"))
+                .and_then(|x| x.as_i64())?;
             let titel = v
                 .get("Titel")
                 .or_else(|| v.get("titel"))
@@ -519,7 +605,11 @@ pub async fn perform_update_inner(
                 .and_then(|x| x.as_str())
                 .unwrap_or("Opdracht")
                 .to_string();
-            let vak = v.get("Vak").or_else(|| v.get("vak")).and_then(|x| x.as_str()).map(|s| s.to_string());
+            let vak = v
+                .get("Vak")
+                .or_else(|| v.get("vak"))
+                .and_then(|x| x.as_str())
+                .map(|s| s.to_string());
             let inleveren_voor = v
                 .get("InleverenVoor")
                 .or_else(|| v.get("inleveren_voor"))
@@ -529,10 +619,22 @@ pub async fn perform_update_inner(
             if inleveren_voor.is_empty() {
                 return None;
             }
-            let omschrijving = v.get("Omschrijving").or_else(|| v.get("omschrijving")).and_then(|x| x.as_str()).map(|s| s.to_string());
+            let omschrijving = v
+                .get("Omschrijving")
+                .or_else(|| v.get("omschrijving"))
+                .and_then(|x| x.as_str())
+                .map(|s| s.to_string());
             // Filter to open assignments only: not closed/submitted? Check Afgesloten etc.
-            let afgesloten = v.get("Afgesloten").or_else(|| v.get("afgesloten")).and_then(|x| x.as_bool()).unwrap_or(false);
-            let ingeleverd = v.get("IngeleverdOp").or_else(|| v.get("ingeleverd_op")).and_then(|x| x.as_str()).is_some();
+            let afgesloten = v
+                .get("Afgesloten")
+                .or_else(|| v.get("afgesloten"))
+                .and_then(|x| x.as_bool())
+                .unwrap_or(false);
+            let ingeleverd = v
+                .get("IngeleverdOp")
+                .or_else(|| v.get("ingeleverd_op"))
+                .and_then(|x| x.as_str())
+                .is_some();
             if afgesloten || ingeleverd {
                 // If already submitted/closed, maybe still need review? But for now skip closed
                 // Keep if manually not closed? We'll skip submitted to avoid planning done work.
@@ -578,8 +680,11 @@ pub async fn perform_update_inner(
         let now = chrono::Local::now().naive_local();
         // Prune old completed/dismissed with end in past
         items.retain(|item| {
-            if (item.status == AiScheduleStatus::Completed || item.status == AiScheduleStatus::Dismissed)
-                && crate::ai::schedule::iso_to_naive(&item.end).map(|e| e < now).unwrap_or(false)
+            if (item.status == AiScheduleStatus::Completed
+                || item.status == AiScheduleStatus::Dismissed)
+                && crate::ai::schedule::iso_to_naive(&item.end)
+                    .map(|e| e < now)
+                    .unwrap_or(false)
                 && crate::ai::schedule::iso_to_naive(&item.end)
                     .map(|e| e.date() < window_start)
                     .unwrap_or(false)
@@ -613,7 +718,9 @@ pub async fn perform_update_inner(
                 return false;
             }
             // If Planned and source AiChat, remove (rearrangeable)
-            if item.status == AiScheduleStatus::Planned && item.source == crate::models::ai_schedule::AiScheduleSource::AiChat {
+            if item.status == AiScheduleStatus::Planned
+                && item.source == crate::models::ai_schedule::AiScheduleSource::AiChat
+            {
                 return false;
             }
             // Keep User items, InProgress, etc. (already handled locked check)
@@ -637,14 +744,21 @@ pub async fn perform_update_inner(
                 let same_cal = new.related_calendar_event_id.is_some()
                     && i.related_calendar_event_id == new.related_calendar_event_id;
                 (same_assign || same_cal)
-                    && crate::ai::schedule::intervals_overlap_str(&new.start, &new.end, &i.start, &i.end)
+                    && crate::ai::schedule::intervals_overlap_str(
+                        &new.start, &new.end, &i.start, &i.end,
+                    )
             });
             if same_link {
                 continue;
             }
             if find_overlap(&items, &new.start, &new.end, None).is_some() {
                 // Guardrail: would double-book an already planned time — skip.
-                log::warn!("update_ai_schedule: skipping '{}' ({}..{}) — overlaps existing", new.id, new.start, new.end);
+                log::warn!(
+                    "update_ai_schedule: skipping '{}' ({}..{}) — overlaps existing",
+                    new.id,
+                    new.start,
+                    new.end
+                );
                 continue;
             }
             items.push(new);
@@ -717,11 +831,24 @@ async fn fetch_assignments(
     start: &str,
     end: &str,
 ) -> Result<Vec<Value>, String> {
-    let start_date = if start.len() >= 10 { &start[0..10] } else { start };
+    let start_date = if start.len() >= 10 {
+        &start[0..10]
+    } else {
+        start
+    };
     let end_date = if end.len() >= 10 { &end[0..10] } else { end };
-    let path = format!("personen/{}/opdrachten?van={}&tot={}", person_id, start_date, end_date);
-    let data = crate::client::get_with_shared(&client, &path).await.map_err(|e| e.to_string())?;
-    let items = data.get("Items").or_else(|| data.get("items")).cloned().unwrap_or(Value::Array(vec![]));
+    let path = format!(
+        "personen/{}/opdrachten?van={}&tot={}",
+        person_id, start_date, end_date
+    );
+    let data = crate::client::get_with_shared(&client, &path)
+        .await
+        .map_err(|e| e.to_string())?;
+    let items = data
+        .get("Items")
+        .or_else(|| data.get("items"))
+        .cloned()
+        .unwrap_or(Value::Array(vec![]));
     Ok(items.as_array().cloned().unwrap_or_default())
 }
 
@@ -745,7 +872,10 @@ pub async fn set_homework_duration(
     let mut items = state.items.write().await;
     // Find existing item for this assignment (prefer HomeworkReview or AssignmentWork)
     let now = now_iso();
-    if let Some(item) = items.iter_mut().find(|i| i.related_assignment_id == Some(assignment_id)) {
+    if let Some(item) = items
+        .iter_mut()
+        .find(|i| i.related_assignment_id == Some(assignment_id))
+    {
         item.estimated_minutes = Some(estimated_minutes);
         item.duration_source = Some(DurationSource::UserEntered);
         if let Some(u) = urgency {
@@ -767,7 +897,8 @@ pub async fn set_homework_duration(
         item_type: crate::models::ai_schedule::AiScheduleItemType::AssignmentWork,
         start: now.clone(),
         end: {
-            let start_dt = crate::ai::schedule::iso_to_naive(&now).unwrap_or(chrono::Local::now().naive_local());
+            let start_dt = crate::ai::schedule::iso_to_naive(&now)
+                .unwrap_or(chrono::Local::now().naive_local());
             let end_dt = start_dt + chrono::Duration::minutes(estimated_minutes as i64);
             crate::ai::schedule::naive_to_iso(end_dt)
         },

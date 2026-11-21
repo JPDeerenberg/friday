@@ -1,6 +1,6 @@
 [package]
 name = "friday"
-version = "2.18.0"
+version = "2.19.0"
 description = "A Tauri App"
 authors = ["you"]
 edition = "2021"
@@ -42,7 +42,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 # OS-level secure storage for secrets (Magister tokens, AI API key).
 keyring-core = "1.0"
-reqwest = { version = "0.13", features = ["json", "rustls", "stream"], default-features = false }
+reqwest = { version = "0.13", features = ["json", "rustls", "stream", "multipart"], default-features = false }
 # Used directly by src/tls.rs to build a bundled-root TLS config (see that
 # file for why): both are already pulled in transitively by reqwest's
 # "rustls" feature, this just makes the version explicit since we now
@@ -84,7 +84,7 @@ async-trait = "0.1"
 # pdf-extract is pure-Rust (MIT), pulls in lopdf/cff-parser/postscript.
 # zip is only used to unwrap .docx containers (pure-Rust deflate via zlib-rs).
 pdf-extract = "0.12"
-zip = { version = "8.6", default-features = false, features = ["deflate"] }
+zip = { version = "9.0.5", default-features = false, features = ["deflate"] }
 # Cross-process advisory file locking for the token-refresh critical section
 # (acquire_refresh_lock in client.rs). Uses flock(2) on Unix (incl. Android)
 # instead of the recently-stabilized std::fs::File::lock — well-tested

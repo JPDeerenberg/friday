@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { DurationSource } from "$lib/ai-schedule-types";
+  import type { DurationSource } from "#lib/ai-schedule-types.ts";
 
   let {
     minutes = $bindable<number | null>(null),

@@ -7,7 +7,13 @@
  * server.
  */
 import {
-  absoluteLessons, cleanName, diffLessons, type ScheduleDiff, type ScheduleSnapshot, type SharedLesson,
+  absoluteLessons,
+  cleanName,
+  diffLessons,
+  snapshotRange,
+  type ScheduleDiff,
+  type ScheduleSnapshot,
+  type SharedLesson,
 } from "./friends-share.ts";
 import { hueForId, type Person } from "./friends-compare.ts";
 
@@ -60,12 +66,15 @@ export function importFriend(
   if (snapshot.id === state.myId) return { state, status: "self" };
   const existing = state.friends.find((f) => f.id === snapshot.id);
   if (existing) {
-    if (snapshot.createdAt <= existing.snapshot.createdAt) return { state, status: "older" };
+    if (snapshot.createdAt <= existing.snapshot.createdAt)
+      return { state, status: "older" };
     return {
       state: {
         ...state,
         friends: state.friends.map((f) =>
-          f.id === snapshot.id ? { ...f, name: snapshot.name, snapshot, importedAt: now } : f,
+          f.id === snapshot.id
+            ? { ...f, name: snapshot.name, snapshot, importedAt: now }
+            : f,
         ),
       },
       status: "updated",
@@ -73,22 +82,46 @@ export function importFriend(
   }
   if (state.friends.length >= MAX_FRIENDS) return { state, status: "full" };
   const record: FriendRecord = {
-    id: snapshot.id, name: snapshot.name, nickname: "", snapshot, importedAt: now, enabled: true,
+    id: snapshot.id,
+    name: snapshot.name,
+    nickname: "",
+    snapshot,
+    importedAt: now,
+    enabled: true,
   };
-  return { state: { ...state, friends: [...state.friends, record] }, status: "added" };
+  return {
+    state: { ...state, friends: [...state.friends, record] },
+    status: "added",
+  };
 }
 
 export function removeFriend(state: FriendsState, id: string): FriendsState {
   return { ...state, friends: state.friends.filter((f) => f.id !== id) };
 }
 
-export function setEnabled(state: FriendsState, id: string, enabled: boolean): FriendsState {
-  return { ...state, friends: state.friends.map((f) => (f.id === id ? { ...f, enabled } : f)) };
+export function setEnabled(
+  state: FriendsState,
+  id: string,
+  enabled: boolean,
+): FriendsState {
+  return {
+    ...state,
+    friends: state.friends.map((f) => (f.id === id ? { ...f, enabled } : f)),
+  };
 }
 
-export function renameFriend(state: FriendsState, id: string, nickname: string): FriendsState {
+export function renameFriend(
+  state: FriendsState,
+  id: string,
+  nickname: string,
+): FriendsState {
   const clean = cleanName(nickname);
-  return { ...state, friends: state.friends.map((f) => (f.id === id ? { ...f, nickname: clean } : f)) };
+  return {
+    ...state,
+    friends: state.friends.map((f) =>
+      f.id === id ? { ...f, nickname: clean } : f,
+    ),
+  };
 }
 
 export function setMyName(state: FriendsState, name: string): FriendsState {
@@ -103,13 +136,19 @@ export function markShared(
 ): FriendsState {
   return {
     ...state,
-    lastShared: { signature, at: now, windowStart: snapshot.windowStart, lessons: snapshot.lessons },
+    lastShared: {
+      signature,
+      at: now,
+      windowStart: snapshot.windowStart,
+      lessons: snapshot.lessons,
+    },
   };
 }
 
 // ---------------------------------------------------------------- notices
 
-export type ChangeNotice = { kind: "new-week" } | ({ kind: "changed" } & ScheduleDiff);
+export type ChangeNotice =
+  { kind: "new-week" } | ({ kind: "changed" } & ScheduleDiff);
 
 /**
  * Whether the student should share a new link: null when nothing changed or when
@@ -127,10 +166,15 @@ export function changeNotice(
 }
 
 export function describeNotice(n: ChangeNotice): string {
-  if (n.kind === "new-week") return "Het is een nieuwe week: deel een nieuwe QR, dan klopt het rooster van je vrienden weer.";
+  if (n.kind === "new-week")
+    return "Het is een nieuwe week: deel een nieuwe QR, dan klopt het rooster van je vrienden weer.";
   const parts: string[] = [];
-  if (n.removed > 0) parts.push(`${n.removed} ${n.removed === 1 ? "les is" : "lessen zijn"} vervallen of verplaatst`);
-  if (n.added > 0) parts.push(`${n.added} ${n.added === 1 ? "nieuwe les" : "nieuwe lessen"}`);
+  if (n.removed > 0)
+    parts.push(
+      `${n.removed} ${n.removed === 1 ? "les is" : "lessen zijn"} vervallen of verplaatst`,
+    );
+  if (n.added > 0)
+    parts.push(`${n.added} ${n.added === 1 ? "nieuwe les" : "nieuwe lessen"}`);
   return `Je rooster is veranderd (${parts.join(", ")}). Deel een nieuwe QR voor je vrienden.`;
 }
 
@@ -139,14 +183,20 @@ export function describeNotice(n: ChangeNotice): string {
 export type Freshness = "fresh" | "old" | "expired";
 
 /** Expired: every lesson in the snapshot is in the past. Old: made more than 5 days ago (may be out of date). */
-export function freshness(s: ScheduleSnapshot, now: number = Date.now()): Freshness {
+export function freshness(
+  s: ScheduleSnapshot,
+  now: number = Date.now(),
+): Freshness {
   const [y, m, d] = s.windowStart.split("-").map(Number);
   const windowEnd = new Date(y, m - 1, d + s.days).getTime();
   if (now >= windowEnd) return "expired";
   return now - s.createdAt * 60000 > 5 * 86400000 ? "old" : "fresh";
 }
 
-export function ageText(createdAtMinutes: number, now: number = Date.now()): string {
+export function ageText(
+  createdAtMinutes: number,
+  now: number = Date.now(),
+): string {
   const min = Math.max(0, Math.floor((now - createdAtMinutes * 60000) / 60000));
   if (min < 2) return "zojuist";
   if (min < 60) return `${min} min geleden`;
@@ -158,17 +208,28 @@ export function ageText(createdAtMinutes: number, now: number = Date.now()): str
 
 // ---------------------------------------------------------------- people
 
-/** The comparison's people: enabled friends with their lessons as absolute times. */
+/** The comparison's people: enabled friends with their lessons as absolute times and coverage. */
 export function friendsAsPeople(state: FriendsState): Person[] {
   return state.friends
     .filter((f) => f.enabled)
-    .map((f) => ({ id: f.id, name: friendLabel(f), hue: hueForId(f.id), lessons: absoluteLessons(f.snapshot) }));
+    .map((f) => {
+      const { from, to } = snapshotRange(f.snapshot);
+      return {
+        id: f.id,
+        name: friendLabel(f),
+        hue: hueForId(f.id),
+        lessons: absoluteLessons(f.snapshot),
+        coversFrom: from,
+        coversTo: to,
+      };
+    });
 }
 
 // ---------------------------------------------------------------- storage
 
 const isStr = (v: unknown): v is string => typeof v === "string";
-const isNum = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
+const isNum = (v: unknown): v is number =>
+  typeof v === "number" && Number.isFinite(v);
 
 function sanitizeLessons(v: unknown, days: number): SharedLesson[] | null {
   if (!Array.isArray(v) || v.length > 14 * 24) return null;
@@ -176,8 +237,10 @@ function sanitizeLessons(v: unknown, days: number): SharedLesson[] | null {
   for (const l of v) {
     if (!l || typeof l !== "object") return null;
     const { day, start, end, subject } = l as Record<string, unknown>;
-    if (!isNum(day) || !isNum(start) || !isNum(end) || !isStr(subject)) return null;
-    if (day < 0 || day >= days || start < 0 || end <= start || end > 24 * 60) return null;
+    if (!isNum(day) || !isNum(start) || !isNum(end) || !isStr(subject))
+      return null;
+    if (day < 0 || day >= days || start < 0 || end <= start || end > 24 * 60)
+      return null;
     out.push({ day, start, end, subject: subject.slice(0, 14) });
   }
   return out;
@@ -186,12 +249,26 @@ function sanitizeLessons(v: unknown, days: number): SharedLesson[] | null {
 function sanitizeSnapshot(v: unknown): ScheduleSnapshot | null {
   if (!v || typeof v !== "object") return null;
   const s = v as Record<string, unknown>;
-  if (!isStr(s.id) || !/^[0-9a-f]{8}$/.test(s.id) || !isStr(s.name) || !isNum(s.createdAt)) return null;
-  if (!isStr(s.windowStart) || !/^\d{4}-\d{2}-\d{2}$/.test(s.windowStart)) return null;
+  if (
+    !isStr(s.id) ||
+    !/^[0-9a-f]{8}$/.test(s.id) ||
+    !isStr(s.name) ||
+    !isNum(s.createdAt)
+  )
+    return null;
+  if (!isStr(s.windowStart) || !/^\d{4}-\d{2}-\d{2}$/.test(s.windowStart))
+    return null;
   if (!isNum(s.days) || s.days < 1 || s.days > 14) return null;
   const lessons = sanitizeLessons(s.lessons, s.days);
   if (!lessons) return null;
-  return { id: s.id, name: cleanName(s.name) || "Vriend", createdAt: s.createdAt, windowStart: s.windowStart, days: s.days, lessons };
+  return {
+    id: s.id,
+    name: cleanName(s.name) || "Vriend",
+    createdAt: s.createdAt,
+    windowStart: s.windowStart,
+    days: s.days,
+    lessons,
+  };
 }
 
 /** Reads stored state defensively; broken friends are dropped, not fatal. Returns null when unusable. */
@@ -203,10 +280,12 @@ export function sanitizeState(raw: unknown): FriendsState | null {
   const seen = new Set<string>();
   if (Array.isArray(r.friends)) {
     for (const f of r.friends) {
-      if (!f || typeof f !== "object" || friends.length >= MAX_FRIENDS) continue;
+      if (!f || typeof f !== "object" || friends.length >= MAX_FRIENDS)
+        continue;
       const fr = f as Record<string, unknown>;
       const snapshot = sanitizeSnapshot(fr.snapshot);
-      if (!snapshot || seen.has(snapshot.id) || snapshot.id === r.myId) continue;
+      if (!snapshot || seen.has(snapshot.id) || snapshot.id === r.myId)
+        continue;
       seen.add(snapshot.id);
       friends.push({
         id: snapshot.id,
@@ -220,9 +299,27 @@ export function sanitizeState(raw: unknown): FriendsState | null {
   }
   let lastShared: LastShared | null = null;
   const ls = r.lastShared as Record<string, unknown> | null | undefined;
-  if (ls && typeof ls === "object" && isStr(ls.signature) && isNum(ls.at) && isStr(ls.windowStart)) {
+  if (
+    ls &&
+    typeof ls === "object" &&
+    isStr(ls.signature) &&
+    isNum(ls.at) &&
+    isStr(ls.windowStart)
+  ) {
     const lessons = sanitizeLessons(ls.lessons, 14);
-    if (lessons) lastShared = { signature: ls.signature, at: ls.at, windowStart: ls.windowStart, lessons };
+    if (lessons)
+      lastShared = {
+        signature: ls.signature,
+        at: ls.at,
+        windowStart: ls.windowStart,
+        lessons,
+      };
   }
-  return { version: 1, myId: r.myId, myName: isStr(r.myName) ? cleanName(r.myName) : "", lastShared, friends };
+  return {
+    version: 1,
+    myId: r.myId,
+    myName: isStr(r.myName) ? cleanName(r.myName) : "",
+    lastShared,
+    friends,
+  };
 }

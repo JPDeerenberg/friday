@@ -516,6 +516,47 @@ export class WebBackend implements Backend {
     return (await res.json()) as T;
   }
 
+  /**
+   * Tier-A multipart passthrough (message attachments). The browser sets the
+   * multipart boundary itself, so Content-Type is deliberately omitted.
+   */
+  async magisterForm<T>(
+    tokens: SessionTokens,
+    path: string,
+    form: FormData,
+  ): Promise<T> {
+    let res: Response;
+    try {
+      res = await fetch(`${this.base}/magister/${path.replace(/^\//, "")}`, {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          Authorization: `Bearer ${tokens.accessToken}`,
+          "X-Magister-Endpoint": tokens.apiEndpoint,
+        },
+        body: form,
+      });
+    } catch {
+      throw new WebApiError(0, SERVER_STARTING_MESSAGE);
+    }
+    if (isServerStartingStatus(res.status))
+      throw new WebApiError(res.status, SERVER_STARTING_MESSAGE);
+    if (res.status === 429) {
+      const data = (await res.json().catch(() => ({}))) as Record<
+        string,
+        unknown
+      >;
+      throw new WebApiError(
+        429,
+        "Te veel verzoeken, probeer het later opnieuw",
+        errorRef(data),
+      );
+    }
+    if (!res.ok)
+      await throwApiError(res, `Upload mislukt (HTTP ${res.status})`);
+    return (await res.json()) as T;
+  }
+
   async refresh(tokens: SessionTokens): Promise<SessionTokens> {
     let res: Response;
     try {

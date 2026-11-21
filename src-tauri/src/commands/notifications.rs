@@ -1,9 +1,9 @@
 use serde::{Deserialize, Serialize};
+#[cfg(target_os = "android")]
+use std::sync::{Arc, Mutex};
 use tauri::AppHandle;
 #[cfg(target_os = "android")]
 use tauri::Manager;
-#[cfg(target_os = "android")]
-use std::sync::{Arc, Mutex};
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[repr(i32)]
@@ -21,8 +21,6 @@ impl Default for NotificationType {
     }
 }
 
-
-
 #[cfg(target_os = "android")]
 /// Resolve an app class through a Context/Activity's own ClassLoader.
 ///
@@ -36,19 +34,18 @@ pub(crate) fn find_app_class<'local>(
     activity: &jni::objects::JObject<'_>,
     name: &str,
 ) -> Result<jni::objects::JClass<'local>, jni::errors::Error> {
-    let class_loader = env.call_method(
-        activity,
-        "getClassLoader",
-        "()Ljava/lang/ClassLoader;",
-        &[],
-    )?.l()?;
+    let class_loader = env
+        .call_method(activity, "getClassLoader", "()Ljava/lang/ClassLoader;", &[])?
+        .l()?;
     let class_name = env.new_string(name)?;
-    let class_obj = env.call_method(
-        &class_loader,
-        "loadClass",
-        "(Ljava/lang/String;)Ljava/lang/Class;",
-        &[jni::objects::JValue::from(&class_name)],
-    )?.l()?;
+    let class_obj = env
+        .call_method(
+            &class_loader,
+            "loadClass",
+            "(Ljava/lang/String;)Ljava/lang/Class;",
+            &[jni::objects::JValue::from(&class_name)],
+        )?
+        .l()?;
     Ok(jni::objects::JClass::from(class_obj))
 }
 
@@ -58,64 +55,76 @@ pub fn trigger_test_notification(app: AppHandle) -> Result<(), String> {
     #[cfg(target_os = "android")]
     {
         use jni::objects::JValue;
-        
+
         // Try to get the main window to access JNI handle
-        let window = app.get_webview_window("main")
+        let window = app
+            .get_webview_window("main")
             .or_else(|| app.webview_windows().values().next().cloned())
             .ok_or_else(|| "No active window found for JNI access".to_string())?;
 
         // In Tauri 2, WebView has jni_handle()
-        window.with_webview(move |webview| {
-            #[cfg(target_os = "android")]
-            {
-                let _ = webview.jni_handle().exec(move |env, activity, _webview| {
-                    // Find the NotificationHelper class via Activity's ClassLoader to prevent JNI thread isolation
-                    let class = match find_app_class(env, &activity, "com.joris.friday.NotificationHelper") {
-                        Ok(c) => c,
-                        Err(e) => {
-                            let _ = env.exception_clear();
-                            log::error!("JNI ERROR: Failed to find NotificationHelper: {:?}", e);
-                            return;
-                        }
-                    };
-                    
-                    // Create JStrings
-                    let title = match env.new_string("Test Notificatie") {
-                        Ok(s) => s,
-                        Err(_) => return,
-                    };
-                    let message = match env.new_string("Dit is een test van het Friday meldingen systeem!") {
-                        Ok(s) => s,
-                        Err(_) => return,
-                    };
-                    
-                    // Call showTestNotification static method
-                    let res = env.call_static_method(
-                        &class,
-                        "showTestNotification",
-                        "(Landroid/content/Context;Ljava/lang/String;Ljava/lang/String;)V",
-                        &[
-                            JValue::from(&activity),
-                            JValue::from(&title),
-                            JValue::from(&message),
-                        ],
-                    );
+        window
+            .with_webview(move |webview| {
+                #[cfg(target_os = "android")]
+                {
+                    let _ = webview.jni_handle().exec(move |env, activity, _webview| {
+                        // Find the NotificationHelper class via Activity's ClassLoader to prevent JNI thread isolation
+                        let class = match find_app_class(
+                            env,
+                            &activity,
+                            "com.joris.friday.NotificationHelper",
+                        ) {
+                            Ok(c) => c,
+                            Err(e) => {
+                                let _ = env.exception_clear();
+                                log::error!(
+                                    "JNI ERROR: Failed to find NotificationHelper: {:?}",
+                                    e
+                                );
+                                return;
+                            }
+                        };
 
-                    if let Err(_) = res {
-                        if let Ok(true) = env.exception_check() {
-                            let _ = env.exception_clear();
+                        // Create JStrings
+                        let title = match env.new_string("Test Notificatie") {
+                            Ok(s) => s,
+                            Err(_) => return,
+                        };
+                        let message = match env
+                            .new_string("Dit is een test van het Friday meldingen systeem!")
+                        {
+                            Ok(s) => s,
+                            Err(_) => return,
+                        };
+
+                        // Call showTestNotification static method
+                        let res = env.call_static_method(
+                            &class,
+                            "showTestNotification",
+                            "(Landroid/content/Context;Ljava/lang/String;Ljava/lang/String;)V",
+                            &[
+                                JValue::from(&activity),
+                                JValue::from(&title),
+                                JValue::from(&message),
+                            ],
+                        );
+
+                        if let Err(_) = res {
+                            if let Ok(true) = env.exception_check() {
+                                let _ = env.exception_clear();
+                            }
                         }
-                    }
-                });
-            }
-        }).map_err(|e| e.to_string())?;
+                    });
+                }
+            })
+            .map_err(|e| e.to_string())?;
     }
-    
+
     #[cfg(not(target_os = "android"))]
     {
         log::debug!("Test notification triggered (Desktop)");
     }
-    
+
     Ok(())
 }
 
@@ -134,9 +143,10 @@ pub fn show_notification(
     #[cfg(target_os = "android")]
     {
         use jni::objects::JValue;
-        
+
         // Try to get the main window to access JNI handle
-        let window = app.get_webview_window("main")
+        let window = app
+            .get_webview_window("main")
             .or_else(|| app.webview_windows().values().next().cloned())
             .ok_or_else(|| "No active window found for JNI access".to_string())?;
 
@@ -195,12 +205,16 @@ pub fn show_notification(
             }
         }).map_err(|e| e.to_string())?;
     }
-    
+
     #[cfg(not(target_os = "android"))]
     {
-        log::debug!("Notification triggered (Desktop): {:?} - {}", notification_type, title);
+        log::debug!(
+            "Notification triggered (Desktop): {:?} - {}",
+            notification_type,
+            title
+        );
     }
-    
+
     Ok(())
 }
 
@@ -231,32 +245,30 @@ pub fn trigger_sync(app: AppHandle) -> Result<(), String> {
     let _ = &app;
     #[cfg(target_os = "android")]
     {
-        let window = app.get_webview_window("main")
+        let window = app
+            .get_webview_window("main")
             .or_else(|| app.webview_windows().values().next().cloned())
             .ok_or_else(|| "No active window found for JNI access".to_string())?;
 
-        window.with_webview(move |webview| {
-            #[cfg(target_os = "android")]
-            {
-                // Call MainActivity.triggerManualSync() via JNI
-                let _ = webview.jni_handle().exec(move |env, activity, _webview| {
-                    let res = env.call_method(
-                        &activity,
-                        "triggerManualSync",
-                        "()V",
-                        &[],
-                    );
-                    
-                    if let Err(_) = res {
-                        if let Ok(true) = env.exception_check() {
-                            let _ = env.exception_clear();
+        window
+            .with_webview(move |webview| {
+                #[cfg(target_os = "android")]
+                {
+                    // Call MainActivity.triggerManualSync() via JNI
+                    let _ = webview.jni_handle().exec(move |env, activity, _webview| {
+                        let res = env.call_method(&activity, "triggerManualSync", "()V", &[]);
+
+                        if let Err(_) = res {
+                            if let Ok(true) = env.exception_check() {
+                                let _ = env.exception_clear();
+                            }
                         }
-                    }
-                });
-            }
-        }).map_err(|e| e.to_string())?;
+                    });
+                }
+            })
+            .map_err(|e| e.to_string())?;
     }
-    
+
     Ok(())
 }
 
@@ -278,7 +290,8 @@ pub fn sync_notification_preferences(
 
     #[cfg(target_os = "android")]
     {
-        let window = app.get_webview_window("main")
+        let window = app
+            .get_webview_window("main")
             .or_else(|| app.webview_windows().values().next().cloned())
             .ok_or_else(|| "No active window found for JNI access".to_string())?;
 
@@ -286,47 +299,60 @@ pub fn sync_notification_preferences(
         let err_holder: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
         let err_clone = err_holder.clone();
 
-        window.with_webview(move |webview| {
-            #[cfg(target_os = "android")]
-            {
-                let err_inner = err_clone.clone();
-                let _ = webview.jni_handle().exec(move |env, activity, _webview| {
-                    let class = match find_app_class(env, &activity, "com.joris.friday.SyncStateManager") {
-                        Ok(c) => c,
-                        Err(e) => {
-                            let _ = env.exception_clear();
+        window
+            .with_webview(move |webview| {
+                #[cfg(target_os = "android")]
+                {
+                    let err_inner = err_clone.clone();
+                    let _ = webview.jni_handle().exec(move |env, activity, _webview| {
+                        let class = match find_app_class(
+                            env,
+                            &activity,
+                            "com.joris.friday.SyncStateManager",
+                        ) {
+                            Ok(c) => c,
+                            Err(e) => {
+                                let _ = env.exception_clear();
+                                let mut g = err_inner.lock().unwrap();
+                                *g = Some(format!(
+                                    "JNI ERROR: Failed to find SyncStateManager: {:?}",
+                                    e
+                                ));
+                                return;
+                            }
+                        };
+
+                        // Call the static method that accepts context and five booleans
+                        let res = env.call_static_method(
+                            &class,
+                            "syncPreferencesFromFrontend",
+                            "(Landroid/content/Context;ZZZZZ)V",
+                            &[
+                                jni::objects::JValue::from(&activity),
+                                jni::objects::JValue::Bool(if notify_messages { 1u8 } else { 0u8 }),
+                                jni::objects::JValue::Bool(if notify_grades { 1u8 } else { 0u8 }),
+                                jni::objects::JValue::Bool(if notify_deadlines {
+                                    1u8
+                                } else {
+                                    0u8
+                                }),
+                                jni::objects::JValue::Bool(if notify_calendar { 1u8 } else { 0u8 }),
+                                jni::objects::JValue::Bool(if notify_auto_dnd { 1u8 } else { 0u8 }),
+                            ],
+                        );
+
+                        if let Err(e) = res {
+                            if let Ok(true) = env.exception_check() {
+                                let _ = env.exception_clear();
+                            }
                             let mut g = err_inner.lock().unwrap();
-                            *g = Some(format!("JNI ERROR: Failed to find SyncStateManager: {:?}", e));
+                            *g = Some(format!("JNI call error: {:?}", e));
                             return;
                         }
-                    };
-
-                    // Call the static method that accepts context and five booleans
-                    let res = env.call_static_method(
-                        &class,
-                        "syncPreferencesFromFrontend",
-                        "(Landroid/content/Context;ZZZZZ)V",
-                        &[
-                            jni::objects::JValue::from(&activity),
-                            jni::objects::JValue::Bool(if notify_messages { 1u8 } else { 0u8 }),
-                            jni::objects::JValue::Bool(if notify_grades { 1u8 } else { 0u8 }),
-                            jni::objects::JValue::Bool(if notify_deadlines { 1u8 } else { 0u8 }),
-                            jni::objects::JValue::Bool(if notify_calendar { 1u8 } else { 0u8 }),
-                            jni::objects::JValue::Bool(if notify_auto_dnd { 1u8 } else { 0u8 }),
-                        ],
-                    );
-
-                    if let Err(e) = res {
-                        if let Ok(true) = env.exception_check() {
-                            let _ = env.exception_clear();
-                        }
-                        let mut g = err_inner.lock().unwrap();
-                        *g = Some(format!("JNI call error: {:?}", e));
-                        return;
-                    }
-                });
-            }
-        }).map_err(|e| e.to_string())?;
+                    });
+                }
+            })
+            .map_err(|e| e.to_string())?;
 
         // If the JNI closure recorded an error, return it to the caller so the frontend can retry or surface it.
         let err_msg = err_holder.lock().unwrap().clone();
@@ -334,7 +360,7 @@ pub fn sync_notification_preferences(
             return Err(msg);
         }
     }
-    
+
     Ok(())
 }
 
@@ -346,38 +372,45 @@ pub fn clear_sync_state(app: AppHandle) -> Result<String, String> {
     let _ = &app;
     #[cfg(target_os = "android")]
     {
-        let window = app.get_webview_window("main")
+        let window = app
+            .get_webview_window("main")
             .or_else(|| app.webview_windows().values().next().cloned())
             .ok_or_else(|| "No active window found for JNI access".to_string())?;
 
-        window.with_webview(move |webview| {
-            #[cfg(target_os = "android")]
-            {
-                let _ = webview.jni_handle().exec(move |env, activity, _webview| {
-                    let class = match find_app_class(env, &activity, "com.joris.friday.SyncStateManager") {
-                        Ok(c) => c,
-                        Err(e) => {
-                            let _ = env.exception_clear();
-                            log::error!("JNI ERROR: Failed to find SyncStateManager: {:?}", e);
-                            return;
+        window
+            .with_webview(move |webview| {
+                #[cfg(target_os = "android")]
+                {
+                    let _ = webview.jni_handle().exec(move |env, activity, _webview| {
+                        let class = match find_app_class(
+                            env,
+                            &activity,
+                            "com.joris.friday.SyncStateManager",
+                        ) {
+                            Ok(c) => c,
+                            Err(e) => {
+                                let _ = env.exception_clear();
+                                log::error!("JNI ERROR: Failed to find SyncStateManager: {:?}", e);
+                                return;
+                            }
+                        };
+                        // Call clearState(context) on the SyncStateManager singleton
+                        let res = env.call_static_method(
+                            &class,
+                            "clearState",
+                            "(Landroid/content/Context;)V",
+                            &[jni::objects::JValue::from(&activity)],
+                        );
+                        if let Err(_) = res {
+                            if let Ok(true) = env.exception_check() {
+                                let _ = env.exception_clear();
+                            }
                         }
-                    };
-                    // Call clearState(context) on the SyncStateManager singleton
-                    let res = env.call_static_method(
-                        &class,
-                        "clearState",
-                        "(Landroid/content/Context;)V",
-                        &[jni::objects::JValue::from(&activity)],
-                    );
-                    if let Err(_) = res {
-                        if let Ok(true) = env.exception_check() {
-                            let _ = env.exception_clear();
-                        }
-                    }
-                });
-            }
-        }).map_err(|e| e.to_string())?;
-        
+                    });
+                }
+            })
+            .map_err(|e| e.to_string())?;
+
         return Ok("Sync state cleared — next sync will establish new baseline".to_string());
     }
     #[cfg(not(target_os = "android"))]
@@ -395,8 +428,8 @@ pub fn get_sync_state_debug(app: AppHandle) -> Result<String, String> {
         let data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
         // SyncStateManager (Kotlin) writes to context.filesDir which is app_data_dir/files/
         let candidates = vec![
-            data_dir.join("files").join("sync_state.json"),  // correct: filesDir
-            data_dir.join("sync_state.json"),                // fallback: app_data_dir root
+            data_dir.join("files").join("sync_state.json"), // correct: filesDir
+            data_dir.join("sync_state.json"),               // fallback: app_data_dir root
         ];
         for state_file in &candidates {
             if state_file.exists() {
@@ -409,8 +442,13 @@ pub fn get_sync_state_debug(app: AppHandle) -> Result<String, String> {
                 return Ok(format!("// Path: {}\n{}", state_file.display(), preview));
             }
         }
-        Ok(format!("STATE_FILE_NOT_FOUND\nChecked:\n{}",
-            candidates.iter().map(|p| format!("  - {}", p.display())).collect::<Vec<_>>().join("\n")
+        Ok(format!(
+            "STATE_FILE_NOT_FOUND\nChecked:\n{}",
+            candidates
+                .iter()
+                .map(|p| format!("  - {}", p.display()))
+                .collect::<Vec<_>>()
+                .join("\n")
         ))
     }
     #[cfg(not(target_os = "android"))]
@@ -422,56 +460,63 @@ pub fn open_notification_policy_settings(app: AppHandle) -> Result<(), String> {
     let _ = &app;
     #[cfg(target_os = "android")]
     {
-        let window = app.get_webview_window("main")
+        let window = app
+            .get_webview_window("main")
             .or_else(|| app.webview_windows().values().next().cloned())
             .ok_or_else(|| "No active window found for JNI access".to_string())?;
 
-        window.with_webview(move |webview| {
-            #[cfg(target_os = "android")]
-            {
-                let _ = webview.jni_handle().exec(move |env, activity, _webview| {
-                    use jni::objects::JValue;
-                    
-                    // Intent intent = new Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS);
-                    let settings_class = match env.find_class("android/provider/Settings") {
-                        Ok(c) => c,
-                        Err(_) => return,
-                    };
-                    
-                    let action = match env.get_static_field(settings_class, "ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS", "Ljava/lang/String;") {
-                        Ok(f) => match f.l() {
-                            Ok(l) => l,
+        window
+            .with_webview(move |webview| {
+                #[cfg(target_os = "android")]
+                {
+                    let _ = webview.jni_handle().exec(move |env, activity, _webview| {
+                        use jni::objects::JValue;
+
+                        // Intent intent = new Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS);
+                        let settings_class = match env.find_class("android/provider/Settings") {
+                            Ok(c) => c,
                             Err(_) => return,
-                        },
-                        Err(_) => return,
-                    };
-                    
-                    let intent_class = match env.find_class("android/content/Intent") {
-                        Ok(c) => c,
-                        Err(_) => return,
-                    };
-                    
-                    let intent = match env.new_object(
-                        intent_class,
-                        "(Ljava/lang/String;)V",
-                        &[JValue::from(&action)],
-                    ) {
-                        Ok(o) => o,
-                        Err(_) => return,
-                    };
-                    
-                    // activity.startActivity(intent);
-                    let _ = env.call_method(
-                        &activity,
-                        "startActivity",
-                        "(Landroid/content/Intent;)V",
-                        &[JValue::from(&intent)],
-                    );
-                });
-            }
-        }).map_err(|e| e.to_string())?;
+                        };
+
+                        let action = match env.get_static_field(
+                            settings_class,
+                            "ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS",
+                            "Ljava/lang/String;",
+                        ) {
+                            Ok(f) => match f.l() {
+                                Ok(l) => l,
+                                Err(_) => return,
+                            },
+                            Err(_) => return,
+                        };
+
+                        let intent_class = match env.find_class("android/content/Intent") {
+                            Ok(c) => c,
+                            Err(_) => return,
+                        };
+
+                        let intent = match env.new_object(
+                            intent_class,
+                            "(Ljava/lang/String;)V",
+                            &[JValue::from(&action)],
+                        ) {
+                            Ok(o) => o,
+                            Err(_) => return,
+                        };
+
+                        // activity.startActivity(intent);
+                        let _ = env.call_method(
+                            &activity,
+                            "startActivity",
+                            "(Landroid/content/Intent;)V",
+                            &[JValue::from(&intent)],
+                        );
+                    });
+                }
+            })
+            .map_err(|e| e.to_string())?;
     }
-    
+
     Ok(())
 }
 
@@ -481,40 +526,50 @@ pub fn trigger_dnd_test(app: AppHandle) -> Result<(), String> {
     let _ = &app;
     #[cfg(target_os = "android")]
     {
-        let window = app.get_webview_window("main")
+        let window = app
+            .get_webview_window("main")
             .or_else(|| app.webview_windows().values().next().cloned())
             .ok_or_else(|| "No active window found for JNI access".to_string())?;
 
-        window.with_webview(move |webview| {
-            #[cfg(target_os = "android")]
-            {
-                let _ = webview.jni_handle().exec(move |env, activity, _webview| {
-                    use jni::objects::JValue;
+        window
+            .with_webview(move |webview| {
+                #[cfg(target_os = "android")]
+                {
+                    let _ = webview.jni_handle().exec(move |env, activity, _webview| {
+                        use jni::objects::JValue;
 
-                    let class = match find_app_class(env, &activity, "com.joris.friday.NotificationHelper") {
-                        Ok(c) => c,
-                        Err(e) => {
-                            let _ = env.exception_clear();
-                            log::error!("JNI ERROR: Failed to find NotificationHelper: {:?}", e);
-                            return;
-                        }
-                    };
+                        let class = match find_app_class(
+                            env,
+                            &activity,
+                            "com.joris.friday.NotificationHelper",
+                        ) {
+                            Ok(c) => c,
+                            Err(e) => {
+                                let _ = env.exception_clear();
+                                log::error!(
+                                    "JNI ERROR: Failed to find NotificationHelper: {:?}",
+                                    e
+                                );
+                                return;
+                            }
+                        };
 
-                    let res = env.call_static_method(
-                        &class,
-                        "testDnd",
-                        "(Landroid/content/Context;J)V",
-                        &[JValue::from(&activity), JValue::Long(5_000)],
-                    );
-                    if let Err(e) = res {
-                        if let Ok(true) = env.exception_check() {
-                            let _ = env.exception_clear();
+                        let res = env.call_static_method(
+                            &class,
+                            "testDnd",
+                            "(Landroid/content/Context;J)V",
+                            &[JValue::from(&activity), JValue::Long(5_000)],
+                        );
+                        if let Err(e) = res {
+                            if let Ok(true) = env.exception_check() {
+                                let _ = env.exception_clear();
+                            }
+                            log::error!("JNI ERROR: Failed to trigger DND test: {:?}", e);
                         }
-                        log::error!("JNI ERROR: Failed to trigger DND test: {:?}", e);
-                    }
-                });
-            }
-        }).map_err(|e| e.to_string())?;
+                    });
+                }
+            })
+            .map_err(|e| e.to_string())?;
     }
 
     Ok(())
@@ -523,9 +578,9 @@ pub fn trigger_dnd_test(app: AppHandle) -> Result<(), String> {
 /// Returns a JSON string with debug information about the sync service state.
 #[tauri::command]
 pub fn get_debug_info(app: AppHandle) -> Result<String, String> {
-    use tauri::Manager;
     use serde_json::json;
     use std::time::SystemTime;
+    use tauri::Manager;
 
     let data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
     let token_path = data_dir.join("tokens.json");
@@ -534,7 +589,8 @@ pub fn get_debug_info(app: AppHandle) -> Result<String, String> {
 
     // Check token file
     let token_exists = token_path.exists();
-    let (token_size, token_modified) = token_path.metadata()
+    let (token_size, token_modified) = token_path
+        .metadata()
         .map(|m| (m.len(), m.modified().ok()))
         .unwrap_or((0, None));
 
@@ -546,33 +602,40 @@ pub fn get_debug_info(app: AppHandle) -> Result<String, String> {
                 // Parse state JSON to get diagnostic info
                 match serde_json::from_str::<serde_json::Value>(&content) {
                     Ok(state_obj) => {
-                        let msg_count = state_obj.get("messages")
+                        let msg_count = state_obj
+                            .get("messages")
                             .and_then(|v| v.as_array())
                             .map(|arr| arr.len())
                             .unwrap_or(0);
-                        let grades_count = state_obj.get("grades")
+                        let grades_count = state_obj
+                            .get("grades")
                             .and_then(|v| v.as_array())
                             .map(|arr| arr.len())
                             .unwrap_or(0);
-                        let assignments_count = state_obj.get("assignments")
+                        let assignments_count = state_obj
+                            .get("assignments")
                             .and_then(|v| v.as_array())
                             .map(|arr| arr.len())
                             .unwrap_or(0);
-                        let calendar_count = state_obj.get("calendar")
+                        let calendar_count = state_obj
+                            .get("calendar")
                             .and_then(|v| v.as_array())
                             .map(|arr| arr.len())
                             .unwrap_or(0);
-                        let _last_sync = state_obj.get("lastSync")
+                        let _last_sync = state_obj
+                            .get("lastSync")
                             .and_then(|v| v.as_i64())
                             .map(|ts| format!("{}", ts))
                             .unwrap_or_else(|| "unknown".to_string());
-                        
+
                         (
-                            format!("messages: {}, grades: {}, assignments: {}, calendar: {}", 
-                                msg_count, grades_count, assignments_count, calendar_count),
-                            state_path.metadata().ok().and_then(|m| m.modified().ok())
+                            format!(
+                                "messages: {}, grades: {}, assignments: {}, calendar: {}",
+                                msg_count, grades_count, assignments_count, calendar_count
+                            ),
+                            state_path.metadata().ok().and_then(|m| m.modified().ok()),
                         )
-                    },
+                    }
                     Err(e) => (format!("parse error: {}", e), None),
                 }
             }
@@ -584,7 +647,7 @@ pub fn get_debug_info(app: AppHandle) -> Result<String, String> {
         if alt_state.exists() {
             (
                 "exists (at app_data_dir, not files/)".to_string(),
-                alt_state.metadata().ok().and_then(|m| m.modified().ok())
+                alt_state.metadata().ok().and_then(|m| m.modified().ok()),
             )
         } else {
             ("not found".to_string(), None)
@@ -600,7 +663,9 @@ pub fn get_debug_info(app: AppHandle) -> Result<String, String> {
                     let days_ago = (SystemTime::now()
                         .duration_since(SystemTime::UNIX_EPOCH)
                         .unwrap_or_default()
-                        .as_secs() - secs) / 86400;
+                        .as_secs()
+                        - secs)
+                        / 86400;
                     if days_ago == 0 {
                         "today".to_string()
                     } else if days_ago == 1 {
@@ -649,36 +714,34 @@ pub fn get_sync_interval(app: AppHandle) -> Result<i64, String> {
     let _ = &app;
     #[cfg(target_os = "android")]
     {
-        let window = app.get_webview_window("main")
+        let window = app
+            .get_webview_window("main")
             .or_else(|| app.webview_windows().values().next().cloned())
             .ok_or_else(|| "No active window found".to_string())?;
 
         let (tx, rx) = std::sync::mpsc::channel();
 
-        window.with_webview(move |webview| {
-            #[cfg(target_os = "android")]
-            {
-                let _res = webview.jni_handle().exec(move |env, activity, _webview| {
-                    let res = env.call_method(
-                        &activity,
-                        "getSyncInterval",
-                        "()J",
-                        &[],
-                    );
+        window
+            .with_webview(move |webview| {
+                #[cfg(target_os = "android")]
+                {
+                    let _res = webview.jni_handle().exec(move |env, activity, _webview| {
+                        let res = env.call_method(&activity, "getSyncInterval", "()J", &[]);
 
-                    let mut result_seconds = 900; // default 15 mins (WorkManager floor)
+                        let mut result_seconds = 900; // default 15 mins (WorkManager floor)
 
-                    if let Ok(jni::objects::JValueGen::Long(seconds)) = res {
-                        result_seconds = seconds;
-                    } else if let Err(_) = res {
-                        if let Ok(true) = env.exception_check() {
-                            let _ = env.exception_clear();
+                        if let Ok(jni::objects::JValueGen::Long(seconds)) = res {
+                            result_seconds = seconds;
+                        } else if let Err(_) = res {
+                            if let Ok(true) = env.exception_check() {
+                                let _ = env.exception_clear();
+                            }
                         }
-                    }
-                    let _ = tx.send(result_seconds);
-                });
-            }
-        }).map_err(|e| e.to_string())?;
+                        let _ = tx.send(result_seconds);
+                    });
+                }
+            })
+            .map_err(|e| e.to_string())?;
 
         if let Ok(val) = rx.recv() {
             return Ok(val);
@@ -695,42 +758,53 @@ pub fn get_night_sleep_config(app: AppHandle) -> Result<serde_json::Value, Strin
     let _ = &app;
     #[cfg(target_os = "android")]
     {
-        let window = app.get_webview_window("main")
+        let window = app
+            .get_webview_window("main")
             .or_else(|| app.webview_windows().values().next().cloned())
             .ok_or_else(|| "No active window found".to_string())?;
 
         let (tx, rx) = std::sync::mpsc::channel();
 
-        window.with_webview(move |webview| {
-            #[cfg(target_os = "android")]
-            {
-                let _ = webview.jni_handle().exec(move |env, activity, _webview| {
-                    let res = env.call_method(
-                        &activity,
-                        "getNightSleepConfig",
-                        "()Ljava/lang/String;",
-                        &[],
-                    );
+        window
+            .with_webview(move |webview| {
+                #[cfg(target_os = "android")]
+                {
+                    let _ = webview.jni_handle().exec(move |env, activity, _webview| {
+                        let res = env.call_method(
+                            &activity,
+                            "getNightSleepConfig",
+                            "()Ljava/lang/String;",
+                            &[],
+                        );
 
-                    let mut result_str = "{\"enabled\":false,\"startHour\":22,\"endHour\":7}".to_string();
+                        let mut result_str =
+                            "{\"enabled\":false,\"startHour\":22,\"endHour\":7}".to_string();
 
-                    if let Ok(jni::objects::JValueGen::Object(obj)) = res {
-                        if !obj.is_null() {
-                            let jstring = unsafe { jni::objects::JString::from_raw(obj.into_raw() as jni::sys::jstring) };
-                            if let Ok(s) = env.get_string(&jstring) { result_str = s.into(); };
+                        if let Ok(jni::objects::JValueGen::Object(obj)) = res {
+                            if !obj.is_null() {
+                                let jstring = unsafe {
+                                    jni::objects::JString::from_raw(
+                                        obj.into_raw() as jni::sys::jstring
+                                    )
+                                };
+                                if let Ok(s) = env.get_string(&jstring) {
+                                    result_str = s.into();
+                                };
+                            }
+                        } else if let Err(_) = res {
+                            if let Ok(true) = env.exception_check() {
+                                let _ = env.exception_clear();
+                            }
                         }
-                    } else if let Err(_) = res {
-                        if let Ok(true) = env.exception_check() {
-                            let _ = env.exception_clear();
-                        }
-                    }
-                    let _ = tx.send(result_str);
-                });
-            }
-        }).map_err(|e| e.to_string())?;
+                        let _ = tx.send(result_str);
+                    });
+                }
+            })
+            .map_err(|e| e.to_string())?;
 
         if let Ok(res_json) = rx.recv() {
-            let val: serde_json::Value = serde_json::from_str(&res_json).unwrap_or(serde_json::json!({"enabled":false,"startHour":22,"endHour":7}));
+            let val: serde_json::Value = serde_json::from_str(&res_json)
+                .unwrap_or(serde_json::json!({"enabled":false,"startHour":22,"endHour":7}));
             return Ok(val);
         } else {
             return Ok(serde_json::json!({"enabled":false,"startHour":22,"endHour":7}));
@@ -741,44 +815,57 @@ pub fn get_night_sleep_config(app: AppHandle) -> Result<serde_json::Value, Strin
 }
 
 #[tauri::command]
-pub fn set_night_sleep_config(app: AppHandle, enabled: bool, start_hour: i32, end_hour: i32) -> Result<String, String> {
+pub fn set_night_sleep_config(
+    app: AppHandle,
+    enabled: bool,
+    start_hour: i32,
+    end_hour: i32,
+) -> Result<String, String> {
     let _ = enabled;
     let _ = start_hour;
     let _ = end_hour;
     let _ = &app;
     #[cfg(target_os = "android")]
     {
-        let window = app.get_webview_window("main")
+        let window = app
+            .get_webview_window("main")
             .or_else(|| app.webview_windows().values().next().cloned())
             .ok_or_else(|| "No active window found".to_string())?;
 
-        window.with_webview(move |webview| {
-            #[cfg(target_os = "android")]
-            {
-                let _ = webview.jni_handle().exec(move |env, activity, _webview| {
-                    let res = env.call_method(
-                        &activity,
-                        "setNightSleepConfig",
-                        "(ZII)V",
-                        &[
-                            jni::objects::JValue::Bool(if enabled { 1 } else { 0 }),
-                            jni::objects::JValue::Int(start_hour),
-                            jni::objects::JValue::Int(end_hour),
-                        ],
-                    );
-                    if let Err(_) = res {
-                        if let Ok(true) = env.exception_check() {
-                            let _ = env.exception_clear();
+        window
+            .with_webview(move |webview| {
+                #[cfg(target_os = "android")]
+                {
+                    let _ = webview.jni_handle().exec(move |env, activity, _webview| {
+                        let res = env.call_method(
+                            &activity,
+                            "setNightSleepConfig",
+                            "(ZII)V",
+                            &[
+                                jni::objects::JValue::Bool(if enabled { 1 } else { 0 }),
+                                jni::objects::JValue::Int(start_hour),
+                                jni::objects::JValue::Int(end_hour),
+                            ],
+                        );
+                        if let Err(_) = res {
+                            if let Ok(true) = env.exception_check() {
+                                let _ = env.exception_clear();
+                            }
                         }
-                    }
-                });
-            }
-        }).map_err(|e| e.to_string())?;
+                    });
+                }
+            })
+            .map_err(|e| e.to_string())?;
 
-        return Ok(format!("Night sleep config set: {} {}-{}", enabled, start_hour, end_hour));
+        return Ok(format!(
+            "Night sleep config set: {} {}-{}",
+            enabled, start_hour, end_hour
+        ));
     }
     #[cfg(not(target_os = "android"))]
-    Ok(format!("set_night_sleep_config is only supported on Android"))
+    Ok(format!(
+        "set_night_sleep_config is only supported on Android"
+    ))
 }
 
 #[tauri::command]
@@ -786,36 +873,35 @@ pub fn get_disable_all_notifications(app: AppHandle) -> Result<bool, String> {
     let _ = &app;
     #[cfg(target_os = "android")]
     {
-        let window = app.get_webview_window("main")
+        let window = app
+            .get_webview_window("main")
             .or_else(|| app.webview_windows().values().next().cloned())
             .ok_or_else(|| "No active window found".to_string())?;
 
         let (tx, rx) = std::sync::mpsc::channel();
 
-        window.with_webview(move |webview| {
-            #[cfg(target_os = "android")]
-            {
-                let _ = webview.jni_handle().exec(move |env, activity, _webview| {
-                    let res = env.call_method(
-                        &activity,
-                        "getDisableAllNotifications",
-                        "()Z",
-                        &[],
-                    );
+        window
+            .with_webview(move |webview| {
+                #[cfg(target_os = "android")]
+                {
+                    let _ = webview.jni_handle().exec(move |env, activity, _webview| {
+                        let res =
+                            env.call_method(&activity, "getDisableAllNotifications", "()Z", &[]);
 
-                    let mut result = false;
+                        let mut result = false;
 
-                    if let Ok(jni::objects::JValueGen::Bool(b)) = res {
-                        result = b != 0;
-                    } else if let Err(_) = res {
-                        if let Ok(true) = env.exception_check() {
-                            let _ = env.exception_clear();
+                        if let Ok(jni::objects::JValueGen::Bool(b)) = res {
+                            result = b != 0;
+                        } else if let Err(_) = res {
+                            if let Ok(true) = env.exception_check() {
+                                let _ = env.exception_clear();
+                            }
                         }
-                    }
-                    let _ = tx.send(result);
-                });
-            }
-        }).map_err(|e| e.to_string())?;
+                        let _ = tx.send(result);
+                    });
+                }
+            })
+            .map_err(|e| e.to_string())?;
 
         if let Ok(is_disabled) = rx.recv() {
             return Ok(is_disabled);
@@ -833,33 +919,38 @@ pub fn set_disable_all_notifications(app: AppHandle, enabled: bool) -> Result<St
     let _ = &app;
     #[cfg(target_os = "android")]
     {
-        let window = app.get_webview_window("main")
+        let window = app
+            .get_webview_window("main")
             .or_else(|| app.webview_windows().values().next().cloned())
             .ok_or_else(|| "No active window found".to_string())?;
 
-        window.with_webview(move |webview| {
-            #[cfg(target_os = "android")]
-            {
-                let _ = webview.jni_handle().exec(move |env, activity, _webview| {
-                    let res = env.call_method(
-                        &activity,
-                        "setDisableAllNotifications",
-                        "(Z)V",
-                        &[jni::objects::JValue::Bool(if enabled { 1 } else { 0 })],
-                    );
-                    if let Err(_) = res {
-                        if let Ok(true) = env.exception_check() {
-                            let _ = env.exception_clear();
+        window
+            .with_webview(move |webview| {
+                #[cfg(target_os = "android")]
+                {
+                    let _ = webview.jni_handle().exec(move |env, activity, _webview| {
+                        let res = env.call_method(
+                            &activity,
+                            "setDisableAllNotifications",
+                            "(Z)V",
+                            &[jni::objects::JValue::Bool(if enabled { 1 } else { 0 })],
+                        );
+                        if let Err(_) = res {
+                            if let Ok(true) = env.exception_check() {
+                                let _ = env.exception_clear();
+                            }
                         }
-                    }
-                });
-            }
-        }).map_err(|e| e.to_string())?;
+                    });
+                }
+            })
+            .map_err(|e| e.to_string())?;
 
         return Ok(format!("Disable all notifications set to {}", enabled));
     }
     #[cfg(not(target_os = "android"))]
-    Ok(format!("set_disable_all_notifications is only supported on Android"))
+    Ok(format!(
+        "set_disable_all_notifications is only supported on Android"
+    ))
 }
 
 /// Whether the app has Android "Notification policy access" (DND access) granted.
@@ -869,45 +960,55 @@ pub fn get_dnd_access_status(app: AppHandle) -> Result<bool, String> {
     let _ = &app;
     #[cfg(target_os = "android")]
     {
-        let window = app.get_webview_window("main")
+        let window = app
+            .get_webview_window("main")
             .or_else(|| app.webview_windows().values().next().cloned())
             .ok_or_else(|| "No active window found for JNI access".to_string())?;
 
         let (tx, rx) = std::sync::mpsc::channel();
 
-        window.with_webview(move |webview| {
-            #[cfg(target_os = "android")]
-            {
-                let _ = webview.jni_handle().exec(move |env, activity, _webview| {
-                    let class = match find_app_class(env, &activity, "com.joris.friday.NotificationHelper") {
-                        Ok(c) => c,
-                        Err(e) => {
-                            let _ = env.exception_clear();
-                            log::error!("JNI ERROR: Failed to find NotificationHelper: {:?}", e);
-                            let _ = tx.send(false);
-                            return;
-                        }
-                    };
+        window
+            .with_webview(move |webview| {
+                #[cfg(target_os = "android")]
+                {
+                    let _ = webview.jni_handle().exec(move |env, activity, _webview| {
+                        let class = match find_app_class(
+                            env,
+                            &activity,
+                            "com.joris.friday.NotificationHelper",
+                        ) {
+                            Ok(c) => c,
+                            Err(e) => {
+                                let _ = env.exception_clear();
+                                log::error!(
+                                    "JNI ERROR: Failed to find NotificationHelper: {:?}",
+                                    e
+                                );
+                                let _ = tx.send(false);
+                                return;
+                            }
+                        };
 
-                    let res = env.call_static_method(
-                        &class,
-                        "hasDndAccess",
-                        "(Landroid/content/Context;)Z",
-                        &[jni::objects::JValue::from(&activity)],
-                    );
+                        let res = env.call_static_method(
+                            &class,
+                            "hasDndAccess",
+                            "(Landroid/content/Context;)Z",
+                            &[jni::objects::JValue::from(&activity)],
+                        );
 
-                    let mut result = false;
-                    if let Ok(jni::objects::JValueGen::Bool(b)) = res {
-                        result = b != 0;
-                    } else if let Err(_) = res {
-                        if let Ok(true) = env.exception_check() {
-                            let _ = env.exception_clear();
+                        let mut result = false;
+                        if let Ok(jni::objects::JValueGen::Bool(b)) = res {
+                            result = b != 0;
+                        } else if let Err(_) = res {
+                            if let Ok(true) = env.exception_check() {
+                                let _ = env.exception_clear();
+                            }
                         }
-                    }
-                    let _ = tx.send(result);
-                });
-            }
-        }).map_err(|e| e.to_string())?;
+                        let _ = tx.send(result);
+                    });
+                }
+            })
+            .map_err(|e| e.to_string())?;
 
         if let Ok(val) = rx.recv() {
             return Ok(val);
@@ -928,32 +1029,38 @@ pub fn set_sync_interval(app: AppHandle, seconds: i64) -> Result<String, String>
     let clamped = seconds.max(900);
     #[cfg(target_os = "android")]
     {
-        let window = app.get_webview_window("main")
+        let window = app
+            .get_webview_window("main")
             .or_else(|| app.webview_windows().values().next().cloned())
             .ok_or_else(|| "No active window found".to_string())?;
 
-        window.with_webview(move |webview| {
-            #[cfg(target_os = "android")]
-            {
-                let _ = webview.jni_handle().exec(move |env, activity, _webview| {
-                    // Call MainActivity.setSyncInterval(seconds)
-                    let res = env.call_method(
-                        &activity,
-                        "setSyncInterval",
-                        "(J)V",
-                        &[jni::objects::JValue::Long(clamped)],
-                    );
-                    if let Err(_) = res {
-                        if let Ok(true) = env.exception_check() {
-                            let _ = env.exception_clear();
+        window
+            .with_webview(move |webview| {
+                #[cfg(target_os = "android")]
+                {
+                    let _ = webview.jni_handle().exec(move |env, activity, _webview| {
+                        // Call MainActivity.setSyncInterval(seconds)
+                        let res = env.call_method(
+                            &activity,
+                            "setSyncInterval",
+                            "(J)V",
+                            &[jni::objects::JValue::Long(clamped)],
+                        );
+                        if let Err(_) = res {
+                            if let Ok(true) = env.exception_check() {
+                                let _ = env.exception_clear();
+                            }
                         }
-                    }
-                });
-            }
-        }).map_err(|e| e.to_string())?;
+                    });
+                }
+            })
+            .map_err(|e| e.to_string())?;
 
         return Ok(format!("Sync interval set to {} seconds", clamped));
     }
     #[cfg(not(target_os = "android"))]
-    Ok(format!("set_sync_interval({}) is only supported on Android", clamped))
+    Ok(format!(
+        "set_sync_interval({}) is only supported on Android",
+        clamped
+    ))
 }

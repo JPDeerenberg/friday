@@ -164,6 +164,29 @@ export async function webRequest<T>(
   });
 }
 
+/** Multipart variant of `webRequest`, used by the message composer upload. */
+export async function webRequestForm<T>(
+  path: string,
+  form: FormData,
+): Promise<T> {
+  return withServerStartingRetry(async () => {
+    let tokens = await loadWebSession();
+    if (!tokens) throw new WebApiError(401, "Niet ingelogd.");
+    if (isExpiredLocal(tokens)) {
+      tokens = await mustRefresh(tokens);
+    }
+    try {
+      return await webBackend().magisterForm<T>(tokens, path, form);
+    } catch (e) {
+      if (e instanceof WebApiError && e.status === 401) {
+        const fresh = await mustRefresh(tokens);
+        return await webBackend().magisterForm<T>(fresh, path, form);
+      }
+      throw e;
+    }
+  });
+}
+
 // Magister refresh tokens are single-use: the first refresh_token grant wins and
 // rotates the token, every other grant that presents the old one gets
 // invalid_grant (-> 401 here). Several requests fire at once (dashboard fan-out,
@@ -237,6 +260,13 @@ export function sessionTierA(): TierA {
     },
     magisterBytes(_: SessionTokens, path: string): Promise<Uint8Array | null> {
       return webRequestBytes(path);
+    },
+    magisterForm<T>(
+      _: SessionTokens,
+      path: string,
+      form: FormData,
+    ): Promise<T> {
+      return webRequestForm<T>(path, form);
     },
   };
 }

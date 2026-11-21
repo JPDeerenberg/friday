@@ -5,10 +5,10 @@
    * level 1 each August. Tapping it opens the grades page, where the album lives.
    */
   import { untrack } from "svelte";
-  import Icon from "$lib/components/Icon.svelte";
-  import { personId, userSettings, currentPage } from "$lib/stores";
-  import { gradeRevealState } from "$lib/grade-reveal";
-  import { loadCurrentYearGrades } from "$lib/current-year-grades";
+  import Icon from "#lib/components/Icon.svelte";
+  import { personId, userSettings, currentPage } from "#lib/stores.ts";
+  import { gradeRevealState } from "#lib/grade-reveal.ts";
+  import { loadCurrentYearGrades } from "#lib/current-year-grades.ts";
   import {
     buildCards,
     levelInfo,
@@ -16,8 +16,8 @@
     seasonOf,
     seasonXp,
     careerInfo,
-  } from "$lib/cards";
-  import type { Grade } from "$lib/types";
+  } from "#lib/cards.ts";
+  import type { Grade } from "#lib/types.ts";
 
   let grades = $state<Grade[]>([]);
   let loading = $state(true);

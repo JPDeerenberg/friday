@@ -4,10 +4,10 @@
    * the text looks non-Dutch; shows the translation under the button, with the
    * original one tap away. Uses the student's own AI key (see translate.ts).
    */
-  import { htmlToText, shouldOfferTranslation } from "$lib/translate-text";
-  import { translateToDutch } from "$lib/translate";
-  import { recordQuestEvent } from "$lib/quests-store";
-  import Icon from "$lib/components/Icon.svelte";
+  import { htmlToText, shouldOfferTranslation } from "#lib/translate-text.ts";
+  import { translateToDutch } from "#lib/translate.ts";
+  import { recordQuestEvent } from "#lib/quests-store.ts";
+  import Icon from "#lib/components/Icon.svelte";
 
   let {
     source,

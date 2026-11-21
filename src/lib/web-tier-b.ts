@@ -32,6 +32,8 @@ import type {
   GradeExtraInfo,
   Link,
   Message,
+  MessageAttachment,
+  MessageAttachmentRef,
   MessagesFolder,
   Schoolyear,
 } from "./types.ts";
@@ -49,6 +51,12 @@ export interface TierA {
     tokens: SessionTokens,
     path: string,
   ): Promise<Uint8Array | null>;
+  /** Multipart POST (message attachments). Optional: only uploads need it. */
+  magisterForm?<T>(
+    tokens: SessionTokens,
+    path: string,
+    form: FormData,
+  ): Promise<T>;
 }
 
 /** MIME sniff for fetched bytes (PNG/JPEG/GIF magic). */
@@ -237,7 +245,7 @@ export function buildSendMessageBody(p: {
   isConcept: boolean;
   sendOption?: string;
   relatedMessageId?: number;
-  attachmentIds: number[];
+  attachments: MessageAttachmentRef[];
 }): { endpoint: string; body: unknown } {
   // Magister's field names are camelCase and the reference discriminator is `type`
   // — the same body the native app sends (SendMessageRequest in models/messages.rs).
@@ -258,7 +266,11 @@ export function buildSendMessageBody(p: {
       ...(p.relatedMessageId != null
         ? { gerelateerdBerichtId: p.relatedMessageId }
         : {}),
-      bijlagen: p.attachmentIds.map((id) => ({ id, type: "upload" })),
+      bijlagen: p.attachments.map((a) => ({
+        id: a.id,
+        naam: a.naam,
+        type: a.type || "upload",
+      })),
     },
   };
 }
@@ -650,6 +662,148 @@ export async function webGetMessageDetail(
   return sanitizeMessage(msg);
 }
 
+function pickString(
+  value: Record<string, unknown>,
+  keys: string[],
+): string | null {
+  for (const key of keys) {
+    const candidate = value[key];
+    if (typeof candidate === "string") return candidate;
+  }
+  return null;
+}
+
+function pickNumber(
+  value: Record<string, unknown>,
+  keys: string[],
+): number | null {
+  for (const key of keys) {
+    const candidate = value[key];
+    if (typeof candidate === "number" && Number.isFinite(candidate))
+      return candidate;
+    if (typeof candidate === "string" && candidate.trim() !== "") {
+      const parsed = Number(candidate);
+      if (Number.isFinite(parsed)) return parsed;
+    }
+  }
+  return null;
+}
+
+/** `download` first, then contents/content, and self only as a last resort. */
+function attachmentHref(links: unknown): string | null {
+  if (Array.isArray(links)) {
+    for (const wanted of ["download", "contents", "content", "self"]) {
+      const found = links.find((link) => {
+        const record = link as Record<string, unknown>;
+        const rel = pickString(record, ["Rel", "rel"])?.toLowerCase();
+        return rel === wanted;
+      });
+      if (found) {
+        const href = pickString(found as Record<string, unknown>, [
+          "Href",
+          "href",
+        ]);
+        if (href) return href;
+      }
+    }
+    return null;
+  }
+  if (links && typeof links === "object") {
+    const record = links as Record<string, unknown>;
+    const download = record["download"];
+    if (typeof download === "string") return download;
+    if (download && typeof download === "object") {
+      const href = pickString(download as Record<string, unknown>, [
+        "href",
+        "Href",
+      ]);
+      if (href) return href;
+    }
+    return pickString(record, ["downloadUrl", "DownloadUrl"]);
+  }
+  return null;
+}
+
+/**
+ * Normalize the `links.bijlagen` answer. Magister sends `{ items: [...] }`
+ * with PascalCase bron fields and a lowercase `links.download.href`; some
+ * responses use `Items` and/or a `Links` array. Mirrors
+ * `parse_message_attachments` in models/messages.rs.
+ */
+export function parseMessageAttachments(data: unknown): MessageAttachment[] {
+  const root = (data ?? {}) as Record<string, unknown>;
+  const items = root["Items"] ?? root["items"];
+  if (!Array.isArray(items)) return [];
+  return items.flatMap((raw) => {
+    const item = (raw ?? {}) as Record<string, unknown>;
+    const id = pickNumber(item, ["Id", "id"]);
+    if (id == null) return [];
+    const links = item["links"] ?? item["Links"];
+    return [
+      {
+        id,
+        naam: pickString(item, ["Naam", "naam"]) ?? `bijlage-${id}`,
+        contentType: pickString(item, ["ContentType", "contentType"]),
+        grootte: pickNumber(item, ["Grootte", "grootte"]),
+        datum: pickString(item, ["Datum", "datum", "aangemaaktOp"]),
+        downloadUrl: attachmentHref(links) ?? pickString(item, ["Url", "url"]),
+        bronSoort: pickNumber(item, ["BronSoort", "bronSoort"]) ?? 1,
+      },
+    ];
+  });
+}
+
+export async function webGetMessageAttachments(
+  be: TierA,
+  tokens: SessionTokens,
+  bijlagenLink: string,
+): Promise<MessageAttachment[]> {
+  const data = await be.magister<unknown>(
+    tokens,
+    "GET",
+    stripApiPrefix(bijlagenLink),
+  );
+  return parseMessageAttachments(data);
+}
+
+/** The uploaded file out of `POST /bestanden`'s array answer. */
+export function parseUploadedAttachment(
+  data: unknown,
+  fallbackName: string,
+): MessageAttachmentRef {
+  const items = Array.isArray(data)
+    ? data
+    : ((data as Record<string, unknown> | null)?.["Items"] ??
+      (data as Record<string, unknown> | null)?.["items"]);
+  const first = Array.isArray(items) ? items[0] : null;
+  const record = (first ?? {}) as Record<string, unknown>;
+  const id = pickNumber(record, ["Id", "id"]);
+  if (id == null) throw new Error("Magister gaf geen bijlage terug.");
+  return {
+    id,
+    naam: pickString(record, ["Naam", "naam"]) ?? fallbackName,
+    type: "upload",
+  };
+}
+
+/**
+ * Message attachments use the multipart `POST /bestanden` upload (the same
+ * one Magister's own composer calls), not the 3-step blob upload assignments
+ * use. The multipart body goes through the web-api proxy verbatim.
+ */
+export async function webUploadMessageAttachment(
+  be: TierA,
+  tokens: SessionTokens,
+  file: File,
+): Promise<MessageAttachmentRef> {
+  if (!be.magisterForm)
+    throw new Error("Uploaden wordt in deze omgeving niet ondersteund.");
+  const form = new FormData();
+  form.append("file", file, file.name);
+  const data = await be.magisterForm<unknown>(tokens, "bestanden", form);
+  return parseUploadedAttachment(data, file.name);
+}
+
 export async function webSendMessage(
   be: TierA,
   tokens: SessionTokens,
@@ -663,7 +817,7 @@ export async function webSendMessage(
     isConcept: boolean;
     sendOption?: string;
     relatedMessageId?: number;
-    attachmentIds: number[];
+    attachments: MessageAttachmentRef[];
   },
 ): Promise<void> {
   const { endpoint, body } = buildSendMessageBody(params);

@@ -14,7 +14,9 @@ pub async fn get_bronnen(
     // stripped, since api_endpoint already ends in /api — same convention as calendar.rs,
     // messages.rs, and assignments.rs (see those files' Links handling).
     let path = path.replace("/api/", "");
-    let response = crate::client::get_with_shared(&client, &path).await.map_err(|e| e.to_string())?;
+    let response = crate::client::get_with_shared(&client, &path)
+        .await
+        .map_err(|e| e.to_string())?;
     let bronnen: BronnenResponse =
         serde_json::from_value(response).map_err(|e| format!("Failed to parse bronnen: {}", e))?;
     Ok(bronnen.items)
@@ -26,7 +28,9 @@ pub async fn get_external_bron_sources(
     person_id: i64,
 ) -> Result<Vec<ExternalBronSource>, String> {
     let url = format!("personen/{}/bronnen?soort=0", person_id);
-    let response = crate::client::get_with_shared(&client, &url).await.map_err(|e| e.to_string())?;
+    let response = crate::client::get_with_shared(&client, &url)
+        .await
+        .map_err(|e| e.to_string())?;
     let sources: ExternalBronSourcesResponse = serde_json::from_value(response)
         .map_err(|e| format!("Failed to parse external bron sources: {}", e))?;
     Ok(sources.items)

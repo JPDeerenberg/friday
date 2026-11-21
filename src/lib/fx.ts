@@ -7,7 +7,8 @@
  * - `freeze(ms)` pauses the simulation (the "hit-stop" at the moment of impact).
  */
 
-type Shape = "dot" | "rect" | "star" | "streak";
+type Shape =
+  "dot" | "rect" | "star" | "streak" | "shard" | "ribbon" | "bokeh" | "leaf";
 
 interface Particle {
   x: number;
@@ -26,6 +27,19 @@ interface Particle {
   glow: boolean;
   sway: number;
   phase: number;
+  /** Gravity well used by the hold gesture: acceleration toward a point. */
+  pull?: { x: number; y: number; strength: number };
+}
+
+interface Ring {
+  x: number;
+  y: number;
+  r: number;
+  vr: number;
+  life: number;
+  max: number;
+  color: string;
+  width: number;
 }
 
 interface Bolt {
@@ -43,7 +57,14 @@ interface Star {
 }
 
 export type LoopKind =
-  "embers" | "goldrain" | "confetti" | "stars" | "lightning";
+  | "embers"
+  | "goldrain"
+  | "confetti"
+  | "stars"
+  | "lightning"
+  | "snow"
+  | "bubbles"
+  | "dust";
 
 interface LoopCfg {
   rate: number;
@@ -65,6 +86,8 @@ export interface BurstOpts {
   spread?: number;
   angle?: number;
   life?: number;
+  /** Sideways drift, useful for paper flakes and ribbons. */
+  sway?: number;
 }
 
 const rand = (a: number, b: number) => a + Math.random() * (b - a);
@@ -76,6 +99,7 @@ export class FxEngine {
   private dpr = 1;
   private parts: Particle[] = [];
   private bolts: Bolt[] = [];
+  private rings: Ring[] = [];
   private stars: Star[] = [];
   private loops = new Map<LoopKind, LoopCfg>();
   private raf = 0;
@@ -141,7 +165,7 @@ export class FxEngine {
         rot: rand(0, 6.28),
         vr: rand(-8, 8),
         glow: o.glow ?? true,
-        sway: 0,
+        sway: o.sway ?? 0,
         phase: rand(0, 6.28),
       });
     }
@@ -171,6 +195,81 @@ export class FxEngine {
         phase: rand(0, 6.28),
       });
     }
+    this.kick();
+  }
+
+  /**
+   * Particles spiral inward toward a point. Used by the hold gesture so the
+   * screen visibly feeds energy into the card instead of just glowing.
+   */
+  attract(
+    x: number,
+    y: number,
+    o: {
+      count?: number;
+      color: string;
+      color2?: string;
+      radius?: number;
+      speed?: number;
+      life?: number;
+      size?: number;
+      strength?: number;
+    },
+  ) {
+    const n = Math.max(1, Math.round((o.count ?? 60) * this.quality));
+    const radius = o.radius ?? Math.hypot(this.w, this.h) * 0.42;
+    for (let i = 0; i < n; i++) {
+      const a = rand(0, Math.PI * 2);
+      const r = radius * rand(0.72, 1.12);
+      const px = x + Math.cos(a) * r;
+      const py = y + Math.sin(a) * r;
+      const tangent = (Math.random() < 0.5 ? -1 : 1) * rand(60, 180);
+      this.push({
+        x: px,
+        y: py,
+        vx: -Math.sin(a) * tangent + (x - px) * 0.35,
+        vy: Math.cos(a) * tangent + (y - py) * 0.35,
+        g: 0,
+        drag: 0.997,
+        life: 0,
+        max: (o.life ?? 1.5) * rand(0.7, 1.2),
+        size: (o.size ?? 2.6) * rand(0.6, 1.3),
+        color: Math.random() < 0.5 || !o.color2 ? o.color : o.color2,
+        shape: Math.random() < 0.22 ? "star" : "dot",
+        rot: rand(0, 6.28),
+        vr: rand(-6, 6),
+        glow: true,
+        sway: 0,
+        phase: rand(0, 6.28),
+        pull: { x, y, strength: o.strength ?? 760 },
+      });
+    }
+    this.kick();
+  }
+
+  /** Expanding shock ring for the impact frame. */
+  shockRing(
+    x: number,
+    y: number,
+    color: string,
+    opts: {
+      radius?: number;
+      width?: number;
+      life?: number;
+      speed?: number;
+    } = {},
+  ) {
+    this.rings.push({
+      x,
+      y,
+      r: opts.radius ?? 8,
+      vr: opts.speed ?? 900,
+      life: 0,
+      max: opts.life ?? 0.7,
+      color,
+      width: opts.width ?? 3,
+    });
+    if (this.rings.length > 6) this.rings.shift();
     this.kick();
   }
 
@@ -231,6 +330,7 @@ export class FxEngine {
   clear() {
     this.parts = [];
     this.bolts = [];
+    this.rings = [];
     this.loops.clear();
     this.ctx?.clearRect(0, 0, this.canvas.width, this.canvas.height);
   }
@@ -241,6 +341,7 @@ export class FxEngine {
     window.removeEventListener("resize", this.resizeHandler);
     this.parts = [];
     this.bolts = [];
+    this.rings = [];
     this.loops.clear();
   }
 
@@ -297,6 +398,65 @@ export class FxEngine {
           });
         } else if (kind === "confetti") {
           this.confetti(1, [cfg.color, cfg.color2]);
+        } else if (kind === "snow") {
+          const r = cfg.rect;
+          this.push({
+            x: r ? rand(r.x, r.x + r.w) : rand(0, this.w),
+            y: r ? r.y - rand(0, 20) : -10,
+            vx: rand(-12, 12),
+            vy: rand(18, 55),
+            g: 8,
+            drag: 0.996,
+            life: 0,
+            max: rand(3, 5.5),
+            size: rand(1.2, 3.2),
+            color: Math.random() < 0.5 ? cfg.color : cfg.color2,
+            shape: Math.random() < 0.2 ? "star" : "dot",
+            rot: rand(0, 6.28),
+            vr: rand(-2, 2),
+            glow: true,
+            sway: rand(12, 42),
+            phase: rand(0, 6.28),
+          });
+        } else if (kind === "bubbles") {
+          this.push({
+            x: rand(0, this.w),
+            y: this.h + rand(0, 40),
+            vx: rand(-14, 14),
+            vy: rand(-70, -24),
+            g: -4,
+            drag: 0.997,
+            life: 0,
+            max: rand(2.6, 4.4),
+            size: rand(2, 7),
+            color: Math.random() < 0.5 ? cfg.color : cfg.color2,
+            shape: "bokeh",
+            rot: 0,
+            vr: 0,
+            glow: true,
+            sway: rand(8, 26),
+            phase: rand(0, 6.28),
+          });
+        } else if (kind === "dust") {
+          const r = cfg.rect;
+          this.push({
+            x: r ? rand(r.x, r.x + r.w) : rand(0, this.w),
+            y: r ? rand(r.y, r.y + r.h) : rand(0, this.h),
+            vx: rand(-6, 6),
+            vy: rand(-16, -3),
+            g: 0,
+            drag: 0.999,
+            life: 0,
+            max: rand(3, 6),
+            size: rand(0.8, 2.2),
+            color: Math.random() < 0.5 ? cfg.color : cfg.color2,
+            shape: "dot",
+            rot: 0,
+            vr: 0,
+            glow: true,
+            sway: rand(4, 14),
+            phase: rand(0, 6.28),
+          });
         } else if (kind === "lightning") {
           const r = cfg.rect;
           if (r) {
@@ -352,18 +512,43 @@ export class FxEngine {
           (p.sway ? Math.sin(p.life * 3 + p.phase) * p.sway * dt : 0);
         p.y += p.vy * dt;
         p.rot += p.vr * dt;
+        if (p.pull) {
+          const dx = p.pull.x - p.x;
+          const dy = p.pull.y - p.y;
+          const d = Math.hypot(dx, dy) || 1;
+          p.vx += (dx / d) * p.pull.strength * dt;
+          p.vy += (dy / d) * p.pull.strength * dt;
+          if (d < 7) p.life = p.max;
+        }
       }
       this.parts = this.parts.filter(
         (p) => p.life < p.max && p.y < this.h + 40 && p.y > -80,
       );
       for (const b of this.bolts) b.life += dt;
       this.bolts = this.bolts.filter((b) => b.life < b.max);
+      for (const r of this.rings) {
+        r.life += dt;
+        r.r += r.vr * dt;
+        r.vr *= Math.pow(0.97, dt * 60);
+      }
+      this.rings = this.rings.filter((r) => r.life < r.max);
     }
 
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     ctx.clearRect(0, 0, this.w, this.h);
 
     if (this.loops.has("stars")) this.drawStars(ctx, now);
+
+    for (const ring of this.rings) {
+      const t = ring.life / ring.max;
+      ctx.globalCompositeOperation = "lighter";
+      ctx.globalAlpha = Math.max(0, 1 - t) * 0.9;
+      ctx.strokeStyle = ring.color;
+      ctx.lineWidth = Math.max(0.6, ring.width * (1 - t * 0.65));
+      ctx.beginPath();
+      ctx.arc(ring.x, ring.y, ring.r, 0, 6.283);
+      ctx.stroke();
+    }
 
     for (const p of this.parts) {
       const t = p.life / p.max;
@@ -393,6 +578,45 @@ export class FxEngine {
         ctx.restore();
       } else if (p.shape === "star") {
         this.star(ctx, p.x, p.y, p.size * 1.8, p.rot);
+      } else if (p.shape === "shard") {
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.rotate(p.rot);
+        ctx.beginPath();
+        ctx.moveTo(0, -p.size * 1.8);
+        ctx.lineTo(p.size * 0.7, 0);
+        ctx.lineTo(0, p.size * 1.4);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+      } else if (p.shape === "ribbon") {
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.rotate(p.rot);
+        ctx.lineWidth = Math.max(1, p.size * 0.45);
+        ctx.beginPath();
+        ctx.moveTo(-p.size * 1.8, 0);
+        ctx.quadraticCurveTo(0, -p.size * 1.6, p.size * 1.8, 0);
+        ctx.stroke();
+        ctx.restore();
+      } else if (p.shape === "bokeh") {
+        ctx.globalAlpha *= 0.55;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size * 1.7, 0, 6.283);
+        ctx.stroke();
+        ctx.globalAlpha *= 0.7;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, 6.283);
+        ctx.fill();
+      } else if (p.shape === "leaf") {
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.rotate(p.rot);
+        ctx.scale(1, Math.abs(Math.cos(p.rot * 1.4)) * 0.8 + 0.2);
+        ctx.beginPath();
+        ctx.ellipse(0, 0, p.size, p.size * 0.55, 0, 0, 6.283);
+        ctx.fill();
+        ctx.restore();
       } else {
         ctx.lineWidth = Math.max(1, p.size * 0.5);
         ctx.beginPath();
@@ -421,6 +645,7 @@ export class FxEngine {
     const busy =
       this.parts.length > 0 ||
       this.bolts.length > 0 ||
+      this.rings.length > 0 ||
       this.loops.size > 0 ||
       frozen;
     if (busy) {

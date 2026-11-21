@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { CalendarEvent } from "$lib/types";
+  import type { CalendarEvent } from "#lib/types.ts";
 
   let { event }: { event: CalendarEvent } = $props();
 

@@ -1,8 +1,8 @@
 <script lang="ts">
   /** Tiny "Missie voltooid" pop-up (bottom, above the navigation), shown for a few seconds. */
-  import { questToast } from "$lib/quests-store";
+  import { questToast } from "#lib/quests-store.ts";
   import { fly } from "svelte/transition";
-  import Icon from "$lib/components/Icon.svelte";
+  import Icon from "#lib/components/Icon.svelte";
 
   let visible = $state<{ id: number; text: string; awarded: number } | null>(
     null,

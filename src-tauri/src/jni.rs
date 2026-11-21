@@ -1,14 +1,14 @@
+use crate::client::{get_with_context, ClientError, MagisterClient, RequestContext};
+use chrono::Utc;
 #[cfg(target_os = "android")]
 use jni::{
     objects::{JClass, JString},
     sys::{jint, jlong, jstring},
     JNIEnv,
 };
+use std::sync::{Mutex, OnceLock};
 #[cfg(target_os = "android")]
 use tokio::runtime::{Builder, Runtime};
-use crate::client::{get_with_context, ClientError, MagisterClient, RequestContext};
-use chrono::Utc;
-use std::sync::{Mutex, OnceLock};
 
 // A single, process-wide Tokio runtime shared across every JNI sync call instead of
 // building a fresh multi-threaded runtime per invocation. `current_thread` matches the
@@ -64,10 +64,18 @@ fn ensure_sync_logging(data_dir: &str) {
             return;
         }
         let path = log_dir.join("friday-sync.log");
-        let Ok(file) = std::fs::OpenOptions::new().create(true).append(true).open(&path) else {
+        let Ok(file) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)
+        else {
             return;
         };
-        if log::set_boxed_logger(Box::new(SyncFileLogger { file: Mutex::new(file) })).is_ok() {
+        if log::set_boxed_logger(Box::new(SyncFileLogger {
+            file: Mutex::new(file),
+        }))
+        .is_ok()
+        {
             log::set_max_level(log::LevelFilter::Info);
         }
         // A panic anywhere in do_sync()'s call graph currently aborts this
@@ -265,20 +273,24 @@ pub extern "system" fn Java_com_joris_friday_SyncWorker_showNotificationWithType
         Ok(s) => s.into(),
         Err(_) => return,
     };
-    
+
     let message_str: String = match env.get_string(&message) {
         Ok(s) => s.into(),
         Err(_) => return,
     };
-    
+
     let extra_str: Option<String> = match env.get_string(&extra) {
         Ok(s) => {
             let inner: String = s.into();
-            if inner.is_empty() { None } else { Some(inner) }
-        },
+            if inner.is_empty() {
+                None
+            } else {
+                Some(inner)
+            }
+        }
         Err(_) => None,
     };
-    
+
     // Call the Kotlin NotificationHelper via JNI
     let class = match env.find_class("com/joris/friday/NotificationHelper") {
         Ok(c) => c,
@@ -288,25 +300,26 @@ pub extern "system" fn Java_com_joris_friday_SyncWorker_showNotificationWithType
             return;
         }
     };
-    
+
     // Build the method signature for: showNotification(Context, int, String, String, String)
-    let method_sig = "(Landroid/content/Context;ILjava/lang/String;Ljava/lang/String;Ljava/lang/String;)V";
-    
+    let method_sig =
+        "(Landroid/content/Context;ILjava/lang/String;Ljava/lang/String;Ljava/lang/String;)V";
+
     let jni_title = match env.new_string(&title_str) {
         Ok(s) => s,
         Err(_) => return,
     };
-    
+
     let jni_message = match env.new_string(&message_str) {
         Ok(s) => s,
         Err(_) => return,
     };
-    
+
     let jni_extra = match extra_str {
         Some(s) => env.new_string(&s).ok(),
         None => env.new_string("").ok(),
     };
-    
+
     if let Some(extra_jni) = jni_extra {
         let _ = env.call_static_method(
             &class,
@@ -320,7 +333,7 @@ pub extern "system" fn Java_com_joris_friday_SyncWorker_showNotificationWithType
                 jni::objects::JValue::from(&extra_jni),
             ],
         );
-        
+
         // Clear any possible exception from the call
         if let Ok(true) = env.exception_check() {
             let _ = env.exception_clear();
@@ -331,7 +344,9 @@ pub extern "system" fn Java_com_joris_friday_SyncWorker_showNotificationWithType
 // JNI function to sync notification preferences
 #[cfg(target_os = "android")]
 #[no_mangle]
-pub extern "system" fn Java_com_joris_friday_SyncStateManager_syncPreferencesFromFrontend<'local>(
+pub extern "system" fn Java_com_joris_friday_SyncStateManager_syncPreferencesFromFrontend<
+    'local,
+>(
     mut env: JNIEnv<'local>,
     _class: JClass<'local>,
     context: jni::objects::JObject<'local>,
@@ -361,7 +376,7 @@ pub extern "system" fn Java_com_joris_friday_SyncStateManager_syncPreferencesFro
             return;
         }
     };
-    
+
     let editor = match env.call_method(
         &prefs,
         "edit",
@@ -380,64 +395,74 @@ pub extern "system" fn Java_com_joris_friday_SyncStateManager_syncPreferencesFro
             return;
         }
     };
-    
+
     let _ = env.call_method(
         &editor,
         "putBoolean",
         "(Ljava/lang/String;Z)Landroid/content/SharedPreferences$Editor;",
         &[
-            jni::objects::JValue::from(&env.new_string("notifyMessages").expect("Failed to create JString")),
+            jni::objects::JValue::from(
+                &env.new_string("notifyMessages")
+                    .expect("Failed to create JString"),
+            ),
             jni::objects::JValue::Bool(if notify_messages != 0 { 1u8 } else { 0u8 }),
         ],
     );
-    
+
     let _ = env.call_method(
         &editor,
         "putBoolean",
         "(Ljava/lang/String;Z)Landroid/content/SharedPreferences$Editor;",
         &[
-            jni::objects::JValue::from(&env.new_string("notifyGrades").expect("Failed to create JString")),
+            jni::objects::JValue::from(
+                &env.new_string("notifyGrades")
+                    .expect("Failed to create JString"),
+            ),
             jni::objects::JValue::Bool(if notify_grades != 0 { 1u8 } else { 0u8 }),
         ],
     );
-    
+
     let _ = env.call_method(
         &editor,
         "putBoolean",
         "(Ljava/lang/String;Z)Landroid/content/SharedPreferences$Editor;",
         &[
-            jni::objects::JValue::from(&env.new_string("notifyDeadlines").expect("Failed to create JString")),
+            jni::objects::JValue::from(
+                &env.new_string("notifyDeadlines")
+                    .expect("Failed to create JString"),
+            ),
             jni::objects::JValue::Bool(if notify_deadlines != 0 { 1u8 } else { 0u8 }),
         ],
     );
-    
+
     let _ = env.call_method(
         &editor,
         "putBoolean",
         "(Ljava/lang/String;Z)Landroid/content/SharedPreferences$Editor;",
         &[
-            jni::objects::JValue::from(&env.new_string("notifyCalendar").expect("Failed to create JString")),
+            jni::objects::JValue::from(
+                &env.new_string("notifyCalendar")
+                    .expect("Failed to create JString"),
+            ),
             jni::objects::JValue::Bool(if notify_calendar != 0 { 1u8 } else { 0u8 }),
         ],
     );
-    
+
     let _ = env.call_method(
         &editor,
         "putBoolean",
         "(Ljava/lang/String;Z)Landroid/content/SharedPreferences$Editor;",
         &[
-            jni::objects::JValue::from(&env.new_string("initialized").expect("Failed to create JString")),
+            jni::objects::JValue::from(
+                &env.new_string("initialized")
+                    .expect("Failed to create JString"),
+            ),
             jni::objects::JValue::Bool(1u8),
         ],
     );
-    
-    let _ = env.call_method(
-        &editor,
-        "apply",
-        "()V",
-        &[],
-    );
-    
+
+    let _ = env.call_method(&editor, "apply", "()V", &[]);
+
     // Clear any possible exceptions at the end
     if let Ok(true) = env.exception_check() {
         let _ = env.exception_clear();
@@ -492,7 +517,9 @@ pub fn share_downloaded_file(
             return Err(format!("Failed to find ShareHelper: {}", e));
         }
     };
-    let mime = mime_guess::from_path(file_path).first_or_octet_stream().to_string();
+    let mime = mime_guess::from_path(file_path)
+        .first_or_octet_stream()
+        .to_string();
     let j_path = match env.new_string(file_path.to_string_lossy().as_ref()) {
         Ok(s) => s,
         Err(e) => {
@@ -557,7 +584,7 @@ pub fn share_downloaded_file(
 
 #[cfg(target_os = "android")]
 async fn do_sync(data_dir: &str, trigger: &str, next_alarm_at_ms: i64) -> String {
-    use crate::client::{TokenSetPersistence, migrate_legacy_tokens};
+    use crate::client::{migrate_legacy_tokens, TokenSetPersistence};
     use std::path::PathBuf;
 
     let dir = PathBuf::from(data_dir);
@@ -585,7 +612,10 @@ async fn do_sync(data_dir: &str, trigger: &str, next_alarm_at_ms: i64) -> String
             }
         },
         Err(e) => {
-            log::warn!("FridaySyncWorker (Rust): token store unreadable ({}), will retry later", e);
+            log::warn!(
+                "FridaySyncWorker (Rust): token store unreadable ({}), will retry later",
+                e
+            );
             return "ERROR: STORE_UNAVAILABLE".to_string();
         }
     };
@@ -616,10 +646,10 @@ async fn do_sync(data_dir: &str, trigger: &str, next_alarm_at_ms: i64) -> String
         Some(id) => {
             log::debug!("FridaySync (Rust): Person ID: {}", id);
             id
-        },
+        }
         None => {
             log::error!("FridaySync (Rust): ERROR: No person_id in token");
-            return "ERROR: NO_PERSON_ID".to_string()
+            return "ERROR: NO_PERSON_ID".to_string();
         }
     };
 
@@ -631,7 +661,10 @@ async fn do_sync(data_dir: &str, trigger: &str, next_alarm_at_ms: i64) -> String
     let ctx = match client.request_context().await {
         Ok(ctx) => ctx,
         Err(e) => {
-            log::error!("FridaySync (Rust): ERROR: Failed to build request context: {}", e);
+            log::error!(
+                "FridaySync (Rust): ERROR: Failed to build request context: {}",
+                e
+            );
             if e.is_rejected() {
                 return format!("AUTH_REJECTED: {}", e);
             }
@@ -673,7 +706,10 @@ async fn do_sync(data_dir: &str, trigger: &str, next_alarm_at_ms: i64) -> String
         .filter(|s| !attempted.contains(s))
         .collect();
     if rate_limited_stop {
-        log::warn!("FridaySync (Rust): skipped after rate-limit stop: {:?}", skipped);
+        log::warn!(
+            "FridaySync (Rust): skipped after rate-limit stop: {:?}",
+            skipped
+        );
     }
 
     // The snapshot above can go stale if the server expires the token
@@ -694,7 +730,8 @@ async fn do_sync(data_dir: &str, trigger: &str, next_alarm_at_ms: i64) -> String
                 Ok(new_ctx) => {
                     for (section, r) in results.iter_mut() {
                         if matches!(r, Err(ClientError::TokenExpiredRetryable(_))) {
-                            *r = fetch_section(*section, &new_ctx, person_id, &today, &tomorrow).await;
+                            *r = fetch_section(*section, &new_ctx, person_id, &today, &tomorrow)
+                                .await;
                         }
                     }
                 }
@@ -811,10 +848,7 @@ fn build_sync_payload(
             None => failed.push(serde_json::Value::String(name.to_string())),
         }
     }
-    map.insert(
-        "failed".to_string(),
-        serde_json::Value::Array(failed),
-    );
+    map.insert("failed".to_string(), serde_json::Value::Array(failed));
     map.insert(
         "syncTimestamp".to_string(),
         serde_json::Value::from(timestamp),
@@ -898,59 +932,89 @@ fn tomorrow_string() -> String {
 async fn fetch_messages(ctx: &RequestContext) -> Result<serde_json::Value, ClientError> {
     match get_with_context(ctx, "berichten/mappen/1/berichten?top=50&skip=0").await {
         Ok(data) => {
-            if let Some(items) = data.get("items").or(data.get("Items")).filter(|v| v.is_array()) {
+            if let Some(items) = data
+                .get("items")
+                .or(data.get("Items"))
+                .filter(|v| v.is_array())
+            {
                 Ok(items.clone())
             } else {
                 Ok(data)
             }
-        },
-        Err(e) => Err(e)
+        }
+        Err(e) => Err(e),
     }
 }
 
-async fn fetch_recent_grades(ctx: &RequestContext, person_id: i64) -> Result<serde_json::Value, ClientError> {
+async fn fetch_recent_grades(
+    ctx: &RequestContext,
+    person_id: i64,
+) -> Result<serde_json::Value, ClientError> {
     let url = format!("personen/{}/cijfers/laatste?top=50&skip=0", person_id);
     match get_with_context(ctx, &url).await {
         Ok(data) => {
             // Extract items from the response
-            if let Some(items) = data.get("items").or(data.get("Items")).filter(|v| v.is_array()) {
+            if let Some(items) = data
+                .get("items")
+                .or(data.get("Items"))
+                .filter(|v| v.is_array())
+            {
                 Ok(items.clone())
             } else {
                 Ok(data)
             }
-        },
-        Err(e) => Err(e)
+        }
+        Err(e) => Err(e),
     }
 }
 
-async fn fetch_assignments(ctx: &RequestContext, person_id: i64) -> Result<serde_json::Value, ClientError> {
+async fn fetch_assignments(
+    ctx: &RequestContext,
+    person_id: i64,
+) -> Result<serde_json::Value, ClientError> {
     // Get assignments for next 14 days (Amsterdam dates, like the calendar window)
     let today = crate::ai::time::today_amsterdam();
     let two_weeks = crate::ai::time::add_days(&today, 14);
-    let url = format!("personen/{}/opdrachten?einddatum={}&startdatum={}&top=50", person_id, two_weeks, today);
+    let url = format!(
+        "personen/{}/opdrachten?einddatum={}&startdatum={}&top=50",
+        person_id, two_weeks, today
+    );
     match get_with_context(ctx, &url).await {
         Ok(data) => {
-            if let Some(items) = data.get("items").or(data.get("Items")).filter(|v| v.is_array()) {
+            if let Some(items) = data
+                .get("items")
+                .or(data.get("Items"))
+                .filter(|v| v.is_array())
+            {
                 Ok(items.clone())
             } else {
                 Ok(data)
             }
-        },
-        Err(e) => Err(e)
+        }
+        Err(e) => Err(e),
     }
 }
 
-async fn fetch_calendar(ctx: &RequestContext, person_id: i64, from: &str, to: &str) -> Result<serde_json::Value, ClientError> {
+async fn fetch_calendar(
+    ctx: &RequestContext,
+    person_id: i64,
+    from: &str,
+    to: &str,
+) -> Result<serde_json::Value, ClientError> {
     let url = format!("personen/{}/afspraken?van={}&tot={}", person_id, from, to);
     match get_with_context(ctx, &url).await {
         Ok(data) => {
-            if let Some(items) = data.get("items").or(data.get("Items")).filter(|v| v.is_array()) {
+            if let Some(items) = data
+                .get("items")
+                .or(data.get("Items"))
+                .filter(|v| v.is_array())
+            {
                 Ok(items.clone())
             } else {
                 Ok(data)
             }
-        },
-        Err(e) => Err(e)
+        }
+        Err(e) => Err(e),
     }
 }
 
@@ -991,7 +1055,10 @@ mod tests {
             ("assignments", Some(arr(2))),
         ];
         let payload = build_sync_payload(&sections, 1_700_000_000);
-        assert!(payload.get("calendar").is_none(), "failed section must be omitted");
+        assert!(
+            payload.get("calendar").is_none(),
+            "failed section must be omitted"
+        );
         assert_eq!(payload["failed"], serde_json::json!(["calendar"]));
         // An empty-but-successful section stays present as `[]`.
         assert_eq!(payload["messages"], serde_json::json!([]));
@@ -1026,7 +1093,9 @@ mod tests {
             "failed(RateLimited)"
         );
         assert_eq!(
-            section_status(&Err(ClientError::RequestFailed("error sending request".into()))),
+            section_status(&Err(ClientError::RequestFailed(
+                "error sending request".into()
+            ))),
             "failed(Network)"
         );
         assert_eq!(

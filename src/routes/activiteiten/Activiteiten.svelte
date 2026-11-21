@@ -1,22 +1,22 @@
 <script lang="ts">
-  import { personId, resumedAt } from "$lib/stores";
+  import { personId, resumedAt } from "#lib/stores.ts";
   import {
     getActivities,
     getActivityElements,
     subscribeActivityElement,
     unsubscribeActivityElement,
-  } from "$lib/api";
+  } from "#lib/api.ts";
   import {
     subscriptionsHref,
     canSubscribe,
     canUnsubscribe,
     withSubscription,
-  } from "$lib/activities";
-  import { cacheGet, cacheRefresh } from "$lib/cache";
+  } from "#lib/activities.ts";
+  import { cacheGet, cacheRefresh } from "#lib/cache.ts";
   import { onMount, untrack } from "svelte";
   import { fade, fly, slide } from "svelte/transition";
-  import Button from "$lib/components/Button.svelte";
-  import IconButton from "$lib/components/IconButton.svelte";
+  import Button from "#lib/components/Button.svelte";
+  import IconButton from "#lib/components/IconButton.svelte";
 
   let activities = $state<any[]>([]);
 

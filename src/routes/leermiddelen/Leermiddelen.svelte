@@ -1,14 +1,14 @@
 <script lang="ts">
-  import { personId, resumedAt } from "$lib/stores";
+  import { personId, resumedAt } from "#lib/stores.ts";
   import { get } from "svelte/store";
-  import { getLeermiddelen, getLeermiddelLaunchUrl } from "$lib/api";
-  import { cacheGet, cacheRefresh } from "$lib/cache";
+  import { getLeermiddelen, getLeermiddelLaunchUrl } from "#lib/api.ts";
+  import { cacheGet, cacheRefresh } from "#lib/cache.ts";
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { onMount, untrack } from "svelte";
   import { fade, fly } from "svelte/transition";
-  import Button from "$lib/components/Button.svelte";
-  import IconButton from "$lib/components/IconButton.svelte";
-  import AuthedImg from "$lib/components/AuthedImg.svelte";
+  import Button from "#lib/components/Button.svelte";
+  import IconButton from "#lib/components/IconButton.svelte";
+  import AuthedImg from "#lib/components/AuthedImg.svelte";
 
   let leermiddelen = $state<any[]>([]);
   let loading = $state(true);

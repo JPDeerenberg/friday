@@ -19,6 +19,8 @@ import {
   itemsArray,
   mergeAbsencesIntoEvents,
   normalizeGrades,
+  parseMessageAttachments,
+  parseUploadedAttachment,
   selfUrlFromLinks,
   stripApiPrefix,
   truncateDate,
@@ -188,7 +190,7 @@ test("buildSendMessageBody picks endpoint and shapes refs", () => {
     isConcept: false,
     sendOption: undefined,
     relatedMessageId: undefined,
-    attachmentIds: [3],
+    attachments: [{ id: 3, naam: "brief.pdf", type: "upload" }],
   };
   const { endpoint, body } = buildSendMessageBody(p);
   assert.strictEqual(endpoint, "berichten/berichten");
@@ -197,7 +199,9 @@ test("buildSendMessageBody picks endpoint and shapes refs", () => {
   assert.deepStrictEqual(b["blindeKopieOntvangers"], [
     { id: 2, type: "persoon" },
   ]);
-  assert.deepStrictEqual(b["bijlagen"], [{ id: 3, type: "upload" }]);
+  assert.deepStrictEqual(b["bijlagen"], [
+    { id: 3, naam: "brief.pdf", type: "upload" },
+  ]);
   assert.strictEqual(b["verzendOptie"], "standaard");
   assert.strictEqual(
     buildSendMessageBody({ ...p, isConcept: true }).endpoint,
@@ -376,7 +380,7 @@ test("buildSendMessageBody sends the camelCase body Magister (and the native app
     htmlContent: "<p>Hallo</p>",
     hasPriority: true,
     isConcept: false,
-    attachmentIds: [9],
+    attachments: [{ id: 9, naam: "verslag.docx", type: "upload" }],
   });
   assert.strictEqual(endpoint, "berichten/berichten");
   assert.deepStrictEqual(body, {
@@ -390,7 +394,7 @@ test("buildSendMessageBody sends the camelCase body Magister (and the native app
     inhoud: "<p>Hallo</p>",
     onderwerp: "Hoi",
     verzendOptie: "standaard",
-    bijlagen: [{ id: 9, type: "upload" }],
+    bijlagen: [{ id: 9, naam: "verslag.docx", type: "upload" }],
   });
 });
 
@@ -405,7 +409,7 @@ test("buildSendMessageBody links replies and routes concepts", () => {
     isConcept: true,
     sendOption: "beantwoord",
     relatedMessageId: 42,
-    attachmentIds: [],
+    attachments: [],
   });
   assert.strictEqual(reply.endpoint, "berichten/concepten");
   const body = reply.body as Record<string, unknown>;
@@ -420,6 +424,54 @@ test("buildSendMessageBody links replies and routes concepts", () => {
   ]) {
     assert.ok(!(wrong in body), `${wrong} must not be sent`);
   }
+});
+
+test("parseMessageAttachments reads bron items and resolves the download link", () => {
+  const out = parseMessageAttachments({
+    items: [
+      {
+        Id: 7,
+        Naam: "brief.pdf",
+        ContentType: "application/pdf",
+        Grootte: 2048,
+        Datum: "2026-01-01T10:00:00",
+        BronSoort: 1,
+        links: { download: { href: "/api/berichten/1/bijlagen/7/contents" } },
+      },
+      {
+        id: 8,
+        naam: "link",
+        bronSoort: 3,
+        Links: [{ Rel: "download", Href: "https://example.com/x" }],
+      },
+      { Naam: "zonder id" },
+    ],
+  });
+  assert.strictEqual(out.length, 2);
+  assert.strictEqual(
+    out[0].downloadUrl,
+    "/api/berichten/1/bijlagen/7/contents",
+  );
+  assert.strictEqual(out[0].contentType, "application/pdf");
+  assert.strictEqual(out[0].grootte, 2048);
+  assert.strictEqual(out[1].downloadUrl, "https://example.com/x");
+  assert.strictEqual(out[1].bronSoort, 3);
+});
+
+test("parseUploadedAttachment takes the first file from POST /bestanden", () => {
+  assert.deepStrictEqual(
+    parseUploadedAttachment(
+      [{ id: 11, naam: "foto.jpg", type: "upload" }],
+      "x",
+    ),
+    { id: 11, naam: "foto.jpg", type: "upload" },
+  );
+  assert.deepStrictEqual(parseUploadedAttachment([{ Id: 12 }], "map.pdf"), {
+    id: 12,
+    naam: "map.pdf",
+    type: "upload",
+  });
+  assert.throws(() => parseUploadedAttachment([], "x"), /geen bijlage/);
 });
 
 test("webExportAllData exports the grades of every school year, newest first", async () => {

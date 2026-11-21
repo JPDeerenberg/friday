@@ -12,5 +12,5 @@ pub mod files;
 pub mod grades;
 pub mod leermiddelen;
 pub mod messages;
-pub mod studiewijzers;
 pub mod notifications;
+pub mod studiewijzers;

@@ -1,11 +1,11 @@
 <script lang="ts">
-  import { userSettings } from "$lib/stores";
+  import { userSettings } from "#lib/stores.ts";
   import {
     sanitizeCompensation,
     DEFAULT_COMPENSATION,
     type CompensationConfig,
-  } from "$lib/grades/compensation";
-  import Button from "$lib/components/Button.svelte";
+  } from "#lib/grades/compensation.ts";
+  import Button from "#lib/components/Button.svelte";
 
   const cfg = $derived($userSettings.compensation as CompensationConfig);
 

@@ -5,15 +5,15 @@
    * the teachers the app has come across; a name can also be added by hand.
    */
   import { onMount } from "svelte";
-  import { userSettings } from "$lib/stores";
+  import { userSettings } from "#lib/stores.ts";
   import {
     listSeenTeachers,
     registerTeacherNames,
     stripTeacherCode,
     teacherKey,
     withAlias,
-  } from "$lib/teachers";
-  import Button from "$lib/components/Button.svelte";
+  } from "#lib/teachers.ts";
+  import Button from "#lib/components/Button.svelte";
 
   let seen = $state<{ key: string; name: string }[]>([]);
   let query = $state("");

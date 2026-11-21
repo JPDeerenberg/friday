@@ -1,15 +1,43 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
-  emptyState, importFriend, removeFriend, setEnabled, renameFriend, setMyName, markShared, changeNotice, describeNotice,
-  freshness, ageText, friendsAsPeople, friendLabel, sanitizeState, MAX_FRIENDS,
+  emptyState,
+  importFriend,
+  removeFriend,
+  setEnabled,
+  renameFriend,
+  setMyName,
+  markShared,
+  changeNotice,
+  describeNotice,
+  freshness,
+  ageText,
+  friendsAsPeople,
+  friendLabel,
+  sanitizeState,
+  MAX_FRIENDS,
 } from "./friends-state.ts";
 import type { ScheduleSnapshot, SharedLesson } from "./friends-share.ts";
 
 const ME = "00000001";
-const lesson = (day: number, start: number, subject = "Wiskunde"): SharedLesson => ({ day, start, end: start + 50, subject });
-function snap(id: string, over: Partial<ScheduleSnapshot> = {}): ScheduleSnapshot {
-  return { id, name: "Anna", createdAt: 1000, windowStart: "2026-11-09", days: 14, lessons: [lesson(0, 510)], ...over };
+const lesson = (
+  day: number,
+  start: number,
+  subject = "Wiskunde",
+): SharedLesson => ({ day, start, end: start + 50, subject });
+function snap(
+  id: string,
+  over: Partial<ScheduleSnapshot> = {},
+): ScheduleSnapshot {
+  return {
+    id,
+    name: "Anna",
+    createdAt: 1000,
+    windowStart: "2026-11-09",
+    days: 14,
+    lessons: [lesson(0, 510)],
+    ...over,
+  };
 }
 
 describe("importFriend", () => {
@@ -17,13 +45,27 @@ describe("importFriend", () => {
     const { state, status } = importFriend(emptyState(ME), snap("aaaaaaaa"), 5);
     assert.equal(status, "added");
     assert.equal(state.friends.length, 1);
-    assert.deepEqual([state.friends[0].enabled, state.friends[0].nickname, state.friends[0].importedAt], [true, "", 5]);
+    assert.deepEqual(
+      [
+        state.friends[0].enabled,
+        state.friends[0].nickname,
+        state.friends[0].importedAt,
+      ],
+      [true, "", 5],
+    );
   });
   it("replaces an older version with a newer one and keeps the nickname and the toggle", () => {
-    let s = importFriend(emptyState(ME), snap("aaaaaaaa", { createdAt: 1000 })).state;
+    let s = importFriend(
+      emptyState(ME),
+      snap("aaaaaaaa", { createdAt: 1000 }),
+    ).state;
     s = renameFriend(s, "aaaaaaaa", "Annie");
     s = setEnabled(s, "aaaaaaaa", false);
-    const r = importFriend(s, snap("aaaaaaaa", { createdAt: 2000, lessons: [lesson(1, 600)] }), 9);
+    const r = importFriend(
+      s,
+      snap("aaaaaaaa", { createdAt: 2000, lessons: [lesson(1, 600)] }),
+      9,
+    );
     assert.equal(r.status, "updated");
     assert.equal(r.state.friends.length, 1);
     assert.deepEqual(r.state.friends[0].snapshot.lessons, [lesson(1, 600)]);
@@ -31,14 +73,24 @@ describe("importFriend", () => {
     assert.equal(r.state.friends[0].enabled, false);
   });
   it("ignores an older or identical version", () => {
-    const s = importFriend(emptyState(ME), snap("aaaaaaaa", { createdAt: 2000 })).state;
-    assert.equal(importFriend(s, snap("aaaaaaaa", { createdAt: 1000 })).status, "older");
-    assert.equal(importFriend(s, snap("aaaaaaaa", { createdAt: 2000 })).status, "older");
+    const s = importFriend(
+      emptyState(ME),
+      snap("aaaaaaaa", { createdAt: 2000 }),
+    ).state;
+    assert.equal(
+      importFriend(s, snap("aaaaaaaa", { createdAt: 1000 })).status,
+      "older",
+    );
+    assert.equal(
+      importFriend(s, snap("aaaaaaaa", { createdAt: 2000 })).status,
+      "older",
+    );
   });
   it("refuses your own link and a full list", () => {
     assert.equal(importFriend(emptyState(ME), snap(ME)).status, "self");
     let s = emptyState(ME);
-    for (let i = 0; i < MAX_FRIENDS; i++) s = importFriend(s, snap(`${String(i).padStart(8, "a")}`)).state;
+    for (let i = 0; i < MAX_FRIENDS; i++)
+      s = importFriend(s, snap(`${String(i).padStart(8, "a")}`)).state;
     assert.equal(s.friends.length, MAX_FRIENDS);
     assert.equal(importFriend(s, snap("bbbbbbbb")).status, "full");
   });
@@ -69,11 +121,16 @@ describe("editing the list", () => {
     assert.equal(p.lessons.length, 1);
     assert.equal(new Date(p.lessons[0].start).getHours(), 8);
     assert.equal(friendsAsPeople(s)[0].hue, p.hue);
+    assert.equal(p.coversFrom, new Date(2026, 10, 9).getTime());
+    assert.equal(p.coversTo, new Date(2026, 10, 23).getTime());
   });
 });
 
 describe("change notices (the 'new QR' prompt)", () => {
-  const shared = { windowStart: "2026-11-09", lessons: [lesson(0, 510), lesson(0, 560, "Frans")] };
+  const shared = {
+    windowStart: "2026-11-09",
+    lessons: [lesson(0, 510), lesson(0, 560, "Frans")],
+  };
   const base = markShared(emptyState(ME), shared, "sig", 1);
   it("says nothing before the first share", () => {
     assert.equal(changeNotice(emptyState(ME), shared), null);
@@ -82,23 +139,42 @@ describe("change notices (the 'new QR' prompt)", () => {
     assert.equal(changeNotice(base, shared), null);
   });
   it("notices a cancelled lesson and a new lesson", () => {
-    const n = changeNotice(base, { windowStart: "2026-11-09", lessons: [lesson(0, 510), lesson(1, 600, "Nask")] });
-    assert.deepEqual(n, { kind: "changed", added: 1, removed: 1, changed: true });
-    assert.match(describeNotice(n!), /1 les is vervallen of verplaatst, 1 nieuwe les/);
+    const n = changeNotice(base, {
+      windowStart: "2026-11-09",
+      lessons: [lesson(0, 510), lesson(1, 600, "Nask")],
+    });
+    assert.deepEqual(n, {
+      kind: "changed",
+      added: 1,
+      removed: 1,
+      changed: true,
+    });
+    assert.match(
+      describeNotice(n!),
+      /1 les is vervallen of verplaatst, 1 nieuwe les/,
+    );
   });
   it("asks for a new link when a new week has started", () => {
-    const n = changeNotice(base, { windowStart: "2026-11-16", lessons: shared.lessons });
+    const n = changeNotice(base, {
+      windowStart: "2026-11-16",
+      lessons: shared.lessons,
+    });
     assert.deepEqual(n, { kind: "new-week" });
     assert.match(describeNotice(n!), /nieuwe week/);
   });
 });
 
 describe("freshness and age", () => {
-  const s = snap("aaaaaaaa", { createdAt: Math.floor(new Date(2026, 10, 9, 12).getTime() / 60000) });
+  const s = snap("aaaaaaaa", {
+    createdAt: Math.floor(new Date(2026, 10, 9, 12).getTime() / 60000),
+  });
   it("is fresh, then old, then expired", () => {
     assert.equal(freshness(s, new Date(2026, 10, 10, 12).getTime()), "fresh");
     assert.equal(freshness(s, new Date(2026, 10, 16, 12).getTime()), "old");
-    assert.equal(freshness(s, new Date(2026, 10, 23, 0, 1).getTime()), "expired");
+    assert.equal(
+      freshness(s, new Date(2026, 10, 23, 0, 1).getTime()),
+      "expired",
+    );
   });
   it("describes age in Dutch", () => {
     const base = 1_000_000;
@@ -115,7 +191,12 @@ describe("freshness and age", () => {
 describe("sanitizeState", () => {
   it("round-trips a good state", () => {
     let s = importFriend(emptyState(ME), snap("aaaaaaaa")).state;
-    s = markShared(s, { windowStart: "2026-11-09", lessons: [lesson(0, 510)] }, "sig", 7);
+    s = markShared(
+      s,
+      { windowStart: "2026-11-09", lessons: [lesson(0, 510)] },
+      "sig",
+      7,
+    );
     assert.deepEqual(sanitizeState(JSON.parse(JSON.stringify(s))), s);
   });
   it("rejects states without a valid id and survives garbage", () => {
@@ -128,13 +209,26 @@ describe("sanitizeState", () => {
     const raw = {
       myId: ME,
       friends: [
-        { snapshot: good }, { snapshot: good }, { snapshot: { ...good, id: ME } },
-        { snapshot: { ...good, id: "bbbbbbbb", lessons: [{ day: 99, start: 1, end: 2, subject: "x" }] } },
-        { snapshot: { id: "cccccccc" } }, null, "nope",
+        { snapshot: good },
+        { snapshot: good },
+        { snapshot: { ...good, id: ME } },
+        {
+          snapshot: {
+            ...good,
+            id: "bbbbbbbb",
+            lessons: [{ day: 99, start: 1, end: 2, subject: "x" }],
+          },
+        },
+        { snapshot: { id: "cccccccc" } },
+        null,
+        "nope",
       ],
     };
     const s = sanitizeState(raw)!;
-    assert.deepEqual(s.friends.map((f) => f.id), ["aaaaaaaa"]);
+    assert.deepEqual(
+      s.friends.map((f) => f.id),
+      ["aaaaaaaa"],
+    );
     assert.equal(s.lastShared, null);
     assert.equal(s.myName, "");
   });

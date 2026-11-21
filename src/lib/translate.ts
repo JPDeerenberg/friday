@@ -3,12 +3,12 @@
  * they set up under Settings > AI Assistent). Nothing is sent anywhere else, and
  * nothing is sent until the student taps the button.
  */
-import { aiChat, getAiConfig } from "$lib/ai";
+import { aiChat, getAiConfig } from "#lib/ai.ts";
 import {
   buildTranslationPrompt,
   cleanTranslation,
   translationKey,
-} from "$lib/translate-text";
+} from "#lib/translate-text.ts";
 
 const cache = new Map<string, string>();
 const MAX_CACHED = 200;

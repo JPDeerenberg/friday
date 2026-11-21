@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { personId, userSettings, resumedAt } from "$lib/stores";
+  import { personId, userSettings, resumedAt } from "#lib/stores.ts";
   import {
     getCalendarEvents,
     formatDate,
@@ -8,22 +8,22 @@
     downloadFile,
     createCalendarEvent,
     deleteCalendarEvent,
-  } from "$lib/api";
-  import { formatTime } from "$lib/format";
+  } from "#lib/api.ts";
+  import { formatTime } from "#lib/format.ts";
   let downloadingFile = $state<string | null>(null);
 
-  import HtmlRenderer from "$lib/components/HtmlRenderer.svelte";
-  import Button from "$lib/components/Button.svelte";
-  import IconButton from "$lib/components/IconButton.svelte";
-  import DropdownMenu from "$lib/components/DropdownMenu.svelte";
+  import HtmlRenderer from "#lib/components/HtmlRenderer.svelte";
+  import Button from "#lib/components/Button.svelte";
+  import IconButton from "#lib/components/IconButton.svelte";
+  import DropdownMenu from "#lib/components/DropdownMenu.svelte";
   import { on } from "svelte/events";
-  import { pickDownloadHref, describeDownload } from "$lib/attachments";
-  import { displayTeacherName } from "$lib/teachers";
-  import TranslateButton from "$lib/components/TranslateButton.svelte";
-  import { recordQuestEvent } from "$lib/quests-store";
-  import { onMount, untrack } from "svelte";
+  import { pickDownloadHref, describeDownload } from "#lib/attachments.ts";
+  import { displayTeacherName } from "#lib/teachers.ts";
+  import TranslateButton from "#lib/components/TranslateButton.svelte";
+  import { recordQuestEvent } from "#lib/quests-store.ts";
+  import { onMount, tick, untrack } from "svelte";
   import { fade, fly, slide, scale } from "svelte/transition";
-  import type { CalendarAttachment, CalendarEvent, Link } from "$lib/types";
+  import type { CalendarAttachment, CalendarEvent, Link } from "#lib/types.ts";
 
   type DayAppointment = CalendarEvent & {
     IsCombined?: boolean;
@@ -628,11 +628,11 @@
     }).length;
   });
 
-  // ===== Week view (desktop grid) =====
-  // 96px/hour so a 30-min lesson renders ~48px tall — enough for the subject
-  // line plus the time row. At 72px/hour short lessons were 33px and unreadable.
-  const PX_PER_HOUR = 96;
-
+  // ===== Week view timeline =====
+  // Lesson blocks are positioned in percentages of the grid height and the
+  // vertical scale lives in CSS (--week-hour-h, see the style block). One
+  // timeline therefore fits phones, tablets and desktops without any JS
+  // resize bookkeeping, and phone columns stay in sync with the day headers.
   function minutesOf(iso: string | null | undefined): number | null {
     if (!iso) return null;
     const d = new Date(iso);
@@ -747,24 +747,35 @@
     maxH = Math.min(23, Math.max(18, maxH));
     const hours: number[] = [];
     for (let h = minH; h < maxH; h++) hours.push(h);
-    return { minH, maxH, hours, heightPx: (maxH - minH) * PX_PER_HOUR };
+    return { minH, maxH, hours };
   });
 
-  function appTopPx(a: DayAppointment): number {
+  /** Height of the grid in minutes (e.g. 08:00–18:00 = 600). */
+  const gridSpanMinutes = $derived((grid.maxH - grid.minH) * 60);
+
+  function appTopPercent(a: DayAppointment): number {
     const s = minutesOf(a.Start);
     if (s === null) return 0;
-    return ((s - grid.minH * 60) / 60) * PX_PER_HOUR;
+    return ((s - grid.minH * 60) / gridSpanMinutes) * 100;
   }
 
-  function appHeightPx(a: DayAppointment): number {
+  function appHeightPercent(a: DayAppointment): number {
     const s = minutesOf(a.Start);
+    if (s === null) return 8;
     const e = minutesOf(a.Einde);
-    if (s === null) return 40;
     const dur = (e !== null ? e : s + 50) - s;
-    // Minimum 44px so even very short (15–30 min) lessons stay readable;
-    // the extra height may slightly overlap the next block's gap, which is
-    // acceptable versus an unreadable sliver.
-    return Math.max(44, Math.round((dur / 60) * PX_PER_HOUR) - 3);
+    // Minimum heights (40px phone / 44px desktop, see .week-appt) keep very
+    // short lessons readable; that block may lap slightly into the next gap,
+    // which beats an unreadable sliver.
+    return (dur / gridSpanMinutes) * 100;
+  }
+
+  /** Below ~47 minutes three title lines + the time no longer fit. */
+  function isShortAppointment(a: DayAppointment): boolean {
+    const s = minutesOf(a.Start);
+    if (s === null) return false;
+    const e = minutesOf(a.Einde);
+    return (e !== null ? e : s + 50) - s <= 45;
   }
 
   const weekAppCount = $derived(
@@ -777,18 +788,109 @@
     const last = weekViewDays[weekViewDays.length - 1].date;
     const f = first.toLocaleDateString("nl-NL", {
       day: "numeric",
-      month: "long",
+      month: "short",
     });
     const l = last.toLocaleDateString("nl-NL", {
       day: "numeric",
-      month: "long",
+      month: "short",
     });
     return `${f} – ${l}`;
   });
 
+  /**
+   * The phone header only leaves ~85px for the week range, which ellipsizes
+   * "16 nov – 22 nov". Same-month weeks fit as "16–22 nov"; weeks that cross
+   * a month keep both months.
+   */
+  const weekLabelCompact = $derived.by(() => {
+    if (weekViewDays.length === 0) return "";
+    const first = weekViewDays[0].date;
+    const last = weekViewDays[weekViewDays.length - 1].date;
+    const month = (d: Date) =>
+      d.toLocaleDateString("nl-NL", { month: "short" });
+    return month(first) === month(last)
+      ? `${first.getDate()}–${last.getDate()} ${month(last)}`
+      : `${first.getDate()} ${month(first)}–${last.getDate()} ${month(last)}`;
+  });
+
+  /** ISO-8601 week number, shown in the grid's top-left corner. */
+  function isoWeekNumber(date: Date): number {
+    const d = new Date(
+      Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()),
+    );
+    const day = d.getUTCDay() || 7;
+    d.setUTCDate(d.getUTCDate() + 4 - day);
+    const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+    return Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
+  }
+
   const nowMinutes = $derived.by(() => {
     const d = now;
     return d.getHours() * 60 + d.getMinutes();
+  });
+
+  // Auto-scroll the timeline to the part of the day that matters. A phone
+  // shows roughly six hours at once, so opening the grid at 06:00 would push
+  // every lesson below the fold. Runs once per week (and on view toggle); the
+  // user keeps their own scroll position afterwards.
+  let weekGridEl = $state<HTMLDivElement | null>(null);
+  let lastAutoScrolledWeek = "";
+
+  $effect(() => {
+    if (!showWeekView) {
+      lastAutoScrolledWeek = "";
+      return;
+    }
+    if (loading || weekViewDays.length === 0) return;
+
+    const key = `${weekViewDays[0].date.toDateString()}:${weekViewDays.length}`;
+    if (key === lastAutoScrolledWeek) return;
+    lastAutoScrolledWeek = key;
+
+    const starts: number[] = [];
+    for (const day of weekViewDays) {
+      for (const a of day.apps) {
+        const s = minutesOf(a.Start);
+        if (s !== null) starts.push(s);
+      }
+    }
+    const nowVisible =
+      weekViewDays.some((d) => d.isToday) &&
+      nowMinutes >= grid.minH * 60 &&
+      nowMinutes <= grid.maxH * 60;
+    const focusMin =
+      (nowVisible
+        ? nowMinutes
+        : starts.length
+          ? Math.min(...starts)
+          : grid.minH * 60) - 15;
+    const minH = grid.minH;
+    const span = gridSpanMinutes;
+
+    tick().then(() => {
+      const el = weekGridEl;
+      if (!el) return;
+      const scroller = findScrollingAncestor(el) ?? findScrollParent(el);
+      const body = el.querySelector<HTMLElement>("[data-week-body]");
+      if (!scroller || !body) return;
+
+      const pxPerMinute = body.offsetHeight / span;
+      const scrollerRect = scroller.getBoundingClientRect();
+      const bodyTop =
+        body.getBoundingClientRect().top -
+        scrollerRect.top +
+        scroller.scrollTop;
+      const focusY = bodyTop + Math.max(0, focusMin - minH * 60) * pxPerMinute;
+      const visibleTop = scroller.scrollTop + 80;
+      const visibleBottom = scroller.scrollTop + scroller.clientHeight - 80;
+      // Only scroll when the point of interest is outside the fold. Always
+      // re-centring made the agenda jump past its own header on open.
+      if (focusY >= visibleTop && focusY <= visibleBottom) return;
+      scroller.scrollTo({
+        top: Math.max(0, focusY - scroller.clientHeight * 0.35),
+        behavior: "smooth",
+      });
+    });
   });
 
   // Swipe handling with live drag tracking
@@ -882,6 +984,27 @@
     return null;
   }
 
+  /**
+   * Nearest ancestor that can actually scroll vertically. The calendar's own
+   * <main> sets overflow-y-auto, but the page wrapper has no fixed height so
+   * it grows with its content and the layout's <main> is the real scroll
+   * container. findScrollParent() returns the inert one; this walks further.
+   */
+  function findScrollingAncestor(node: HTMLElement): HTMLElement | null {
+    let el = node.parentElement;
+    while (el && el !== document.body) {
+      const overflowY = getComputedStyle(el).overflowY;
+      if (
+        (overflowY === "auto" || overflowY === "scroll") &&
+        el.scrollHeight > el.clientHeight + 1
+      ) {
+        return el;
+      }
+      el = el.parentElement;
+    }
+    return null;
+  }
+
   function swipeGesture(node: HTMLDivElement) {
     // The page wrapper in +page.svelte has no explicit height, so this node
     // (and its `h-full`) only spans its content. Touches in the empty area
@@ -946,14 +1069,15 @@
           />
           {#if showWeekView}
             <p
-              class="text-label-small text-primary-400 group-hover:text-primary-300 transition-colors leading-none truncate"
+              class="hidden md:block text-label-small text-primary-400 group-hover:text-primary-300 transition-colors leading-none truncate"
             >
               Weekoverzicht
             </p>
             <h2
               class="text-title-medium md:text-headline-small text-white leading-tight group-hover:text-gray-200 transition-colors truncate"
             >
-              {weekLabel}
+              <span class="md:hidden">{weekLabelCompact}</span>
+              <span class="hidden md:inline">{weekLabel}</span>
             </h2>
           {:else}
             <p
@@ -971,6 +1095,48 @@
             </h2>
           {/if}
         </label>
+        <!-- Mobile week navigation: the grid has no day pills, so give the
+             phone its own compact prev/next cluster next to the week label. -->
+        {#if showWeekView}
+          <div
+            class="md:hidden flex items-center bg-surface-900 rounded-m3-sm p-0.5 border border-white/5 shrink-0"
+          >
+            <IconButton
+              size="sm"
+              onclick={prevWeek}
+              class="w-7! h-7!"
+              title="Vorige week"
+              aria-label="Vorige week"
+            >
+              <svg
+                class="w-3 h-3"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="3"
+                stroke-linecap="round"
+                stroke-linejoin="round"><path d="m15 18-6-6 6-6" /></svg
+              >
+            </IconButton>
+            <IconButton
+              size="sm"
+              onclick={nextWeek}
+              class="w-7! h-7!"
+              title="Volgende week"
+              aria-label="Volgende week"
+            >
+              <svg
+                class="w-3 h-3"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="3"
+                stroke-linecap="round"
+                stroke-linejoin="round"><path d="m9 18 6-6-6-6" /></svg
+              >
+            </IconButton>
+          </div>
+        {/if}
         <!-- Mobile: single overflow menu -->
         <div class="md:hidden shrink-0">
           <DropdownMenu bind:open={viewMenuOpen} align="right">
@@ -1412,8 +1578,29 @@
             stroke-width="2.5"><path d="M12 5v14M5 12h14" /></svg
           >
         </IconButton>
-        <Button variant="tonal" onclick={goToToday} class="px-4 h-8!">
-          Vandaag
+        <Button
+          variant="tonal"
+          onclick={goToToday}
+          class="px-2! min-[375px]:px-3! md:px-4! h-8!"
+          aria-label="Naar vandaag"
+          title="Naar vandaag"
+        >
+          <span class="hidden min-[375px]:inline">Vandaag</span>
+          <svg
+            class="min-[375px]:hidden w-4 h-4"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <rect x="3" y="4" width="18" height="18" rx="2" />
+            <line x1="16" y1="2" x2="16" y2="6" />
+            <line x1="8" y1="2" x2="8" y2="6" />
+            <line x1="3" y1="10" x2="21" y2="10" />
+            <circle cx="12" cy="15" r="1.5" fill="currentColor" stroke="none" />
+          </svg>
         </Button>
       </div>
     </div>
@@ -1550,244 +1737,201 @@
             </p>
           </div>
         </div>
-      {:else if isDesktop}
-        <div
-          class="md:rounded-m3-lg md:border border-surface-800/40 overflow-hidden"
-        >
-          <div class="overflow-x-auto custom-scrollbar">
-            <div class="min-w-full flex">
-              <!-- Time gutter -->
-              <div class="w-16 shrink-0 flex flex-col">
-                <!-- Corner spacer -->
-                <div
-                  class="shrink-0 h-[52px] border-b border-surface-800/40 bg-surface-900/40"
-                ></div>
-                <!-- Hour labels -->
-                <div class="relative" style="height: {grid.heightPx}px;">
-                  {#each grid.hours as h}
-                    <div
-                      class="absolute right-2 -translate-y-1/2 text-label-medium text-gray-500 tabular-nums"
-                      style="top: {(h - grid.minH) * PX_PER_HOUR}px;"
-                    >
-                      {String(h).padStart(2, "0")}:00
-                    </div>
-                  {/each}
-                </div>
-              </div>
-
-              <!-- Day columns -->
-              {#each weekViewDays as day}
-                <div
-                  class="flex-1 min-w-[140px] border-l border-surface-800/30"
-                >
-                  <!-- Day header -->
-                  <button
-                    onclick={() => {
-                      selectedDate = new Date(day.date);
-                      loadAppointments();
-                    }}
-                    class="w-full flex flex-col items-center justify-center gap-0.5 h-[52px] border-b border-surface-800/40 transition-colors {day.isSelected
-                      ? 'bg-primary-container text-on-primary-container'
-                      : day.isToday
-                        ? 'bg-primary-500/10'
-                        : 'bg-surface-900/40 hover:bg-surface-800/40'}"
-                  >
-                    <span
-                      class="text-label-medium {day.isSelected
-                        ? 'text-on-primary-container'
-                        : 'text-gray-500'}"
-                    >
-                      {day.date.toLocaleDateString("nl-NL", {
-                        weekday: "short",
-                      })}
-                    </span>
-                    <span
-                      class="text-title-medium {day.isSelected
-                        ? 'text-on-primary-container'
-                        : 'text-white'} leading-none"
-                    >
-                      {day.date.getDate()}
-                    </span>
-                    <span class="flex gap-0.5 h-1">
-                      {#if day.apps.some( (a) => [2, 3, 4, 5].includes(a.InfoType) )}
-                        <span class="w-1 h-1 rounded-full bg-red-500"></span>
-                      {:else if day.apps.some((a) => a.InfoType === 1 && !a.Afgerond)}
-                        <span class="w-1 h-1 rounded-full bg-primary-400"
-                        ></span>
-                      {/if}
-                    </span>
-                  </button>
-
-                  <!-- Time column -->
-                  <div class="relative" style="height: {grid.heightPx}px;">
-                    <!-- Hour grid lines -->
-                    {#each grid.hours as h}
-                      <div
-                        class="absolute left-0 right-0 border-t border-surface-800/30 pointer-events-none"
-                        style="top: {(h - grid.minH) * PX_PER_HOUR}px;"
-                      ></div>
-                    {/each}
-
-                    <!-- Today highlight -->
-                    {#if day.isToday}
-                      <div
-                        class="absolute inset-0 bg-primary-500/5 pointer-events-none"
-                      ></div>
-                    {/if}
-
-                    <!-- Now indicator -->
-                    {#if day.isToday && nowMinutes >= grid.minH * 60 && nowMinutes <= grid.maxH * 60}
-                      <div
-                        class="absolute left-0 right-0 z-10 pointer-events-none"
-                        style="top: {((nowMinutes - grid.minH * 60) / 60) *
-                          PX_PER_HOUR}px;"
-                      >
-                        <div class="h-0.5 bg-red-500 rounded-full relative">
-                          <div
-                            class="absolute -left-1 -top-[4px] w-2 h-2 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)]"
-                          ></div>
-                        </div>
-                      </div>
-                    {/if}
-
-                    <!-- Appointments -->
-                    {#each day.apps as app}
-                      <button
-                        onclick={() => openDetail(app)}
-                        class="absolute rounded-m3-sm border px-2 py-1.5 text-left overflow-hidden transition-all active:scale-[0.98] hover:brightness-125 cursor-pointer {app.InfoType ===
-                          1 && !app.Afgerond
-                          ? 'bg-primary-500/16 border-primary-500/40 shadow-sm'
-                          : app.Status === 4 || app.Status === 5
-                            ? 'bg-red-500/10 border-red-500/30'
-                            : 'bg-surface-800/80 border-surface-700/50 hover:bg-surface-700/70'}"
-                        style="top: {appTopPx(app)}px; height: {appHeightPx(
-                          app,
-                        )}px; left: calc({app._column} / {app._columnCount} * 100% + 4px); width: calc(100% / {app._columnCount} - 8px);"
-                        title="{app.Vakken?.[0]?.Naam ||
-                          app.Omschrijving ||
-                          'Vrij'} · {formatTime(app.Start)} – {formatTime(
-                          app.Einde,
-                        )}"
-                      >
-                        <div class="flex flex-col min-w-0 h-full">
-                          <p
-                            class="text-title-small leading-tight truncate {app.Status ===
-                              4 || app.Status === 5
-                              ? 'text-red-400 line-through'
-                              : app.InfoType === 1 && !app.Afgerond
-                                ? 'text-primary-100'
-                                : 'text-white'}"
-                          >
-                            {app.Vakken?.[0]?.Naam ||
-                              app.Omschrijving ||
-                              "Vrij"}
-                          </p>
-                          <div
-                            class="flex items-center gap-1 text-label-medium text-gray-400 mt-0.5"
-                          >
-                            <span class="tabular-nums shrink-0"
-                              >{formatTime(app.Start)}</span
-                            >
-                            {#if app.Lokatie}
-                              <span class="truncate">· {app.Lokatie}</span>
-                            {/if}
-                          </div>
-                        </div>
-                        {#if app.InfoType === 1 && !app.Afgerond}
-                          <div
-                            class="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-primary-400"
-                          ></div>
-                        {:else if app.InfoType === 1 && app.Afgerond}
-                          <div
-                            class="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-emerald-500"
-                          ></div>
-                        {:else if [2, 3, 4, 5].includes(app.InfoType)}
-                          <div
-                            class="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-red-500"
-                          ></div>
-                        {/if}
-                      </button>
-                    {/each}
-                  </div>
-                </div>
-              {/each}
-            </div>
-          </div>
-        </div>
       {:else}
-        <div class="space-y-3">
-          {#each weekViewDays as day}
+        <div
+          bind:this={weekGridEl}
+          class="week-grid rounded-m3-lg border border-surface-800/40 overflow-clip"
+        >
+          <!-- Sticky day header. One GRID track per day keeps the labels
+               aligned with the timeline at every width, with no horizontal
+               scrolling — phones show the whole week too. -->
+          <div
+            data-week-head
+            class="sticky top-0 z-30 grid bg-surface-950/95 backdrop-blur-md border-b border-surface-800/40"
+            style="grid-template-columns: var(--week-gutter) repeat({weekViewDays.length}, minmax(0, 1fr));"
+          >
             <div
-              class="rounded-m3-md overflow-hidden border {day.isToday
-                ? 'border-primary-500/40 bg-primary-500/5'
-                : 'border-surface-800/40 bg-surface-900/30'}"
+              class="flex items-end justify-center pb-1.5 overflow-hidden"
+              aria-hidden="true"
             >
+              <span
+                class="text-[9px] md:text-label-small text-gray-600 tabular-nums whitespace-nowrap"
+              >
+                wk {isoWeekNumber(weekViewDays[0].date)}
+              </span>
+            </div>
+            {#each weekViewDays as day}
               <button
                 onclick={() => {
                   selectedDate = new Date(day.date);
                   loadAppointments();
                 }}
-                class="w-full flex items-center justify-between px-3 py-2 {day.isToday
-                  ? 'bg-primary-500/10'
-                  : 'bg-surface-900/50'}"
+                class="flex flex-col items-center justify-center gap-0 h-11 md:h-[52px] border-l border-surface-800/30 transition-colors {day.isSelected
+                  ? 'bg-primary-container text-on-primary-container'
+                  : day.isToday
+                    ? 'bg-primary-500/10'
+                    : 'hover:bg-surface-800/50'}"
+                aria-label={day.date.toLocaleDateString("nl-NL", {
+                  weekday: "long",
+                  day: "numeric",
+                  month: "long",
+                })}
               >
-                <span class="flex items-center gap-2">
-                  <span
-                    class="text-label-medium {day.isToday
-                      ? 'text-primary-300'
-                      : 'text-gray-500'}"
-                  >
-                    {day.date.toLocaleDateString("nl-NL", { weekday: "long" })}
-                  </span>
-                  <span
-                    class="text-title-small {day.isToday
-                      ? 'text-white'
-                      : 'text-gray-300'}">{day.date.getDate()}</span
-                  >
+                <span
+                  class="text-[10px] md:text-label-medium leading-none {day.isSelected
+                    ? 'text-on-primary-container'
+                    : 'text-gray-500'}"
+                >
+                  {day.date
+                    .toLocaleDateString("nl-NL", { weekday: "short" })
+                    .slice(0, 2)}
                 </span>
-                {#if day.isToday}
-                  <span
-                    class="text-label-small text-primary-400 px-2 py-0.5 rounded-m3-full bg-primary-500/15"
-                    >Vandaag</span
-                  >
-                {/if}
+                <span
+                  class="text-[13px] md:text-title-medium leading-tight {day.isSelected
+                    ? 'text-on-primary-container'
+                    : 'text-white'}"
+                >
+                  {day.date.getDate()}
+                </span>
+                <span class="flex gap-0.5 h-1">
+                  {#if day.apps.some((a) => [2, 3, 4, 5].includes(a.InfoType))}
+                    <span class="w-1 h-1 rounded-full bg-red-500"></span>
+                  {:else if day.apps.some((a) => a.InfoType === 1 && !a.Afgerond)}
+                    <span class="w-1 h-1 rounded-full bg-primary-400"></span>
+                  {/if}
+                </span>
               </button>
-              <div class="divide-y divide-surface-800/40">
+            {/each}
+          </div>
+
+          <!-- Timeline. Positions are percentages of this row and the vertical
+               scale is --week-hour-h (style block), so header, gutter and
+               blocks stay in sync without resize listeners. -->
+          <div
+            data-week-body
+            class="week-body grid"
+            style="--week-hours: {grid.maxH -
+              grid.minH}; grid-template-columns: var(--week-gutter) repeat({weekViewDays.length}, minmax(0, 1fr));"
+          >
+            <!-- Time gutter -->
+            <div class="week-col relative">
+              {#each grid.hours as h}
+                {#if h > grid.minH}
+                  <div
+                    class="absolute left-0 right-0 flex justify-end pr-1 md:pr-2 -translate-y-1/2"
+                    style="top: {(((h - grid.minH) * 60) / gridSpanMinutes) *
+                      100}%;"
+                  >
+                    <span
+                      class="text-[9px] md:text-label-medium text-gray-600 tabular-nums leading-none"
+                    >
+                      <span class="md:hidden">{String(h).padStart(2, "0")}</span
+                      >
+                      <span class="hidden md:inline"
+                        >{String(h).padStart(2, "0")}:00</span
+                      >
+                    </span>
+                  </div>
+                {/if}
+              {/each}
+            </div>
+
+            <!-- Day columns -->
+            {#each weekViewDays as day}
+              <div class="week-col relative border-l border-surface-800/30">
+                <!-- Hour grid lines -->
+                {#each grid.hours as h}
+                  <div
+                    class="absolute left-0 right-0 border-t border-surface-800/25 pointer-events-none"
+                    style="top: {(((h - grid.minH) * 60) / gridSpanMinutes) *
+                      100}%;"
+                  ></div>
+                {/each}
+
+                <!-- Today highlight -->
+                {#if day.isToday}
+                  <div
+                    class="absolute inset-0 bg-primary-500/5 pointer-events-none"
+                  ></div>
+                {/if}
+
+                <!-- Now indicator -->
+                {#if day.isToday && nowMinutes >= grid.minH * 60 && nowMinutes <= grid.maxH * 60}
+                  <div
+                    class="absolute left-0 right-0 z-10 pointer-events-none"
+                    style="top: {((nowMinutes - grid.minH * 60) /
+                      gridSpanMinutes) *
+                      100}%;"
+                  >
+                    <div class="h-0.5 bg-red-500 rounded-full relative">
+                      <div
+                        class="absolute -left-0.5 -top-[3px] w-1.5 h-1.5 md:w-2 md:h-2 md:-top-[4px] rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)]"
+                      ></div>
+                    </div>
+                  </div>
+                {/if}
+
+                <!-- Appointments -->
                 {#each day.apps as app}
                   <button
                     onclick={() => openDetail(app)}
-                    class="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-surface-800/40 transition-colors"
+                    class="week-appt border transition-all active:scale-[0.98] hover:brightness-125 cursor-pointer {app.InfoType ===
+                      1 && !app.Afgerond
+                      ? 'bg-primary-500/16 border-primary-500/40 shadow-sm'
+                      : app.Status === 4 || app.Status === 5
+                        ? 'bg-red-500/10 border-red-500/30'
+                        : 'bg-surface-800/80 border-surface-700/50 hover:bg-surface-700/70'}"
+                    class:short={isShortAppointment(app)}
+                    class:overlap={app._columnCount > 1}
+                    style="--col: {app._column}; --cols: {app._columnCount}; top: calc({appTopPercent(
+                      app,
+                    )}% + 1px); height: calc({appHeightPercent(app)}% - 2px);"
+                    title="{app.Vakken?.[0]?.Naam ||
+                      app.Omschrijving ||
+                      'Vrij'} · {formatTime(app.Start)} – {formatTime(
+                      app.Einde,
+                    )}"
                   >
                     <span
-                      class="text-label-small tabular-nums {app.Status === 4 ||
+                      class="week-appt-title {app.Status === 4 ||
                       app.Status === 5
-                        ? 'text-red-400'
-                        : 'text-primary-300'} w-10 shrink-0"
-                      >{formatTime(app.Start)}</span
-                    >
-                    <span
-                      class="flex-1 min-w-0 text-title-small truncate {app.Status ===
-                        4 || app.Status === 5
                         ? 'text-red-400 line-through'
-                        : 'text-white'}"
-                      >{app.Vakken?.[0]?.Naam ||
-                        app.Omschrijving ||
-                        "Vrij"}</span
+                        : app.InfoType === 1 && !app.Afgerond
+                          ? 'text-primary-100'
+                          : 'text-white'}"
                     >
-                    {#if app.Lokatie}
-                      <span class="text-label-small text-gray-500 shrink-0"
-                        >{app.Lokatie}</span
-                      >
+                      {app.Vakken?.[0]?.Naam || app.Omschrijving || "Vrij"}
+                    </span>
+                    <span
+                      class="week-appt-meta {app.Status === 4 ||
+                      app.Status === 5
+                        ? 'text-red-400/70'
+                        : 'text-gray-400'}"
+                    >
+                      <span class="tabular-nums">{formatTime(app.Start)}</span>
+                      {#if app.Lokatie}
+                        <span class="hidden md:inline"> · {app.Lokatie}</span>
+                      {/if}
+                    </span>
+                    {#if app.InfoType === 1 && !app.Afgerond}
+                      <span
+                        class="week-appt-dot bg-primary-400"
+                        aria-hidden="true"
+                      ></span>
+                    {:else if app.InfoType === 1 && app.Afgerond}
+                      <span
+                        class="week-appt-dot bg-emerald-500"
+                        aria-hidden="true"
+                      ></span>
+                    {:else if [2, 3, 4, 5].includes(app.InfoType)}
+                      <span class="week-appt-dot bg-red-500" aria-hidden="true"
+                      ></span>
                     {/if}
                   </button>
-                {:else}
-                  <p class="px-3 py-2.5 text-label-small text-gray-600">
-                    Geen lessen
-                  </p>
                 {/each}
               </div>
-            </div>
-          {/each}
+            {/each}
+          </div>
         </div>
       {/if}
     {:else if dayAppointments.length === 0}
@@ -2221,7 +2365,8 @@
                   r="4"
                 /></svg
               >
-              {displayTeacherName(selectedAppointment.Docenten?.[0]?.Naam) || "Geen docent"}
+              {displayTeacherName(selectedAppointment.Docenten?.[0]?.Naam) ||
+                "Geen docent"}
             </span>
             <span
               class="flex items-center gap-1.5 text-label-small text-gray-300 bg-surface-800/80 px-2 py-1 rounded-m3-sm border border-white/5"
@@ -2712,5 +2857,109 @@
   }
   input[type="time"]::-webkit-calendar-picker-indicator {
     filter: invert(1);
+  }
+
+  /* ===== Week timeline =====
+     One grid for phones and desktops: only these two variables change with
+     the breakpoint. Phones fit the whole week (no horizontal scroll), the
+     shorter hour keeps the tap targets usable, the gutter shrinks to hour
+     numbers and entries get a compact two-line label. */
+  .week-grid {
+    --week-gutter: 30px;
+    /* 64px keeps a 50-minute lesson readable (3 title lines + time) while a
+       08:00–18:00 day fits on a 390×844 phone without scrolling. */
+    --week-hour-h: 64px;
+  }
+  .week-body,
+  .week-col {
+    height: calc(var(--week-hours) * var(--week-hour-h));
+    min-width: 0;
+  }
+  .week-appt {
+    position: absolute;
+    /* Overlapping lessons cascade on phones: each lane leaves an 8px strip
+       of the lane beneath it tappable instead of splitting ~45px columns
+       into unreadable 20px slivers. */
+    left: calc(2px + var(--col) * 8px);
+    width: calc(100% - 4px - (var(--cols) - 1) * 8px);
+    min-height: 40px;
+    padding: 2px 4px;
+    border-radius: 6px;
+    overflow: hidden;
+    text-align: left;
+    z-index: calc(5 + var(--col));
+  }
+  .week-appt-title {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+    font-size: 10px;
+    line-height: 1.15;
+    font-weight: 500;
+  }
+  .week-appt.short .week-appt-title {
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+  }
+  .week-appt-meta {
+    display: block;
+    margin-top: 1px;
+    font-size: 9px;
+    line-height: 1.1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .week-appt-dot {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    width: 4px;
+    height: 4px;
+    border-radius: 9999px;
+  }
+
+  @media (min-width: 768px) {
+    .week-grid {
+      --week-gutter: 64px;
+      --week-hour-h: 96px;
+    }
+    .week-appt {
+      left: calc(var(--col) / var(--cols) * 100% + 4px);
+      width: calc(100% / var(--cols) - 8px);
+      min-height: 44px;
+      padding: 5px 7px;
+      border-radius: 8px;
+    }
+    .week-appt-title {
+      display: block;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+      font-size: 12px;
+      line-height: 1.2;
+    }
+    /* Two lessons sharing a day column leave each lane ~60px wide; wrap the
+       subject instead of reducing it to "Wisk…". */
+    .week-appt.overlap .week-appt-title {
+      display: -webkit-box;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+      line-clamp: 2;
+      white-space: normal;
+      overflow-wrap: anywhere;
+    }
+    .week-appt-meta {
+      margin-top: 2px;
+      font-size: 11px;
+    }
+    .week-appt-dot {
+      top: 6px;
+      right: 6px;
+      width: 8px;
+      height: 8px;
+    }
   }
 </style>

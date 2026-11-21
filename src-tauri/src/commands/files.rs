@@ -25,7 +25,11 @@ pub fn safe_file_name(name: &str, fallback: &str) -> String {
         })
         .collect();
     let cleaned = cleaned.trim().trim_matches('.').trim();
-    let base = if cleaned.is_empty() { fallback } else { cleaned };
+    let base = if cleaned.is_empty() {
+        fallback
+    } else {
+        cleaned
+    };
     shorten_keep_extension(base, MAX_NAME_CHARS)
 }
 
@@ -90,7 +94,10 @@ mod tests {
     #[test]
     fn safe_file_name_removes_separators_and_reserved_characters() {
         assert_eq!(safe_file_name("verslag 1/2.pdf", "x"), "verslag 1_2.pdf");
-        assert_eq!(safe_file_name("a\\b:c*d?e\"f<g>h|i.txt", "x"), "a_b_c_d_e_f_g_h_i.txt");
+        assert_eq!(
+            safe_file_name("a\\b:c*d?e\"f<g>h|i.txt", "x"),
+            "a_b_c_d_e_f_g_h_i.txt"
+        );
     }
 
     #[test]
@@ -104,7 +111,10 @@ mod tests {
 
     #[test]
     fn safe_file_name_keeps_normal_names_untouched() {
-        assert_eq!(safe_file_name("Opdracht Nederlands (2).docx", "x"), "Opdracht Nederlands (2).docx");
+        assert_eq!(
+            safe_file_name("Opdracht Nederlands (2).docx", "x"),
+            "Opdracht Nederlands (2).docx"
+        );
         assert_eq!(safe_file_name("é-ö.pdf", "x"), "é-ö.pdf");
     }
 
@@ -128,24 +138,34 @@ mod tests {
     fn parse_share_status_understands_every_status() {
         assert_eq!(
             parse_share_status("OPENED|Download/Friday"),
-            Ok(ShareOutcome { opened: true, location: "Download/Friday".into() })
+            Ok(ShareOutcome {
+                opened: true,
+                location: "Download/Friday".into()
+            })
         );
         assert_eq!(
             parse_share_status("SAVED|Documents/School"),
-            Ok(ShareOutcome { opened: false, location: "Documents/School".into() })
+            Ok(ShareOutcome {
+                opened: false,
+                location: "Documents/School".into()
+            })
         );
-        assert_eq!(parse_share_status("ERROR|Schijf vol"), Err("Schijf vol".to_string()));
-        assert!(parse_share_status("ERROR").unwrap_err().contains("Onbekende fout"));
-        assert!(parse_share_status("???").unwrap_err().contains("Onverwacht"));
+        assert_eq!(
+            parse_share_status("ERROR|Schijf vol"),
+            Err("Schijf vol".to_string())
+        );
+        assert!(parse_share_status("ERROR")
+            .unwrap_err()
+            .contains("Onbekende fout"));
+        assert!(parse_share_status("???")
+            .unwrap_err()
+            .contains("Onverwacht"));
         assert!(parse_share_status("").unwrap_err().contains("Onverwacht"));
     }
 
     #[test]
     fn parse_share_status_keeps_pipes_inside_the_detail() {
-        assert_eq!(
-            parse_share_status("SAVED|a|b").unwrap().location,
-            "a|b"
-        );
+        assert_eq!(parse_share_status("SAVED|a|b").unwrap().location, "a|b");
     }
 
     #[test]
@@ -154,7 +174,9 @@ mod tests {
         assert_eq!(android_tree_uri(Some("")), None);
         assert_eq!(android_tree_uri(Some("/home/joris/Downloads")), None);
         assert_eq!(
-            android_tree_uri(Some(" content://com.android.externalstorage.documents/tree/primary%3AFriday ")),
+            android_tree_uri(Some(
+                " content://com.android.externalstorage.documents/tree/primary%3AFriday "
+            )),
             Some("content://com.android.externalstorage.documents/tree/primary%3AFriday")
         );
     }

@@ -113,15 +113,122 @@ impl Contact {
 }
 
 /// Uploaded attachment info
-#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UploadedAttachment {
+    #[serde(alias = "Id")]
+    pub id: i64,
+    #[serde(alias = "Naam", default)]
+    pub naam: String,
+    #[serde(rename = "type", alias = "Type", default = "default_upload_type")]
+    pub attachment_type: String,
+    #[serde(rename = "storageId", alias = "StorageId")]
+    pub storage_id: Option<String>,
+}
+
+/// One attachment of a message, as returned by its `links.bijlagen` endpoint.
+///
+/// Magister answers that endpoint with `{ "items": [...] }` where every item is
+/// a "bron": PascalCase metadata and a lowercase `links.download.href` object
+/// (some responses use a PascalCase `Links` array instead). Both shapes are
+/// normalized here so the frontend gets one stable record with `downloadUrl`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MessageAttachment {
     pub id: i64,
     pub naam: String,
-    #[serde(rename = "type", default = "default_upload_type")]
-    pub attachment_type: String,
-    #[serde(rename = "storageId")]
-    pub storage_id: Option<String>,
+    #[serde(rename = "contentType")]
+    pub content_type: Option<String>,
+    pub grootte: Option<i64>,
+    pub datum: Option<String>,
+    #[serde(rename = "downloadUrl")]
+    pub download_url: Option<String>,
+    #[serde(rename = "bronSoort")]
+    pub bron_soort: i64,
+}
+
+fn json_string(value: &serde_json::Value, keys: &[&str]) -> Option<String> {
+    keys.iter().find_map(|key| {
+        value
+            .get(*key)
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+    })
+}
+
+fn json_i64(value: &serde_json::Value, keys: &[&str]) -> Option<i64> {
+    keys.iter().find_map(|key| {
+        value.get(*key).and_then(|v| {
+            v.as_i64()
+                .or_else(|| v.as_str().and_then(|s| s.parse::<i64>().ok()))
+        })
+    })
+}
+
+/// The actual file URL out of a bron's links. Prefers `download`, then
+/// `contents`/`content`, and only then `self` (also an indirection link that
+/// `download_file` can resolve).
+fn attachment_download_href(links: &serde_json::Value) -> Option<String> {
+    if let Some(array) = links.as_array() {
+        for wanted in ["download", "contents", "content", "self"] {
+            let found = array.iter().find_map(|link| {
+                let rel = json_string(link, &["Rel", "rel"])?.to_ascii_lowercase();
+                if rel == wanted {
+                    json_string(link, &["Href", "href"])
+                } else {
+                    None
+                }
+            });
+            if found.is_some() {
+                return found;
+            }
+        }
+        return None;
+    }
+
+    if let Some(download) = links.get("download") {
+        if let Some(href) = download.as_str() {
+            return Some(href.to_string());
+        }
+        if let Some(href) = json_string(download, &["href", "Href"]) {
+            return Some(href);
+        }
+    }
+
+    json_string(links, &["downloadUrl", "DownloadUrl"])
+}
+
+impl MessageAttachment {
+    pub fn from_json(value: &serde_json::Value) -> Option<Self> {
+        let id = json_i64(value, &["Id", "id"])?;
+        let naam = json_string(value, &["Naam", "naam"]).unwrap_or_else(|| format!("bijlage-{id}"));
+        let links = value.get("links").or_else(|| value.get("Links"));
+        let download_url = links
+            .and_then(attachment_download_href)
+            .or_else(|| json_string(value, &["Url", "url"]));
+
+        Some(Self {
+            id,
+            naam,
+            content_type: json_string(value, &["ContentType", "contentType"]),
+            grootte: json_i64(value, &["Grootte", "grootte"]),
+            datum: json_string(value, &["Datum", "datum", "aangemaaktOp"]),
+            download_url,
+            bron_soort: json_i64(value, &["BronSoort", "bronSoort"]).unwrap_or(1),
+        })
+    }
+}
+
+/// Normalize the `links.bijlagen` answer (`Items`/`items` with bron records).
+pub fn parse_message_attachments(data: &serde_json::Value) -> Vec<MessageAttachment> {
+    data.get("Items")
+        .or_else(|| data.get("items"))
+        .and_then(|items| items.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(MessageAttachment::from_json)
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 #[allow(dead_code)]
@@ -180,6 +287,57 @@ pub struct ContactRef {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AttachmentRef {
     pub id: i64,
+    /// Shown on the sent message. Magister's own client sends it too.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub naam: Option<String>,
     #[serde(rename = "type")]
     pub ref_type: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_message_attachments_from_lowercase_links() {
+        let data = serde_json::json!({
+            "items": [
+                {
+                    "Id": 7,
+                    "Naam": "brief.pdf",
+                    "ContentType": "application/pdf",
+                    "Grootte": 2048,
+                    "Datum": "2026-01-01T10:00:00",
+                    "BronSoort": 1,
+                    "links": { "download": { "href": "/api/berichten/1/bijlagen/7/contents" } }
+                },
+                { "Naam": "zonder id" }
+            ]
+        });
+        let parsed = parse_message_attachments(&data);
+        assert_eq!(parsed.len(), 1);
+        assert_eq!(parsed[0].id, 7);
+        assert_eq!(parsed[0].naam, "brief.pdf");
+        assert_eq!(
+            parsed[0].download_url.as_deref(),
+            Some("/api/berichten/1/bijlagen/7/contents")
+        );
+        assert_eq!(parsed[0].bron_soort, 1);
+    }
+
+    #[test]
+    fn parses_pascal_case_links_and_prefers_download() {
+        let data = serde_json::json!({
+            "Items": [{
+                "Id": 8,
+                "Naam": "x",
+                "Links": [
+                    { "Rel": "Self", "Href": "/self" },
+                    { "Rel": "download", "Href": "/download" }
+                ]
+            }]
+        });
+        let parsed = parse_message_attachments(&data);
+        assert_eq!(parsed[0].download_url.as_deref(), Some("/download"));
+    }
 }

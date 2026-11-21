@@ -2,8 +2,9 @@ use tauri::State;
 
 use crate::client::SharedClient;
 use crate::models::messages::{
-    AttachmentRef, Bericht, Contact, ContactRef, ContactsResponse, FoldersResponse, MessagesFolder,
-    MessagesResponse, SendMessageRequest,
+    parse_message_attachments, AttachmentRef, Bericht, Contact, ContactRef, ContactsResponse,
+    FoldersResponse, MessageAttachment, MessagesFolder, MessagesResponse, SendMessageRequest,
+    UploadedAttachment,
 };
 
 /// Get all message folders.
@@ -39,7 +40,9 @@ pub async fn get_messages(
     }
 
     let path = format!("{}?{}", link, params.join("&"));
-    let data = crate::client::get_with_shared(&client, &path).await.map_err(|e| e.to_string())?;
+    let data = crate::client::get_with_shared(&client, &path)
+        .await
+        .map_err(|e| e.to_string())?;
 
     let resp: MessagesResponse = serde_json::from_value(data).map_err(|e| e.to_string())?;
 
@@ -53,8 +56,69 @@ pub async fn get_message_detail(
     self_link: String,
 ) -> Result<Bericht, String> {
     let link = self_link.replace("/api/", "");
-    let data = crate::client::get_with_shared(&client, &link).await.map_err(|e| e.to_string())?;
+    let data = crate::client::get_with_shared(&client, &link)
+        .await
+        .map_err(|e| e.to_string())?;
     serde_json::from_value(data).map_err(|e| e.to_string())
+}
+
+/// Get the attachments of one message (`links.bijlagen` of the message).
+#[tauri::command]
+pub async fn get_message_attachments(
+    client: State<'_, SharedClient>,
+    bijlagen_link: String,
+) -> Result<Vec<MessageAttachment>, String> {
+    let link = bijlagen_link.replace("/api/", "");
+    let data = crate::client::get_with_shared(&client, &link)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(parse_message_attachments(&data))
+}
+
+/// Upload one file for a message. Magister's message composer posts a
+/// multipart form to `/bestanden` (not the 3-step blob upload used by
+/// assignments) and returns the created attachments; the new message then
+/// references the first one as `{ id, naam, type: "upload" }`.
+///
+/// The bytes arrive as the raw request body (Android's picker only yields
+/// `content://` URIs, so a path is useless there), with `x-file-name`
+/// (URI-encoded) and optionally `x-content-type` as headers.
+#[tauri::command]
+pub async fn upload_message_attachment_bytes(
+    client: State<'_, SharedClient>,
+    request: tauri::ipc::Request<'_>,
+) -> Result<UploadedAttachment, String> {
+    let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
+        return Err("Verwachtte de bestandsinhoud als ruwe bytes.".to_string());
+    };
+    let (file_name, mime_type) = crate::commands::assignments::upload_meta(
+        request
+            .headers()
+            .get("x-file-name")
+            .and_then(|v| v.to_str().ok()),
+        request
+            .headers()
+            .get("x-content-type")
+            .and_then(|v| v.to_str().ok()),
+    )?;
+
+    let mut c = client.lock().await;
+    let data = c
+        .post_multipart("bestanden", &file_name, &mime_type, bytes.clone())
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let first = data
+        .as_array()
+        .and_then(|items| items.first())
+        .ok_or_else(|| "Magister gaf geen bijlage terug.".to_string())?;
+    let mut attachment: UploadedAttachment =
+        serde_json::from_value(first.clone()).map_err(|e| e.to_string())?;
+    attachment.attachment_type = "upload".to_string();
+    if attachment.naam.trim().is_empty() {
+        attachment.naam = file_name;
+    }
+    Ok(attachment)
 }
 
 /// Send a new message.
@@ -70,7 +134,7 @@ pub async fn send_message(
     is_concept: bool,
     send_option: Option<String>, // "standaard", "beantwoord", "doorgestuurd"
     related_message_id: Option<i64>,
-    attachment_ids: Vec<i64>,
+    attachments: Vec<AttachmentRef>,
 ) -> Result<(), String> {
     let mut c = client.lock().await;
 
@@ -92,11 +156,13 @@ pub async fn send_message(
         onderwerp: subject,
         verzend_optie: send_option.unwrap_or("standaard".to_string()),
         gerelateerd_bericht_id: related_message_id,
-        bijlagen: attachment_ids
+        bijlagen: attachments
             .into_iter()
-            .map(|id| AttachmentRef {
-                id,
-                ref_type: "upload".to_string(),
+            .map(|mut attachment| {
+                if attachment.ref_type.trim().is_empty() {
+                    attachment.ref_type = "upload".to_string();
+                }
+                attachment
             })
             .collect(),
     };
@@ -218,9 +284,12 @@ pub async fn search_contacts(
     let max = max_results.unwrap_or(250);
 
     let encoded: String = url::form_urlencoded::byte_serialize(query.as_bytes()).collect();
-    let data = crate::client::get_with_shared(&client, &format!("contacten/personen?q={encoded}&top={max}&type=alle"))
-        .await
-        .map_err(|e| e.to_string())?;
+    let data = crate::client::get_with_shared(
+        &client,
+        &format!("contacten/personen?q={encoded}&top={max}&type=alle"),
+    )
+    .await
+    .map_err(|e| e.to_string())?;
 
     let resp: ContactsResponse = serde_json::from_value(data).map_err(|e| e.to_string())?;
 

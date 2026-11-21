@@ -5,15 +5,15 @@
    * Opening the home screen counts as the daily check-in.
    */
   import { onMount } from "svelte";
-  import Icon from "$lib/components/Icon.svelte";
-  import { quests, recordQuestEvent } from "$lib/quests-store";
+  import Icon from "#lib/components/Icon.svelte";
+  import { quests, recordQuestEvent } from "#lib/quests-store.ts";
   import {
     tierInfo,
     todaysRows,
     weekRows,
     weekStreak,
     DAILY_XP_CAP,
-  } from "$lib/quests";
+  } from "#lib/quests.ts";
 
   onMount(() => recordQuestEvent("app_open"));
 

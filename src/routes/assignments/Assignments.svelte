@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { personId, userSettings, resumedAt } from "$lib/stores";
+  import { personId, userSettings, resumedAt } from "#lib/stores.ts";
   import { get } from "svelte/store";
   import {
     getAssignments,
@@ -12,14 +12,14 @@
     uploadAssignmentAttachment,
     formatTeacherName,
     downloadFile,
-  } from "$lib/api";
-  import { cacheGet, cacheRefresh } from "$lib/cache";
-  import { pickDownloadHref, describeDownload } from "$lib/attachments";
+  } from "#lib/api.ts";
+  import { cacheGet, cacheRefresh } from "#lib/cache.ts";
+  import { pickDownloadHref, describeDownload } from "#lib/attachments.ts";
   import {
     sortSchoolyears,
     currentSchoolyear,
     schoolyearLabel,
-  } from "$lib/schoolyears";
+  } from "#lib/schoolyears.ts";
   import {
     getAssignmentStatus,
     isOverdue,
@@ -38,20 +38,20 @@
     type StatusFilter,
     type SortMode,
     type HandInFile,
-  } from "$lib/assignments";
+  } from "#lib/assignments.ts";
   import { onMount, untrack } from "svelte";
   import { fade, fly } from "svelte/transition";
-  import RichTextEditor from "$lib/components/RichTextEditor.svelte";
-  import TranslateButton from "$lib/components/TranslateButton.svelte";
-  import Button from "$lib/components/Button.svelte";
-  import Chip from "$lib/components/Chip.svelte";
-  import IconButton from "$lib/components/IconButton.svelte";
+  import RichTextEditor from "#lib/components/RichTextEditor.svelte";
+  import TranslateButton from "#lib/components/TranslateButton.svelte";
+  import Button from "#lib/components/Button.svelte";
+  import Chip from "#lib/components/Chip.svelte";
+  import IconButton from "#lib/components/IconButton.svelte";
   import type {
     Assignment,
     AssignmentAttachment,
     AssignmentVersion,
     Schoolyear,
-  } from "$lib/types";
+  } from "#lib/types.ts";
 
   /** One version of the open assignment: the link item plus its loaded content. */
   type VersionView = {

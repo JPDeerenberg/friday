@@ -5,8 +5,8 @@
    * Opened-state, XP and pins come from the persisted collection state.
    */
   import { fade, fly } from "svelte/transition";
-  import GradeCardView from "$lib/components/GradeCardView.svelte";
-  import Icon from "$lib/components/Icon.svelte";
+  import GradeCardView from "#lib/components/GradeCardView.svelte";
+  import Icon from "#lib/components/Icon.svelte";
   import {
     ACHIEVEMENTS,
     RARITIES,
@@ -22,7 +22,7 @@
     type CardData,
     type Rarity,
     type Stamp,
-  } from "$lib/cards";
+  } from "#lib/cards.ts";
   import {
     DEFAULT_FILTERS,
     activeFilterCount,
@@ -31,8 +31,8 @@
     type CatalogFilters,
     type CatalogSort,
     type CatalogStatus,
-  } from "$lib/card-catalog";
-  import { gradeRevealState, toggleShowcase } from "$lib/grade-reveal";
+  } from "#lib/card-catalog.ts";
+  import { gradeRevealState, toggleShowcase } from "#lib/grade-reveal.ts";
 
   let {
     cards,
@@ -62,6 +62,8 @@
     season && seasons.includes(season) ? season : seasons[0],
   );
   const seasonPoints = $derived(seasonXp(cards, openedSet, activeSeason));
+  /** Opened within the album currently shown (one school year), not all time. */
+  const openedCount = $derived(cards.filter((c) => openedSet.has(c.id)).length);
   const li = $derived(levelInfo(seasonPoints));
   const career = $derived(careerInfo(tally.xp));
   const completeSets = $derived(countCompleteSets(cards, openedSet));
@@ -219,7 +221,7 @@
     <div class="flex flex-wrap gap-2">
       <span class="chip"
         ><Icon name="cards" size={13} />
-        {tally.total} / {cards.length} geopend</span
+        {openedCount} / {cards.length} geopend</span
       >
       {#if tally.bestStreak > 1}<span class="chip"
           ><Icon name="trend-up" size={13} /> beste reeks {tally.bestStreak}</span

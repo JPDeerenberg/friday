@@ -1,7 +1,7 @@
 <script lang="ts">
-  import type { AiScheduleItem } from "$lib/ai-schedule-types";
+  import type { AiScheduleItem } from "#lib/ai-schedule-types.ts";
   import DurationUrgencyInput from "./DurationUrgencyInput.svelte";
-  import Icon from "$lib/components/Icon.svelte";
+  import Icon from "#lib/components/Icon.svelte";
 
   let {
     item,

@@ -137,11 +137,7 @@ fn apply_stream_delta(
         return None;
     }
     let v: Value = serde_json::from_str(payload).ok()?;
-    let delta = v
-        .get("choices")?
-        .as_array()?
-        .first()?
-        .get("delta")?;
+    let delta = v.get("choices")?.as_array()?.first()?.get("delta")?;
     let mut text = String::new();
     if let Some(t) = delta.get("content").and_then(|c| c.as_str()) {
         if !t.is_empty() {
@@ -238,7 +234,10 @@ impl AiProvider for OpenAiProvider {
             .and_then(|d| d.as_array())
             .map(|arr| {
                 arr.iter()
-                    .filter_map(|m| m.get("id").and_then(|id| id.as_str().map(|s| s.to_string())))
+                    .filter_map(|m| {
+                        m.get("id")
+                            .and_then(|id| id.as_str().map(|s| s.to_string()))
+                    })
                     .collect()
             })
             .unwrap_or_default();
@@ -589,7 +588,10 @@ mod tests {
         assert_eq!(apply_stream_delta(d2, &mut content, &mut calls), None);
         assert_eq!(content, "Hallo");
         assert_eq!(apply_stream_delta("[DONE]", &mut content, &mut calls), None);
-        assert_eq!(apply_stream_delta("not json", &mut content, &mut calls), None);
+        assert_eq!(
+            apply_stream_delta("not json", &mut content, &mut calls),
+            None
+        );
         let entry = calls.get(&0).unwrap();
         assert_eq!(entry.id, "call_1");
         assert_eq!(entry.name, "get_grades");

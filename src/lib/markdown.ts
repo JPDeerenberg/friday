@@ -1,4 +1,4 @@
-import { sanitizeHtml } from '$lib/sanitize';
+import { sanitizeHtml } from '#lib/sanitize.ts';
 
 type MarkedInstance = {
   parse: (src: string) => string;

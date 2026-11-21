@@ -1,7 +1,7 @@
 <script lang="ts">
   /** Home-screen teaser that opens the Wrapped story. */
-  import { seasonLabel, seasonOf } from "$lib/cards";
-  import Icon from "$lib/components/Icon.svelte";
+  import { seasonLabel, seasonOf } from "#lib/cards.ts";
+  import Icon from "#lib/components/Icon.svelte";
 
   let { onopen }: { onopen: () => void } = $props();
   const season = seasonOf(null);

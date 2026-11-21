@@ -1,16 +1,16 @@
 <script lang="ts">
-  import { personId, resumedAt } from "$lib/stores";
-  import { getAbsences, formatDate, getSchoolyears } from "$lib/api";
-  import { cacheGet, cacheRefresh } from "$lib/cache";
+  import { personId, resumedAt } from "#lib/stores.ts";
+  import { getAbsences, formatDate, getSchoolyears } from "#lib/api.ts";
+  import { cacheGet, cacheRefresh } from "#lib/cache.ts";
   import {
     sortSchoolyears,
     currentSchoolyear,
     schoolyearLabel,
-  } from "$lib/schoolyears";
+  } from "#lib/schoolyears.ts";
   import { onMount, untrack } from "svelte";
   import { fade, fly, slide } from "svelte/transition";
-  import IconButton from "$lib/components/IconButton.svelte";
-  import type { Absence, Schoolyear } from "$lib/types";
+  import IconButton from "#lib/components/IconButton.svelte";
+  import type { Absence, Schoolyear } from "#lib/types.ts";
 
   let absences = $state<Absence[]>([]);
   let schoolyears = $state<Schoolyear[]>([]);

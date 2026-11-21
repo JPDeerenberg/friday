@@ -6,11 +6,11 @@
    * hidden), and is a "what if", never a verdict: the wording stays encouraging.
    */
   import { untrack } from "svelte";
-  import Icon from "$lib/components/Icon.svelte";
-  import { personId, userSettings } from "$lib/stores";
-  import { loadCurrentYearGrades } from "$lib/current-year-grades";
-  import { recordQuestEvent } from "$lib/quests-store";
-  import { gradePeek, gradeRevealState, splitGrades } from "$lib/grade-reveal";
+  import Icon from "#lib/components/Icon.svelte";
+  import { personId, userSettings } from "#lib/stores.ts";
+  import { loadCurrentYearGrades } from "#lib/current-year-grades.ts";
+  import { recordQuestEvent } from "#lib/quests-store.ts";
+  import { gradePeek, gradeRevealState, splitGrades } from "#lib/grade-reveal.ts";
   import {
     subjectTotals,
     averageWith,
@@ -18,8 +18,8 @@
     oneDecimal,
     reactionFor,
     type SubjectTotals,
-  } from "$lib/quick-grades";
-  import type { Grade } from "$lib/types";
+  } from "#lib/quick-grades.ts";
+  import type { Grade } from "#lib/types.ts";
 
   let allGrades = $state<Grade[]>([]);
   let loading = $state(true);

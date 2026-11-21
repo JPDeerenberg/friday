@@ -4,8 +4,8 @@
   // fetched with the session Bearer into a Blob object URL. Anything else
   // passes through; on any failure the fallback slot renders instead.
   import { onMount } from 'svelte';
-  import { loadWebSession, sessionTierA } from '$lib/web-session';
-  import { webAuthedImageUrl } from '$lib/web-tier-b';
+  import { loadWebSession, sessionTierA } from '#lib/web-session.ts';
+  import { webAuthedImageUrl } from '#lib/web-tier-b.ts';
 
   let {
     src,

@@ -1,21 +1,34 @@
 <script lang="ts">
-  import { displayTeacherName } from "$lib/teachers";
+  import { displayTeacherName } from "#lib/teachers.ts";
   import {
+    downloadFile,
     getMessageFolders,
     getMessages,
     getMessageDetail,
+    getMessageAttachments,
     markMessagesAsRead,
     searchContacts,
     sendMessage,
-  } from "$lib/api";
-  import { cacheGet, cacheRefresh } from "$lib/cache";
-  import { resumedAt } from "$lib/stores";
+    uploadMessageAttachment,
+  } from "#lib/api.ts";
+  import { cacheGet, cacheRefresh } from "#lib/cache.ts";
+  import { resumedAt, userSettings } from "#lib/stores.ts";
   import { onMount, untrack } from "svelte";
+  import { get } from "svelte/store";
   import { slide, fade } from "svelte/transition";
-  import Button from "$lib/components/Button.svelte";
-  import Chip from "$lib/components/Chip.svelte";
-  import IconButton from "$lib/components/IconButton.svelte";
-  import type { Contact, Message, MessagesFolder } from "$lib/types";
+  import Button from "#lib/components/Button.svelte";
+  import Chip from "#lib/components/Chip.svelte";
+  import IconButton from "#lib/components/IconButton.svelte";
+  import { describeDownload } from "#lib/attachments.ts";
+  import { openExternalUrl } from "#lib/bron-actions.ts";
+  import { formatBytes } from "#lib/assignments.ts";
+  import type {
+    Contact,
+    Message,
+    MessageAttachment,
+    MessageAttachmentRef,
+    MessagesFolder,
+  } from "#lib/types.ts";
 
   type Recipient = {
     id: number;
@@ -65,6 +78,14 @@
   let composeRecipients = $state<Recipient[]>([]);
   let composeSending = $state(false);
   let composeError = $state<string | null>(null);
+  let composeAttachments = $state<MessageAttachmentRef[]>([]);
+  let composeUploading = $state(false);
+
+  // Attachments of the opened message
+  let messageAttachments = $state<MessageAttachment[]>([]);
+  let attachmentsLoading = $state(false);
+  let attachmentsError = $state<string | null>(null);
+  let downloadingAttachment = $state<number | null>(null);
 
   onMount(async () => {
     try {
@@ -179,11 +200,67 @@
       selectedMessage = msg;
     }
     loadingDetail = false;
+    if (selectedMessage) await loadAttachments(selectedMessage, msg);
+  }
+
+  async function loadAttachments(msg: Message, fallback?: Message) {
+    messageAttachments = [];
+    attachmentsError = null;
+    // The detail response normally carries the link, but fall back to the list
+    // item's link (same fallback Discipulus uses).
+    const href = msg.links?.bijlagen?.href ?? fallback?.links?.bijlagen?.href;
+    const hasAttachments = msg.heeftBijlagen || fallback?.heeftBijlagen;
+    if (!href) {
+      if (hasAttachments) attachmentsError = "Bijlagen zijn niet beschikbaar.";
+      return;
+    }
+    attachmentsLoading = true;
+    const messageId = msg.id;
+    try {
+      const loaded = await getMessageAttachments(href);
+      if (selectedMessage?.id === messageId) messageAttachments = loaded;
+    } catch (e) {
+      console.warn("Could not load message attachments", e);
+      if (selectedMessage?.id === messageId)
+        attachmentsError = "Bijlagen laden mislukt.";
+    } finally {
+      if (selectedMessage?.id === messageId) attachmentsLoading = false;
+    }
+  }
+
+  async function downloadAttachment(attachment: MessageAttachment) {
+    if (downloadingAttachment) return;
+    if (!attachment.downloadUrl) {
+      alert("Deze bijlage heeft geen downloadlink.");
+      return;
+    }
+    downloadingAttachment = attachment.id;
+    try {
+      if (attachment.bronSoort === 3) {
+        await openExternalUrl(attachment.downloadUrl);
+        return;
+      }
+      const downloadDir = get(userSettings).downloadDir || "";
+      const outcome = await downloadFile(
+        attachment.downloadUrl,
+        attachment.naam,
+        downloadDir,
+      );
+      const note = describeDownload(outcome);
+      if (note) alert(note);
+    } catch (e) {
+      alert(`Download mislukt: ${e instanceof Error ? e.message : e}`);
+    } finally {
+      downloadingAttachment = null;
+    }
   }
 
   function goBack() {
     panel = "list";
     selectedMessage = null;
+    messageAttachments = [];
+    attachmentsError = null;
+    attachmentsLoading = false;
   }
 
   async function doSearchContacts() {
@@ -203,8 +280,39 @@
     composeContacts = [];
   }
 
+  async function onComposeFilesPicked(event: Event) {
+    const input = event.currentTarget as HTMLInputElement;
+    const files = Array.from(input.files ?? []);
+    if (files.length === 0) return;
+    composeUploading = true;
+    composeError = null;
+    const failed: string[] = [];
+    for (const file of files) {
+      try {
+        const uploaded = await uploadMessageAttachment(file);
+        if (!composeAttachments.some((a) => a.id === uploaded.id))
+          composeAttachments = [...composeAttachments, uploaded];
+      } catch (e) {
+        failed.push(`${file.name}: ${e instanceof Error ? e.message : e}`);
+      }
+    }
+    composeUploading = false;
+    input.value = "";
+    if (failed.length > 0)
+      composeError = `Uploaden mislukt — ${failed.join("; ")}`;
+  }
+
+  function removeComposeAttachment(id: number) {
+    composeAttachments = composeAttachments.filter((a) => a.id !== id);
+  }
+
   async function doSend() {
-    if (composeRecipients.length === 0 || !composeSubject.trim()) return;
+    if (
+      composeRecipients.length === 0 ||
+      !composeSubject.trim() ||
+      composeUploading
+    )
+      return;
     composeSending = true;
     composeError = null;
     try {
@@ -216,12 +324,13 @@
         htmlContent: composeContent,
         hasPriority: false,
         isConcept: false,
-        attachmentIds: [],
+        attachments: composeAttachments,
       });
       showCompose = false;
       composeSubject = "";
       composeContent = "";
       composeRecipients = [];
+      composeAttachments = [];
       await loadMessages(true);
     } catch (e) {
       // Used to be console-only: a failed send looked like a dead button.
@@ -233,6 +342,8 @@
 
   function replyToMessage() {
     if (!selectedMessage) return;
+    composeError = null;
+    composeAttachments = [];
     if (selectedMessage.afzender)
       composeRecipients = [selectedMessage.afzender];
     composeSubject = `Re: ${selectedMessage.onderwerp ?? ""}`;
@@ -256,6 +367,89 @@
     if (!searchOpen) searchQuery = "";
   }
 </script>
+
+{#snippet attachmentsBlock()}
+  {#if attachmentsLoading || attachmentsError || messageAttachments.length > 0}
+    <div class="space-y-2">
+      <p class="flex items-center gap-1.5 text-label-medium text-gray-500">
+        <svg
+          class="w-3.5 h-3.5"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          ><path
+            d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"
+          /></svg
+        >
+        Bijlagen
+        {#if messageAttachments.length > 0}
+          <span class="text-gray-600">({messageAttachments.length})</span>
+        {/if}
+      </p>
+      {#if attachmentsLoading}
+        <div class="flex items-center gap-2 text-body-small text-gray-600">
+          <div
+            class="w-3.5 h-3.5 border-2 border-primary-500 border-t-transparent rounded-full animate-spin"
+          ></div>
+          Laden...
+        </div>
+      {:else if attachmentsError}
+        <p class="text-body-small text-red-400">{attachmentsError}</p>
+      {:else}
+        <div class="space-y-1.5">
+          {#each messageAttachments as attachment (attachment.id)}
+            <button
+              type="button"
+              onclick={() => downloadAttachment(attachment)}
+              disabled={downloadingAttachment !== null}
+              class="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-m3-sm bg-surface-800/60 border border-surface-700/40 hover:border-primary-500/40 hover:bg-surface-800 transition-all text-left disabled:opacity-60"
+            >
+              <svg
+                class="w-4 h-4 text-primary-400 shrink-0"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                ><path
+                  d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"
+                /><path d="M14 2v4a2 2 0 0 0 2 2h4" /></svg
+              >
+              <span class="min-w-0 flex-1">
+                <span class="block truncate text-body-medium text-gray-200"
+                  >{attachment.naam}</span
+                >
+                <span class="block text-label-small text-gray-600">
+                  {#if downloadingAttachment === attachment.id}
+                    Downloaden...
+                  {:else if attachment.grootte && attachment.grootte > 0}
+                    {formatBytes(attachment.grootte)}
+                  {/if}
+                </span>
+              </span>
+              <svg
+                class="w-4 h-4 text-gray-500 shrink-0"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                ><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline
+                  points="7 10 12 15 17 10"
+                /><line x1="12" y1="15" x2="12" y2="3" /></svg
+              >
+            </button>
+          {/each}
+        </div>
+      {/if}
+    </div>
+  {/if}
+{/snippet}
 
 <div class="flex flex-col h-full bg-surface-950">
   <!-- ====== LIST PANEL ====== -->
@@ -579,9 +773,25 @@
                     {displayTeacherName(msg.afzender?.naam) || "Onbekend"}
                   </p>
                 </div>
-                <span class="text-label-small text-gray-600 shrink-0"
-                  >{formatDate(msg.verzondenOp ?? "")}</span
-                >
+                <div class="flex items-center gap-1.5 shrink-0">
+                  {#if msg.heeftBijlagen}
+                    <svg
+                      class="w-3.5 h-3.5 text-gray-600"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      ><path
+                        d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"
+                      /></svg
+                    >
+                  {/if}
+                  <span class="text-label-small text-gray-600"
+                    >{formatDate(msg.verzondenOp ?? "")}</span
+                  >
+                </div>
               </div>
               <p class="text-body-small text-gray-500 truncate mt-0.5 pl-4.5">
                 {msg.onderwerp ?? "(geen onderwerp)"}
@@ -638,11 +848,14 @@
             <div
               class="w-9 h-9 rounded-full bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center text-on-fill text-sm font-black shrink-0 shadow-lg shadow-primary-500/25"
             >
-              {displayTeacherName(selectedMessage.afzender?.naam)?.[0]?.toUpperCase() ?? "?"}
+              {displayTeacherName(
+                selectedMessage.afzender?.naam,
+              )?.[0]?.toUpperCase() ?? "?"}
             </div>
             <div>
               <p class="text-title-small text-gray-200">
-                {displayTeacherName(selectedMessage.afzender?.naam) || "Onbekend"}
+                {displayTeacherName(selectedMessage.afzender?.naam) ||
+                  "Onbekend"}
               </p>
               {#if selectedMessage.ontvangers?.length}
                 <p class="text-body-small text-gray-600">
@@ -661,6 +874,8 @@
               {@html selectedMessage.inhoud}
             </div>
           {/if}
+
+          {@render attachmentsBlock()}
 
           <div class="pt-4 border-t border-surface-800/50 flex flex-wrap gap-2">
             <Button variant="filled" onclick={replyToMessage} class="px-5">
@@ -738,11 +953,14 @@
               <div
                 class="w-8 h-8 rounded-full bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center text-on-fill text-xs font-black shrink-0"
               >
-                {displayTeacherName(selectedMessage.afzender?.naam)?.[0]?.toUpperCase() ?? "?"}
+                {displayTeacherName(
+                  selectedMessage.afzender?.naam,
+                )?.[0]?.toUpperCase() ?? "?"}
               </div>
               <div>
                 <p class="text-title-small text-gray-200">
-                  {displayTeacherName(selectedMessage.afzender?.naam) || "Onbekend"}
+                  {displayTeacherName(selectedMessage.afzender?.naam) ||
+                    "Onbekend"}
                 </p>
                 {#if selectedMessage.ontvangers?.length}
                   <p class="text-body-small text-gray-600">
@@ -762,6 +980,8 @@
             {:else}
               <p class="text-body-medium text-gray-600">Geen berichtinhoud</p>
             {/if}
+
+            {@render attachmentsBlock()}
 
             <Button variant="filled" onclick={replyToMessage} class="w-full">
               <svg
@@ -925,6 +1145,83 @@
             class="w-full px-3 py-2.5 rounded-m3-xs bg-surface-800 border border-surface-700 text-gray-100 text-body-large resize-none focus:outline-none focus:border-primary-500"
           ></textarea>
         </div>
+
+        <!-- Attachments -->
+        <div>
+          <div class="flex items-center justify-between mb-1.5">
+            <span class="text-label-medium text-gray-500">Bijlagen</span>
+            <label
+              for="composeFiles"
+              class="flex items-center gap-1.5 px-2.5 py-1 rounded-m3-sm bg-surface-800 border border-surface-700 text-label-medium text-gray-300 cursor-pointer hover:bg-surface-700 transition-colors {composeUploading
+                ? 'opacity-50 pointer-events-none'
+                : ''}"
+            >
+              <svg
+                class="w-3.5 h-3.5"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.5"
+                stroke-linecap="round"><path d="M12 5v14M5 12h14" /></svg
+              >
+              Bestand
+            </label>
+            <input
+              id="composeFiles"
+              type="file"
+              multiple
+              class="hidden"
+              disabled={composeUploading}
+              onchange={onComposeFilesPicked}
+            />
+          </div>
+          {#if composeUploading}
+            <p class="flex items-center gap-2 text-body-small text-gray-500">
+              <span
+                class="w-3.5 h-3.5 border-2 border-primary-500 border-t-transparent rounded-full animate-spin"
+              ></span>
+              Uploaden...
+            </p>
+          {/if}
+          {#if composeAttachments.length > 0}
+            <div class="mt-1 space-y-1.5">
+              {#each composeAttachments as attachment (attachment.id)}
+                <div
+                  class="flex items-center gap-2 px-3 py-2 rounded-m3-xs bg-surface-800 border border-surface-700/60"
+                >
+                  <svg
+                    class="w-3.5 h-3.5 text-primary-400 shrink-0"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    ><path
+                      d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"
+                    /><path d="M14 2v4a2 2 0 0 0 2 2h4" /></svg
+                  >
+                  <span class="flex-1 truncate text-body-small text-gray-200"
+                    >{attachment.naam}</span
+                  >
+                  <IconButton
+                    size="sm"
+                    onclick={() => removeComposeAttachment(attachment.id)}
+                    aria-label="Bijlage verwijderen"
+                  >
+                    <svg
+                      class="w-3 h-3"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="3"><path d="M18 6 6 18M6 6l12 12" /></svg
+                    >
+                  </IconButton>
+                </div>
+              {/each}
+            </div>
+          {/if}
+        </div>
       </div>
 
       <!-- Sticky action footer — always visible above keyboard -->
@@ -943,6 +1240,7 @@
           onclick={() => {
             showCompose = false;
             composeError = null;
+            composeAttachments = [];
           }}
           class="flex-1"
         >
@@ -952,6 +1250,7 @@
           variant="filled"
           onclick={doSend}
           disabled={composeSending ||
+            composeUploading ||
             composeRecipients.length === 0 ||
             !composeSubject.trim()}
           class="flex-1"

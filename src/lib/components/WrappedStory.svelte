@@ -5,11 +5,11 @@
    * Left/right tap or arrow keys to move, Escape to close.
    */
   import { onMount, untrack } from "svelte";
-  import Icon from "$lib/components/Icon.svelte";
+  import Icon from "#lib/components/Icon.svelte";
   import { fade, fly } from "svelte/transition";
-  import { personId, userSettings } from "$lib/stores";
-  import { gradePeek, gradeRevealState, splitGrades } from "$lib/grade-reveal";
-  import { loadCurrentYearGrades } from "$lib/current-year-grades";
+  import { personId, userSettings } from "#lib/stores.ts";
+  import { gradePeek, gradeRevealState, splitGrades } from "#lib/grade-reveal.ts";
+  import { loadCurrentYearGrades } from "#lib/current-year-grades.ts";
   import {
     buildCards,
     careerInfo,
@@ -18,15 +18,15 @@
     seasonLabel,
     seasonOf,
     seasonXp,
-  } from "$lib/cards";
-  import { quests, recordQuestEvent } from "$lib/quests-store";
-  import { tierInfo, weekStreak } from "$lib/quests";
+  } from "#lib/cards.ts";
+  import { quests, recordQuestEvent } from "#lib/quests-store.ts";
+  import { tierInfo, weekStreak } from "#lib/quests.ts";
   import {
     buildWrapped,
     wrappedShareText,
     type WrappedSlide,
-  } from "$lib/wrapped";
-  import type { Grade } from "$lib/types";
+  } from "#lib/wrapped.ts";
+  import type { Grade } from "#lib/types.ts";
 
   let { onclose }: { onclose: () => void } = $props();
 

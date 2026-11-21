@@ -9,10 +9,7 @@ pub use crate::ai::providers::AiMessage;
 
 /// Send a chat message and return just the text response.
 /// This is the version WITHOUT Magister data access — no tools are passed to the AI.
-pub async fn send_chat(
-    config: &AiConfig,
-    messages: &[AiMessage],
-) -> Result<String, String> {
+pub async fn send_chat(config: &AiConfig, messages: &[AiMessage]) -> Result<String, String> {
     validate_config(config)?;
 
     let provider = get_provider(&config.provider);
@@ -102,7 +99,11 @@ mod tests {
 
     #[test]
     fn system_prompt_includes_real_today_date() {
-        let prompt = build_school_context_system_prompt(None, Some(&crate::ai::tools::get_all_tool_defs()), None);
+        let prompt = build_school_context_system_prompt(
+            None,
+            Some(&crate::ai::tools::get_all_tool_defs()),
+            None,
+        );
         let today = today_amsterdam();
 
         assert!(prompt.contains("NU:"), "moet het NU-blok bevatten");
@@ -125,7 +126,8 @@ mod tests {
     #[test]
     fn system_prompt_date_context_present_for_all_modes() {
         for tools in [Some(crate::ai::tools::get_all_tool_defs()), None] {
-            let with_page = build_school_context_system_prompt(Some("Testpagina"), tools.as_deref(), None);
+            let with_page =
+                build_school_context_system_prompt(Some("Testpagina"), tools.as_deref(), None);
             let without_page = build_school_context_system_prompt(None, tools.as_deref(), None);
             assert!(with_page.contains("NU:"));
             assert!(without_page.contains("NU:"));

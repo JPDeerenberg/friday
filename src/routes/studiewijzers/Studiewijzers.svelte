@@ -1,13 +1,13 @@
 <script lang="ts">
-  import { personId, resumedAt, userSettings } from "$lib/stores";
-  import { openBron } from "$lib/bron-actions";
+  import { personId, resumedAt, userSettings } from "#lib/stores.ts";
+  import { openBron } from "#lib/bron-actions.ts";
   import {
     getStudiewijzers,
     getStudiewijzerDetail,
     getStudiewijzerOnderdeelDetail,
-  } from "$lib/api";
-  import { getFileIcon } from "$lib/icons";
-  import { cacheGet, cacheRefresh } from "$lib/cache";
+  } from "#lib/api.ts";
+  import { getFileIcon } from "#lib/icons.ts";
+  import { cacheGet, cacheRefresh } from "#lib/cache.ts";
   import { onMount, untrack } from "svelte";
 
   // One open/download at a time; the button used to be a dead link.
@@ -25,8 +25,8 @@
   }
   import { get } from "svelte/store";
   import { fade, fly, slide } from "svelte/transition";
-  import Button from "$lib/components/Button.svelte";
-  import IconButton from "$lib/components/IconButton.svelte";
+  import Button from "#lib/components/Button.svelte";
+  import IconButton from "#lib/components/IconButton.svelte";
 
   let studiewijzers = $state<any[]>([]);
   let selectedSW = $state<any>(null);

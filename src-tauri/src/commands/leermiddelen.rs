@@ -10,7 +10,9 @@ pub async fn get_leermiddelen(
     let url = format!("personen/{}/lesmateriaal", person_id);
     log::debug!("Fetching leermiddelen from: {}", url);
 
-    let response = crate::client::get_with_shared(&client, &url).await.map_err(|e| e.to_string())?;
+    let response = crate::client::get_with_shared(&client, &url)
+        .await
+        .map_err(|e| e.to_string())?;
     let leermiddelen: LeermiddelenResponse = serde_json::from_value(response)
         .map_err(|e| format!("Failed to parse leermiddelen: {}", e))?;
 

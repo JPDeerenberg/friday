@@ -292,6 +292,27 @@ export interface Ontvanger {
   mailGroep: string | null;
 }
 
+/** One attachment of a message (`berichten/{id}/bijlagen`). */
+export interface MessageAttachment {
+  id: number;
+  naam: string;
+  contentType: string | null;
+  grootte: number | null;
+  datum: string | null;
+  /** Resolved `links.download.href` (or `Url`); null when Magister sent none. */
+  downloadUrl: string | null;
+  /** 0 = folder, 1 = file, 3 = web link. */
+  bronSoort: number;
+}
+
+/** Reference to an uploaded file when sending a message. */
+export interface MessageAttachmentRef {
+  id: number;
+  naam: string;
+  /** `upload` for a file uploaded in this composer. */
+  type: string;
+}
+
 export interface MessagesFolder {
   aantalOngelezen: number;
   id: number;
@@ -352,7 +373,9 @@ export interface Permission {
 export interface ProfileInfo {
   Id: number | null;
   EmailAdres: string | null;
+  EmailAdresPrive: string | null;
   Mobiel: string | null;
+  EloBerichtenDoorsturen: boolean;
 }
 
 export interface ProfileAddress {
@@ -361,9 +384,12 @@ export interface ProfileAddress {
   Huisnummer: string;
   Toevoeging: string | null;
   Postcode: string;
+  /** The API calls this `plaats`; Friday serializes it as `Woonplaats`. */
   Woonplaats: string;
   Land: string | null;
-  Type: number;
+  /** Address kind from Magister ("Woon", "Post"); older payloads use 1/2. */
+  Type: string;
+  IsGeheim: boolean;
 }
 
 export interface ProfileCareer {
@@ -371,4 +397,23 @@ export interface ProfileCareer {
   StamNr: string | null;
   Studie: string | null;
   Klas: string | null;
+  ExamenNr: string | null;
+  Profielen: string | null;
+}
+
+export interface ProfileAuthorization {
+  OudersMogenGegevensZien: boolean;
+  MagInzageOudersInstellen: boolean;
+  MeerderJarigeLeeftijd: number;
+}
+
+/** `/toestemmingen/personen/{id}/antwoorden` (camelCase response). */
+export interface ProfileAnswer {
+  vraagId: number;
+  code: string;
+  omschrijving: string;
+  uitleg: string;
+  volgnummer: number;
+  datumAangepast: string | null;
+  toestemming: boolean;
 }

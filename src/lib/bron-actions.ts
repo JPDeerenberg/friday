@@ -9,12 +9,12 @@
  */
 import { isTauri } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { downloadFile, getLeermiddelLaunchUrl } from "$lib/api";
+import { downloadFile, getLeermiddelLaunchUrl } from "#lib/api.ts";
 import {
   pickDownloadHref,
   describeDownload,
   type AttachmentLink,
-} from "$lib/attachments";
+} from "#lib/attachments.ts";
 
 export interface OpenableBron {
   Naam: string;

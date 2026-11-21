@@ -6,21 +6,31 @@
 // Friday PWA service worker (SvelteKit built-in — auto-registered).
 //
 // Caching contract:
-// - App shell (`build` + `files`): precached on install, served cache-first.
+// - App shell (`immutable` + `assets`): precached on install, served cache-first.
 // - Navigations: network-first, cache fallback (fresh HTML when online).
 // - `/api/*` (web-api + Magister data): NEVER cached here. API freshness is
 //   owned by IndexedDB (`cache.ts` TTL + stale-while-revalidate); a second,
 //   unversioned HTTP cache would only serve stale grades as "fresh".
 // - Everything else (fonts, images): network-first, cache fallback.
 
-import { build, files, version } from '$service-worker';
-
-const self = /** @type {ServiceWorkerGlobalScope} */ (/** @type {unknown} */ (globalThis.self));
+import { self } from "$app/service-worker";
+import { version } from "$app/env";
+import { assets, immutable } from "$app/manifest";
+import { resolve } from "$app/paths";
 
 const CACHE = `friday-${version}`;
-const ASSETS = new Set([...build, ...files]);
+// Manifest paths are relative to the base path; resolve them so they match
+// `url.pathname` in the fetch handler (works at any deployment subpath).
+// Manifest paths are static asset paths, not typed app routes, so widen
+// `resolve` to accept plain strings while keeping its base-path handling.
+const resolvePath = /** @type {(path: string) => string} */ (resolve);
+/** @type {Set<string>} */
+const ASSETS = new Set([
+  ...immutable.map((asset) => resolvePath(asset.path)),
+  ...assets.map((asset) => resolvePath(asset.path)),
+]);
 
-self.addEventListener('install', (event) => {
+self.addEventListener("install", (event) => {
   async function addFilesToCache() {
     const cache = await caches.open(CACHE);
     await cache.addAll([...ASSETS]);
@@ -28,7 +38,7 @@ self.addEventListener('install', (event) => {
   event.waitUntil(addFilesToCache());
 });
 
-self.addEventListener('activate', (event) => {
+self.addEventListener("activate", (event) => {
   async function deleteOldCaches() {
     for (const key of await caches.keys()) {
       if (key !== CACHE) await caches.delete(key);
@@ -38,9 +48,9 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(deleteOldCaches());
 });
 
-self.addEventListener('fetch', (event) => {
+self.addEventListener("fetch", (event) => {
   const req = event.request;
-  if (req.method !== 'GET') return;
+  if (req.method !== "GET") return;
 
   const url = new URL(req.url);
   // Only handle same-origin traffic. Cross-origin fetches (Magister file
@@ -52,14 +62,14 @@ self.addEventListener('fetch', (event) => {
   // cache. Segment match (not prefix) so it holds at any base path:
   // same-origin /api on Caddy, /friday/fdroid on Pages, absolute backend
   // URLs never even reach this worker's origin scope.
-  const segments = url.pathname.split('/');
+  const segments = url.pathname.split("/");
   // API traffic is never cached here. API freshness is owned by IndexedDB
   // (`cache.ts` TTL + stale-while-revalidate); a second, unversioned HTTP
   // cache would only serve stale grades as "fresh".
-  if (segments.includes('api')) return;
+  if (segments.includes("api")) return;
   // The gh-pages branch also serves the F-Droid repo (/fdroid/*, multi-MB
   // APKs) — never cache those either.
-  if (segments.includes('fdroid')) return;
+  if (segments.includes("fdroid")) return;
   // App scope root (base-aware: '/' locally, '/friday/' on Pages).
   const scopeRoot = new URL(self.registration.scope).pathname;
 
@@ -77,8 +87,8 @@ self.addEventListener('fetch', (event) => {
       if (
         response instanceof Response &&
         response.status === 200 &&
-        response.type === 'basic' &&
-        !response.headers.get('cache-control')?.includes('no-store')
+        response.type === "basic" &&
+        !response.headers.get("cache-control")?.includes("no-store")
       ) {
         cache.put(req, response.clone());
       }
@@ -88,7 +98,7 @@ self.addEventListener('fetch', (event) => {
       if (hit) return hit;
       // Offline navigation with nothing cached: fall back to the app shell
       // (scope root, so this works at any base path).
-      if (req.mode === 'navigate') {
+      if (req.mode === "navigate") {
         const shell = await cache.match(scopeRoot);
         if (shell) return shell;
       }

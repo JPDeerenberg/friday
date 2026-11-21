@@ -5,7 +5,7 @@
     userSettings,
     currentPage,
     resumedAt,
-  } from "$lib/stores";
+  } from "#lib/stores.ts";
   import { get } from "svelte/store";
   import { untrack } from "svelte";
   import {
@@ -17,47 +17,47 @@
     getAssignments,
     formatDate,
     toggleCalendarEventDone,
-  } from "$lib/api";
-  import { formatTime } from "$lib/format";
-  import { cacheGet, cacheRefresh } from "$lib/cache";
+  } from "#lib/api.ts";
+  import { formatTime } from "#lib/format.ts";
+  import { cacheGet, cacheRefresh } from "#lib/cache.ts";
   import {
     createSingleFlight,
     shouldRefresh,
     DASHBOARD_MIN_INTERVAL_MS,
-  } from "$lib/singleflight";
+  } from "#lib/singleflight.ts";
   import { fade, fly } from "svelte/transition";
-  import Button from "$lib/components/Button.svelte";
-  import IconButton from "$lib/components/IconButton.svelte";
-  import PendingGradesBanner from "$lib/components/PendingGradesBanner.svelte";
-  import NextLessonHero from "$lib/components/NextLessonHero.svelte";
-  import { displayTeacherName } from "$lib/teachers";
-  import TranslateButton from "$lib/components/TranslateButton.svelte";
-  import LevelCard from "$lib/components/LevelCard.svelte";
-  import QuickGradeSliders from "$lib/components/QuickGradeSliders.svelte";
-  import QuestsCard from "$lib/components/QuestsCard.svelte";
-  import FriendsCard from "$lib/components/FriendsCard.svelte";
-  import WrappedCard from "$lib/components/WrappedCard.svelte";
-  import WrappedStory from "$lib/components/WrappedStory.svelte";
-  import { recordQuestEvent } from "$lib/quests-store";
+  import Button from "#lib/components/Button.svelte";
+  import IconButton from "#lib/components/IconButton.svelte";
+  import PendingGradesBanner from "#lib/components/PendingGradesBanner.svelte";
+  import NextLessonHero from "#lib/components/NextLessonHero.svelte";
+  import { displayTeacherName } from "#lib/teachers.ts";
+  import TranslateButton from "#lib/components/TranslateButton.svelte";
+  import LevelCard from "#lib/components/LevelCard.svelte";
+  import QuickGradeSliders from "#lib/components/QuickGradeSliders.svelte";
+  import QuestsCard from "#lib/components/QuestsCard.svelte";
+  import FriendsCard from "#lib/components/FriendsCard.svelte";
+  import WrappedCard from "#lib/components/WrappedCard.svelte";
+  import WrappedStory from "#lib/components/WrappedStory.svelte";
+  import { recordQuestEvent } from "#lib/quests-store.ts";
   import {
     gradePeek,
     gradeRevealState,
     openPackIntent,
     splitGrades,
-  } from "$lib/grade-reveal";
-  import type { Assignment, CalendarEvent, Grade } from "$lib/types";
+  } from "#lib/grade-reveal.ts";
+  import type { Assignment, CalendarEvent, Grade } from "#lib/types.ts";
   import {
     computeWeekStats,
     getMonday,
     EMPTY_WEEK_STATS,
     type WeekStats,
-  } from "$lib/weekStats";
+  } from "#lib/weekStats.ts";
 
   // Svelte 5 State
   let heroEvents = $state<CalendarEvent[]>([]);
   let showWrapped = $state(false);
   // While grade reveal is on, every grade stays hidden until its card is opened
-  // (see $lib/grade-reveal); the dashboard offers a banner instead. Opening a
+  // (see #lib/grade-reveal); the dashboard offers a banner instead. Opening a
   // pack happens on the grades page, where cards are built from the full list.
   let allLatestGrades = $state<Grade[]>([]);
   const revealEnabled = $derived($userSettings.gradeReveal !== false);

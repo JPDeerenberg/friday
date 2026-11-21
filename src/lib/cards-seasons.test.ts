@@ -78,10 +78,26 @@ test("a student with an extra year does not start ahead", () => {
   assert.equal(a.level, b.level);
 });
 
-test("seasons are listed newest first and always include the current one", () => {
+test("seasons are the ones with cards, newest first; empty falls back to current", () => {
   assert.deepEqual(seasonsOf([], NOW), ["2026-2027"]);
-  const list = seasonsOf([card(1, "2024-09-01", 1), card(2, "2025-09-01", 1)], NOW);
-  assert.deepEqual(list, ["2026-2027", "2025-2026", "2024-2025"]);
+  const list = seasonsOf(
+    [card(1, "2024-09-01", 1), card(2, "2025-09-01", 1)],
+    NOW,
+  );
+  assert.deepEqual(list, ["2025-2026", "2024-2025"]);
+});
+
+test("a past school year opens on its own season, so opened cards count", () => {
+  // Grades page hands the album one school year at a time; its first season
+  // must be that year's season, not the current one, or the level stays at 1
+  // with 0 XP while every card is opened.
+  const cards = [card(1, "2024-09-01", 100), card(2, "2025-02-01", 100)];
+  const opened = new Set([1, 2]);
+  const season = seasonsOf(cards, NOW)[0];
+  assert.equal(season, "2024-2025");
+  const xp = seasonXp(cards, opened, season, NOW);
+  assert.equal(xp, 200);
+  assert.ok(levelInfo(xp).level > 1);
 });
 
 test("career rank climbs with all-time XP and tops out", () => {

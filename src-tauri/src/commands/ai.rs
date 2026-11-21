@@ -1,7 +1,11 @@
 use crate::ai::providers::{self, AiConfig, AiMessage, AiProviderType, StreamEvent};
-use crate::ai::tools::{self, execute_pending_action, execute_tool, PendingAction, PendingActionStore};
+use crate::ai::tools::{
+    self, execute_pending_action, execute_tool, PendingAction, PendingActionStore,
+};
 use crate::client::SharedClient;
-use crate::models::ai_schedule::{AiScheduleItem, AiScheduleItemType, AiScheduleSource, AiScheduleStatus, DurationSource};
+use crate::models::ai_schedule::{
+    AiScheduleItem, AiScheduleItemType, AiScheduleSource, AiScheduleStatus, DurationSource,
+};
 use crate::secure_store;
 use serde::Serialize;
 use serde_json::Value;
@@ -46,10 +50,9 @@ impl AiState {
     pub async fn load_api_key_async(config: Arc<Mutex<AiConfig>>) {
         // The Android keyring performs JNI calls and must not run on the async
         // executor thread. In particular, it reads ndk-context during startup.
-        let result = tokio::task::spawn_blocking(|| {
-            secure_store::get_secret(secure_store::USER_AI_API_KEY)
-        })
-        .await;
+        let result =
+            tokio::task::spawn_blocking(|| secure_store::get_secret(secure_store::USER_AI_API_KEY))
+                .await;
 
         let Ok(Ok(Some(api_key))) = result else {
             return;
@@ -154,17 +157,22 @@ pub async fn ai_chat(
 ) -> Result<String, String> {
     let config = state.config.lock().map_err(|e| e.to_string())?.clone();
 
-    let mut messages: Vec<AiMessage> =
-        serde_json::from_str(&messages_json).map_err(|e| format!("Ongeldig berichtformaat: {}", e))?;
+    let mut messages: Vec<AiMessage> = serde_json::from_str(&messages_json)
+        .map_err(|e| format!("Ongeldig berichtformaat: {}", e))?;
 
     // Prepend system prompt with page context (no tools — this is the non-data-access version)
-    let notes = notes_prompt_for(&notes_state, config.ai_notes_use_in_chats, config.ai_notes_ai_can_edit).await;
-    let system_prompt =
-        crate::ai_client::build_school_context_system_prompt(page_context.as_deref(), None, notes.as_ref());
-    messages.insert(
-        0,
-        AiMessage::simple("system", system_prompt),
+    let notes = notes_prompt_for(
+        &notes_state,
+        config.ai_notes_use_in_chats,
+        config.ai_notes_ai_can_edit,
+    )
+    .await;
+    let system_prompt = crate::ai_client::build_school_context_system_prompt(
+        page_context.as_deref(),
+        None,
+        notes.as_ref(),
     );
+    messages.insert(0, AiMessage::simple("system", system_prompt));
 
     let diag_start = std::time::Instant::now();
     let provider = providers::get_provider(&config.provider);
@@ -333,7 +341,11 @@ pub fn record_ai_diag(entry: AiDiagEntry) {
 /// Best-effort error class for a provider error string.
 fn diag_error_class(msg: &str) -> &'static str {
     let m = msg.to_lowercase();
-    if m.contains("401") || m.contains("403") || m.contains("invalid_api_key") || m.contains("unauthorized") {
+    if m.contains("401")
+        || m.contains("403")
+        || m.contains("invalid_api_key")
+        || m.contains("unauthorized")
+    {
         "invalid_key"
     } else if m.contains("404") || m.contains("model_not_found") || m.contains("model not found") {
         "model_not_found"
@@ -705,8 +717,8 @@ pub async fn ai_chat_with_tools(
         .map(parse_plan_settings)
         .unwrap_or_default();
 
-    let mut messages: Vec<providers::AiMessage> =
-        serde_json::from_str(&messages_json).map_err(|e| format!("Ongeldig berichtformaat: {}", e))?;
+    let mut messages: Vec<providers::AiMessage> = serde_json::from_str(&messages_json)
+        .map_err(|e| format!("Ongeldig berichtformaat: {}", e))?;
 
     // Prepend system prompt with page context and tools enabled.
     // Filtering happens first so listed tools always match offered tools.
@@ -718,16 +730,18 @@ pub async fn ai_chat_with_tools(
     } else if !config.ai_notes_ai_can_edit {
         tools.retain(|t| !tools::NOTES_WRITE_TOOLS.contains(&t.name.as_str()));
     }
-    let notes = notes_prompt_for(&notes_state, config.ai_notes_use_in_chats, config.ai_notes_ai_can_edit).await;
+    let notes = notes_prompt_for(
+        &notes_state,
+        config.ai_notes_use_in_chats,
+        config.ai_notes_ai_can_edit,
+    )
+    .await;
     let system_prompt = crate::ai_client::build_school_context_system_prompt(
         page_context.as_deref(),
         Some(&tools),
         notes.as_ref(),
     );
-    messages.insert(
-        0,
-        providers::AiMessage::simple("system", system_prompt),
-    );
+    messages.insert(0, providers::AiMessage::simple("system", system_prompt));
 
     // Call AI with tools (up to MAX_ROUNDS rounds of tool execution).
     // Desktop executes sequentially: execute_tool needs &mut MagisterClient
@@ -953,10 +967,21 @@ pub async fn ai_chat_with_tools(
                         .await
                     } else {
                         let mut c = client.lock().await;
-                        execute_tool(&mut c, &tool_call.name, &tool_call.arguments, person_id, &state.pending_actions).await
+                        execute_tool(
+                            &mut c,
+                            &tool_call.name,
+                            &tool_call.arguments,
+                            person_id,
+                            &state.pending_actions,
+                        )
+                        .await
                     }
                 };
-                let tool_result = match tokio::time::timeout(std::time::Duration::from_secs(secs), exec).await
+                let tool_result = match tokio::time::timeout(
+                    std::time::Duration::from_secs(secs),
+                    exec,
+                )
+                .await
                 {
                     Err(_) => tools::ToolResult {
                         tool: tool_call.name.clone(),
@@ -1083,7 +1108,9 @@ pub async fn ai_chat_with_tools(
         let mut close_flush = std::time::Instant::now();
         let mut on_text = |delta: String| {
             close_buf.push_str(&delta);
-            if close_buf.len() >= 1000 || close_flush.elapsed() >= std::time::Duration::from_millis(150) {
+            if close_buf.len() >= 1000
+                || close_flush.elapsed() >= std::time::Duration::from_millis(150)
+            {
                 let d = std::mem::take(&mut close_buf);
                 emit_activity(&app, "text", None, Some(&d));
                 close_flush = std::time::Instant::now();
@@ -1154,7 +1181,10 @@ pub async fn ai_chat_with_tools(
 }
 
 fn is_notes_tool(name: &str) -> bool {
-    matches!(name, "read_notes" | "append_note" | "edit_note" | "replace_notes")
+    matches!(
+        name,
+        "read_notes" | "append_note" | "edit_note" | "replace_notes"
+    )
 }
 
 /// Parse frontend AI-Planning settings (camelCase from the shared Settings
@@ -1323,7 +1353,8 @@ async fn handle_notes_tool(
             success: false,
             data: Value::Null,
             error: Some(
-                "Notities bewerken staat uit (Instellingen > AI). Alleen lezen is mogelijk.".to_string(),
+                "Notities bewerken staat uit (Instellingen > AI). Alleen lezen is mogelijk."
+                    .to_string(),
             ),
         };
     }
@@ -1469,7 +1500,12 @@ async fn handle_schedule_tool(
         }
         "create_ai_schedule_item" => {
             // Build item from args
-            let title = args.get("title").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+            let title = args
+                .get("title")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
             if title.is_empty() {
                 return tools::ToolResult {
                     tool: tool_name.to_string(),
@@ -1478,7 +1514,10 @@ async fn handle_schedule_tool(
                     error: Some("Titel is verplicht.".to_string()),
                 };
             }
-            let item_type_str = args.get("item_type").and_then(|v| v.as_str()).unwrap_or("custom");
+            let item_type_str = args
+                .get("item_type")
+                .and_then(|v| v.as_str())
+                .unwrap_or("custom");
             let item_type = match item_type_str {
                 "assignment_work" => AiScheduleItemType::AssignmentWork,
                 "study_block" => AiScheduleItemType::StudyBlock,
@@ -1489,8 +1528,16 @@ async fn handle_schedule_tool(
                 "sleep" => AiScheduleItemType::Sleep,
                 _ => AiScheduleItemType::Custom,
             };
-            let start = args.get("start").and_then(|v| v.as_str()).unwrap_or("").to_string();
-            let end = args.get("end").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let start = args
+                .get("start")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let end = args
+                .get("end")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
             let urgency = args.get("urgency").and_then(|v| v.as_i64()).unwrap_or(3) as u8;
             if !(1..=5).contains(&urgency) {
                 return tools::ToolResult {
@@ -1500,7 +1547,10 @@ async fn handle_schedule_tool(
                     error: Some("Urgency moet 1-5 zijn.".to_string()),
                 };
             }
-            let now = chrono::Local::now().naive_local().format("%Y-%m-%dT%H:%M:%S").to_string();
+            let now = chrono::Local::now()
+                .naive_local()
+                .format("%Y-%m-%dT%H:%M:%S")
+                .to_string();
             let mut item = AiScheduleItem {
                 id: format!("ai-{}-{}", chrono::Utc::now().timestamp_millis(), {
                     use rand::RngExt;
@@ -1508,16 +1558,27 @@ async fn handle_schedule_tool(
                     r
                 }),
                 title,
-                description: args.get("description").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                description: args
+                    .get("description")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
                 item_type,
                 start: start.clone(),
                 end: end.clone(),
                 status: AiScheduleStatus::Planned,
                 urgency,
                 related_assignment_id: args.get("related_assignment_id").and_then(|v| v.as_i64()),
-                related_calendar_event_id: args.get("related_calendar_event_id").and_then(|v| v.as_i64()),
-                related_subject: args.get("related_subject").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                estimated_minutes: args.get("estimated_minutes").and_then(|v| v.as_i64()).map(|v| v as u32),
+                related_calendar_event_id: args
+                    .get("related_calendar_event_id")
+                    .and_then(|v| v.as_i64()),
+                related_subject: args
+                    .get("related_subject")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                estimated_minutes: args
+                    .get("estimated_minutes")
+                    .and_then(|v| v.as_i64())
+                    .map(|v| v as u32),
                 duration_source: args
                     .get("estimated_minutes")
                     .and_then(|v| v.as_i64())
@@ -1578,13 +1639,23 @@ async fn handle_schedule_tool(
                         "suggestions": suggestions,
                         "lessons_checked": lessons_checked,
                     }),
-                    error: Some(format!("Overlap met {} '{}'. Kies een van de voorgestelde vrije plekken.", kind, what)),
+                    error: Some(format!(
+                        "Overlap met {} '{}'. Kies een van de voorgestelde vrije plekken.",
+                        kind, what
+                    )),
                 };
             }
             let mut items = schedule_state.items.write().await;
             items.push(item.clone());
             schedule_state.save(&items);
-            push_undo(&schedule_state, "create_ai_schedule_item", item.id.clone(), None, Some(item.clone())).await;
+            push_undo(
+                &schedule_state,
+                "create_ai_schedule_item",
+                item.id.clone(),
+                None,
+                Some(item.clone()),
+            )
+            .await;
             emit_schedule_changed(app);
             tools::ToolResult {
                 tool: tool_name.to_string(),
@@ -1594,7 +1665,11 @@ async fn handle_schedule_tool(
             }
         }
         "update_ai_schedule_item" => {
-            let id = args.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let id = args
+                .get("id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
             if id.is_empty() {
                 return tools::ToolResult {
                     tool: tool_name.to_string(),
@@ -1667,13 +1742,21 @@ async fn handle_schedule_tool(
                     _ => item.status,
                 };
                 if item.status == AiScheduleStatus::Completed && item.completed_at.is_none() {
-                    item.completed_at = Some(chrono::Local::now().naive_local().format("%Y-%m-%dT%H:%M:%S").to_string());
+                    item.completed_at = Some(
+                        chrono::Local::now()
+                            .naive_local()
+                            .format("%Y-%m-%dT%H:%M:%S")
+                            .to_string(),
+                    );
                 }
                 if item.status != AiScheduleStatus::Completed {
                     item.completed_at = None;
                 }
             }
-            item.updated_at = chrono::Local::now().naive_local().format("%Y-%m-%dT%H:%M:%S").to_string();
+            item.updated_at = chrono::Local::now()
+                .naive_local()
+                .format("%Y-%m-%dT%H:%M:%S")
+                .to_string();
             // Validate
             let (s, e) = match (
                 crate::ai::schedule::iso_to_naive(&item.start),
@@ -1699,8 +1782,9 @@ async fn handle_schedule_tool(
             }
             // Overlap guardrail when the item stays plannable and its time
             // or type changed, with free-slot suggestions.
-            let time_changed =
-                item.start != before.start || item.end != before.end || item.item_type != before.item_type;
+            let time_changed = item.start != before.start
+                || item.end != before.end
+                || item.item_type != before.item_type;
             let plannable = item.item_type != AiScheduleItemType::FreeTime
                 && item.item_type != AiScheduleItemType::Sleep
                 && item.status != AiScheduleStatus::Completed
@@ -1709,13 +1793,19 @@ async fn handle_schedule_tool(
                 let day = s.date();
                 let ai_conflict = {
                     let items = schedule_state.items.read().await;
-                    crate::commands::ai_schedule::find_overlap(&items, &item.start, &item.end, Some(&id))
+                    crate::commands::ai_schedule::find_overlap(
+                        &items,
+                        &item.start,
+                        &item.end,
+                        Some(&id),
+                    )
                 };
                 let (lessons, lessons_checked) = day_lessons(&client, person_id, day).await;
                 let lesson_conflict = lesson_overlap(&lessons, &item.start, &item.end);
                 if ai_conflict.is_some() || lesson_conflict.is_some() {
                     let suggestions =
-                        suggest_free_slots(&schedule_state, &lessons, plan_settings, day, 0, 3).await;
+                        suggest_free_slots(&schedule_state, &lessons, plan_settings, day, 0, 3)
+                            .await;
                     let (kind, what) = match (&ai_conflict, &lesson_conflict) {
                         (Some(cid), _) => ("ai_item", cid.clone()),
                         (_, Some(les)) => ("les", les.clone()),
@@ -1730,7 +1820,10 @@ async fn handle_schedule_tool(
                             "suggestions": suggestions,
                             "lessons_checked": lessons_checked,
                         }),
-                        error: Some(format!("Overlap met {} '{}'. Kies een van de voorgestelde vrije plekken.", kind, what)),
+                        error: Some(format!(
+                            "Overlap met {} '{}'. Kies een van de voorgestelde vrije plekken.",
+                            kind, what
+                        )),
                     };
                 }
             }
@@ -1751,7 +1844,14 @@ async fn handle_schedule_tool(
                 let snapshot = items.clone();
                 schedule_state.save(&snapshot);
             }
-            push_undo(&schedule_state, "update_ai_schedule_item", id.clone(), Some(before), Some(item.clone())).await;
+            push_undo(
+                &schedule_state,
+                "update_ai_schedule_item",
+                id.clone(),
+                Some(before),
+                Some(item.clone()),
+            )
+            .await;
             emit_schedule_changed(app);
             tools::ToolResult {
                 tool: tool_name.to_string(),
@@ -1761,21 +1861,35 @@ async fn handle_schedule_tool(
             }
         }
         "complete_ai_schedule_item" => {
-            let id = args.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let id = args
+                .get("id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
             let mut items = schedule_state.items.write().await;
             let item = items.iter_mut().find(|i| i.id == id);
             match item {
                 Some(it) => {
                     let before = it.clone();
                     it.status = AiScheduleStatus::Completed;
-                    let now = chrono::Local::now().naive_local().format("%Y-%m-%dT%H:%M:%S").to_string();
+                    let now = chrono::Local::now()
+                        .naive_local()
+                        .format("%Y-%m-%dT%H:%M:%S")
+                        .to_string();
                     it.completed_at = Some(now.clone());
                     it.updated_at = now;
                     let after = it.clone();
                     let snapshot = items.clone();
                     schedule_state.save(&snapshot);
                     drop(items);
-                    push_undo(&schedule_state, "complete_ai_schedule_item", id.clone(), Some(before), Some(after)).await;
+                    push_undo(
+                        &schedule_state,
+                        "complete_ai_schedule_item",
+                        id.clone(),
+                        Some(before),
+                        Some(after),
+                    )
+                    .await;
                     emit_schedule_changed(app);
                     tools::ToolResult {
                         tool: tool_name.to_string(),
@@ -1793,19 +1907,33 @@ async fn handle_schedule_tool(
             }
         }
         "dismiss_ai_schedule_item" => {
-            let id = args.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let id = args
+                .get("id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
             let mut items = schedule_state.items.write().await;
             let item = items.iter_mut().find(|i| i.id == id);
             match item {
                 Some(it) => {
                     let before = it.clone();
                     it.status = AiScheduleStatus::Dismissed;
-                    it.updated_at = chrono::Local::now().naive_local().format("%Y-%m-%dT%H:%M:%S").to_string();
+                    it.updated_at = chrono::Local::now()
+                        .naive_local()
+                        .format("%Y-%m-%dT%H:%M:%S")
+                        .to_string();
                     let after = it.clone();
                     let snapshot = items.clone();
                     schedule_state.save(&snapshot);
                     drop(items);
-                    push_undo(&schedule_state, "dismiss_ai_schedule_item", id.clone(), Some(before), Some(after)).await;
+                    push_undo(
+                        &schedule_state,
+                        "dismiss_ai_schedule_item",
+                        id.clone(),
+                        Some(before),
+                        Some(after),
+                    )
+                    .await;
                     emit_schedule_changed(app);
                     tools::ToolResult {
                         tool: tool_name.to_string(),
@@ -1824,8 +1952,14 @@ async fn handle_schedule_tool(
         }
         "set_homework_duration" => {
             let assignment_id = args.get("assignment_id").and_then(|v| v.as_i64());
-            let estimated_minutes = args.get("estimated_minutes").and_then(|v| v.as_i64()).map(|v| v as u32);
-            let urgency = args.get("urgency").and_then(|v| v.as_i64()).map(|v| v as u8);
+            let estimated_minutes = args
+                .get("estimated_minutes")
+                .and_then(|v| v.as_i64())
+                .map(|v| v as u32);
+            let urgency = args
+                .get("urgency")
+                .and_then(|v| v.as_i64())
+                .map(|v| v as u8);
             if assignment_id.is_none() || estimated_minutes.is_none() {
                 return tools::ToolResult {
                     tool: tool_name.to_string(),
@@ -1855,8 +1989,14 @@ async fn handle_schedule_tool(
                 }
             }
             let mut items = schedule_state.items.write().await;
-            let now = chrono::Local::now().naive_local().format("%Y-%m-%dT%H:%M:%S").to_string();
-            if let Some(item) = items.iter_mut().find(|i| i.related_assignment_id == Some(assignment_id)) {
+            let now = chrono::Local::now()
+                .naive_local()
+                .format("%Y-%m-%dT%H:%M:%S")
+                .to_string();
+            if let Some(item) = items
+                .iter_mut()
+                .find(|i| i.related_assignment_id == Some(assignment_id))
+            {
                 let before = item.clone();
                 item.estimated_minutes = Some(estimated_minutes);
                 item.duration_source = Some(DurationSource::UserEntered);
@@ -1868,7 +2008,14 @@ async fn handle_schedule_tool(
                 let snapshot = items.clone();
                 schedule_state.save(&snapshot);
                 drop(items);
-                push_undo(&schedule_state, "set_homework_duration", cloned.id.clone(), Some(before), Some(cloned.clone())).await;
+                push_undo(
+                    &schedule_state,
+                    "set_homework_duration",
+                    cloned.id.clone(),
+                    Some(before),
+                    Some(cloned.clone()),
+                )
+                .await;
                 emit_schedule_changed(app);
                 return tools::ToolResult {
                     tool: tool_name.to_string(),
@@ -1885,7 +2032,8 @@ async fn handle_schedule_tool(
                 item_type: AiScheduleItemType::AssignmentWork,
                 start: now.clone(),
                 end: {
-                    let start_dt = crate::ai::schedule::iso_to_naive(&now).unwrap_or(chrono::Local::now().naive_local());
+                    let start_dt = crate::ai::schedule::iso_to_naive(&now)
+                        .unwrap_or(chrono::Local::now().naive_local());
                     let end_dt = start_dt + chrono::Duration::minutes(estimated_minutes as i64);
                     crate::ai::schedule::naive_to_iso(end_dt)
                 },
@@ -1893,7 +2041,10 @@ async fn handle_schedule_tool(
                 urgency: urgency.unwrap_or(3),
                 related_assignment_id: Some(assignment_id),
                 related_calendar_event_id: None,
-                related_subject: args.get("subject").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                related_subject: args
+                    .get("subject")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
                 estimated_minutes: Some(estimated_minutes),
                 duration_source: Some(DurationSource::UserEntered),
                 source: AiScheduleSource::User,
@@ -1905,7 +2056,14 @@ async fn handle_schedule_tool(
             let snapshot = items.clone();
             schedule_state.save(&snapshot);
             drop(items);
-            push_undo(&schedule_state, "set_homework_duration", new_item.id.clone(), None, Some(new_item.clone())).await;
+            push_undo(
+                &schedule_state,
+                "set_homework_duration",
+                new_item.id.clone(),
+                None,
+                Some(new_item.clone()),
+            )
+            .await;
             emit_schedule_changed(app);
             tools::ToolResult {
                 tool: tool_name.to_string(),
@@ -1929,12 +2087,23 @@ async fn handle_schedule_tool(
             // Respect the frontend AI-Planning settings (threaded through the
             // chat call) instead of silently using defaults.
             let settings = plan_settings.clone();
-            match crate::commands::ai_schedule::perform_update_inner(schedule_state, client_clone, person_id, settings).await {
+            match crate::commands::ai_schedule::perform_update_inner(
+                schedule_state,
+                client_clone,
+                person_id,
+                settings,
+            )
+            .await
+            {
                 Ok(updated) => {
-                    let vals: Vec<Value> = updated.iter().map(|i| serde_json::to_value(i).unwrap_or(Value::Null)).collect();
+                    let vals: Vec<Value> = updated
+                        .iter()
+                        .map(|i| serde_json::to_value(i).unwrap_or(Value::Null))
+                        .collect();
                     // Bound the prompt payload: the full replan can be long.
                     let total = vals.len();
-                    let (page, truncated, _) = tools::paginate_slice(&vals, 0, tools::CALENDAR_DEFAULT_LIMIT);
+                    let (page, truncated, _) =
+                        tools::paginate_slice(&vals, 0, tools::CALENDAR_DEFAULT_LIMIT);
                     emit_schedule_changed(app);
                     // Summarise what actually changed so the model reports
                     // accurately instead of claiming a generic success.
@@ -1948,7 +2117,10 @@ async fn handle_schedule_tool(
                             T::StudyBlock => {
                                 n_study += 1;
                                 if it.id.starts_with("study-test-") {
-                                    let vak = it.related_subject.clone().unwrap_or_else(|| "onbekend vak".to_string());
+                                    let vak = it
+                                        .related_subject
+                                        .clone()
+                                        .unwrap_or_else(|| "onbekend vak".to_string());
                                     let when = it.start.get(0..10).unwrap_or("?").to_string();
                                     let entry = format!("{} ({})", vak, when);
                                     if !tests_covered.contains(&entry) {
@@ -1989,7 +2161,11 @@ async fn handle_schedule_tool(
             }
         }
         "delete_ai_schedule_item" => {
-            let id = args.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let id = args
+                .get("id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
             if id.is_empty() {
                 return tools::ToolResult {
                     tool: tool_name.to_string(),
@@ -2006,7 +2182,14 @@ async fn handle_schedule_tool(
                     let snapshot = items.clone();
                     schedule_state.save(&snapshot);
                     drop(items);
-                    push_undo(&schedule_state, "delete_ai_schedule_item", id.clone(), Some(before), None).await;
+                    push_undo(
+                        &schedule_state,
+                        "delete_ai_schedule_item",
+                        id.clone(),
+                        Some(before),
+                        None,
+                    )
+                    .await;
                     emit_schedule_changed(app);
                     tools::ToolResult {
                         tool: tool_name.to_string(),
@@ -2024,8 +2207,16 @@ async fn handle_schedule_tool(
             }
         }
         "move_ai_schedule_item" => {
-            let id = args.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
-            let new_start = args.get("new_start").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let id = args
+                .get("id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let new_start = args
+                .get("new_start")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
             if id.is_empty() || new_start.is_empty() {
                 return tools::ToolResult {
                     tool: tool_name.to_string(),
@@ -2090,7 +2281,12 @@ async fn handle_schedule_tool(
             let day = new_s.date();
             let ai_conflict = {
                 let items = schedule_state.items.read().await;
-                crate::commands::ai_schedule::find_overlap(&items, &new_start_str, &new_end_str, Some(&id))
+                crate::commands::ai_schedule::find_overlap(
+                    &items,
+                    &new_start_str,
+                    &new_end_str,
+                    Some(&id),
+                )
             };
             let (lessons, lessons_checked) = day_lessons(&client, person_id, day).await;
             let lesson_conflict = lesson_overlap(&lessons, &new_start_str, &new_end_str);
@@ -2111,13 +2307,19 @@ async fn handle_schedule_tool(
                         "suggestions": suggestions,
                         "lessons_checked": lessons_checked,
                     }),
-                    error: Some(format!("Overlap met {} '{}'. Kies een van de voorgestelde vrije plekken.", kind, what)),
+                    error: Some(format!(
+                        "Overlap met {} '{}'. Kies een van de voorgestelde vrije plekken.",
+                        kind, what
+                    )),
                 };
             }
             let mut item = before.clone();
             item.start = new_start_str;
             item.end = new_end_str;
-            item.updated_at = chrono::Local::now().naive_local().format("%Y-%m-%dT%H:%M:%S").to_string();
+            item.updated_at = chrono::Local::now()
+                .naive_local()
+                .format("%Y-%m-%dT%H:%M:%S")
+                .to_string();
             {
                 let mut items = schedule_state.items.write().await;
                 match items.iter().position(|i| i.id == id) {
@@ -2134,7 +2336,14 @@ async fn handle_schedule_tool(
                 let snapshot = items.clone();
                 schedule_state.save(&snapshot);
             }
-            push_undo(&schedule_state, "move_ai_schedule_item", id.clone(), Some(before), Some(item.clone())).await;
+            push_undo(
+                &schedule_state,
+                "move_ai_schedule_item",
+                id.clone(),
+                Some(before),
+                Some(item.clone()),
+            )
+            .await;
             emit_schedule_changed(app);
             tools::ToolResult {
                 tool: tool_name.to_string(),
@@ -2160,29 +2369,45 @@ async fn handle_schedule_tool(
         "get_free_slots" => {
             let date_arg = args.get("date").and_then(|v| v.as_str()).unwrap_or("");
             let end_arg = args.get("end").and_then(|v| v.as_str()).unwrap_or("");
-            let min_minutes = args.get("min_minutes").and_then(|v| v.as_i64()).unwrap_or(0).max(0);
-            let start_day = match chrono::NaiveDate::parse_from_str(date_arg.get(0..10).unwrap_or(date_arg), "%Y-%m-%d") {
+            let min_minutes = args
+                .get("min_minutes")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(0)
+                .max(0);
+            let start_day = match chrono::NaiveDate::parse_from_str(
+                date_arg.get(0..10).unwrap_or(date_arg),
+                "%Y-%m-%d",
+            ) {
                 Ok(d) => d,
                 Err(_) => {
                     return tools::ToolResult {
                         tool: tool_name.to_string(),
                         success: false,
                         data: Value::Null,
-                        error: Some(format!("Ongeldige datum '{}' (verwacht yyyy-MM-dd).", date_arg)),
+                        error: Some(format!(
+                            "Ongeldige datum '{}' (verwacht yyyy-MM-dd).",
+                            date_arg
+                        )),
                     };
                 }
             };
             let end_day = if end_arg.is_empty() {
                 start_day
             } else {
-                match chrono::NaiveDate::parse_from_str(end_arg.get(0..10).unwrap_or(end_arg), "%Y-%m-%d") {
+                match chrono::NaiveDate::parse_from_str(
+                    end_arg.get(0..10).unwrap_or(end_arg),
+                    "%Y-%m-%d",
+                ) {
                     Ok(d) => d,
                     Err(_) => {
                         return tools::ToolResult {
                             tool: tool_name.to_string(),
                             success: false,
                             data: Value::Null,
-                            error: Some(format!("Ongeldige einddatum '{}' (verwacht yyyy-MM-dd).", end_arg)),
+                            error: Some(format!(
+                                "Ongeldige einddatum '{}' (verwacht yyyy-MM-dd).",
+                                end_arg
+                            )),
                         };
                     }
                 }
@@ -2218,10 +2443,16 @@ async fn handle_schedule_tool(
             let lessons_checked = lessons.is_ok();
             let lessons = lessons.unwrap_or_default();
             let items = schedule_state.items.read().await;
-            let locked = crate::commands::ai_schedule::locked_items_in_window(&items, start_day, end_day);
+            let locked =
+                crate::commands::ai_schedule::locked_items_in_window(&items, start_day, end_day);
             drop(items);
-            let slots =
-                crate::ai::schedule::compute_free_slots(start_day, end_day, &lessons, &locked, plan_settings);
+            let slots = crate::ai::schedule::compute_free_slots(
+                start_day,
+                end_day,
+                &lessons,
+                &locked,
+                plan_settings,
+            );
             let all: Vec<Value> = slots
                 .iter()
                 .filter(|s| (s.end - s.start).num_minutes() >= min_minutes)
@@ -2335,22 +2566,13 @@ pub async fn ai_page_insight(
             "Pagina: Dashboard (overzicht)\nData: {}\nVraag: {}",
             data_json, query
         ),
-        "grades" => format!(
-            "Pagina: Cijfers\nData: {}\nVraag: {}",
-            data_json, query
-        ),
-        _ => format!(
-            "Pagina: {}\nData: {}\nVraag: {}",
-            page, data_json, query
-        ),
+        "grades" => format!("Pagina: Cijfers\nData: {}\nVraag: {}", data_json, query),
+        _ => format!("Pagina: {}\nData: {}\nVraag: {}", page, data_json, query),
     };
 
     let config = state.config.lock().map_err(|e| e.to_string())?.clone();
-    let system_prompt = crate::ai_client::build_school_context_system_prompt(
-        Some(&page_context),
-        None,
-        None,
-    );
+    let system_prompt =
+        crate::ai_client::build_school_context_system_prompt(Some(&page_context), None, None);
 
     let ai_messages = vec![
         providers::AiMessage::simple("system", system_prompt),
@@ -2410,7 +2632,9 @@ mod tests {
 
     #[test]
     fn overflow_detection() {
-        assert!(is_context_overflow("This model's maximum context length is 128000 tokens"));
+        assert!(is_context_overflow(
+            "This model's maximum context length is 128000 tokens"
+        ));
         assert!(is_context_overflow("context_length_exceeded"));
         assert!(!is_context_overflow("HTTP 503 Service Unavailable"));
         assert!(!is_context_overflow("all good"));
@@ -2420,15 +2644,18 @@ mod tests {
     fn dedupe_key_ignores_key_order() {
         let a = serde_json::json!({"start": "2026-09-21", "end": "2026-09-27"});
         let b = serde_json::json!({"end": "2026-09-27", "start": "2026-09-21"});
-        assert_eq!(dedupe_key("get_calendar_events", &a), dedupe_key("get_calendar_events", &b));
+        assert_eq!(
+            dedupe_key("get_calendar_events", &a),
+            dedupe_key("get_calendar_events", &b)
+        );
         assert_ne!(
             dedupe_key("get_calendar_events", &a),
-            dedupe_key("get_calendar_events", &serde_json::json!({"start": "2026-09-22"}))
+            dedupe_key(
+                "get_calendar_events",
+                &serde_json::json!({"start": "2026-09-22"})
+            )
         );
-        assert_ne!(
-            dedupe_key("a", &a),
-            dedupe_key("b", &a)
-        );
+        assert_ne!(dedupe_key("a", &a), dedupe_key("b", &a));
     }
 
     #[test]
@@ -2583,15 +2810,24 @@ mod tests {
             lesson_overlap(&lessons, "2026-09-21T08:45:00", "2026-09-21T09:30:00"),
             Some("Wiskunde".to_string())
         );
-        assert_eq!(lesson_overlap(&lessons, "2026-09-21T10:00:00", "2026-09-21T11:00:00"), None);
+        assert_eq!(
+            lesson_overlap(&lessons, "2026-09-21T10:00:00", "2026-09-21T11:00:00"),
+            None
+        );
         let cancelled = vec![mk(4, "2026-09-21T08:30:00", "2026-09-21T09:20:00")];
-        assert_eq!(lesson_overlap(&cancelled, "2026-09-21T08:45:00", "2026-09-21T09:30:00"), None);
+        assert_eq!(
+            lesson_overlap(&cancelled, "2026-09-21T08:45:00", "2026-09-21T09:30:00"),
+            None
+        );
     }
 
     #[test]
     fn diag_error_classes_match_taxonomy() {
         assert_eq!(diag_error_class("HTTP 401 Unauthorized"), "invalid_key");
-        assert_eq!(diag_error_class("HTTP 404 model not found"), "model_not_found");
+        assert_eq!(
+            diag_error_class("HTTP 404 model not found"),
+            "model_not_found"
+        );
         assert_eq!(diag_error_class("HTTP 429 slow down"), "rate_limited");
         assert_eq!(
             diag_error_class("maximum context length exceeded"),
@@ -2635,10 +2871,18 @@ mod tests {
         ];
         assert_eq!(
             diag_message_shape(&msgs),
-            vec!["system", "user", "assistant(c0,t1)", "tool", "assistant(c1,t0)"]
+            vec![
+                "system",
+                "user",
+                "assistant(c0,t1)",
+                "tool",
+                "assistant(c1,t0)"
+            ]
         );
         assert_eq!(
-            diag_provider_type("AI-fout (400): x (type=invalid_request_assistant_message, code=3240)"),
+            diag_provider_type(
+                "AI-fout (400): x (type=invalid_request_assistant_message, code=3240)"
+            ),
             Some("invalid_request_assistant_message".to_string())
         );
         assert_eq!(diag_provider_type("AI-fout (500): Weg"), None);

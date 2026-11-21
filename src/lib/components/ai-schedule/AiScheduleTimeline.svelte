@@ -1,6 +1,6 @@
 <script lang="ts">
-  import type { AiScheduleItem } from "$lib/ai-schedule-types";
-  import type { CalendarEvent } from "$lib/types";
+  import type { AiScheduleItem } from "#lib/ai-schedule-types.ts";
+  import type { CalendarEvent } from "#lib/types.ts";
   import AiScheduleItemCard from "./AiScheduleItemCard.svelte";
   import MagisterEventGhost from "./MagisterEventGhost.svelte";
   import UpdateScheduleButton from "./UpdateScheduleButton.svelte";

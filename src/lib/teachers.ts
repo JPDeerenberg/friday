@@ -3,7 +3,7 @@
  * rename applies everywhere a teacher name is shown, because every place goes
  * through `formatTeacherName` / `displayTeacherName`.
  *
- * No `$lib` imports and no Svelte, so it runs in plain Node tests; the settings
+ * No `#lib` imports and no Svelte, so it runs in plain Node tests; the settings
  * store pushes the saved aliases in via `setTeacherAliases`.
  */
 

@@ -1,11 +1,11 @@
 <script lang="ts">
-  import { isLoggedIn, loginError, accountInfo, personId, profilePicture } from '$lib/stores';
-  import { startLoginFlow, getPersonId, getProfilePicture, handleAuthCallback } from '$lib/api';
-  import Button from '$lib/components/Button.svelte';
-  import InstallPrompt from '$lib/components/InstallPrompt.svelte';
-  import Logo from '$lib/components/Logo.svelte';
+  import { isLoggedIn, loginError, accountInfo, personId, profilePicture } from '#lib/stores.ts';
+  import { startLoginFlow, getPersonId, getProfilePicture, handleAuthCallback } from '#lib/api.ts';
+  import Button from '#lib/components/Button.svelte';
+  import InstallPrompt from '#lib/components/InstallPrompt.svelte';
+  import Logo from '#lib/components/Logo.svelte';
 
-  import { webBackend, saveWebSession, webRequest, webRequestBytes, bytesToBase64 } from '$lib/web-session';
+  import { webBackend, saveWebSession, webRequest, webRequestBytes, bytesToBase64 } from '#lib/web-session.ts';
 
   let loading = $state(false);
   let error = $state('');
@@ -47,7 +47,7 @@
     error = '';
     startLoginTimer();
     try {
-      const { webBackend, saveWebSession, webRequest, webRequestBytes } = await import('$lib/web-session');
+      const { webBackend, saveWebSession, webRequest, webRequestBytes } = await import('#lib/web-session.ts');
       const be = webBackend();
       const result = await be.login(school.trim(), username.trim(), password);
       await saveWebSession(result.tokens);

@@ -8,16 +8,16 @@
     type AiConfig,
     type AiMessage,
     type PendingActionInfo,
-  } from "$lib/ai";
-  import { classifyAiError, type AiErrorInfo } from "$lib/ai-errors";
-  import Icon from "$lib/components/Icon.svelte";
-  import type { IconName } from "$lib/icons";
+  } from "#lib/ai.ts";
+  import { classifyAiError, type AiErrorInfo } from "#lib/ai-errors.ts";
+  import Icon from "#lib/components/Icon.svelte";
+  import type { IconName } from "#lib/icons.ts";
   import {
     activityForTool,
     type LoopActivity,
     type LoopTurnTrace,
-  } from "$lib/ai-loop";
-  import { getNotes } from "$lib/ai-notes";
+  } from "#lib/ai-loop.ts";
+  import { getNotes } from "#lib/ai-notes.ts";
   import {
     appendMessage,
     createConversation,
@@ -39,17 +39,17 @@
     traceBlock,
     type Conversation,
     type ThreadMessage,
-  } from "$lib/ai-chats";
-  import { currentPage, accountInfo, personId } from "$lib/stores";
+  } from "#lib/ai-chats.ts";
+  import { currentPage, accountInfo, personId } from "#lib/stores.ts";
   import { onMount, untrack } from "svelte";
   import { fly, scale } from "svelte/transition";
-  import MarkdownRenderer from "$lib/components/MarkdownRenderer.svelte";
+  import MarkdownRenderer from "#lib/components/MarkdownRenderer.svelte";
   import {
     preloadMarkdown,
     renderMarkdownAsync,
     tryRenderMarkdownSync,
     getCachedHtml,
-  } from "$lib/markdown";
+  } from "#lib/markdown.ts";
 
   let isOpen = $state(false);
   let messages = $state<AiMessage[]>([]);

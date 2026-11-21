@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Manager};
 use std::path::PathBuf;
+use tauri::{AppHandle, Manager};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LogExportResult {
@@ -37,15 +37,18 @@ pub async fn clear_debug_logs(app: AppHandle) -> Result<LogClearResult, String> 
     }
 
     let mut cleared = 0usize;
-    let entries = std::fs::read_dir(&log_dir)
-        .map_err(|e| format!("Kan logmap niet lezen: {}", e))?;
+    let entries =
+        std::fs::read_dir(&log_dir).map_err(|e| format!("Kan logmap niet lezen: {}", e))?;
     for entry in entries.filter_map(|e| e.ok()).map(|e| e.path()) {
         if entry.is_file() && std::fs::remove_file(&entry).is_ok() {
             cleared += 1;
         }
     }
 
-    log::info!("Logbestanden gewist door gebruiker ({} bestanden), nieuwe sessie", cleared);
+    log::info!(
+        "Logbestanden gewist door gebruiker ({} bestanden), nieuwe sessie",
+        cleared
+    );
 
     Ok(LogClearResult {
         success: true,
@@ -159,8 +162,8 @@ pub async fn export_debug_log(
         let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
             continue;
         };
-        let contents = std::fs::read(path)
-            .map_err(|e| format!("Kan {} niet lezen: {}", name, e))?;
+        let contents =
+            std::fs::read(path).map_err(|e| format!("Kan {} niet lezen: {}", name, e))?;
         zip.start_file(name, options)
             .map_err(|e| format!("zip: {}: {}", name, e))?;
         use std::io::Write;

@@ -1,32 +1,39 @@
 <script lang="ts">
-  import { personId, resumedAt } from "$lib/stores";
+  import { personId, resumedAt } from "#lib/stores.ts";
   import {
     getProfileInfo,
     getProfileAddresses,
+    getProfileAnswers,
+    getProfileAuthorization,
     getCareerInfo,
     getProfilePicture,
     getAccount,
-  } from "$lib/api";
-  import { photoDataUrl } from "$lib/web-session";
-  import { cacheGet, cacheRefresh } from "$lib/cache";
+  } from "#lib/api.ts";
+  import { photoDataUrl } from "#lib/web-session.ts";
+  import { cacheGet, cacheRefresh } from "#lib/cache.ts";
   import { onMount, untrack } from "svelte";
   import { fade, fly, slide } from "svelte/transition";
-  import Button from "$lib/components/Button.svelte";
-  import IconButton from "$lib/components/IconButton.svelte";
-  import Card from "$lib/components/Card.svelte";
-  import Chip from "$lib/components/Chip.svelte";
+  import Button from "#lib/components/Button.svelte";
+  import IconButton from "#lib/components/IconButton.svelte";
+  import Card from "#lib/components/Card.svelte";
+  import Chip from "#lib/components/Chip.svelte";
   import type {
     Account,
     ProfileAddress,
+    ProfileAnswer,
+    ProfileAuthorization,
     ProfileCareer,
     ProfileInfo,
-  } from "$lib/types";
+  } from "#lib/types.ts";
 
   let info = $state<ProfileInfo | null>(null);
   let addresses = $state<ProfileAddress[]>([]);
+  let answers = $state<ProfileAnswer[]>([]);
+  let authorization = $state<ProfileAuthorization | null>(null);
   let career = $state<ProfileCareer | null>(null);
   let profilePic = $state<string | null>(null);
   let account = $state<Account | null>(null);
+  let openAnswer = $state<number | null>(null);
   let loading = $state(true);
   let error = $state<string | null>(null);
 
@@ -37,6 +44,8 @@
   async function fetchAllProfileData(pid: number): Promise<{
     info: ProfileInfo | null;
     addresses: ProfileAddress[];
+    answers: ProfileAnswer[];
+    authorization: ProfileAuthorization | null;
     career: ProfileCareer | null;
     profilePic: string | null;
     account: Account | null;
@@ -44,6 +53,8 @@
     const result = {
       info: null as ProfileInfo | null,
       addresses: [] as ProfileAddress[],
+      answers: [] as ProfileAnswer[],
+      authorization: null as ProfileAuthorization | null,
       career: null as ProfileCareer | null,
       profilePic: null as string | null,
       account: null as Account | null,
@@ -55,6 +66,12 @@
       getProfileAddresses(pid)
         .then((r) => (result.addresses = r))
         .catch((e) => console.error("Addr fail:", e)),
+      getProfileAnswers(pid)
+        .then((r) => (result.answers = r))
+        .catch((e) => console.error("Answers fail:", e)),
+      getProfileAuthorization(pid)
+        .then((r) => (result.authorization = r))
+        .catch((e) => console.error("Authorization fail:", e)),
       getCareerInfo(pid)
         .then((r) => (result.career = r))
         .catch((e) => console.error("Career fail:", e)),
@@ -90,19 +107,23 @@
     error = null;
 
     try {
+      // v2: address/answer shapes gained fields; don't feed old cached data to
+      // the new UI while the 5-minute TTL is still valid.
       const data = force
         ? await cacheRefresh(
-            `profile_${pid}`,
+            `profile_v2_${pid}`,
             () => fetchAllProfileData(pid),
             5 * 60 * 1000,
           )
         : await cacheGet(
-            `profile_${pid}`,
+            `profile_v2_${pid}`,
             () => fetchAllProfileData(pid),
             5 * 60 * 1000,
           );
       info = data.info;
       addresses = data.addresses;
+      answers = data.answers;
+      authorization = data.authorization;
       career = data.career;
       profilePic = data.profilePic;
       account = data.account;
@@ -154,6 +175,26 @@
     });
   }
 
+  /** Human label for Magister's address kind ("Woon", "Post", 1, 2). */
+  function addressLabel(type: string | null | undefined): string {
+    const raw = (type ?? "").trim();
+    if (!raw) return "Adres";
+    if (raw === "1") return "Woonadres";
+    if (raw === "2") return "Postadres";
+    const label = raw.charAt(0).toUpperCase() + raw.slice(1);
+    return /adres$/i.test(label) ? label : `${label}adres`;
+  }
+
+  function addressLine(addr: ProfileAddress): string {
+    return [addr.Straat, addr.Huisnummer, addr.Toevoeging]
+      .filter((part): part is string => Boolean(part && part.trim()))
+      .join(" ");
+  }
+
+  function toggleAnswer(id: number) {
+    openAnswer = openAnswer === id ? null : id;
+  }
+
   /** Returns how many days into the current school year we are (school year starts ~Aug 1). */
   function schoolYearProgress(): {
     daysIn: number;
@@ -185,6 +226,10 @@
   });
 
   const progress = $derived(schoolYearProgress());
+
+  const sortedAnswers = $derived(
+    [...answers].sort((a, b) => a.volgnummer - b.volgnummer),
+  );
 </script>
 
 <div class="flex flex-col bg-surface-950 min-h-full">
@@ -381,12 +426,22 @@
               <div class="grid gap-5">
                 <div class="space-y-1">
                   <span class="text-label-small text-primary-400 block"
-                    >Privé e-mail</span
+                    >E-mailadres (school)</span
                   >
                   <p class="text-body-large text-gray-100 break-all">
                     {info?.EmailAdres || "Niet ingevuld"}
                   </p>
                 </div>
+                {#if info?.EmailAdresPrive}
+                  <div class="space-y-1">
+                    <span class="text-label-small text-primary-400 block"
+                      >E-mailadres (privé)</span
+                    >
+                    <p class="text-body-large text-gray-100 break-all">
+                      {info.EmailAdresPrive}
+                    </p>
+                  </div>
+                {/if}
                 <div class="space-y-1">
                   <span class="text-label-small text-primary-400 block"
                     >Telefoonnummer</span
@@ -437,12 +492,42 @@
                     {career?.StamNr || "Onbekend"}
                   </p>
                 </div>
+                {#if career?.Studie}
+                  <div class="space-y-1">
+                    <span class="text-label-small text-accent-400 block"
+                      >Studie</span
+                    >
+                    <p class="text-body-large text-gray-100">
+                      {career.Studie}
+                    </p>
+                  </div>
+                {/if}
                 {#if career?.Klas}
                   <div class="space-y-1">
                     <span class="text-label-small text-accent-400 block"
                       >Klas</span
                     >
-                    <p class="text-body-large text-gray-100">{career?.Klas}</p>
+                    <p class="text-body-large text-gray-100">{career.Klas}</p>
+                  </div>
+                {/if}
+                {#if career?.ExamenNr}
+                  <div class="space-y-1">
+                    <span class="text-label-small text-accent-400 block"
+                      >Examennummer</span
+                    >
+                    <p class="text-body-large text-gray-100">
+                      {career.ExamenNr}
+                    </p>
+                  </div>
+                {/if}
+                {#if career?.Profielen}
+                  <div class="space-y-1">
+                    <span class="text-label-small text-accent-400 block"
+                      >Profielen</span
+                    >
+                    <p class="text-body-large text-gray-100">
+                      {career.Profielen}
+                    </p>
                   </div>
                 {/if}
                 <div class="space-y-1">
@@ -497,23 +582,28 @@
                     <div
                       class="bg-surface-950/50 p-6 rounded-m3-md border border-white/5 hover:bg-surface-800/60 transition-all"
                     >
-                      <div class="mb-4">
-                        <Chip variant="assist"
-                          >{addr.Type === 1 ? "Woonadres" : "Postadres"}</Chip
-                        >
+                      <div class="mb-4 flex items-center gap-2">
+                        <Chip variant="assist">{addressLabel(addr.Type)}</Chip>
+                        {#if addr.IsGeheim}
+                          <span class="text-label-small text-amber-400"
+                            >Geheim adres</span
+                          >
+                        {/if}
                       </div>
                       <div>
                         <p class="text-title-medium text-white mb-1">
-                          {addr.Straat}
-                          {addr.Huisnummer}{addr.Toevoeging || ""}
+                          {addressLine(addr) || "—"}
                         </p>
                         <div
-                          class="flex items-center gap-2 text-gray-400 text-body-medium"
+                          class="flex flex-wrap items-center gap-2 text-gray-400 text-body-medium"
                         >
-                          <span>{addr.Postcode}</span>
-                          <span class="w-1 h-1 bg-surface-700 rounded-full"
-                          ></span>
-                          <span>{addr.Woonplaats}</span>
+                          {#if addr.Postcode}<span>{addr.Postcode}</span>{/if}
+                          {#if addr.Postcode && addr.Woonplaats}
+                            <span class="w-1 h-1 bg-surface-700 rounded-full"
+                            ></span>
+                          {/if}
+                          {#if addr.Woonplaats}<span>{addr.Woonplaats}</span
+                            >{/if}
                         </div>
                         <p class="text-label-small text-gray-500 mt-3">
                           {addr.Land || "Nederland"}
@@ -525,6 +615,180 @@
               {/if}
             </Card>
           </div>
+
+          {#if sortedAnswers.length > 0 || authorization}
+            <div in:fly={{ y: 20, delay: 400 }} class="md:col-span-2">
+              <Card variant="elevated" class="space-y-6">
+                <div class="flex items-center gap-4">
+                  <div
+                    class="w-12 h-12 rounded-m3-md bg-surface-800 flex items-center justify-center text-emerald-400"
+                  >
+                    <svg
+                      class="w-6 h-6"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2.5"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      ><path
+                        d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"
+                      /><path d="m9 12 2 2 4-4" /></svg
+                    >
+                  </div>
+                  <div>
+                    <h3 class="text-title-medium text-gray-200">
+                      Toestemmingen
+                    </h3>
+                    <p class="text-label-small text-gray-500 mt-0.5">
+                      Wat de school met je gegevens mag doen
+                    </p>
+                  </div>
+                </div>
+
+                {#if sortedAnswers.length > 0}
+                  <div class="divide-y divide-surface-800/60">
+                    {#each sortedAnswers as answer}
+                      <div>
+                        <button
+                          type="button"
+                          onclick={() => toggleAnswer(answer.vraagId)}
+                          aria-expanded={openAnswer === answer.vraagId}
+                          class="w-full flex items-start gap-4 py-4 text-left"
+                        >
+                          <span
+                            class="mt-0.5 w-9 h-9 rounded-full flex items-center justify-center shrink-0 {answer.toestemming
+                              ? 'bg-emerald-500/10 text-emerald-400'
+                              : 'bg-red-500/10 text-red-400'}"
+                          >
+                            {#if answer.toestemming}
+                              <svg
+                                class="w-4 h-4"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-width="3"
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                                ><polyline points="20 6 9 17 4 12" /></svg
+                              >
+                            {:else}
+                              <svg
+                                class="w-4 h-4"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-width="3"
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                                ><path d="M18 6 6 18M6 6l12 12" /></svg
+                              >
+                            {/if}
+                          </span>
+                          <span class="flex-1 min-w-0">
+                            <span class="block text-body-large text-gray-100"
+                              >{answer.omschrijving ||
+                                answer.code ||
+                                "Toestemming"}</span
+                            >
+                            <span
+                              class="block text-body-small text-gray-500 mt-0.5"
+                              >Veranderd op
+                              {formatDate(answer.datumAangepast)}</span
+                            >
+                          </span>
+                          <span
+                            class="self-center text-label-small shrink-0 {answer.toestemming
+                              ? 'text-emerald-400'
+                              : 'text-red-400'}"
+                          >
+                            {answer.toestemming
+                              ? "Toegestaan"
+                              : "Niet toegestaan"}
+                          </span>
+                          <svg
+                            class="self-center w-4 h-4 text-gray-500 shrink-0 transition-transform duration-200 {openAnswer ===
+                            answer.vraagId
+                              ? 'rotate-180'
+                              : ''}"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="2.5"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            ><path d="m6 9 6 6 6-6" /></svg
+                          >
+                        </button>
+                        {#if openAnswer === answer.vraagId}
+                          <p
+                            class="pb-4 pl-12 pr-2 text-body-medium text-gray-400"
+                          >
+                            {answer.uitleg || "Geen uitleg beschikbaar."}
+                          </p>
+                        {/if}
+                      </div>
+                    {/each}
+                  </div>
+                {/if}
+
+                {#if authorization}
+                  <div
+                    class="flex items-start gap-4 rounded-m3-md bg-surface-950/50 border border-white/5 p-4"
+                  >
+                    <span
+                      class="mt-0.5 w-9 h-9 rounded-full flex items-center justify-center shrink-0 {authorization.OudersMogenGegevensZien
+                        ? 'bg-emerald-500/10 text-emerald-400'
+                        : 'bg-red-500/10 text-red-400'}"
+                    >
+                      {#if authorization.OudersMogenGegevensZien}
+                        <svg
+                          class="w-4 h-4"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="3"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          ><polyline points="20 6 9 17 4 12" /></svg
+                        >
+                      {:else}
+                        <svg
+                          class="w-4 h-4"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="3"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          ><path d="M18 6 6 18M6 6l12 12" /></svg
+                        >
+                      {/if}
+                    </span>
+                    <div class="flex-1 min-w-0">
+                      <p class="text-body-large text-gray-100">
+                        Ouders mogen gegevens zien
+                      </p>
+                      <p class="text-body-small text-gray-500 mt-0.5">
+                        {authorization.MagInzageOudersInstellen
+                          ? "Je hebt toestemming om de ouderinzage aan te passen."
+                          : "Je mag dit nog niet aanpassen."}
+                      </p>
+                    </div>
+                    <span
+                      class="self-center text-label-small shrink-0 {authorization.OudersMogenGegevensZien
+                        ? 'text-emerald-400'
+                        : 'text-red-400'}"
+                    >
+                      {authorization.OudersMogenGegevensZien
+                        ? "Toegestaan"
+                        : "Niet toegestaan"}
+                    </span>
+                  </div>
+                {/if}
+              </Card>
+            </div>
+          {/if}
         </div>
 
         <div

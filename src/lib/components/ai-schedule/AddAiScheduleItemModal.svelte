@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { AiScheduleItem, AiScheduleItemType } from "$lib/ai-schedule-types";
+  import type { AiScheduleItem, AiScheduleItemType } from "#lib/ai-schedule-types.ts";
   import DurationUrgencyInput from "./DurationUrgencyInput.svelte";
 
   let {

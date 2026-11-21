@@ -1,6 +1,5 @@
 /// Module for AI-related functionality.
 /// Provides tool definitions and provider abstraction.
-
 pub mod attachment_reader;
 pub mod budget;
 pub mod grade_calc;

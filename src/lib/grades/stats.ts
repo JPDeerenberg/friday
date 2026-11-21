@@ -38,7 +38,9 @@ export interface DistributionBucket {
 export function getDistribution(values: number[]): DistributionBucket[] {
   const buckets = [1, 2, 3, 4, 5, 6, 7, 8, 9];
   return buckets.map((b) => {
-    const count = values.filter((v) => v >= b && v < b + 1).length;
+    const count = values.filter(
+      (v) => v >= b && (b === 9 ? v <= 10 : v < b + 1),
+    ).length;
     return {
       label: `${b}-${b + 1}`,
       count,

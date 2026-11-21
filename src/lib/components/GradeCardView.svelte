@@ -14,9 +14,9 @@
     mulberry32,
     polyPoints,
     type CardData,
-  } from "$lib/cards";
-  import Icon from "$lib/components/Icon.svelte";
-  import { tilt } from "$lib/tilt";
+  } from "#lib/cards.ts";
+  import Icon from "#lib/components/Icon.svelte";
+  import { tilt } from "#lib/tilt.ts";
 
   let {
     card,
@@ -26,6 +26,7 @@
     calm = false,
     lite = false,
     animateFlip = true,
+    celebrate = false,
     class: className = "",
   }: {
     card: CardData;
@@ -39,6 +40,8 @@
     /** Skip the expensive blend/filter layers (low-end phones). */
     lite?: boolean;
     animateFlip?: boolean;
+    /** One-shot celebration when the card lands in the reveal. */
+    celebrate?: boolean;
     class?: string;
   } = $props();
 
@@ -93,6 +96,14 @@
         })
       : "",
   );
+  // A deterministic "print run" code. Flavour, but it makes the card feel
+  // like an object rather than a div.
+  const serial = $derived.by(() => {
+    const rnd = mulberry32(card.seed ^ 0x6d2b79f5);
+    return `FR-${String(Math.floor(rnd() * 9000) + 1000)}-${String(
+      Math.floor(rnd() * 90) + 10,
+    )}`;
+  });
   const label = $derived(
     faceDown
       ? `Verborgen cijfer, ${card.subject}`
@@ -107,6 +118,7 @@
   class:shiny={card.shiny}
   class:down={faceDown}
   class:flip-anim={animateFlip}
+  class:celebrate
   style="font-size:{scale}px; --h:{card.hue}; --c1:{meta.color}; --c2:{meta.color2};"
   use:tilt={{ enabled: tiltOn && !calm }}
   role="img"
@@ -196,8 +208,18 @@
           {/if}
         </svg>
 
+        <div class="poster" aria-hidden="true">
+          <div class="halo"></div>
+          <div class="beams"></div>
+          <div class="orbit o1"></div>
+          <div class="orbit o2"></div>
+          <div class="watermark">{card.value}</div>
+          <div class="grain"></div>
+        </div>
+
         <div class="tex"></div>
         <div class="foil"></div>
+        <div class="holo"></div>
 
         <div class="shade"></div>
 
@@ -228,7 +250,12 @@
           <div class="meta">
             {#if card.weight}<span>×{card.weight}</span>{/if}
             {#if dateLabel}<span>{dateLabel}</span>{/if}
+            {#if !mini}<span class="serial">{serial}</span>{/if}
           </div>
+        </div>
+
+        <div class="corners" aria-hidden="true">
+          <i></i><i></i><i></i><i></i>
         </div>
 
         {#if card.shiny}
@@ -346,6 +373,92 @@
     height: 100%;
     z-index: 0;
   }
+  /* Layered poster: halo, light rays, orbit rings, a ghosted grade and grain.
+     All decorative, all deterministic, all cheap enough for a binder grid. */
+  .poster {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    overflow: hidden;
+    border-radius: inherit;
+    pointer-events: none;
+  }
+  .halo {
+    position: absolute;
+    inset: -22%;
+    background: radial-gradient(
+      46% 38% at 50% 34%,
+      color-mix(in srgb, var(--c1) 58%, transparent),
+      transparent 70%
+    );
+    opacity: 0.55;
+    animation: halo-breathe 6s ease-in-out infinite alternate;
+  }
+  .beams {
+    position: absolute;
+    inset: -40%;
+    background: repeating-conic-gradient(
+      from 9deg at 50% 34%,
+      color-mix(in srgb, var(--c1) 22%, transparent) 0 2.2deg,
+      transparent 2.2deg 17deg
+    );
+    opacity: 0.3;
+    -webkit-mask-image: radial-gradient(
+      58% 60% at 50% 34%,
+      transparent 0 26%,
+      #000 52%,
+      transparent 76%
+    );
+    mask-image: radial-gradient(
+      58% 60% at 50% 34%,
+      transparent 0 26%,
+      #000 52%,
+      transparent 76%
+    );
+    animation: spin-rays 58s linear infinite;
+  }
+  .orbit {
+    position: absolute;
+    left: 50%;
+    top: 36%;
+    width: 15em;
+    height: 15em;
+    border: 0.07em solid color-mix(in srgb, var(--c1) 45%, transparent);
+    border-radius: 50%;
+    transform: translate(-50%, -50%) rotate(-18deg);
+    opacity: 0.32;
+  }
+  .orbit.o2 {
+    width: 10.4em;
+    height: 10.4em;
+    border-style: dashed;
+    opacity: 0.2;
+    animation: spin-rays 34s linear infinite reverse;
+  }
+  .watermark {
+    position: absolute;
+    left: 50%;
+    top: 34%;
+    transform: translate(-50%, -50%);
+    font-size: 12.5em;
+    font-weight: 900;
+    line-height: 1;
+    letter-spacing: -0.08em;
+    font-variant-numeric: tabular-nums;
+    color: color-mix(in srgb, var(--c1) 30%, transparent);
+    opacity: 0.26;
+  }
+  .grain {
+    position: absolute;
+    inset: 0;
+    opacity: 0.32;
+    background-image: radial-gradient(
+      rgba(255, 255, 255, 0.14) 0.5px,
+      transparent 0.6px
+    );
+    background-size: 3px 3px;
+    mix-blend-mode: overlay;
+  }
   .bolt {
     stroke-dasharray: 6 4;
     filter: drop-shadow(0 0 3px var(--c1));
@@ -353,8 +466,10 @@
   }
   .tex,
   .foil,
+  .holo,
   .glare,
-  .frame {
+  .frame,
+  .corners {
     position: absolute;
     inset: 0;
     pointer-events: none;
@@ -366,6 +481,23 @@
   .foil {
     z-index: 4;
     opacity: 0;
+  }
+  .holo {
+    z-index: 5;
+    opacity: 0;
+    background: linear-gradient(
+      115deg,
+      transparent 16%,
+      rgba(255, 255, 255, 0.18) 30%,
+      rgba(120, 255, 255, 0.28) 40%,
+      rgba(255, 120, 220, 0.24) 50%,
+      rgba(255, 240, 140, 0.26) 60%,
+      transparent 78%
+    );
+    background-size: 220% 220%;
+    background-position: var(--mx, 50%) var(--my, 50%);
+    mix-blend-mode: color-dodge;
+    transition: opacity 0.35s ease;
   }
   .shade {
     position: absolute;
@@ -386,7 +518,7 @@
     );
   }
   .glare {
-    z-index: 5;
+    z-index: 6;
     background: radial-gradient(
       circle at var(--mx, 50%) var(--my, 30%),
       rgba(255, 255, 255, 0.3),
@@ -396,7 +528,7 @@
     opacity: 0.55;
   }
   .frame {
-    z-index: 6;
+    z-index: 7;
     padding: 0.32em;
     background: linear-gradient(135deg, var(--c1), var(--c2) 55%, var(--c1));
     background-size: 200% 200%;
@@ -408,6 +540,45 @@
       linear-gradient(#000 0 0) content-box exclude,
       linear-gradient(#000 0 0);
     mask-composite: exclude;
+  }
+  .corners {
+    inset: 0.62em;
+    z-index: 7;
+  }
+  .corners i {
+    position: absolute;
+    width: 1.25em;
+    height: 1.25em;
+    border-color: color-mix(in srgb, var(--c1) 75%, #fff);
+    opacity: 0.55;
+  }
+  .corners i:nth-child(1) {
+    top: 0;
+    left: 0;
+    border-top: 0.1em solid;
+    border-left: 0.1em solid;
+    border-top-left-radius: 0.35em;
+  }
+  .corners i:nth-child(2) {
+    top: 0;
+    right: 0;
+    border-top: 0.1em solid;
+    border-right: 0.1em solid;
+    border-top-right-radius: 0.35em;
+  }
+  .corners i:nth-child(3) {
+    bottom: 0;
+    left: 0;
+    border-bottom: 0.1em solid;
+    border-left: 0.1em solid;
+    border-bottom-left-radius: 0.35em;
+  }
+  .corners i:nth-child(4) {
+    bottom: 0;
+    right: 0;
+    border-bottom: 0.1em solid;
+    border-right: 0.1em solid;
+    border-bottom-right-radius: 0.35em;
   }
 
   .head {
@@ -518,6 +689,13 @@
     font-size: 0.78em;
     opacity: 0.75;
     font-weight: 600;
+  }
+  .serial {
+    margin-left: auto;
+    font-size: 0.9em;
+    letter-spacing: 0.08em;
+    opacity: 0.55;
+    font-variant-numeric: tabular-nums;
   }
 
   /* ---------- back ---------- */
@@ -721,6 +899,49 @@
     );
     animation: hue-spin 6s linear infinite;
   }
+  .r-speciaal .holo,
+  .r-zeldzaam .holo,
+  .r-episch .holo,
+  .r-legendarisch .holo {
+    opacity: 0.42;
+  }
+  .r-mythisch .holo {
+    opacity: 0.75;
+  }
+  .r-gewoon .beams {
+    opacity: 0.12;
+  }
+  .r-speciaal .halo {
+    background: radial-gradient(
+      46% 38% at 50% 34%,
+      rgba(125, 255, 235, 0.5),
+      transparent 70%
+    );
+  }
+  .r-zeldzaam .halo {
+    background: radial-gradient(
+      46% 38% at 50% 34%,
+      rgba(125, 211, 252, 0.52),
+      transparent 70%
+    );
+  }
+  .r-episch .beams {
+    opacity: 0.38;
+  }
+  .r-legendarisch .beams {
+    opacity: 0.42;
+    background: repeating-conic-gradient(
+      from 9deg at 50% 34%,
+      rgba(251, 191, 36, 0.26) 0 2.2deg,
+      transparent 2.2deg 16deg
+    );
+  }
+  .r-mythisch .beams {
+    opacity: 0.48;
+  }
+  .r-glitch .halo {
+    opacity: 0.28;
+  }
   .r-glitch .tex {
     background: repeating-linear-gradient(
       0deg,
@@ -756,7 +977,7 @@
   .sparkles {
     position: absolute;
     inset: 0;
-    z-index: 7;
+    z-index: 2;
     pointer-events: none;
   }
   .sparkles i {
@@ -783,16 +1004,42 @@
   .calm {
     animation: none !important;
   }
+  .calm .beams,
+  .calm .orbit,
+  .calm .grain,
+  .calm .holo,
+  .calm .corners {
+    display: none;
+  }
   .calm .shineback {
     display: none;
   }
   .lite .foil,
   .lite .tex,
-  .lite .glare {
+  .lite .glare,
+  .lite .holo {
     mix-blend-mode: normal;
   }
   .lite.r-mythisch .foil {
     opacity: 0.35;
+  }
+  .lite .beams,
+  .lite .grain {
+    display: none;
+  }
+
+  /* ---------- reveal celebration (one-shot) ---------- */
+  .celebrate .value {
+    animation: value-slam 0.72s cubic-bezier(0.16, 1.2, 0.3, 1) both;
+  }
+  .celebrate .halo {
+    animation: halo-pop 1s ease-out both;
+  }
+  .celebrate .holo {
+    animation: holo-sweep 1.1s ease-out both;
+  }
+  .celebrate .frame {
+    animation: frame-flash 0.85s ease-out both;
   }
 
   @keyframes sweep {
@@ -851,6 +1098,70 @@
     50% {
       transform: scale(1) rotate(45deg);
       opacity: 1;
+    }
+  }
+  @keyframes halo-breathe {
+    0% {
+      transform: scale(0.96);
+      opacity: 0.42;
+    }
+    100% {
+      transform: scale(1.08);
+      opacity: 0.62;
+    }
+  }
+  @keyframes value-slam {
+    0% {
+      transform: scale(1.45) translateY(-0.06em);
+      opacity: 0;
+      filter: blur(0.05em);
+    }
+    55% {
+      transform: scale(0.97) translateY(0);
+      opacity: 1;
+      filter: blur(0);
+    }
+    100% {
+      transform: scale(1);
+      opacity: 1;
+    }
+  }
+  @keyframes halo-pop {
+    0% {
+      transform: scale(0.62);
+      opacity: 0;
+    }
+    42% {
+      transform: scale(1.14);
+      opacity: 0.95;
+    }
+    100% {
+      transform: scale(1);
+      opacity: 0.55;
+    }
+  }
+  @keyframes holo-sweep {
+    0% {
+      background-position: 0% 0%;
+      opacity: 0;
+    }
+    30% {
+      opacity: 0.95;
+    }
+    100% {
+      background-position: 100% 100%;
+      opacity: 0.42;
+    }
+  }
+  @keyframes frame-flash {
+    0% {
+      filter: brightness(2.4) saturate(0.4);
+    }
+    28% {
+      filter: brightness(1.5) saturate(1.4);
+    }
+    100% {
+      filter: none;
     }
   }
   @keyframes glitch-jitter {

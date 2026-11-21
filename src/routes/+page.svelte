@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { isLoggedIn, currentPage } from '$lib/stores';
+  import { isLoggedIn, currentPage } from '#lib/stores.ts';
   import { fly } from 'svelte/transition';
   import Login from './login/Login.svelte';
 

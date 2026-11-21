@@ -59,7 +59,9 @@ pub async fn get_studiewijzer_detail(
         "studiewijzers"
     };
     let url = format!("leerlingen/{}/{}/{}", person_id, base, id);
-    let response = crate::client::get_with_shared(&client, &url).await.map_err(|e| e.to_string())?;
+    let response = crate::client::get_with_shared(&client, &url)
+        .await
+        .map_err(|e| e.to_string())?;
     let detail: StudiewijzerDetail = serde_json::from_value(response)
         .map_err(|e| format!("Failed to parse studiewijzer detail: {}", e))?;
     Ok(detail)
@@ -82,7 +84,9 @@ pub async fn get_studiewijzer_onderdeel_detail(
         "leerlingen/{}/{}/{}/onderdelen/{}?gebruikMappenStructuur=true",
         person_id, base, sw_id, onderdeel_id
     );
-    let response = crate::client::get_with_shared(&client, &url).await.map_err(|e| e.to_string())?;
+    let response = crate::client::get_with_shared(&client, &url)
+        .await
+        .map_err(|e| e.to_string())?;
     let detail: StudiewijzerOnderdeelDetail = serde_json::from_value(response)
         .map_err(|e| format!("Failed to parse onderdeel detail: {}", e))?;
     Ok(detail)

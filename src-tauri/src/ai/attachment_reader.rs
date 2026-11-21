@@ -168,7 +168,12 @@ fn extract_docx(bytes: &[u8]) -> Result<String, String> {
         .map_err(|e| format!("Kon .docx niet openen (ongeldig archief): {}", e))?;
 
     let entry_name = (0..archive.len())
-        .filter_map(|i| archive.by_index(i).ok().map(|f| f.name().to_string()))
+        .filter_map(|i| {
+            archive
+                .by_index(i)
+                .ok()
+                .and_then(|f| f.name().ok().map(|name| name.to_string()))
+        })
         .find(|n| n.eq_ignore_ascii_case("word/document.xml"))
         .ok_or_else(|| "Geen word/document.xml gevonden in het .docx-bestand.".to_string())?;
 
@@ -197,7 +202,12 @@ fn extract_pptx(bytes: &[u8]) -> Result<String, String> {
         .map_err(|e| format!("Kon .pptx niet openen (ongeldig archief): {}", e))?;
 
     let mut names: Vec<String> = (0..archive.len())
-        .filter_map(|i| archive.by_index(i).ok().map(|f| f.name().to_string()))
+        .filter_map(|i| {
+            archive
+                .by_index(i)
+                .ok()
+                .and_then(|f| f.name().ok().map(|name| name.to_string()))
+        })
         .filter(|n| {
             let l = n.to_lowercase();
             l.starts_with("ppt/slides/slide") && l.ends_with(".xml")

@@ -10,7 +10,9 @@ pub async fn get_activities(
     person_id: i64,
 ) -> Result<Vec<Activity>, String> {
     let url = format!("personen/{}/activiteiten", person_id);
-    let response = crate::client::get_with_shared(&client, &url).await.map_err(|e| e.to_string())?;
+    let response = crate::client::get_with_shared(&client, &url)
+        .await
+        .map_err(|e| e.to_string())?;
     let activities: ActivitiesResponse = serde_json::from_value(response)
         .map_err(|e| format!("Failed to parse activities: {}", e))?;
     Ok(activities.items)
@@ -27,7 +29,9 @@ pub async fn get_activity_elements(
         "personen/{}/activiteiten/{}/onderdelen",
         person_id, activity_id
     );
-    let response = crate::client::get_with_shared(&client, &url).await.map_err(|e| e.to_string())?;
+    let response = crate::client::get_with_shared(&client, &url)
+        .await
+        .map_err(|e| e.to_string())?;
     let elements: ActivityElementsResponse = serde_json::from_value(response)
         .map_err(|e| format!("Failed to parse activity elements: {}", e))?;
     Ok(elements.items)

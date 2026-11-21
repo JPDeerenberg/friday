@@ -12,11 +12,11 @@
  * Hidden grades are filtered out of the data (see `splitGrades`) before averages,
  * charts or lists are built, so nothing can leak a value early.
  *
- * Keep this module free of `$lib` runtime imports so it stays importable from
+ * Keep this module free of `#lib` runtime imports so it stays importable from
  * plain Node tests.
  */
 import { writable, get } from "svelte/store";
-import type { Grade } from "$lib/types";
+import type { Grade } from "#lib/types.ts";
 import {
   emptyTally,
   tallyAfterOpening,

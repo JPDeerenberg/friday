@@ -12,7 +12,7 @@
  *    just starts again silently.
  */
 
-import type { IconName } from "$lib/icons";
+import type { IconName } from "#lib/icons.ts";
 
 export type QuestEvent =
   | "app_open"

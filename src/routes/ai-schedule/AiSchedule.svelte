@@ -1,17 +1,17 @@
 <script lang="ts">
   import { onMount, untrack } from "svelte";
   import { Moon } from "@lucide/svelte";
-  import { personId, userSettings, resumedAt } from "$lib/stores";
+  import { personId, userSettings, resumedAt } from "#lib/stores.ts";
   import { get } from "svelte/store";
-  import { formatTime } from "$lib/format";
-  import { displayTeacherName } from "$lib/teachers";
-  import * as schedApi from "$lib/ai-schedule";
-  import type { AiScheduleItem } from "$lib/ai-schedule-types";
-  import type { CalendarEvent } from "$lib/types";
-  import Button from "$lib/components/Button.svelte";
-  import IconButton from "$lib/components/IconButton.svelte";
-  import DropdownMenu from "$lib/components/DropdownMenu.svelte";
-  import AddAiScheduleItemModal from "$lib/components/ai-schedule/AddAiScheduleItemModal.svelte";
+  import { formatTime } from "#lib/format.ts";
+  import { displayTeacherName } from "#lib/teachers.ts";
+  import * as schedApi from "#lib/ai-schedule.ts";
+  import type { AiScheduleItem } from "#lib/ai-schedule-types.ts";
+  import type { CalendarEvent } from "#lib/types.ts";
+  import Button from "#lib/components/Button.svelte";
+  import IconButton from "#lib/components/IconButton.svelte";
+  import DropdownMenu from "#lib/components/DropdownMenu.svelte";
+  import AddAiScheduleItemModal from "#lib/components/ai-schedule/AddAiScheduleItemModal.svelte";
   import { on } from "svelte/events";
   import { fly, slide } from "svelte/transition";
 

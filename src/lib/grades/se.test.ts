@@ -7,7 +7,7 @@ import {
   distinctSeColumns,
   type SeConfig,
 } from "./se.ts";
-import type { Grade } from "$lib/types";
+import type { Grade } from "#lib/types.ts";
 
 function mkGrade(overrides: Partial<Grade> = {}): Grade {
   return {

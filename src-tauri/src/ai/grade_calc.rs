@@ -27,9 +27,9 @@ fn default_weight() -> f64 {
 /// Sum of `value * weight` over the points, plus the total weight.
 /// Mirrors the accumulator loops in predictor.ts.
 pub fn weighted_sum(points: &[GradePoint]) -> (f64, f64) {
-    points
-        .iter()
-        .fold((0.0, 0.0), |(p, w), g| (p + g.value * g.weight, w + g.weight))
+    points.iter().fold((0.0, 0.0), |(p, w), g| {
+        (p + g.value * g.weight, w + g.weight)
+    })
 }
 
 /// Parse a Magister grade string ("7,5" or "7.5") into a number.
@@ -54,7 +54,8 @@ pub fn required_grade(
     let (sim_points, sim_weight) = weighted_sum(simulation);
     let current_points = total_points + sim_points;
     let current_weight = total_weight + sim_weight;
-    let required = (target_average * (current_weight + grade_weight) - current_points) / grade_weight;
+    let required =
+        (target_average * (current_weight + grade_weight) - current_points) / grade_weight;
     if required > 10.0 {
         return "Onmogelijk (>10)".to_string();
     }
@@ -142,7 +143,13 @@ pub fn new_overall_average(
     }
     let total: f64 = valid
         .iter()
-        .map(|(name, avg)| if name.eq_ignore_ascii_case(subject_name) { replacement_avg } else { *avg })
+        .map(|(name, avg)| {
+            if name.eq_ignore_ascii_case(subject_name) {
+                replacement_avg
+            } else {
+                *avg
+            }
+        })
         .sum();
     format!("{:.*}", decimal_points, total / valid.len() as f64)
 }
@@ -171,7 +178,10 @@ mod tests {
     #[test]
     fn required_grade_matches_frontend_examples() {
         // Simple case: 4 grades averaging 6.0, want 6.5 next test (weight 1).
-        let points = [GradePoint { value: 6.0, weight: 1.0 }; 4];
+        let points = [GradePoint {
+            value: 6.0,
+            weight: 1.0,
+        }; 4];
         let (tp, tw) = weighted_sum(&points);
         assert_eq!((tp, tw), (24.0, 4.0));
         let req = required_grade(tp, tw, 6.5, 1.0, &[], 1);
@@ -181,40 +191,70 @@ mod tests {
 
     #[test]
     fn required_grade_impossible_and_floor() {
-        let points = [GradePoint { value: 2.0, weight: 1.0 }];
+        let points = [GradePoint {
+            value: 2.0,
+            weight: 1.0,
+        }];
         let (tp, tw) = weighted_sum(&points);
         assert_eq!(required_grade(tp, tw, 9.0, 1.0, &[], 1), "Onmogelijk (>10)");
         // Required < 1 clamps to "1.0" like the frontend.
-        let points = [GradePoint { value: 9.5, weight: 3.0 }; 4];
+        let points = [GradePoint {
+            value: 9.5,
+            weight: 3.0,
+        }; 4];
         let (tp, tw) = weighted_sum(&points);
         assert_eq!(required_grade(tp, tw, 5.5, 1.0, &[], 1), "1.0");
     }
 
     #[test]
     fn predicted_average_adds_simulation() {
-        let points = [GradePoint { value: 7.0, weight: 1.0 }; 3];
+        let points = [GradePoint {
+            value: 7.0,
+            weight: 1.0,
+        }; 3];
         let (tp, tw) = weighted_sum(&points);
-        let sim = [GradePoint { value: 5.0, weight: 1.0 }];
+        let sim = [GradePoint {
+            value: 5.0,
+            weight: 1.0,
+        }];
         assert_eq!(predicted_average(tp, tw, &sim, true, 1), "6.5");
         assert_eq!(predicted_average(tp, tw, &sim, false, 1), "7.0");
     }
 
     #[test]
     fn min_grade_for_pass_variants() {
-        let (tp, tw) = weighted_sum(&[GradePoint { value: 6.0, weight: 2.0 }]);
+        let (tp, tw) = weighted_sum(&[GradePoint {
+            value: 6.0,
+            weight: 2.0,
+        }]);
         // 5.5 * 3 - 12 = 4.5
-        assert_eq!(min_grade_for_pass(tp, tw, 5.5), MinGradeForPass::Needed("4.5".to_string()));
+        assert_eq!(
+            min_grade_for_pass(tp, tw, 5.5),
+            MinGradeForPass::Needed("4.5".to_string())
+        );
 
-        let (tp, tw) = weighted_sum(&[GradePoint { value: 9.0, weight: 3.0 }]);
-        assert_eq!(min_grade_for_pass(tp, tw, 5.5), MinGradeForPass::AlreadyPassing);
+        let (tp, tw) = weighted_sum(&[GradePoint {
+            value: 9.0,
+            weight: 3.0,
+        }]);
+        assert_eq!(
+            min_grade_for_pass(tp, tw, 5.5),
+            MinGradeForPass::AlreadyPassing
+        );
 
-        let (tp, tw) = weighted_sum(&[GradePoint { value: 1.0, weight: 2.0 }]);
+        let (tp, tw) = weighted_sum(&[GradePoint {
+            value: 1.0,
+            weight: 2.0,
+        }]);
         assert_eq!(min_grade_for_pass(tp, tw, 5.5), MinGradeForPass::Impossible);
     }
 
     #[test]
     fn average_for_grade_is_weighted() {
-        let (tp, tw) = weighted_sum(&[GradePoint { value: 7.0, weight: 1.0 }]);
+        let (tp, tw) = weighted_sum(&[GradePoint {
+            value: 7.0,
+            weight: 1.0,
+        }]);
         assert_eq!(average_for_grade(tp, tw, 5.0, 1.0, 1), "6.0");
     }
 

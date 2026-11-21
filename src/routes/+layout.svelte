@@ -16,7 +16,7 @@
     restoreStatus,
     getStartPage,
     resolveBackgroundMode,
-  } from "$lib/stores";
+  } from "#lib/stores.ts";
   import {
     restoreSession,
     getAccount,
@@ -25,18 +25,18 @@
     handleAuthCallback,
     logout,
     type RestoreSessionStatus,
-  } from "$lib/api";
+  } from "#lib/api.ts";
   import { getCurrent as getCurrentDeepLink } from "@tauri-apps/plugin-deep-link";
-  import { getAiConfig } from "$lib/ai";
-  import { navIcon } from "$lib/icons";
+  import { getAiConfig } from "#lib/ai.ts";
+  import { navIcon } from "#lib/icons.ts";
   import { get } from "svelte/store";
   import { fade } from "svelte/transition";
-  import AIAssistant from "$lib/components/AIAssistant.svelte";
-  import IconButton from "$lib/components/IconButton.svelte";
-  import { ensureAutoUpdateCheck } from "$lib/updates";
-  import { photoDataUrl } from "$lib/web-session";
-  import Logo from "$lib/components/Logo.svelte";
-  import type { Account } from "$lib/types";
+  import AIAssistant from "#lib/components/AIAssistant.svelte";
+  import IconButton from "#lib/components/IconButton.svelte";
+  import { ensureAutoUpdateCheck } from "#lib/updates.ts";
+  import { photoDataUrl } from "#lib/web-session.ts";
+  import Logo from "#lib/components/Logo.svelte";
+  import type { Account } from "#lib/types.ts";
   import {
     clearOffline,
     loadIdentity,
@@ -44,16 +44,16 @@
     offlineStatus,
     saveIdentity,
     setOfflineEnabled,
-  } from "$lib/offline";
-  import { runOfflineSync } from "$lib/offline-sync";
-  import CalendarChangesDialog from "$lib/components/CalendarChangesDialog.svelte";
-  import QuestToast from "$lib/components/QuestToast.svelte";
-  import { offerFriendLink } from "$lib/friends-store";
+  } from "#lib/offline.ts";
+  import { runOfflineSync } from "#lib/offline-sync.ts";
+  import CalendarChangesDialog from "#lib/components/CalendarChangesDialog.svelte";
+  import QuestToast from "#lib/components/QuestToast.svelte";
+  import { offerFriendLink } from "#lib/friends-store.ts";
   import {
     calendarChangesPopup,
     consumeNotificationTap,
-  } from "$lib/calendar-changes";
-  import { clearGradeMemory, setHiddenGradeRestore } from "$lib/hidden-grades";
+  } from "#lib/calendar-changes.ts";
+  import { clearGradeMemory, setHiddenGradeRestore } from "#lib/hidden-grades.ts";
 
   let { children } = $props();
 
@@ -234,7 +234,7 @@
         webRequest,
         webRequestBytes,
         bytesToBase64,
-      } = await import("$lib/web-session");
+      } = await import("#lib/web-session.ts");
       const status = await restoreWebSession();
       restoreState = status;
       restoreStatus.set(status as any);
@@ -737,7 +737,7 @@
         await logout();
       } else {
         const { webBackend, loadWebSession, clearWebSession } =
-          await import("$lib/web-session");
+          await import("#lib/web-session.ts");
         const tokens = await loadWebSession();
         if (tokens) {
           try {

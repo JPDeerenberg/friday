@@ -3,7 +3,7 @@
  * test is a 7?". Deliberately simple — a weighted mean of the grades you can see —
  * and labelled as an estimate in the UI; the grades page stays the source of truth.
  *
- * Pure and free of `$lib` runtime imports so it can run in plain Node tests.
+ * Pure and free of `#lib` runtime imports so it can run in plain Node tests.
  */
 import type { Grade } from "./types.ts";
 import { parseGrade } from "./grades/scale.ts";
@@ -30,7 +30,12 @@ export function numericGrade(
   if (g.Vrijstelling || g.TeltMee === false) return null;
   const parsed = parseGrade(g.CijferStr);
   if (parsed.kind !== "number" || parsed.value === null) return null;
-  const weight = typeof g.Weging === "number" && g.Weging > 0 ? g.Weging : 1;
+  // Same rule as `effectiveWeight` on the grades page: an explicit weight wins
+  // (0 means "does not count"), only a missing weight falls back to 1.
+  const weight =
+    typeof g.Weging === "number" && Number.isFinite(g.Weging)
+      ? Math.max(0, g.Weging)
+      : 1;
   return { value: parsed.value, weight };
 }
 
@@ -52,9 +57,10 @@ export function subjectTotals(grades: ReadonlyArray<Grade>): SubjectTotals[] {
     t.points += n.value * n.weight;
     t.weight += n.weight;
     t.count += 1;
-    t.average = t.points / t.weight;
     map.set(name, t);
   }
+  for (const t of map.values())
+    t.average = t.weight > 0 ? t.points / t.weight : null;
   return [...map.values()].sort((a, b) =>
     a.name.localeCompare(b.name, "nl", { sensitivity: "base" }),
   );

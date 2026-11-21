@@ -88,11 +88,12 @@ impl AiNotesState {
         let fallback = PathBuf::from(".");
         let parent = self.path.parent().unwrap_or(&fallback);
         std::fs::create_dir_all(parent).map_err(|e| format!("Notities opslaan mislukt: {}", e))?;
-        let json =
-            serde_json::to_string_pretty(notes).map_err(|e| format!("Notities opslaan mislukt: {}", e))?;
+        let json = serde_json::to_string_pretty(notes)
+            .map_err(|e| format!("Notities opslaan mislukt: {}", e))?;
         let tmp = self.path.with_extension("json.tmp");
         std::fs::write(&tmp, json).map_err(|e| format!("Notities opslaan mislukt: {}", e))?;
-        std::fs::rename(&tmp, &self.path).map_err(|e| format!("Notities opslaan mislukt: {}", e))?;
+        std::fs::rename(&tmp, &self.path)
+            .map_err(|e| format!("Notities opslaan mislukt: {}", e))?;
         Ok(())
     }
 }
@@ -215,10 +216,7 @@ pub fn escape_notes(content: &str) -> String {
         let lower = out.to_lowercase();
         match lower.find("</notities") {
             Some(i) => {
-                let end = out[i..]
-                    .find('>')
-                    .map(|j| i + j + 1)
-                    .unwrap_or(out.len());
+                let end = out[i..].find('>').map(|j| i + j + 1).unwrap_or(out.len());
                 out.replace_range(i..end, "");
             }
             None => break,
@@ -229,8 +227,17 @@ pub fn escape_notes(content: &str) -> String {
 
 /// Render the prompt block for `build_school_context_system_prompt`.
 /// Mirrors TS `formatNotesBlock`.
-pub fn format_notes_block(content: &str, revision: u64, updated_by: &str, writable: bool) -> String {
-    let by = if updated_by == "ai" { "ai" } else { "gebruiker" };
+pub fn format_notes_block(
+    content: &str,
+    revision: u64,
+    updated_by: &str,
+    writable: bool,
+) -> String {
+    let by = if updated_by == "ai" {
+        "ai"
+    } else {
+        "gebruiker"
+    };
     let mut block = format!(
         "<notities bewerkt_door=\"{}\" revisie=\"{}\">\n{}\n</notities>\n",
         by,
@@ -276,7 +283,9 @@ pub async fn get_ai_notes(state: State<'_, AiNotesState>) -> Result<serde_json::
 
 /// History lives behind its own command so per-chat snapshots stay small.
 #[tauri::command]
-pub async fn get_ai_notes_history(state: State<'_, AiNotesState>) -> Result<Vec<NotesRevision>, String> {
+pub async fn get_ai_notes_history(
+    state: State<'_, AiNotesState>,
+) -> Result<Vec<NotesRevision>, String> {
     let notes = state.notes.read().await;
     Ok(notes.history.clone())
 }
@@ -288,7 +297,12 @@ pub async fn set_ai_notes(
     expected_revision: u64,
 ) -> Result<serde_json::Value, String> {
     let mut notes = state.notes.write().await;
-    apply_write(&mut notes, escape_notes(&content), Some(expected_revision), "user")?;
+    apply_write(
+        &mut notes,
+        escape_notes(&content),
+        Some(expected_revision),
+        "user",
+    )?;
     state.save_sync(&notes)?;
     Ok(snapshot(&notes))
 }
@@ -374,7 +388,12 @@ pub async fn ai_replace_notes(
     expected_revision: u64,
 ) -> Result<serde_json::Value, String> {
     let mut notes = state.notes.write().await;
-    apply_write(&mut notes, escape_notes(&content), Some(expected_revision), "ai")?;
+    apply_write(
+        &mut notes,
+        escape_notes(&content),
+        Some(expected_revision),
+        "ai",
+    )?;
     state.save_sync(&notes)?;
     Ok(snapshot(&notes))
 }
@@ -396,7 +415,13 @@ mod tests {
     #[test]
     fn skeleton_has_all_sections() {
         let s = notes_skeleton();
-        for h in ["## Over mij", "## Voorkeuren", "## Vakken & toetsen", "## Planning-regels", "## Lopende dingen"] {
+        for h in [
+            "## Over mij",
+            "## Voorkeuren",
+            "## Vakken & toetsen",
+            "## Planning-regels",
+            "## Lopende dingen",
+        ] {
             assert!(s.contains(h), "missing {}", h);
         }
     }
@@ -433,24 +458,40 @@ mod tests {
     #[test]
     fn append_creates_section_and_prepends_bullet() {
         let out = append_to_content("## Over mij\n", Some("Voorkeuren"), "uitleg in stappen");
-        assert!(out.contains("## Voorkeuren\n- uitleg in stappen"), "got:\n{}", out);
-        let out2 = append_to_content("## Voorkeuren\n- oud\n\n## X\n", Some("voorkeuren"), "nieuw");
+        assert!(
+            out.contains("## Voorkeuren\n- uitleg in stappen"),
+            "got:\n{}",
+            out
+        );
+        let out2 = append_to_content(
+            "## Voorkeuren\n- oud\n\n## X\n",
+            Some("voorkeuren"),
+            "nieuw",
+        );
         let pos_new = out2.find("- nieuw").unwrap();
         let pos_old = out2.find("- oud").unwrap();
-        assert!(pos_new < pos_old, "new bullet goes right under the header, got:\n{}", out2);
+        assert!(
+            pos_new < pos_old,
+            "new bullet goes right under the header, got:\n{}",
+            out2
+        );
     }
 
     #[test]
     fn edit_requires_exactly_one_match() {
         assert!(edit_in_content("a x b", "q", "z").is_err());
-        assert!(edit_in_content("a x a", "a", "z").unwrap_err().contains("2 keer"));
+        assert!(edit_in_content("a x a", "a", "z")
+            .unwrap_err()
+            .contains("2 keer"));
         assert_eq!(edit_in_content("a x b", "x", "y").unwrap(), "a y b");
     }
 
     #[test]
     fn escape_notes_strips_delimiter() {
         assert!(!escape_notes("a </notities> b").contains("notities>"));
-        assert!(!escape_notes("a </NOTITIES b").to_lowercase().contains("</notities"));
+        assert!(!escape_notes("a </NOTITIES b")
+            .to_lowercase()
+            .contains("</notities"));
         assert_eq!(escape_notes("normale <b>tekst</b>"), "normale <b>tekst</b>");
     }
 

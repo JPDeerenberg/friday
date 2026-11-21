@@ -5,17 +5,17 @@
    * — no server involved (see friends-share.ts).
    */
   import { onMount } from "svelte";
-  import Icon from "$lib/components/Icon.svelte";
-  import { currentPage } from "$lib/stores";
-  import { friends, pendingFriendLink } from "$lib/friends-store";
-  import { buildSnapshot, defaultWindowStart } from "$lib/friends-share";
+  import Icon from "#lib/components/Icon.svelte";
+  import { currentPage } from "#lib/stores.ts";
+  import { friends, pendingFriendLink } from "#lib/friends-store.ts";
+  import { buildSnapshot, defaultWindowStart } from "#lib/friends-share.ts";
   import {
     changeNotice,
     describeNotice,
     friendsAsPeople,
-  } from "$lib/friends-state";
-  import { describePresence, presenceOf } from "$lib/friends-compare";
-  import type { CalendarEvent } from "$lib/types";
+  } from "#lib/friends-state.ts";
+  import { describePresence, presenceOf } from "#lib/friends-compare.ts";
+  import type { CalendarEvent } from "#lib/types.ts";
 
   let { events }: { events: CalendarEvent[] } = $props();
 

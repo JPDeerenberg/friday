@@ -3,8 +3,8 @@
     calendarChangesPopup,
     describeChange,
     groupByDay,
-  } from "$lib/calendar-changes";
-  import { currentPage } from "$lib/stores";
+  } from "#lib/calendar-changes.ts";
+  import { currentPage } from "#lib/stores.ts";
 
   const changes = $derived($calendarChangesPopup);
   const groups = $derived(changes ? groupByDay(changes) : []);

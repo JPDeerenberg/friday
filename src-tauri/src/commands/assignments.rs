@@ -16,7 +16,13 @@ const ASSIGNMENTS_MAX_PAGES: usize = 40;
 /// with its own default window, so only recent assignments ever came back and the
 /// school-year picker had nothing to show for older years.
 pub fn assignments_path(person_id: i64, start: &str, end: &str, skip: usize) -> String {
-    let day = |s: &str| if s.len() >= 10 { s[0..10].to_string() } else { s.to_string() };
+    let day = |s: &str| {
+        if s.len() >= 10 {
+            s[0..10].to_string()
+        } else {
+            s.to_string()
+        }
+    };
     format!(
         "personen/{person_id}/opdrachten?startdatum={}&einddatum={}&top={ASSIGNMENTS_PAGE}&skip={skip}",
         day(start),
@@ -97,7 +103,9 @@ pub async fn get_assignment_detail(
     self_url: String,
 ) -> Result<Assignment, String> {
     let url = self_url.replace("/api/", "");
-    let data = crate::client::get_with_shared(&client, &url).await.map_err(|e| e.to_string())?;
+    let data = crate::client::get_with_shared(&client, &url)
+        .await
+        .map_err(|e| e.to_string())?;
     serde_json::from_value(data).map_err(|e| e.to_string())
 }
 
@@ -243,8 +251,14 @@ pub async fn upload_assignment_attachment_bytes(
         return Err("Verwachtte de bestandsinhoud als ruwe bytes.".to_string());
     };
     let (file_name, mime_type) = upload_meta(
-        request.headers().get("x-file-name").and_then(|v| v.to_str().ok()),
-        request.headers().get("x-content-type").and_then(|v| v.to_str().ok()),
+        request
+            .headers()
+            .get("x-file-name")
+            .and_then(|v| v.to_str().ok()),
+        request
+            .headers()
+            .get("x-content-type")
+            .and_then(|v| v.to_str().ok()),
     )?;
 
     let mut c = client.lock().await;
@@ -254,7 +268,7 @@ pub async fn upload_assignment_attachment_bytes(
 /// File name and MIME type for an upload from the `x-file-name` /
 /// `x-content-type` headers. The name is URI-encoded by the frontend because
 /// header values must be ASCII; it is cleaned like every other file name.
-fn upload_meta(
+pub(crate) fn upload_meta(
     raw_name: Option<&str>,
     raw_type: Option<&str>,
 ) -> Result<(String, String), String> {
@@ -264,7 +278,9 @@ fn upload_meta(
     let name = crate::commands::files::safe_file_name(&decoded, "bijlage");
     let mime = match raw_type.map(str::trim).filter(|t| !t.is_empty()) {
         Some(t) => t.to_string(),
-        None => mime_guess::from_path(&name).first_or_octet_stream().to_string(),
+        None => mime_guess::from_path(&name)
+            .first_or_octet_stream()
+            .to_string(),
     };
     Ok((name, mime))
 }
@@ -342,7 +358,9 @@ mod tests {
                 .await;
         }
         let client = shared(&server).await;
-        let items = fetch_assignment_items(&client, 7, "2013-01-01", "2026-12-31").await.unwrap();
+        let items = fetch_assignment_items(&client, 7, "2013-01-01", "2026-12-31")
+            .await
+            .unwrap();
         assert_eq!(items.len(), 120);
         assert_eq!(items[0]["Id"], 0);
         assert_eq!(items[119]["Id"], 119);
@@ -361,7 +379,9 @@ mod tests {
             .mount(&server)
             .await;
         let client = shared(&server).await;
-        let items = fetch_assignment_items(&client, 7, "2013-01-01", "2026-12-31").await.unwrap();
+        let items = fetch_assignment_items(&client, 7, "2013-01-01", "2026-12-31")
+            .await
+            .unwrap();
         assert_eq!(items.len(), 50, "duplicates are dropped");
     }
 
@@ -372,16 +392,25 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/personen/7/opdrachten"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({ "oops": 1 })))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(serde_json::json!({ "oops": 1 })),
+            )
             .mount(&server)
             .await;
         let client = shared(&server).await;
-        assert!(fetch_assignment_items(&client, 7, "2013-01-01", "2026-12-31").await.is_err());
+        assert!(
+            fetch_assignment_items(&client, 7, "2013-01-01", "2026-12-31")
+                .await
+                .is_err()
+        );
     }
 
     #[test]
     fn percent_decode_handles_encoded_names() {
-        assert_eq!(percent_decode("verslag%20NL%20%282%29.pdf"), "verslag NL (2).pdf");
+        assert_eq!(
+            percent_decode("verslag%20NL%20%282%29.pdf"),
+            "verslag NL (2).pdf"
+        );
         assert_eq!(percent_decode("caf%C3%A9.docx"), "café.docx");
         assert_eq!(percent_decode("plain.txt"), "plain.txt");
     }

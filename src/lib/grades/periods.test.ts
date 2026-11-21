@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert';
 import { getPeriods, filterGradesByPeriod, isPtaGrade } from './periods.ts';
-import type { Grade, GradePeriod } from '$lib/types';
+import type { Grade, GradePeriod } from '#lib/types.ts';
 
 function mkGrade(overrides: Partial<Grade>): Grade {
   return {

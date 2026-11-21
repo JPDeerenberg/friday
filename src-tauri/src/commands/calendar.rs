@@ -14,7 +14,11 @@ pub async fn get_calendar_events(
     end: String,   // yyyy-MM-dd
 ) -> Result<Vec<CalendarEvent>, String> {
     // Fetch events and absences concurrently
-    let start_date = if start.len() >= 10 { &start[0..10] } else { &start };
+    let start_date = if start.len() >= 10 {
+        &start[0..10]
+    } else {
+        &start
+    };
     let end_date = if end.len() >= 10 { &end[0..10] } else { &end };
 
     let events_url = format!("personen/{person_id}/afspraken?tot={end_date}&van={start_date}");
@@ -26,7 +30,8 @@ pub async fn get_calendar_events(
     let (events_data, absences_data) = tokio::try_join!(
         crate::client::get_with_shared(&client, &events_url),
         crate::client::get_with_shared(&client, &absences_url)
-    ).map_err(|e| e.to_string())?;
+    )
+    .map_err(|e| e.to_string())?;
 
     let events_resp: CalendarEventsResponse =
         serde_json::from_value(events_data).map_err(|e| e.to_string())?;
@@ -63,9 +68,12 @@ pub async fn get_calendar_event(
     person_id: i64,
     event_id: i64,
 ) -> Result<CalendarEvent, String> {
-    let data = crate::client::get_with_shared(&client, &format!("personen/{person_id}/afspraken/{event_id}"))
-        .await
-        .map_err(|e| e.to_string())?;
+    let data = crate::client::get_with_shared(
+        &client,
+        &format!("personen/{person_id}/afspraken/{event_id}"),
+    )
+    .await
+    .map_err(|e| e.to_string())?;
 
     let mut event: CalendarEvent = serde_json::from_value(data).map_err(|e| e.to_string())?;
     event.self_url = Some(format!("personen/{person_id}/afspraken/{event_id}"));
@@ -95,11 +103,19 @@ pub async fn create_calendar_event(
     // homework flows (they key off InfoType 1).
     let inhoud = inhoud.and_then(|s| {
         let t = s.trim().to_string();
-        if t.is_empty() { None } else { Some(t) }
+        if t.is_empty() {
+            None
+        } else {
+            Some(t)
+        }
     });
     let lokatie = lokatie.and_then(|s| {
         let t = s.trim().to_string();
-        if t.is_empty() { None } else { Some(t) }
+        if t.is_empty() {
+            None
+        } else {
+            Some(t)
+        }
     });
     let info_type = if inhoud.is_some() { 6 } else { 0 };
 
@@ -160,9 +176,14 @@ pub async fn get_absences(
     let start_date = if van.len() >= 10 { &van[0..10] } else { &van };
     let end_date = if tot.len() >= 10 { &tot[0..10] } else { &tot };
 
-    let url = format!("personen/{}/absenties?van={}&tot={}", person_id, start_date, end_date);
+    let url = format!(
+        "personen/{}/absenties?van={}&tot={}",
+        person_id, start_date, end_date
+    );
     log::debug!("Fetching absences from: {}", url);
-    let response = crate::client::get_with_shared(&client, &url).await.map_err(|e| e.to_string())?;
+    let response = crate::client::get_with_shared(&client, &url)
+        .await
+        .map_err(|e| e.to_string())?;
 
     let res: crate::models::calendar::AbsencesResponse = serde_json::from_value(response.clone())
         .map_err(|e| {
@@ -211,10 +232,12 @@ pub async fn download_file(
 
     // Resolve the indirection link to the real content URL before fetching bytes.
     let url = url.replace("/api/", "");
-    let resolved = c
-        .get_redirect_location(&url)
-        .await
-        .map_err(|e: crate::client::ClientError| format!("Failed to resolve download link: {}", e))?;
+    let resolved =
+        c.get_redirect_location(&url)
+            .await
+            .map_err(|e: crate::client::ClientError| {
+                format!("Failed to resolve download link: {}", e)
+            })?;
 
     // The resolved URL is usually a pre-signed storage URL: no bearer token there
     // (see `get_resolved_bytes`).
@@ -258,7 +281,8 @@ pub async fn download_file(
 
     let save_path = save_dir.join(&filename);
     let mut file = std::fs::File::create(&save_path).map_err(|e: std::io::Error| e.to_string())?;
-    file.write_all(&bytes).map_err(|e: std::io::Error| e.to_string())?;
+    file.write_all(&bytes)
+        .map_err(|e: std::io::Error| e.to_string())?;
     drop(file);
 
     // Hand the file to the OS: save it where the user can find it (the folder from
@@ -327,7 +351,9 @@ mod tests {
         // Step 2: the resolved content URL returns the real file bytes.
         Mock::given(method("GET"))
             .and(path("/contents/file"))
-            .respond_with(ResponseTemplate::new(200).set_body_bytes(b"%PDF-1.4 real content".to_vec()))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_bytes(b"%PDF-1.4 real content".to_vec()),
+            )
             .mount(&mock_server)
             .await;
 
@@ -364,9 +390,10 @@ mod tests {
         Mock::given(method("GET"))
             .and(path("/blob/file.pdf"))
             .and(header_exists("Authorization"))
-            .respond_with(ResponseTemplate::new(401).set_body_string(
-                "<Error><Code>InvalidAuthenticationInfo</Code></Error>",
-            ))
+            .respond_with(
+                ResponseTemplate::new(401)
+                    .set_body_string("<Error><Code>InvalidAuthenticationInfo</Code></Error>"),
+            )
             .with_priority(1)
             .mount(&storage)
             .await;
@@ -426,4 +453,3 @@ mod tests {
         assert!(err.to_string().contains("404"), "got: {err}");
     }
 }
-

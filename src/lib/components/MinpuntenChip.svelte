@@ -4,9 +4,9 @@
    * subjects are close to a sufficient grade and what a little extra would do.
    * Never red, never alarming (see grades/minpunten.ts).
    */
-  import type { CompensationResult } from "$lib/grades/compensation";
-  import { summarizeMinpunten, describeMinpunten } from "$lib/grades/minpunten";
-  import Icon from "$lib/components/Icon.svelte";
+  import type { CompensationResult } from "#lib/grades/compensation.ts";
+  import { summarizeMinpunten, describeMinpunten } from "#lib/grades/minpunten.ts";
+  import Icon from "#lib/components/Icon.svelte";
 
   let {
     result,

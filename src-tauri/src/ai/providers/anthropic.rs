@@ -128,7 +128,11 @@ impl AiProvider for AnthropicProvider {
         if !status.is_success() {
             let error_msg = extract_error_message(&raw_body, 500);
             log::error!("Anthropic API error ({}): {}", status.as_u16(), error_msg);
-            return Err(format!("Anthropic-fout ({}): {}", status.as_u16(), error_msg));
+            return Err(format!(
+                "Anthropic-fout ({}): {}",
+                status.as_u16(),
+                error_msg
+            ));
         }
 
         let body: Value = serde_json::from_str(&raw_body)

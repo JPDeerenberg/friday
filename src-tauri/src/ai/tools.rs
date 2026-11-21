@@ -57,10 +57,22 @@ pub struct CalendarRange {
 /// Resolve a (possibly partial) model-supplied range to the effective fetch
 /// range. Omitted sides fall back to the 3-week default window; spans over 62
 /// days are clamped, never rejected. Mirrors TS `resolveCalendarRange`.
-pub fn resolve_calendar_range(start_arg: &str, end_arg: &str, today: &str) -> Result<CalendarRange, String> {
+pub fn resolve_calendar_range(
+    start_arg: &str,
+    end_arg: &str,
+    today: &str,
+) -> Result<CalendarRange, String> {
     let win = crate::ai::time::context_window(today);
-    let start = if start_arg.is_empty() { win.start.clone() } else { start_arg.to_string() };
-    let end = if end_arg.is_empty() { win.end.clone() } else { end_arg.to_string() };
+    let start = if start_arg.is_empty() {
+        win.start.clone()
+    } else {
+        start_arg.to_string()
+    };
+    let end = if end_arg.is_empty() {
+        win.end.clone()
+    } else {
+        end_arg.to_string()
+    };
     if !crate::ai::time::is_valid_date_str(&start) || !crate::ai::time::is_valid_date_str(&end) {
         return Err(format!(
             "Ongeldige datum (verwacht yyyy-MM-dd): '{}' t/m '{}'. Vraag get_current_time om 'vandaag'.",
@@ -69,10 +81,16 @@ pub fn resolve_calendar_range(start_arg: &str, end_arg: &str, today: &str) -> Re
     }
     let span = crate::ai::time::diff_days_opt(&start, &end).unwrap_or(0);
     if span < 0 {
-        return Err(format!("Einddatum {} ligt voor startdatum {}. Wissel ze om.", end, start));
+        return Err(format!(
+            "Einddatum {} ligt voor startdatum {}. Wissel ze om.",
+            end, start
+        ));
     }
     let (effective_end, clamped) = if span > CALENDAR_MAX_SPAN_DAYS {
-        (crate::ai::time::add_days(&start, CALENDAR_MAX_SPAN_DAYS), true)
+        (
+            crate::ai::time::add_days(&start, CALENDAR_MAX_SPAN_DAYS),
+            true,
+        )
     } else {
         (end.clone(), false)
     };
@@ -87,11 +105,19 @@ pub fn resolve_calendar_range(start_arg: &str, end_arg: &str, today: &str) -> Re
 }
 
 /// Paginate a slice without consuming it. Returns (page, truncated, next_offset).
-pub fn paginate_slice(items: &[Value], offset: usize, limit: usize) -> (Vec<Value>, bool, Option<usize>) {
+pub fn paginate_slice(
+    items: &[Value],
+    offset: usize,
+    limit: usize,
+) -> (Vec<Value>, bool, Option<usize>) {
     let limit = limit.clamp(1, CALENDAR_MAX_LIMIT);
     let page: Vec<Value> = items.iter().skip(offset).take(limit).cloned().collect();
     let truncated = offset + limit < items.len();
-    let next_offset = if truncated { Some(offset + limit) } else { None };
+    let next_offset = if truncated {
+        Some(offset + limit)
+    } else {
+        None
+    };
     (page, truncated, next_offset)
 }
 
@@ -139,7 +165,11 @@ fn insert_if_present(map: &mut serde_json::Map<String, Value>, key: &str, v: Val
 /// lives behind `get_calendar_event_detail`. Mirrors TS `slimCalendarEvent`.
 pub fn slim_calendar_item(item: &Value) -> Value {
     let mut out = serde_json::Map::new();
-    insert_if_present(&mut out, "id", item.get("Id").cloned().unwrap_or(Value::Null));
+    insert_if_present(
+        &mut out,
+        "id",
+        item.get("Id").cloned().unwrap_or(Value::Null),
+    );
     let start = item.get("Start").and_then(|v| v.as_str()).unwrap_or("");
     let einde = item.get("Einde").and_then(|v| v.as_str()).unwrap_or("");
     if let Some(date) = start.get(0..10) {
@@ -157,8 +187,15 @@ pub fn slim_calendar_item(item: &Value) -> Value {
         .cloned()
         .unwrap_or(Value::Null);
     insert_if_present(&mut out, "vak", vak);
-    if let Some(first) = item.get("Docenten").and_then(|v| v.as_array()).and_then(|a| a.first()) {
-        let naam = redact_docent(first).get("naam").cloned().unwrap_or(Value::Null);
+    if let Some(first) = item
+        .get("Docenten")
+        .and_then(|v| v.as_array())
+        .and_then(|a| a.first())
+    {
+        let naam = redact_docent(first)
+            .get("naam")
+            .cloned()
+            .unwrap_or(Value::Null);
         insert_if_present(&mut out, "docent", naam);
     }
     let lokaal = item
@@ -169,14 +206,31 @@ pub fn slim_calendar_item(item: &Value) -> Value {
         .cloned()
         .unwrap_or(Value::Null);
     insert_if_present(&mut out, "lokaal", lokaal);
-    let omschrijving = item.get("Omschrijving").and_then(|v| v.as_str()).unwrap_or("");
+    let omschrijving = item
+        .get("Omschrijving")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
     if !omschrijving.trim().is_empty() {
-        out.insert("omschrijving".to_string(), Value::String(cut_120(omschrijving)));
+        out.insert(
+            "omschrijving".to_string(),
+            Value::String(cut_120(omschrijving)),
+        );
     }
     let inhoud = item.get("Inhoud").and_then(|v| v.as_str()).unwrap_or("");
-    out.insert("huiswerk".to_string(), Value::Bool(!inhoud.trim().is_empty()));
-    insert_if_present(&mut out, "type", item.get("Type").cloned().unwrap_or(Value::Null));
-    insert_if_present(&mut out, "afgerond", item.get("Afgerond").cloned().unwrap_or(Value::Null));
+    out.insert(
+        "huiswerk".to_string(),
+        Value::Bool(!inhoud.trim().is_empty()),
+    );
+    insert_if_present(
+        &mut out,
+        "type",
+        item.get("Type").cloned().unwrap_or(Value::Null),
+    );
+    insert_if_present(
+        &mut out,
+        "afgerond",
+        item.get("Afgerond").cloned().unwrap_or(Value::Null),
+    );
     // Test/toetsweek detection: InfoType 2-5 (Proefwerk, Tentamen, SO,
     // Mondeling) plus test signals in Opmerking/Aantekening (shared spec).
     let detection = crate::ai::test_detection::detect_test(
@@ -186,10 +240,17 @@ pub fn slim_calendar_item(item: &Value) -> Value {
         item.get("Aantekening").and_then(|v| v.as_str()),
     );
     out.insert("is_test".to_string(), Value::Bool(detection.is_test));
-    insert_if_present(&mut out, "aantekening", item.get("Aantekening").cloned().unwrap_or(Value::Null));
+    insert_if_present(
+        &mut out,
+        "aantekening",
+        item.get("Aantekening").cloned().unwrap_or(Value::Null),
+    );
     if let Some(opmerking) = item.get("Opmerking").and_then(|v| v.as_str()) {
         if !opmerking.trim().is_empty() {
-            out.insert("opmerking".to_string(), Value::String(cut_200(opmerking.trim())));
+            out.insert(
+                "opmerking".to_string(),
+                Value::String(cut_200(opmerking.trim())),
+            );
         }
     }
     if let Some(hint) = detection.hint {
@@ -320,7 +381,9 @@ fn redact_teacher_name_str(name: &str) -> String {
                 let code = trimmed[start + 1..end].trim();
                 if !code.is_empty()
                     && code.len() <= 10
-                    && code.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+                    && code
+                        .chars()
+                        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
                 {
                     return code.to_string();
                 }
@@ -412,7 +475,10 @@ async fn resolve_scenario_grades(
         return Ok((tp, tw, points.len(), subject_name, Vec::new()));
     }
 
-    let schoolyear_id = args.get("schoolyear_id").and_then(|v| v.as_i64()).unwrap_or(0);
+    let schoolyear_id = args
+        .get("schoolyear_id")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(0);
     let subject_query = subject_name.trim().to_lowercase();
     if schoolyear_id == 0 || subject_query.is_empty() {
         return Err(
@@ -430,7 +496,10 @@ async fn resolve_scenario_grades(
 
     let vakken = data
         .get("CijferVakken")
-        .or_else(|| data.get("CijferOverzicht").and_then(|co| co.get("CijferVakken")))
+        .or_else(|| {
+            data.get("CijferOverzicht")
+                .and_then(|co| co.get("CijferVakken"))
+        })
         .and_then(|v| v.as_array())
         .cloned()
         .unwrap_or_default();
@@ -472,7 +541,11 @@ async fn resolve_scenario_grades(
     let vak = found.ok_or_else(|| {
         let known: Vec<&str> = vakken
             .iter()
-            .filter_map(|v| v.get("Vak").and_then(|v| v.get("Omschrijving")).and_then(|v| v.as_str()))
+            .filter_map(|v| {
+                v.get("Vak")
+                    .and_then(|v| v.get("Omschrijving"))
+                    .and_then(|v| v.as_str())
+            })
             .collect();
         format!(
             "Vak '{}' niet gevonden in het cijferoverzicht. Bekende vakken: {}",
@@ -568,7 +641,9 @@ async fn inbox_message_link(
         .and_then(|v| v.as_array())
         .cloned()
         .unwrap_or_default();
-    let f = folders.first().ok_or_else(|| "Geen mappen gevonden.".to_string())?;
+    let f = folders
+        .first()
+        .ok_or_else(|| "Geen mappen gevonden.".to_string())?;
     let link = f
         .get("Links")
         .and_then(|l| l.as_array())
@@ -696,7 +771,11 @@ pub async fn execute_tool(
             let offset = int_arg(args, "offset", 0).max(0) as usize;
             let limit = int_arg(args, "limit", CALENDAR_DEFAULT_LIMIT as i64);
             let limit = (limit.max(1).min(CALENDAR_MAX_LIMIT as i64)) as usize;
-            let range = match resolve_calendar_range(start_arg, end_arg, &crate::ai::time::today_amsterdam()) {
+            let range = match resolve_calendar_range(
+                start_arg,
+                end_arg,
+                &crate::ai::time::today_amsterdam(),
+            ) {
                 Ok(r) => r,
                 Err(e) => {
                     return ToolResult {
@@ -801,7 +880,10 @@ pub async fn execute_tool(
                 };
             }
             match client
-                .get(&format!("personen/{}/afspraken?tot={}&van={}", person_id, date, date))
+                .get(&format!(
+                    "personen/{}/afspraken?tot={}&van={}",
+                    person_id, date, date
+                ))
                 .await
             {
                 Ok(data) => {
@@ -809,7 +891,8 @@ pub async fn execute_tool(
                         .get("Items")
                         .and_then(|v| v.as_array())
                         .and_then(|arr| {
-                            arr.iter().find(|item| item.get("Id").and_then(|v| v.as_i64()) == Some(id))
+                            arr.iter()
+                                .find(|item| item.get("Id").and_then(|v| v.as_i64()) == Some(id))
                         })
                         .cloned();
                     match found {
@@ -864,9 +947,16 @@ pub async fn execute_tool(
             }
         }
         "get_grades" => {
-            let top = args.get("top").and_then(|v| v.as_i64()).unwrap_or(10).min(20) as usize;
+            let top = args
+                .get("top")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(10)
+                .min(20) as usize;
             match client
-                .get(&format!("personen/{}/cijfers/laatste?top={}&skip=0", person_id, top))
+                .get(&format!(
+                    "personen/{}/cijfers/laatste?top={}&skip=0",
+                    person_id, top
+                ))
                 .await
             {
                 Ok(data) => {
@@ -919,9 +1009,16 @@ pub async fn execute_tool(
             }
         }
         "get_full_grade_overview" => {
-            let schoolyear_id = args.get("schoolyear_id").and_then(|v| v.as_i64()).unwrap_or(0);
+            let schoolyear_id = args
+                .get("schoolyear_id")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(0);
             let einde = args.get("einde").and_then(|v| v.as_str()).unwrap_or("");
-            let peildatum = if einde.len() > 10 { einde.get(0..10).unwrap_or(einde) } else { einde };
+            let peildatum = if einde.len() > 10 {
+                einde.get(0..10).unwrap_or(einde)
+            } else {
+                einde
+            };
 
             let path = format!(
                 "personen/{}/aanmeldingen/{}/cijfers/cijferoverzichtvooraanmelding?actievePerioden=false&alleenBerekendeKolommen=false&alleenPTAKolommen=false&peildatum={}",
@@ -932,7 +1029,10 @@ pub async fn execute_tool(
                 Ok(data) => {
                     let vakken = data
                         .get("CijferVakken")
-                        .or_else(|| data.get("CijferOverzicht").and_then(|co| co.get("CijferVakken")))
+                        .or_else(|| {
+                            data.get("CijferOverzicht")
+                                .and_then(|co| co.get("CijferVakken"))
+                        })
                         .and_then(|v| v.as_array());
 
                     let simplified: Vec<Value> = vakken
@@ -991,15 +1091,17 @@ pub async fn execute_tool(
                         .or_else(|| data["items"].as_array())
                         .or_else(|| data.as_array())
                         .map(|arr| {
-                            arr.iter().map(|item| {
-                                serde_json::json!({
-                                    "id": item.get("Id"),
-                                    "naam": item.get("Naam"),
-                                    "van": item.get("Van"),
-                                    "tot": item.get("Tot"),
-                                    "is_actief": item.get("IsActief"),
+                            arr.iter()
+                                .map(|item| {
+                                    serde_json::json!({
+                                        "id": item.get("Id"),
+                                        "naam": item.get("Naam"),
+                                        "van": item.get("Van"),
+                                        "tot": item.get("Tot"),
+                                        "is_actief": item.get("IsActief"),
+                                    })
                                 })
-                            }).collect()
+                                .collect()
                         })
                         .unwrap_or_default();
                     ToolResult {
@@ -1041,9 +1143,9 @@ pub async fn execute_tool(
                                         .map(|a| {
                                             a.iter()
                                                 .filter_map(|b| {
-                                                    b.get("Naam").and_then(|n| n.as_str()).map(|s| {
-                                                        Value::String(s.to_string())
-                                                    })
+                                                    b.get("Naam")
+                                                        .and_then(|n| n.as_str())
+                                                        .map(|s| Value::String(s.to_string()))
                                                 })
                                                 .collect()
                                         })
@@ -1161,7 +1263,14 @@ pub async fn execute_tool(
                         } else {
                             link.trim_start_matches("/api/").to_string()
                         };
-                        match client.get(&format!("{}/berichten?top={}", link.trim_start_matches('/'), top)).await {
+                        match client
+                            .get(&format!(
+                                "{}/berichten?top={}",
+                                link.trim_start_matches('/'),
+                                top
+                            ))
+                            .await
+                        {
                             Ok(msgs) => {
                                 let items = msgs
                                     .get("Items")
@@ -1231,11 +1340,17 @@ pub async fn execute_tool(
                         "is_gelezen": data.get("IsGelezen"),
                     });
                     ToolResult {
-                        tool: tool_name.to_string(), success: true, data: simplified, error: None,
+                        tool: tool_name.to_string(),
+                        success: true,
+                        data: simplified,
+                        error: None,
                     }
                 }
                 Err(e) => ToolResult {
-                    tool: tool_name.to_string(), success: false, data: Value::Null, error: Some(e.to_string()),
+                    tool: tool_name.to_string(),
+                    success: false,
+                    data: Value::Null,
+                    error: Some(e.to_string()),
                 },
             }
         }
@@ -1243,24 +1358,34 @@ pub async fn execute_tool(
             let start = args.get("start").and_then(|v| v.as_str()).unwrap_or("");
             let end = args.get("end").and_then(|v| v.as_str()).unwrap_or("");
             match client
-                .get(&format!("personen/{}/absenties?tot={}&van={}", person_id, end, start))
+                .get(&format!(
+                    "personen/{}/absenties?tot={}&van={}",
+                    person_id, end, start
+                ))
                 .await
             {
                 Ok(data) => {
                     let items = data.get("Items").cloned().unwrap_or(Value::Array(vec![]));
                     ToolResult {
-                        tool: tool_name.to_string(), success: true,
+                        tool: tool_name.to_string(),
+                        success: true,
                         data: serde_json::json!({ "items": items, "count": items.as_array().map(|a| a.len()).unwrap_or(0) }),
                         error: None,
                     }
                 }
                 Err(e) => ToolResult {
-                    tool: tool_name.to_string(), success: false, data: Value::Null, error: Some(e.to_string()),
+                    tool: tool_name.to_string(),
+                    success: false,
+                    data: Value::Null,
+                    error: Some(e.to_string()),
                 },
             }
         }
         "get_studiewijzers" => {
-            match client.get(&format!("personen/{}/studiewijzers", person_id)).await {
+            match client
+                .get(&format!("personen/{}/studiewijzers", person_id))
+                .await
+            {
                 Ok(data) => {
                     let items = data.get("Items").cloned().unwrap_or(Value::Array(vec![]));
                     let simplified: Vec<Value> = items.as_array().map(|arr| {
@@ -1273,88 +1398,128 @@ pub async fn execute_tool(
                         }).collect()
                     }).unwrap_or_default();
                     ToolResult {
-                        tool: tool_name.to_string(), success: true,
+                        tool: tool_name.to_string(),
+                        success: true,
                         data: serde_json::json!({ "items": simplified, "count": simplified.len() }),
                         error: None,
                     }
                 }
                 Err(e) => ToolResult {
-                    tool: tool_name.to_string(), success: false, data: Value::Null, error: Some(e.to_string()),
+                    tool: tool_name.to_string(),
+                    success: false,
+                    data: Value::Null,
+                    error: Some(e.to_string()),
                 },
             }
         }
         "get_activities" => {
-            match client.get(&format!("personen/{}/activiteiten", person_id)).await {
+            match client
+                .get(&format!("personen/{}/activiteiten", person_id))
+                .await
+            {
                 Ok(data) => {
                     let items = data.get("Items").cloned().unwrap_or(Value::Array(vec![]));
-                    let simplified: Vec<Value> = items.as_array().map(|arr| {
-                        arr.iter().map(|item| {
-                            serde_json::json!({
-                                "id": item.get("Id"), "naam": item.get("Naam"),
-                                "categorie": item.get("Categorie"),
-                                "begin": item.get("Begin"), "einde": item.get("Einde"),
-                                "status": item.get("Status"),
-                            })
-                        }).collect()
-                    }).unwrap_or_default();
+                    let simplified: Vec<Value> = items
+                        .as_array()
+                        .map(|arr| {
+                            arr.iter()
+                                .map(|item| {
+                                    serde_json::json!({
+                                        "id": item.get("Id"), "naam": item.get("Naam"),
+                                        "categorie": item.get("Categorie"),
+                                        "begin": item.get("Begin"), "einde": item.get("Einde"),
+                                        "status": item.get("Status"),
+                                    })
+                                })
+                                .collect()
+                        })
+                        .unwrap_or_default();
                     ToolResult {
-                        tool: tool_name.to_string(), success: true,
+                        tool: tool_name.to_string(),
+                        success: true,
                         data: serde_json::json!({ "items": simplified, "count": simplified.len() }),
                         error: None,
                     }
                 }
                 Err(e) => ToolResult {
-                    tool: tool_name.to_string(), success: false, data: Value::Null, error: Some(e.to_string()),
+                    tool: tool_name.to_string(),
+                    success: false,
+                    data: Value::Null,
+                    error: Some(e.to_string()),
                 },
             }
         }
         "get_bronnen" => {
-            match client.get(&format!("personen/{}/bronnen?soort=0", person_id)).await {
+            match client
+                .get(&format!("personen/{}/bronnen?soort=0", person_id))
+                .await
+            {
                 Ok(data) => {
                     let items = data.get("Items").cloned().unwrap_or(Value::Array(vec![]));
-                    let simplified: Vec<Value> = items.as_array().map(|arr| {
-                        arr.iter().map(|item| {
-                            serde_json::json!({
-                                "id": item.get("Id"), "naam": item.get("Naam"),
-                                "bron_soort": item.get("BronSoort"),
-                                "url": item.get("Url"),
-                                "is_favoriet": item.get("IsFavoriet"),
-                            })
-                        }).collect()
-                    }).unwrap_or_default();
+                    let simplified: Vec<Value> = items
+                        .as_array()
+                        .map(|arr| {
+                            arr.iter()
+                                .map(|item| {
+                                    serde_json::json!({
+                                        "id": item.get("Id"), "naam": item.get("Naam"),
+                                        "bron_soort": item.get("BronSoort"),
+                                        "url": item.get("Url"),
+                                        "is_favoriet": item.get("IsFavoriet"),
+                                    })
+                                })
+                                .collect()
+                        })
+                        .unwrap_or_default();
                     ToolResult {
-                        tool: tool_name.to_string(), success: true,
+                        tool: tool_name.to_string(),
+                        success: true,
                         data: serde_json::json!({ "items": simplified, "count": simplified.len() }),
                         error: None,
                     }
                 }
                 Err(e) => ToolResult {
-                    tool: tool_name.to_string(), success: false, data: Value::Null, error: Some(e.to_string()),
+                    tool: tool_name.to_string(),
+                    success: false,
+                    data: Value::Null,
+                    error: Some(e.to_string()),
                 },
             }
         }
         "get_leermiddelen" => {
-            match client.get(&format!("personen/{}/lesmateriaal", person_id)).await {
+            match client
+                .get(&format!("personen/{}/lesmateriaal", person_id))
+                .await
+            {
                 Ok(data) => {
                     let items = data.get("Items").cloned().unwrap_or(Value::Array(vec![]));
-                    let simplified: Vec<Value> = items.as_array().map(|arr| {
-                        arr.iter().map(|item| {
-                            serde_json::json!({
-                                "id": item.get("Id"), "titel": item.get("Titel"),
-                                "vak": item.get("VakNaam"),
-                                "uitgever": item.get("Uitgever"),
-                                "type": item.get("Type"),
-                            })
-                        }).collect()
-                    }).unwrap_or_default();
+                    let simplified: Vec<Value> = items
+                        .as_array()
+                        .map(|arr| {
+                            arr.iter()
+                                .map(|item| {
+                                    serde_json::json!({
+                                        "id": item.get("Id"), "titel": item.get("Titel"),
+                                        "vak": item.get("VakNaam"),
+                                        "uitgever": item.get("Uitgever"),
+                                        "type": item.get("Type"),
+                                    })
+                                })
+                                .collect()
+                        })
+                        .unwrap_or_default();
                     ToolResult {
-                        tool: tool_name.to_string(), success: true,
+                        tool: tool_name.to_string(),
+                        success: true,
                         data: serde_json::json!({ "items": simplified, "count": simplified.len() }),
                         error: None,
                     }
                 }
                 Err(e) => ToolResult {
-                    tool: tool_name.to_string(), success: false, data: Value::Null, error: Some(e.to_string()),
+                    tool: tool_name.to_string(),
+                    success: false,
+                    data: Value::Null,
+                    error: Some(e.to_string()),
                 },
             }
         }
@@ -1373,7 +1538,10 @@ pub async fn execute_tool(
                 results.insert("persoon".to_string(), simplified);
             }
 
-            if let Ok(career) = client.get(&format!("personen/{}/opleidinggegevensprofiel", person_id)).await {
+            if let Ok(career) = client
+                .get(&format!("personen/{}/opleidinggegevensprofiel", person_id))
+                .await
+            {
                 // `opleiding` may contain mentor / klas info which is needed for context;
                 // redact any embedded Docent names to code/last-name only.
                 let mut opleiding_val = career;
@@ -1394,7 +1562,8 @@ pub async fn execute_tool(
             }
 
             ToolResult {
-                tool: tool_name.to_string(), success: true,
+                tool: tool_name.to_string(),
+                success: true,
                 data: serde_json::Value::Object(results),
                 error: None,
             }
@@ -1412,16 +1581,24 @@ pub async fn execute_tool(
             let mut summary = serde_json::Map::new();
 
             if let Ok(events) = client
-                .get(&format!("personen/{}/afspraken?tot={}&van={}", person_id, today, today))
+                .get(&format!(
+                    "personen/{}/afspraken?tot={}&van={}",
+                    person_id, today, today
+                ))
                 .await
             {
                 let mut items = events.get("Items").cloned().unwrap_or(Value::Array(vec![]));
                 // Privacy: redact teacher names in today's lessons
                 if let Some(arr) = items.as_array_mut() {
                     for item in arr.iter_mut() {
-                        if let Some(docenten) = item.get("Docenten").and_then(|v| v.as_array()).cloned() {
+                        if let Some(docenten) =
+                            item.get("Docenten").and_then(|v| v.as_array()).cloned()
+                        {
                             if let Some(obj) = item.as_object_mut() {
-                                obj.insert("Docenten".to_string(), redact_docenten_array(Some(&docenten)));
+                                obj.insert(
+                                    "Docenten".to_string(),
+                                    redact_docenten_array(Some(&docenten)),
+                                );
                             }
                         }
                     }
@@ -1430,14 +1607,21 @@ pub async fn execute_tool(
             }
 
             if let Ok(grades) = client
-                .get(&format!("personen/{}/cijfers/laatste?top=5&skip=0", person_id))
+                .get(&format!(
+                    "personen/{}/cijfers/laatste?top=5&skip=0",
+                    person_id
+                ))
                 .await
             {
                 let mut items = grades.get("Items").cloned().unwrap_or(Value::Array(vec![]));
                 // Privacy: redact teacher names in grades (string field)
                 if let Some(arr) = items.as_array_mut() {
                     for item in arr.iter_mut() {
-                        if let Some(name) = item.get("Docent").and_then(|v| v.as_str()).map(|s| s.to_string()) {
+                        if let Some(name) = item
+                            .get("Docent")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string())
+                        {
                             let redacted = redact_teacher_name_str(&name);
                             if let Some(obj) = item.as_object_mut() {
                                 obj.insert("Docent".to_string(), Value::String(redacted));
@@ -1449,15 +1633,26 @@ pub async fn execute_tool(
             }
 
             if let Ok(assignments) = client
-                .get(&format!("personen/{}/opdrachten?van={}&tot={}", person_id, today, next_week))
+                .get(&format!(
+                    "personen/{}/opdrachten?van={}&tot={}",
+                    person_id, today, next_week
+                ))
                 .await
             {
-                let mut items = assignments.get("Items").cloned().unwrap_or(Value::Array(vec![]));
+                let mut items = assignments
+                    .get("Items")
+                    .cloned()
+                    .unwrap_or(Value::Array(vec![]));
                 if let Some(arr) = items.as_array_mut() {
                     for item in arr.iter_mut() {
-                        if let Some(docenten) = item.get("Docenten").and_then(|v| v.as_array()).cloned() {
+                        if let Some(docenten) =
+                            item.get("Docenten").and_then(|v| v.as_array()).cloned()
+                        {
                             if let Some(obj) = item.as_object_mut() {
-                                obj.insert("Docenten".to_string(), redact_docenten_array(Some(&docenten)));
+                                obj.insert(
+                                    "Docenten".to_string(),
+                                    redact_docenten_array(Some(&docenten)),
+                                );
                             }
                         }
                     }
@@ -1481,19 +1676,29 @@ pub async fn execute_tool(
                             .sum::<i64>()
                     })
                     .unwrap_or(0);
-                summary.insert("ongelezen_berichten".to_string(), Value::Number(unread.into()));
+                summary.insert(
+                    "ongelezen_berichten".to_string(),
+                    Value::Number(unread.into()),
+                );
             }
 
             if let Ok(absences) = client
-                .get(&format!("personen/{}/absenties?tot={}&van={}", person_id, today, today))
+                .get(&format!(
+                    "personen/{}/absenties?tot={}&van={}",
+                    person_id, today, today
+                ))
                 .await
             {
-                let items = absences.get("Items").cloned().unwrap_or(Value::Array(vec![]));
+                let items = absences
+                    .get("Items")
+                    .cloned()
+                    .unwrap_or(Value::Array(vec![]));
                 summary.insert("vandaag_absenties".to_string(), items);
             }
 
             ToolResult {
-                tool: tool_name.to_string(), success: true,
+                tool: tool_name.to_string(),
+                success: true,
                 data: serde_json::Value::Object(summary),
                 error: None,
             }
@@ -1502,9 +1707,21 @@ pub async fn execute_tool(
         // Write tool: never send directly. Stage the message for explicit user
         // confirmation; the real POST only happens via confirm_pending_action.
         "send_message" => {
-            let subject = args.get("subject").and_then(|v| v.as_str()).unwrap_or("").to_string();
-            let body = args.get("body").and_then(|v| v.as_str()).unwrap_or("").to_string();
-            let recipients: Vec<Value> = args.get("recipients").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+            let subject = args
+                .get("subject")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let body = args
+                .get("body")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let recipients: Vec<Value> = args
+                .get("recipients")
+                .and_then(|v| v.as_array())
+                .cloned()
+                .unwrap_or_default();
 
             if subject.trim().is_empty() || body.trim().is_empty() || recipients.is_empty() {
                 return ToolResult {
@@ -1547,7 +1764,8 @@ pub async fn execute_tool(
         // Write tool: never mark directly. Stage the action for explicit user
         // confirmation; the real PUT only happens via confirm_pending_action.
         "mark_messages_read" => {
-            let message_ids = args.get("message_ids")
+            let message_ids = args
+                .get("message_ids")
                 .and_then(|v| v.as_array())
                 .map(|arr| arr.iter().filter_map(|v| v.as_i64()).collect::<Vec<i64>>())
                 .unwrap_or_default();
@@ -1586,9 +1804,18 @@ pub async fn execute_tool(
         }
 
         "get_assignment_detail" => {
-            let assignment_id = args.get("assignment_id").and_then(|v| v.as_i64()).unwrap_or(0);
+            let assignment_id = args
+                .get("assignment_id")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(0);
 
-            match client.get(&format!("personen/{}/opdrachten/{}", person_id, assignment_id)).await {
+            match client
+                .get(&format!(
+                    "personen/{}/opdrachten/{}",
+                    person_id, assignment_id
+                ))
+                .await
+            {
                 Ok(data) => {
                     let docenten_raw = data.get("Docenten").and_then(|v| v.as_array()).cloned();
                     let redacted_docenten = redact_docenten_array(docenten_raw.as_ref());
@@ -1630,7 +1857,11 @@ pub async fn execute_tool(
         }
 
         "list_files" => {
-            let scope = args.get("scope").and_then(|v| v.as_str()).unwrap_or("all").to_string();
+            let scope = args
+                .get("scope")
+                .and_then(|v| v.as_str())
+                .unwrap_or("all")
+                .to_string();
             let scope = match scope.as_str() {
                 "assignment" | "message" | "lesson" => scope,
                 _ => "all".to_string(),
@@ -1644,7 +1875,11 @@ pub async fn execute_tool(
             let end_arg = args.get("end").and_then(|v| v.as_str()).unwrap_or("");
             let start_arg = start_arg.get(0..10).unwrap_or(start_arg);
             let end_arg = end_arg.get(0..10).unwrap_or(end_arg);
-            let range = match resolve_calendar_range(start_arg, end_arg, &crate::ai::time::today_amsterdam()) {
+            let range = match resolve_calendar_range(
+                start_arg,
+                end_arg,
+                &crate::ai::time::today_amsterdam(),
+            ) {
                 Ok(r) => r,
                 Err(e) => {
                     return ToolResult {
@@ -1695,9 +1930,7 @@ pub async fn execute_tool(
                                 None
                             };
                             let src = detail.as_ref().unwrap_or(item);
-                            let vak = subject_name(
-                                src.get("Vak").or_else(|| item.get("Vak")),
-                            );
+                            let vak = subject_name(src.get("Vak").or_else(|| item.get("Vak")));
                             if !subject_matches(&vak) {
                                 continue;
                             }
@@ -1735,7 +1968,13 @@ pub async fn execute_tool(
             // Messages: default folder, top 10, content fetch for details.
             if scope == "all" || scope == "message" {
                 if let Ok(link) = inbox_message_link(client, person_id).await {
-                    if let Ok(msgs) = client.get(&format!("{}/berichten?top=10", link.trim_start_matches('/'))).await {
+                    if let Ok(msgs) = client
+                        .get(&format!(
+                            "{}/berichten?top=10",
+                            link.trim_start_matches('/')
+                        ))
+                        .await
+                    {
                         let items = msgs
                             .get("Items")
                             .or_else(|| msgs.get("items"))
@@ -1743,7 +1982,11 @@ pub async fn execute_tool(
                             .cloned()
                             .unwrap_or_default();
                         for item in items.iter().take(10) {
-                            let mid = item.get("Id").or_else(|| item.get("id")).and_then(|v| v.as_i64()).unwrap_or(0);
+                            let mid = item
+                                .get("Id")
+                                .or_else(|| item.get("id"))
+                                .and_then(|v| v.as_i64())
+                                .unwrap_or(0);
                             if mid == 0 {
                                 continue;
                             }
@@ -1833,7 +2076,10 @@ pub async fn execute_tool(
                             if !subject_matches(&vak) {
                                 continue;
                             }
-                            let title = item.get("Omschrijving").and_then(|v| v.as_str()).map(|s| s.to_string());
+                            let title = item
+                                .get("Omschrijving")
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string());
                             let date = item
                                 .get("Start")
                                 .and_then(|v| v.as_str())
@@ -1885,7 +2131,11 @@ pub async fn execute_tool(
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .to_string();
-            let offset = args.get("offset").and_then(|v| v.as_i64()).unwrap_or(0).max(0) as usize;
+            let offset = args
+                .get("offset")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(0)
+                .max(0) as usize;
             let max_chars = args
                 .get("max_chars")
                 .and_then(|v| v.as_i64())
@@ -2091,7 +2341,11 @@ pub async fn execute_tool(
 
             let peildatum = args.get("peildatum").and_then(|v| v.as_str()).unwrap_or("");
             let today = crate::ai::time::today_amsterdam();
-            let peil = if peildatum.len() >= 10 { &peildatum[0..10] } else { &today };
+            let peil = if peildatum.len() >= 10 {
+                &peildatum[0..10]
+            } else {
+                &today
+            };
 
             // 1. Resolve the subject's current grades: explicit `grades` array,
             //    or fetched internally from the grade overview via schoolyear_id+subject.
@@ -2185,12 +2439,18 @@ pub async fn execute_tool(
                     result.insert("required_grade_numeric".to_string(), num(n));
                 }
                 result.insert("target_average".to_string(), num(target));
-                result.insert("required_grade_grade_weight".to_string(), num(next_grade_weight));
+                result.insert(
+                    "required_grade_grade_weight".to_string(),
+                    num(next_grade_weight),
+                );
             }
 
             if let Some(ng) = next_grade {
                 let mut sim_with_next = simulation.clone();
-                sim_with_next.push(GradePoint { value: ng, weight: next_grade_weight });
+                sim_with_next.push(GradePoint {
+                    value: ng,
+                    weight: next_grade_weight,
+                });
                 let pa = predicted_average(
                     total_points,
                     total_weight,
@@ -2262,8 +2522,16 @@ pub async fn execute_tool(
         // Write tool: never create directly. Stage the action for explicit user
         // confirmation; the real POST only happens via confirm_pending_action.
         "create_calendar_event" => {
-            let start = args.get("start").and_then(|v| v.as_str()).unwrap_or("").to_string();
-            let einde = args.get("einde").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let start = args
+                .get("start")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let einde = args
+                .get("einde")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
             let omschrijving = args
                 .get("omschrijving")
                 .and_then(|v| v.as_str())
@@ -2413,7 +2681,9 @@ pub async fn execute_tool(
         }
 
         _ => ToolResult {
-            tool: tool_name.to_string(), success: false, data: Value::Null,
+            tool: tool_name.to_string(),
+            success: false,
+            data: Value::Null,
             error: Some(format!("Onbekende tool: {}", tool_name)),
         },
     }
@@ -2431,16 +2701,34 @@ pub async fn execute_pending_action(
 ) -> Result<Value, String> {
     match action.action_type.as_str() {
         "send_message" => {
-            let subject = action.args.get("subject").and_then(|v| v.as_str()).unwrap_or("").to_string();
-            let body = action.args.get("body").and_then(|v| v.as_str()).unwrap_or("").to_string();
-            let recipients = action.args.get("recipients").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+            let subject = action
+                .args
+                .get("subject")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let body = action
+                .args
+                .get("body")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let recipients = action
+                .args
+                .get("recipients")
+                .and_then(|v| v.as_array())
+                .cloned()
+                .unwrap_or_default();
 
-            let ontvangers: Vec<serde_json::Value> = recipients.iter().map(|r| {
-                serde_json::json!({
-                    "id": r.get("id").and_then(|v| v.as_i64()).unwrap_or(0),
-                    "type": r.get("type").and_then(|v| v.as_str()).unwrap_or("leerling")
+            let ontvangers: Vec<serde_json::Value> = recipients
+                .iter()
+                .map(|r| {
+                    serde_json::json!({
+                        "id": r.get("id").and_then(|v| v.as_i64()).unwrap_or(0),
+                        "type": r.get("type").and_then(|v| v.as_str()).unwrap_or("leerling")
+                    })
                 })
-            }).collect();
+                .collect();
 
             let req_body = serde_json::json!({
                 "ontvangers": ontvangers,
@@ -2453,17 +2741,25 @@ pub async fn execute_pending_action(
                 "bijlagen": []
             });
 
-            client.post("berichten/verzenden", &req_body).await.map_err(|e| e.to_string())?;
+            client
+                .post("berichten/verzenden", &req_body)
+                .await
+                .map_err(|e| e.to_string())?;
             Ok(serde_json::json!({ "status": "verzonden", "subject": subject }))
         }
         "mark_messages_read" => {
-            let message_ids = action.args.get("message_ids")
+            let message_ids = action
+                .args
+                .get("message_ids")
                 .and_then(|v| v.as_array())
                 .map(|arr| arr.iter().filter_map(|v| v.as_i64()).collect::<Vec<i64>>())
                 .unwrap_or_default();
 
             let body = serde_json::json!({"BerichtIds": message_ids});
-            client.put("berichten/gelezen", &body).await.map_err(|e| e.to_string())?;
+            client
+                .put("berichten/gelezen", &body)
+                .await
+                .map_err(|e| e.to_string())?;
             Ok(serde_json::json!({ "status": "gemarkeerd", "aantal": message_ids.len() }))
         }
         "create_calendar_event" => {
@@ -2473,16 +2769,38 @@ pub async fn execute_pending_action(
                 .and_then(|t| t.person_id)
                 .ok_or_else(|| "Niet geauthenticeerd.".to_string())?;
 
-            let start = action.args.get("start").and_then(|v| v.as_str()).unwrap_or("").to_string();
-            let einde = action.args.get("einde").and_then(|v| v.as_str()).unwrap_or("").to_string();
-            let duurt_hele_dag = action.args.get("duurt_hele_dag").and_then(|v| v.as_bool()).unwrap_or(false);
-            let omschrijving = action.args.get("omschrijving").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
-            let lokatie = action.args
+            let start = action
+                .args
+                .get("start")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let einde = action
+                .args
+                .get("einde")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let duurt_hele_dag = action
+                .args
+                .get("duurt_hele_dag")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            let omschrijving = action
+                .args
+                .get("omschrijving")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            let lokatie = action
+                .args
                 .get("lokatie")
                 .and_then(|v| v.as_str())
                 .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty());
-            let inhoud = action.args
+            let inhoud = action
+                .args
                 .get("inhoud")
                 .and_then(|v| v.as_str())
                 .map(|s| s.trim().to_string())
@@ -2511,7 +2829,8 @@ pub async fn execute_pending_action(
             }
             log::debug!("AI creating calendar event: {}", body);
 
-            client.post(&format!("personen/{}/afspraken", person_id), &body)
+            client
+                .post(&format!("personen/{}/afspraken", person_id), &body)
                 .await
                 .map_err(|e| e.to_string())?;
             Ok(serde_json::json!({ "status": "aangemaakt", "omschrijving": omschrijving }))
@@ -2563,16 +2882,32 @@ mod tests {
         // would fail (no token set), so success proves nothing was sent.
         let mut client = MagisterClient::new();
 
-        let result = execute_tool(&mut client, "send_message", &send_message_args(), 123, &store).await;
+        let result = execute_tool(
+            &mut client,
+            "send_message",
+            &send_message_args(),
+            123,
+            &store,
+        )
+        .await;
 
-        assert!(result.success, "expected pending result, got error: {:?}", result.error);
+        assert!(
+            result.success,
+            "expected pending result, got error: {:?}",
+            result.error
+        );
         assert_eq!(result.data["status"], "pending_user_confirmation");
         assert_eq!(result.data["action_type"], "send_message");
         assert_eq!(result.data["subject"], "Vraag over huiswerk");
-        assert_eq!(result.data["body"], "Hallo! Wanneer moet het verslag ingeleverd worden?");
+        assert_eq!(
+            result.data["body"],
+            "Hallo! Wanneer moet het verslag ingeleverd worden?"
+        );
 
         // The staged action must be stored so confirm_pending_action can run it.
-        let action_id = result.data["action_id"].as_str().expect("action_id present");
+        let action_id = result.data["action_id"]
+            .as_str()
+            .expect("action_id present");
         let stored = store.lock().unwrap();
         let action = stored.get(action_id).expect("pending action stored");
         assert_eq!(action.action_type, "send_message");
@@ -2586,11 +2921,17 @@ mod tests {
         let args = serde_json::json!({ "message_ids": [10, 11] });
         let result = execute_tool(&mut client, "mark_messages_read", &args, 123, &store).await;
 
-        assert!(result.success, "expected pending result, got error: {:?}", result.error);
+        assert!(
+            result.success,
+            "expected pending result, got error: {:?}",
+            result.error
+        );
         assert_eq!(result.data["status"], "pending_user_confirmation");
         assert_eq!(result.data["action_type"], "mark_messages_read");
 
-        let action_id = result.data["action_id"].as_str().expect("action_id present");
+        let action_id = result.data["action_id"]
+            .as_str()
+            .expect("action_id present");
         assert!(store.lock().unwrap().contains_key(action_id));
     }
 
@@ -2608,12 +2949,21 @@ mod tests {
         let mut client = client_with_token(&mock_server.uri());
 
         // Stage the action exactly like execute_tool would.
-        let result = execute_tool(&mut client, "send_message", &send_message_args(), 123, &store).await;
+        let result = execute_tool(
+            &mut client,
+            "send_message",
+            &send_message_args(),
+            123,
+            &store,
+        )
+        .await;
         assert!(result.success);
         let action_id = result.data["action_id"].as_str().unwrap().to_string();
 
         let action = store.lock().unwrap().remove(&action_id).unwrap();
-        let outcome = execute_pending_action(&mut client, &action).await.expect("send succeeds");
+        let outcome = execute_pending_action(&mut client, &action)
+            .await
+            .expect("send succeeds");
         assert_eq!(outcome["status"], "verzonden");
         assert_eq!(outcome["subject"], "Vraag over huiswerk");
     }
@@ -2690,7 +3040,8 @@ mod tests {
             "threshold": 5.5,
             "decimal_points": 2
         });
-        let result = execute_tool(&mut client, "calculate_grade_scenario", &args, 123, &store).await;
+        let result =
+            execute_tool(&mut client, "calculate_grade_scenario", &args, 123, &store).await;
 
         assert!(result.success, "got error: {:?}", result.error);
         // 6*1 + 7*2 + 5*1 = 25 points over weight 4 → avg 6.25
@@ -2710,7 +3061,8 @@ mod tests {
         let store: PendingActionStore = Mutex::new(HashMap::new());
         let mut client = MagisterClient::new();
         let args = serde_json::json!({ "target_average": 6.0 });
-        let result = execute_tool(&mut client, "calculate_grade_scenario", &args, 123, &store).await;
+        let result =
+            execute_tool(&mut client, "calculate_grade_scenario", &args, 123, &store).await;
         assert!(!result.success);
         assert!(result.error.as_deref().unwrap().contains("grades"));
     }
@@ -2728,12 +3080,18 @@ mod tests {
         });
         let result = execute_tool(&mut client, "create_calendar_event", &args, 123, &store).await;
 
-        assert!(result.success, "expected pending result, got error: {:?}", result.error);
+        assert!(
+            result.success,
+            "expected pending result, got error: {:?}",
+            result.error
+        );
         assert_eq!(result.data["status"], "pending_user_confirmation");
         assert_eq!(result.data["action_type"], "create_calendar_event");
         assert_eq!(result.data["omschrijving"], "Werken aan verslag");
 
-        let action_id = result.data["action_id"].as_str().expect("action_id present");
+        let action_id = result.data["action_id"]
+            .as_str()
+            .expect("action_id present");
         let stored = store.lock().unwrap();
         assert!(stored.contains_key(action_id));
     }
@@ -2761,7 +3119,9 @@ mod tests {
 
         let action_id = result.data["action_id"].as_str().unwrap().to_string();
         let action = store.lock().unwrap().remove(&action_id).unwrap();
-        let outcome = execute_pending_action(&mut client, &action).await.expect("create succeeds");
+        let outcome = execute_pending_action(&mut client, &action)
+            .await
+            .expect("create succeeds");
         assert_eq!(outcome["status"], "aangemaakt");
         assert_eq!(outcome["omschrijving"], "Werken aan verslag");
     }
@@ -2791,9 +3151,14 @@ mod tests {
 
         let action_id = result.data["action_id"].as_str().unwrap().to_string();
         let action = store.lock().unwrap().remove(&action_id).unwrap();
-        execute_pending_action(&mut client, &action).await.expect("create succeeds");
+        execute_pending_action(&mut client, &action)
+            .await
+            .expect("create succeeds");
 
-        let requests = mock_server.received_requests().await.expect("requests recorded");
+        let requests = mock_server
+            .received_requests()
+            .await
+            .expect("requests recorded");
         assert_eq!(requests.len(), 1);
         let posted: serde_json::Value =
             serde_json::from_slice(&requests[0].body).expect("posted valid json");
@@ -2830,15 +3195,28 @@ mod tests {
 
         let action_id = result.data["action_id"].as_str().unwrap().to_string();
         let action = store.lock().unwrap().remove(&action_id).unwrap();
-        execute_pending_action(&mut client, &action).await.expect("create succeeds");
+        execute_pending_action(&mut client, &action)
+            .await
+            .expect("create succeeds");
 
-        let requests = mock_server.received_requests().await.expect("requests recorded");
+        let requests = mock_server
+            .received_requests()
+            .await
+            .expect("requests recorded");
         assert_eq!(requests.len(), 1);
         let posted: serde_json::Value =
             serde_json::from_slice(&requests[0].body).expect("posted valid json");
         assert_eq!(posted["InfoType"], 0);
-        assert!(posted.get("Inhoud").is_none(), "blank Inhoud must be omitted, got {}", posted);
-        assert!(posted.get("Lokatie").is_none(), "blank Lokatie must be omitted, got {}", posted);
+        assert!(
+            posted.get("Inhoud").is_none(),
+            "blank Inhoud must be omitted, got {}",
+            posted
+        );
+        assert!(
+            posted.get("Lokatie").is_none(),
+            "blank Lokatie must be omitted, got {}",
+            posted
+        );
     }
 
     // ─── Phase 2: windowing, pagination, budget ──────────────────────────
@@ -2868,12 +3246,14 @@ mod tests {
         assert_eq!(def.effective_end, win.end);
         assert!(!def.clamped);
 
-        let wide = resolve_calendar_range("2026-01-01", "2026-06-01", "2026-02-01").expect("wide resolves");
+        let wide = resolve_calendar_range("2026-01-01", "2026-06-01", "2026-02-01")
+            .expect("wide resolves");
         assert!(wide.clamped);
         assert_eq!(wide.effective_end, "2026-03-04"); // Jan 1 + 62 days
         assert_eq!(wide.start, "2026-01-01");
 
-        let exact = resolve_calendar_range("2026-01-01", "2026-03-04", "2026-02-01").expect("exact resolves");
+        let exact = resolve_calendar_range("2026-01-01", "2026-03-04", "2026-02-01")
+            .expect("exact resolves");
         assert!(!exact.clamped);
 
         assert!(resolve_calendar_range("volgende week", "2026-09-27", "2026-09-21").is_err());
@@ -2901,7 +3281,10 @@ mod tests {
         let slim = slim_calendar_item(&raw);
         assert_eq!(slim["omschrijving"].as_str().unwrap().chars().count(), 121); // 120 + …
         assert_eq!(slim["huiswerk"], Value::Bool(true));
-        assert!(slim.get("inhoud").is_none(), "inhoud lives behind the detail tool");
+        assert!(
+            slim.get("inhoud").is_none(),
+            "inhoud lives behind the detail tool"
+        );
         assert_eq!(slim["docent"], Value::String("JNS".to_string()));
         assert_eq!(slim["date"], Value::String("2026-09-21".to_string()));
 
@@ -2961,13 +3344,23 @@ mod tests {
         let mut client = client_with_token(&mock_server.uri());
         // Empty args: the mock only matches the default-window query, so a
         // wrong range would 404 and fail the tool.
-        let result = execute_tool(&mut client, "get_calendar_events", &serde_json::json!({}), 123, &store).await;
+        let result = execute_tool(
+            &mut client,
+            "get_calendar_events",
+            &serde_json::json!({}),
+            123,
+            &store,
+        )
+        .await;
         assert!(result.success, "got error: {:?}", result.error);
         assert_eq!(result.data["items"][0]["docent"], "JNS");
         assert!(result.data["items"][0].get("inhoud").is_none());
         assert_eq!(result.data["meta"]["clamped"], false);
         assert_eq!(result.data["meta"]["total"], 1);
-        assert_eq!(result.data["meta"]["window_default"]["start"], win.start.as_str());
+        assert_eq!(
+            result.data["meta"]["window_default"]["start"],
+            win.start.as_str()
+        );
     }
 
     #[tokio::test]
@@ -3049,7 +3442,10 @@ mod tests {
         )
         .await;
         assert!(!missing.success);
-        assert!(missing.error.unwrap().contains("niet gevonden op 2026-09-21"));
+        assert!(missing
+            .error
+            .unwrap()
+            .contains("niet gevonden op 2026-09-21"));
     }
 
     #[tokio::test]
@@ -3068,13 +3464,22 @@ mod tests {
             .collect();
         Mock::given(method("GET"))
             .and(path("/personen/123/afspraken"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({ "Items": lessons })))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(serde_json::json!({ "Items": lessons })),
+            )
             .mount(&mock_server)
             .await;
 
         let store: PendingActionStore = Mutex::new(HashMap::new());
         let mut client = client_with_token(&mock_server.uri());
-        let result = execute_tool(&mut client, "get_calendar_events", &serde_json::json!({}), 123, &store).await;
+        let result = execute_tool(
+            &mut client,
+            "get_calendar_events",
+            &serde_json::json!({}),
+            123,
+            &store,
+        )
+        .await;
         assert!(result.success, "got error: {:?}", result.error);
         assert_eq!(result.data["items"].as_array().unwrap().len(), 60);
         assert_eq!(result.data["meta"]["total"], 100);
@@ -3088,7 +3493,10 @@ mod tests {
         let mock_server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/personen/123/cijfers/laatste"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({ "Items": [{"Id": 1}] })))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!({ "Items": [{"Id": 1}] })),
+            )
             .mount(&mock_server)
             .await;
         Mock::given(method("GET"))
@@ -3100,22 +3508,43 @@ mod tests {
             .await;
         Mock::given(method("GET"))
             .and(path("/berichten/mappen/1/berichten/berichten"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({ "Items": [{"Id": 2}] })))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!({ "Items": [{"Id": 2}] })),
+            )
             .mount(&mock_server)
             .await;
 
         let store: PendingActionStore = Mutex::new(HashMap::new());
         let mut client = client_with_token(&mock_server.uri());
-        let grades = execute_tool(&mut client, "get_grades", &serde_json::json!({"top": 5}), 123, &store).await;
+        let grades = execute_tool(
+            &mut client,
+            "get_grades",
+            &serde_json::json!({"top": 5}),
+            123,
+            &store,
+        )
+        .await;
         assert!(grades.success);
         assert_eq!(grades.data["total"], 1);
-        let msgs = execute_tool(&mut client, "get_messages", &serde_json::json!({}), 123, &store).await;
+        let msgs = execute_tool(
+            &mut client,
+            "get_messages",
+            &serde_json::json!({}),
+            123,
+            &store,
+        )
+        .await;
         assert!(msgs.success, "got error: {:?}", msgs.error);
         assert_eq!(msgs.data["total"], 1);
     }
 
-
-    async fn mount_download_pair(server: &MockServer, indirection: &str, content_path: &str, body: &str) {
+    async fn mount_download_pair(
+        server: &MockServer,
+        indirection: &str,
+        content_path: &str,
+        body: &str,
+    ) {
         let content_url = format!("{}{}", server.uri(), content_path);
         Mock::given(method("GET"))
             .and(path(indirection))
@@ -3184,7 +3613,14 @@ mod tests {
 
         let store: PendingActionStore = Mutex::new(HashMap::new());
         let mut client = client_with_token(&mock_server.uri());
-        let result = execute_tool(&mut client, "list_files", &serde_json::json!({}), 123, &store).await;
+        let result = execute_tool(
+            &mut client,
+            "list_files",
+            &serde_json::json!({}),
+            123,
+            &store,
+        )
+        .await;
         assert!(result.success, "got error: {:?}", result.error);
         let files = result.data["files"].as_array().unwrap();
         assert_eq!(files.len(), 3);

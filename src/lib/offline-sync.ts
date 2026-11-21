@@ -22,6 +22,8 @@ import {
   getMessageFolders,
   getMessages,
   getProfileAddresses,
+  getProfileAnswers,
+  getProfileAuthorization,
   getProfileInfo,
   getRecentGrades,
   getSchoolyears,
@@ -238,6 +240,8 @@ async function doSync(pid: number): Promise<SyncResult> {
   await step("profiel", () => getProfileInfo(pid));
   await step("adressen", () => getProfileAddresses(pid));
   await step("opleiding", () => getCareerInfo(pid));
+  await step("toestemmingen", () => getProfileAnswers(pid));
+  await step("ouderinzage", () => getProfileAuthorization(pid));
   await step("absenties", async () => {
     const list = await getSchoolyears(pid);
     const newest = [...list].sort(

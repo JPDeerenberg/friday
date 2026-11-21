@@ -521,15 +521,16 @@ pub async fn chat(http: &reqwest::Client, mut req: ChatRequest) -> Result<ChatRe
     enum Target {
         OpenAI { url: String, key: String },
         Anthropic { key: String },
-        Gemini { url: String },
+        Gemini { url: String, key: String },
     }
     let target = match req.provider.as_str() {
         "anthropic" => Target::Anthropic { key: req.api_key.clone() },
         "gemini" => Target::Gemini {
             url: format!(
-                "https://generativelanguage.googleapis.com/v1/models/{}:generateContent?key={}",
-                req.model, req.api_key
+                "https://generativelanguage.googleapis.com/v1/models/{}:generateContent",
+                req.model
             ),
+            key: req.api_key.clone(),
         },
         _ => Target::OpenAI {
             url: format!("{}/chat/completions", base.trim_end_matches('/')),
@@ -538,7 +539,7 @@ pub async fn chat(http: &reqwest::Client, mut req: ChatRequest) -> Result<ChatRe
     };
 
     // Build the provider-specific request. The key travels only in the
-    // Authorization/header/query below — request bodies are never logged.
+    // Authorization/header below — request bodies are never logged.
     let http_req = match &target {
         Target::OpenAI { url, key } => {
             let mut body = serde_json::json!({
@@ -588,7 +589,7 @@ pub async fn chat(http: &reqwest::Client, mut req: ChatRequest) -> Result<ChatRe
                 .header("Content-Type", "application/json")
                 .json(&body)
         }
-        Target::Gemini { url } => {
+        Target::Gemini { url, key } => {
             let (system, contents) = gemini_contents(&req.messages);
             let mut body = serde_json::json!({
                 "contents": contents,
@@ -606,7 +607,10 @@ pub async fn chat(http: &reqwest::Client, mut req: ChatRequest) -> Result<ChatRe
                     }).collect::<Vec<_>>()
                 }]);
             }
-            http.post(url).header("Content-Type", "application/json").json(&body)
+            http.post(url)
+                .header("x-goog-api-key", key)
+                .header("Content-Type", "application/json")
+                .json(&body)
         }
     };
 
@@ -660,12 +664,10 @@ pub async fn validate(http: &reqwest::Client, mut req: ValidateRequest) -> Resul
                 .await
         }
         "gemini" => {
-            http.get(format!(
-                "https://generativelanguage.googleapis.com/v1/models?key={}",
-                req.api_key
-            ))
-            .send()
-            .await
+            http.get("https://generativelanguage.googleapis.com/v1/models")
+                .header("x-goog-api-key", &req.api_key)
+                .send()
+                .await
         }
         _ => {
             http.get(format!("{}/models", base.trim_end_matches('/')))

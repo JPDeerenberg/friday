@@ -10,14 +10,12 @@ pub struct GeminiProvider;
 #[async_trait]
 impl AiProvider for GeminiProvider {
     async fn validate_key(&self, config: &AiConfig) -> Result<bool, String> {
-        // Gemini uses API key in query param
-        let url = format!(
-            "https://generativelanguage.googleapis.com/v1/models?key={}",
-            config.api_key
-        );
+        // Keep the key out of the URL (proxy logs, Referer, error traces).
+        let url = "https://generativelanguage.googleapis.com/v1/models";
         let client = crate::tls::new_client();
         let resp = client
-            .get(&url)
+            .get(url)
+            .header("x-goog-api-key", &config.api_key)
             .send()
             .await
             .map_err(|e| format!("Verbinding mislukt: {}", e))?;
@@ -31,8 +29,8 @@ impl AiProvider for GeminiProvider {
         tools: &[ToolDef],
     ) -> Result<AiChatResult, String> {
         let url = format!(
-            "https://generativelanguage.googleapis.com/v1/models/{}:generateContent?key={}",
-            config.model, config.api_key
+            "https://generativelanguage.googleapis.com/v1/models/{}:generateContent",
+            config.model
         );
         let client = crate::tls::new_client();
 
@@ -133,6 +131,7 @@ impl AiProvider for GeminiProvider {
 
         let response = client
             .post(&url)
+            .header("x-goog-api-key", &config.api_key)
             .header("Content-Type", "application/json")
             .json(&request_body)
             .send()
@@ -193,10 +192,7 @@ impl AiProvider for GeminiProvider {
                         .and_then(|v| v.as_str())
                         .unwrap_or("")
                         .to_string();
-                    let arguments = fc
-                        .get("args")
-                        .cloned()
-                        .unwrap_or(serde_json::Value::Null);
+                    let arguments = fc.get("args").cloned().unwrap_or(serde_json::Value::Null);
 
                     tool_calls.push(ToolCall {
                         id: format!("fc_{}", i),

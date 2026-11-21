@@ -1,12 +1,12 @@
 <script lang="ts">
   /**
-   * Renders a semantic icon from `$lib/icons`. Decorative by default
+   * Renders a semantic icon from `#lib/icons`. Decorative by default
    * (`aria-hidden`); pass `label` when the icon is the only content and needs
    * an accessible name.
    *
    * Usage: <Icon name="trophy" size={16} class="text-amber-300" />
    */
-  import { ICONS, type IconName } from "$lib/icons";
+  import { ICONS, type IconName } from "#lib/icons.ts";
 
   let {
     name,

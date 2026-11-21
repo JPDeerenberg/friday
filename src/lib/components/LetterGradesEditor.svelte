@@ -4,8 +4,8 @@
     letterScan,
     personId,
     recordLetterScan,
-  } from "$lib/stores";
-  import { getSchoolyears, getGrades, formatDate } from "$lib/api";
+  } from "#lib/stores.ts";
+  import { getSchoolyears, getGrades, formatDate } from "#lib/api.ts";
   import {
     buildLetterTable,
     sanitizeRules,
@@ -14,8 +14,8 @@
     normalizeToken,
     type LetterRule,
     type LetterStatus,
-  } from "$lib/grades/scale";
-  import Button from "$lib/components/Button.svelte";
+  } from "#lib/grades/scale.ts";
+  import Button from "#lib/components/Button.svelte";
 
   // Rows = the saved table plus what the app found in your grades. Saved rows
   // win; found letters without a row show as suggestions until you edit them.

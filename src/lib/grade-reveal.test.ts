@@ -12,7 +12,7 @@ import {
   type GradeRevealState,
 } from "./grade-reveal.ts";
 import { buildCards } from "./cards.ts";
-import type { Grade } from "$lib/types";
+import type { Grade } from "#lib/types.ts";
 
 function mkGrade(id: number, value = "7,5", over: Partial<Grade> = {}): Grade {
   return {

@@ -6,13 +6,13 @@
    * choice of lesson stay right while the app is open.
    */
   import { onMount } from "svelte";
-  import { currentPage } from "$lib/stores";
-  import { formatTeacherName } from "$lib/api";
-  import { formatTime } from "$lib/format";
-  import Icon from "$lib/components/Icon.svelte";
-  import { subjectTheme } from "$lib/cards";
-  import { pickNextLesson, describeStart } from "$lib/next-lesson";
-  import type { CalendarEvent } from "$lib/types";
+  import { currentPage } from "#lib/stores.ts";
+  import { formatTeacherName } from "#lib/api.ts";
+  import { formatTime } from "#lib/format.ts";
+  import Icon from "#lib/components/Icon.svelte";
+  import { subjectTheme } from "#lib/cards.ts";
+  import { pickNextLesson, describeStart } from "#lib/next-lesson.ts";
+  import type { CalendarEvent } from "#lib/types.ts";
 
   let {
     events,

@@ -21,7 +21,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use axum::body::Bytes;
-use axum::extract::{ConnectInfo, Path, RawQuery, State};
+use axum::extract::{ConnectInfo, DefaultBodyLimit, Path, RawQuery, State};
 use axum::http::{HeaderMap, Method, StatusCode};
 use axum::response::IntoResponse;
 use axum::routing::{get, post};
@@ -429,6 +429,9 @@ async fn main() {
         .route("/api/ai/validate", post(ai_validate))
         .route("/api/ai/models", post(ai_models))
         .route("/api/magister/{*path}", get(magister_proxy).post(magister_proxy).put(magister_proxy).patch(magister_proxy).delete(magister_proxy))
+        // Message attachments are uploaded as multipart through this proxy;
+        // Axum's 2 MB default would reject most files.
+        .layer(DefaultBodyLimit::max(25 * 1024 * 1024))
         .layer(cors)
         .with_state(state);
 

@@ -59,7 +59,9 @@ mod tests {
     #[test]
     fn verify_nonce_accepts_matching_nonce() {
         let flow = flow_with("state", "nonce-123");
-        assert!(flow.verify_id_token_nonce(&id_token_with_nonce("nonce-123")).is_ok());
+        assert!(flow
+            .verify_id_token_nonce(&id_token_with_nonce("nonce-123"))
+            .is_ok());
     }
 
     #[test]

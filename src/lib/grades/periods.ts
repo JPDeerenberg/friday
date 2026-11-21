@@ -1,4 +1,4 @@
-import type { Grade, GradePeriod } from '$lib/types';
+import type { Grade, GradePeriod } from '#lib/types.ts';
 
 /** Distinct grading periods across all grades, ordered by VolgNummer. */
 export function getPeriods(grades: Grade[]): GradePeriod[] {

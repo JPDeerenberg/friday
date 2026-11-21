@@ -7,11 +7,11 @@
  * of the three open-gestures a card uses), and even that is seeded by the grade
  * id so a card looks and behaves the same on every device.
  *
- * Keep this module free of `$lib` runtime imports (type imports are fine) so it
+ * Keep this module free of `#lib` runtime imports (type imports are fine) so it
  * stays importable from plain Node tests.
  */
-import type { Grade } from "$lib/types";
-import type { IconName } from "$lib/icons";
+import type { Grade } from "#lib/types.ts";
+import type { IconName } from "#lib/icons.ts";
 
 export type Rarity =
   | "gewoon"
@@ -423,13 +423,22 @@ export function seasonXp(
   return xp;
 }
 
-/** Seasons that have cards, newest first; always includes the current one. */
+/**
+ * Seasons that have cards, newest first. An empty collection falls back to the
+ * current season, so a fresh album still shows the level you are working on.
+ *
+ * Deliberately does NOT add the current season when the cards belong to another
+ * school year: the grades page hands the album one year at a time, and a phantom
+ * current-season tab would open on level 1 with 0 XP while every card is already
+ * opened (the season the user is actually looking at is the one with cards).
+ */
 export function seasonsOf(
   cards: Iterable<CardData>,
   now: Date = new Date(),
 ): string[] {
-  const set = new Set<string>([seasonOf(null, now)]);
+  const set = new Set<string>();
   for (const c of cards) set.add(seasonOf(c.date, now));
+  if (set.size === 0) set.add(seasonOf(null, now));
   return [...set].sort().reverse();
 }
 

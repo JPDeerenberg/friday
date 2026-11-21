@@ -5,7 +5,7 @@
     resumedAt,
     recordLetterScan,
     effectiveLetterRules,
-  } from "$lib/stores";
+  } from "#lib/stores.ts";
   import {
     getSchoolyears,
     getGrades,
@@ -13,10 +13,10 @@
     getBulkGradeExtraInfo,
     formatTeacherName,
     removeHiddenGrade,
-  } from "$lib/api";
-  import { HIDDEN_GRADE_DAYS } from "$lib/hidden-grades";
-  import { formatDateShort } from "$lib/format";
-  import { cacheGet, cacheRefresh, cacheClear } from "$lib/cache";
+  } from "#lib/api.ts";
+  import { HIDDEN_GRADE_DAYS } from "#lib/hidden-grades.ts";
+  import { formatDateShort } from "#lib/format.ts";
+  import { cacheGet, cacheRefresh, cacheClear } from "#lib/cache.ts";
   import {
     computeStats,
     getDistribution,
@@ -25,7 +25,7 @@
     getNumericValue,
     isPassing,
     pct,
-  } from "$lib/grades/stats";
+  } from "#lib/grades/stats.ts";
   import {
     calcPredicted,
     calcRequiredGrade,
@@ -35,20 +35,25 @@
     calcNewOverallAverage,
     calcNewOverallForGrade,
     calcMultiSubjectTarget,
-  } from "$lib/grades/predictor";
-  import { getPeriods, filterGradesByPeriod } from "$lib/grades/periods";
-  import { parseGrade, gradeNumber, effectiveWeight } from "$lib/grades/scale";
-  import { applyRetakeRule } from "$lib/grades/retake";
-  import { formatRounded, effectivePassLimit } from "$lib/grades/rounding";
+  } from "#lib/grades/predictor.ts";
+  import { getPeriods, filterGradesByPeriod } from "#lib/grades/periods.ts";
+  import {
+    parseGrade,
+    gradeNumber,
+    effectiveWeight,
+  } from "#lib/grades/scale.ts";
+  import { applyRetakeRule } from "#lib/grades/retake.ts";
+  import { formatRounded, effectivePassLimit } from "#lib/grades/rounding.ts";
   import {
     bestWorstCase,
     testsNeeded,
     effortToPass,
-  } from "$lib/grades/scenarios";
-  import { schoolAverages, compareWithSchool } from "$lib/grades/compare";
-  import { evaluateCompensation } from "$lib/grades/compensation";
-  import MinpuntenChip from "$lib/components/MinpuntenChip.svelte";
-  import { recordQuestEvent } from "$lib/quests-store";
+  } from "#lib/grades/scenarios.ts";
+  import { schoolAverages, compareWithSchool } from "#lib/grades/compare.ts";
+  import { evaluateCompensation } from "#lib/grades/compensation.ts";
+  import MinpuntenChip from "#lib/components/MinpuntenChip.svelte";
+  import DropdownMenu from "#lib/components/DropdownMenu.svelte";
+  import { recordQuestEvent } from "#lib/quests-store.ts";
   import {
     isSchoolexamenGrade,
     seReason,
@@ -56,39 +61,39 @@
     logSeColumnDiagnostic,
     type SeConfig,
     type SeDetectionMode,
-  } from "$lib/grades/se";
+  } from "#lib/grades/se.ts";
   import {
     loadCombinations,
     saveCombinations,
     calcCombinationAverage,
     type GradeCombination,
-  } from "$lib/grades/combinations";
-  import { checkPassFail, roundEindcijfer } from "$lib/grades/passfail";
+  } from "#lib/grades/combinations.ts";
+  import { checkPassFail, roundEindcijfer } from "#lib/grades/passfail.ts";
   import {
     buildSmoothPath,
     computeChartData,
     buildTrendPath,
     type ChartData,
-  } from "$lib/charts";
-  import { onMount, untrack } from "svelte";
+  } from "#lib/charts.ts";
+  import { onMount, tick, untrack } from "svelte";
   import { fly } from "svelte/transition";
-  import Button from "$lib/components/Button.svelte";
-  import Chip from "$lib/components/Chip.svelte";
-  import IconButton from "$lib/components/IconButton.svelte";
-  import Icon from "$lib/components/Icon.svelte";
-  import Switch from "$lib/components/Switch.svelte";
-  import PackReveal from "$lib/components/PackReveal.svelte";
-  import CardAlbum from "$lib/components/CardAlbum.svelte";
-  import GradeCardView from "$lib/components/GradeCardView.svelte";
-  import PendingGradesBanner from "$lib/components/PendingGradesBanner.svelte";
+  import Button from "#lib/components/Button.svelte";
+  import Chip from "#lib/components/Chip.svelte";
+  import IconButton from "#lib/components/IconButton.svelte";
+  import Icon from "#lib/components/Icon.svelte";
+  import Switch from "#lib/components/Switch.svelte";
+  import PackReveal from "#lib/components/PackReveal.svelte";
+  import CardAlbum from "#lib/components/CardAlbum.svelte";
+  import GradeCardView from "#lib/components/GradeCardView.svelte";
+  import PendingGradesBanner from "#lib/components/PendingGradesBanner.svelte";
   import {
     gradePeek,
     gradeRevealState,
     openPackIntent,
     splitGrades,
-  } from "$lib/grade-reveal";
-  import { buildCards, type CardData } from "$lib/cards";
-  import type { Grade, GradePeriod, Schoolyear } from "$lib/types";
+  } from "#lib/grade-reveal.ts";
+  import { buildCards, type CardData } from "#lib/cards.ts";
+  import type { Grade, GradePeriod, Schoolyear } from "#lib/types.ts";
 
   type SubjectSummary = {
     name: string;
@@ -108,9 +113,11 @@
 
   let schoolyears = $state<Schoolyear[]>([]);
   let selectedYear = $state<Schoolyear | null>(null);
+  // Compacte schooljaar-kiezer (alleen op mobiel, zie header).
+  let yearMenuOpen = $state(false);
   // Everything the API returned. `grades` is what the page shows: while grade
   // reveal is on, EVERY grade stays hidden until the user opens its card (see
-  // $lib/grade-reveal), so averages, charts and lists never leak a hidden grade.
+  // #lib/grade-reveal), so averages, charts and lists never leak a hidden grade.
   // Peek mode shows everything without opening anything.
   let allGrades = $state<Grade[]>([]);
   const revealEnabled = $derived($userSettings.gradeReveal !== false);
@@ -244,7 +251,7 @@
     return sorted;
   }
 
-  // === Analytical functions (moved to $lib/grades/stats) ===
+  // === Analytical functions (moved to #lib/grades/stats) ===
 
   /** The user's letter table (V/O/G, A–F ...). Unknown letters are neutral. */
   const letterRules = $derived($effectiveLetterRules);
@@ -305,6 +312,7 @@
     value: number;
     date: string;
     subject: string;
+    grade: Grade;
   }[] {
     return subjects
       .flatMap((s) =>
@@ -320,6 +328,7 @@
             value: gradeValue(g),
             date: g.DatumIngevoerd ?? "",
             subject: s.name,
+            grade: g,
           })),
       )
       .sort((a, b) => a.date.localeCompare(b.date));
@@ -344,9 +353,6 @@
         .map((g) => gradeValue(g)),
     );
   });
-
-  /** Overall distribution across all subjects */
-  const overallDistribution = $derived(() => getDistribution(allGradeValues()));
 
   /** Overall statistics */
   const overallStats = $derived(() => computeStats(allGradeValues()));
@@ -461,7 +467,7 @@
   let predictGrade = $state(6.5);
   let targetPeriodGrade = $state(6.0);
 
-  // Prediction helper (math in $lib/grades/predictor)
+  // Prediction helper (math in #lib/grades/predictor)
   function getPredictedEnd(subject: SubjectSummary): number {
     return calcPredicted(subject, predictRemainingTests, predictGrade)
       .predictedEnd;
@@ -473,23 +479,12 @@
   // Recent tab filter
   let recentFilter = $state<"today" | "week" | "all">("all");
 
-  function getChronologicalGrades() {
-    return subjects
-      .flatMap((s) =>
-        s.grades.map((g) => ({ ...g, subAbbr: s.abbr, subName: s.name })),
-      )
-      .filter(
-        (g) => !!g.CijferStr && !!g.DatumIngevoerd && !isNaN(gradeValue(g)),
-      )
-      .sort((a, b) =>
-        (a.DatumIngevoerd ?? "").localeCompare(b.DatumIngevoerd ?? ""),
-      );
-  }
-
-  /** Build the overall-trend smooth SVG path from chronological grades (charts math in $lib/charts) */
-  function getOverallTrendPath() {
-    const chrono = getChronologicalGrades();
-    return buildTrendPath(chrono.map((g) => gradeValue(g)));
+  /** Build the overall-trend smooth SVG path from chronological values (charts math in #lib/charts) */
+  function getOverallTrendPath(values: number[]) {
+    return buildTrendPath(values, {
+      w: 300,
+      h: 120,
+    });
   }
 
   async function init(force = false) {
@@ -805,21 +800,102 @@
     return isPassing(val, passLimit);
   }
 
-  /** Compute chart bounds and evenly-spaced points for a subject (chart math in $lib/charts) */
-  function getSubjectChartData(subject: SubjectSummary): ChartData | null {
-    const vals = [...subject.grades]
+  /** Subject grades in chart order (oldest first); shared by path and tooltips. */
+  function getSubjectChartGrades(subject: SubjectSummary): Grade[] {
+    return [...subject.grades]
       .filter((g) => !!g.CijferStr && g.TeltMee && !isNaN(gradeValue(g)))
       .sort((a, b) =>
         (a.DatumIngevoerd ?? "").localeCompare(b.DatumIngevoerd ?? ""),
-      )
-      .map((g) => gradeValue(g));
-    return computeChartData(vals, { zoom: $userSettings.zoomGraph });
+      );
+  }
+
+  /** Compute chart bounds and evenly-spaced points for a subject (chart math in #lib/charts) */
+  function getSubjectChartData(subject: SubjectSummary): ChartData | null {
+    return computeChartData(
+      getSubjectChartGrades(subject).map((g) => gradeValue(g)),
+      { zoom: true },
+    );
   }
 
   function getTrendPath(subject: SubjectSummary): string {
     const data = getSubjectChartData(subject);
     if (!data) return "";
     return buildSmoothPath(data.points);
+  }
+
+  // === Interactie: grafiekpunten, filters en drill-down ===
+  let hoveredTrendPoint = $state<number | null>(null);
+  let hoveredSubjectPoint = $state<number | null>(null);
+  let highlightedGradeId = $state<number | null>(null);
+  let selectedBucket = $state<string | null>(null);
+  let resultFilter = $state<"pass" | "fail" | null>(null);
+  let selectedHistoryYear = $state<string | null>(null);
+
+  /** Open a subject's detail card, wherever the tap came from. */
+  async function focusSubject(name: string) {
+    currentTab = "vakken";
+    selectedSubject = name;
+    hoveredSubjectPoint = null;
+    await tick();
+    const card = [
+      ...document.querySelectorAll<HTMLElement>("[data-subject]"),
+    ].find((el) => el.dataset.subject === name);
+    card?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  /** Mark a grade in the subject list after tapping its point in the chart. */
+  async function focusGrade(grade: Grade) {
+    highlightedGradeId = grade.CijferId;
+    await tick();
+    document
+      .querySelector<HTMLElement>(`[data-grade-id="${grade.CijferId}"]`)
+      ?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+
+  /** Grades behind the histogram (visible set only, numeric values). */
+  const analyticsGrades = $derived.by(() =>
+    subjects.flatMap((s) =>
+      s.grades
+        .filter((g) => !!g.CijferStr && g.TeltMee && !isNaN(gradeValue(g)))
+        .map((g) => ({ grade: g, value: gradeValue(g), subject: s.name })),
+    ),
+  );
+
+  const filteredAnalyticsGrades = $derived.by(() => {
+    if (!resultFilter) return analyticsGrades;
+    return analyticsGrades.filter((row) =>
+      resultFilter === "pass"
+        ? isVoldoende(row.grade)
+        : !isVoldoende(row.grade),
+    );
+  });
+
+  const analyticsDistribution = $derived(
+    getDistribution(filteredAnalyticsGrades.map((row) => row.value)),
+  );
+
+  function toggleResultFilter(kind: "pass" | "fail") {
+    resultFilter = resultFilter === kind ? null : kind;
+    selectedBucket = null;
+  }
+
+  function selectBucket(label: string) {
+    selectedBucket = selectedBucket === label ? null : label;
+  }
+
+  /** All grades in one histogram bucket, newest first. */
+  function gradesForBucket(label: string) {
+    const [low, high] = label.split("-").map(Number);
+    return filteredAnalyticsGrades
+      .filter(
+        (row) =>
+          row.value >= low && (high >= 10 ? row.value <= 10 : row.value < high),
+      )
+      .sort((a, b) =>
+        (b.grade.DatumIngevoerd ?? "").localeCompare(
+          a.grade.DatumIngevoerd ?? "",
+        ),
+      );
   }
 
   // Calculator
@@ -1072,8 +1148,10 @@
   <div
     class="sticky top-0 z-10 bg-surface-950/95 backdrop-blur border-b border-surface-800/50 px-4 py-3 pb-0"
   >
-    <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
-      <div class="flex items-center gap-3 shrink-0">
+    <div
+      class="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 mb-3"
+    >
+      <div class="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
         <h1 class="text-xl font-black text-white italic tracking-tighter">
           Cijfers
         </h1>
@@ -1134,18 +1212,105 @@
           />
         {/if}
       </div>
-      <div class="flex flex-wrap items-center gap-2 justify-end flex-1 min-w-0">
-        {#each schoolyears as year}
-          <Chip
-            variant="filter"
-            selected={selectedYear?.id === year.id}
-            onclick={() => selectYear(year)}
-            class="shrink-0"
+      {#if schoolyears.length > 0}
+        <!-- Jaar-/klaskeuze: op mobiel een compacte menuknop, vanaf sm als chips -->
+        <div
+          class="flex w-full min-w-0 items-center justify-end gap-2 sm:w-auto sm:flex-1"
+        >
+          <!-- Vanaf sm: alle schooljaren als chips -->
+          <div
+            class="hidden min-w-0 flex-wrap items-center justify-end gap-2 sm:flex"
           >
-            {year.groep?.code ?? year.studie?.code ?? "?"}
-          </Chip>
-        {/each}
-      </div>
+            {#each schoolyears as year}
+              <Chip
+                variant="filter"
+                selected={selectedYear?.id === year.id}
+                onclick={() => selectYear(year)}
+                class="shrink-0"
+              >
+                {year.groep?.code ?? year.studie?.code ?? "?"}
+              </Chip>
+            {/each}
+          </div>
+          <!-- Op mobiel: één compacte knop met de schooljaren in een menu -->
+          <div class="sm:hidden">
+            <DropdownMenu bind:open={yearMenuOpen} align="right">
+              {#snippet trigger(toggle, open)}
+                <button
+                  type="button"
+                  onclick={toggle}
+                  aria-haspopup="menu"
+                  aria-expanded={open}
+                  aria-label="Kies schooljaar"
+                  class="inline-flex h-8 max-w-[45vw] items-center gap-1.5 rounded-m3-sm border px-3 text-label-large transition-all active:scale-95 {open
+                    ? 'border-transparent bg-secondary-container text-on-secondary-container'
+                    : 'border-surface-700/60 bg-transparent text-gray-300'}"
+                >
+                  <svg
+                    class="h-4 w-4 shrink-0"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2.2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    ><rect x="3" y="4" width="18" height="18" rx="2" /><path
+                      d="M16 2v4M8 2v4M3 10h18"
+                    /></svg
+                  >
+                  <span class="truncate"
+                    >{selectedYear?.groep?.code ??
+                      selectedYear?.studie?.code ??
+                      "Schooljaar"}</span
+                  >
+                  <svg
+                    class="h-4 w-4 shrink-0 transition-transform {open
+                      ? 'rotate-180'
+                      : ''}"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2.5"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"><path d="m6 9 6 6 6-6" /></svg
+                  >
+                </button>
+              {/snippet}
+              {#each schoolyears as year}
+                <button
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={selectedYear?.id === year.id}
+                  onclick={() => {
+                    yearMenuOpen = false;
+                    selectYear(year);
+                  }}
+                  class="flex w-full items-center gap-3 px-3 py-2.5 text-left text-label-medium transition-colors hover:bg-white/5 {selectedYear?.id ===
+                  year.id
+                    ? 'text-primary-300'
+                    : 'text-gray-200'}"
+                >
+                  <span class="flex-1 truncate"
+                    >{year.groep?.code ?? year.studie?.code ?? "?"}</span
+                  >
+                  {#if selectedYear?.id === year.id}
+                    <svg
+                      class="h-4 w-4 shrink-0"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="3"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      ><polyline points="20 6 9 17 4 12" /></svg
+                    >
+                  {/if}
+                </button>
+              {/each}
+            </DropdownMenu>
+          </div>
+        </div>
+      {/if}
     </div>
 
     <!-- Tabs – M3 wrap: 2×2 on phones, single row on larger -->
@@ -1280,8 +1445,8 @@
         <!-- Overall trend graph -->
         {#if subjects.length > 0}
           {@const chronoAll = getAllChronologicalValues()}
-          {@const path = getOverallTrendPath()}
           {@const chronoValues = chronoAll.map((g) => g.value)}
+          {@const path = getOverallTrendPath(chronoValues)}
           {@const validSubjects = subjects.filter((s) => s.avg > 0)}
           {@const overallAvg =
             validSubjects.length > 0
@@ -1321,10 +1486,10 @@
                 ></div>
               </div>
             </div>
-            <div class="h-44 w-full relative z-10">
+            <div class="relative z-10 mx-auto aspect-[13/5] w-full max-w-2xl">
               <svg
-                viewBox="0 0 300 120"
-                class="w-full h-full"
+                viewBox="0 0 312 120"
+                class="absolute inset-0 h-full w-full overflow-visible"
                 preserveAspectRatio="xMidYMid meet"
               >
                 <defs>
@@ -1381,7 +1546,7 @@
                       opacity="0.4"
                     />
                     <text
-                      x="298"
+                      x="310"
                       y={gy + 3}
                       text-anchor="end"
                       class="text-[6px]"
@@ -1420,33 +1585,115 @@
                     opacity="0.9"
                   />
 
-                  <!-- Interactive hover areas (invisible wider paths for easier hitting) -->
-                  {#each chronoAll as g, idx}
+                  <!-- Hover guide -->
+                  {#if hoveredTrendPoint !== null && chronoAll[hoveredTrendPoint]}
+                    {@const hp = chronoAll[hoveredTrendPoint]}
+                    {@const hx =
+                      chronoAll.length > 1
+                        ? (hoveredTrendPoint * 300) / (chronoAll.length - 1)
+                        : 150}
+                    {@const hy = 120 - ((hp.value - gMin) / gRange) * 120}
+                    <line
+                      x1={hx}
+                      y1="0"
+                      x2={hx}
+                      y2="120"
+                      stroke="var(--color-primary-300)"
+                      stroke-width="0.6"
+                      stroke-dasharray="2 2"
+                      opacity="0.7"
+                    />
+                    <circle
+                      cx={hx}
+                      cy={hy}
+                      r="3.2"
+                      fill="var(--color-primary-300)"
+                      stroke="var(--color-surface-950)"
+                      stroke-width="1"
+                    />
+                  {/if}
+
+                  <!-- Tappable points: hover for details, tap to open the subject -->
+                  {#each chronoAll as g, idx (g.grade.CijferId)}
                     {@const step =
                       chronoAll.length > 1 ? 300 / (chronoAll.length - 1) : 150}
                     {@const cx = idx * step}
                     {@const cy = 120 - ((g.value - gMin) / gRange) * 120}
-                    <!-- Invisible hover target -->
-                    <g class="group/point" style="cursor: pointer;">
-                      <line
-                        x1={cx}
-                        y1={cy - 10}
-                        x2={cx}
-                        y2={cy + 10}
-                        stroke="transparent"
-                        stroke-width="12"
-                      />
+                    <g
+                      role="button"
+                      tabindex="0"
+                      aria-label="{g.subject}: {g.grade
+                        .CijferStr} op {formatDateShort(g.date)}"
+                      class="cursor-pointer focus:outline-none"
+                      onpointerenter={() => (hoveredTrendPoint = idx)}
+                      onpointerleave={() => (hoveredTrendPoint = null)}
+                      onfocus={() => (hoveredTrendPoint = idx)}
+                      onblur={() => (hoveredTrendPoint = null)}
+                      onclick={() => focusSubject(g.subject)}
+                      onkeydown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          focusSubject(g.subject);
+                        }
+                      }}
+                    >
+                      <circle {cx} {cy} r="6" fill="transparent" />
                       <circle
                         {cx}
                         {cy}
-                        r="0"
-                        fill="var(--color-primary-400)"
-                        class="transition-all duration-200 group-hover/point:r-[4]"
+                        r={hoveredTrendPoint === idx ? 2.8 : 1.5}
+                        fill={isVoldoende(g.value)
+                          ? "var(--color-primary-300)"
+                          : "var(--color-red-400)"}
+                        stroke="var(--color-surface-950)"
+                        stroke-width="0.6"
+                        class="transition-all duration-150"
                       />
                     </g>
                   {/each}
                 {/if}
               </svg>
+
+              {#if hoveredTrendPoint !== null && chronoAll[hoveredTrendPoint]}
+                {@const hp = chronoAll[hoveredTrendPoint]}
+                {@const hx =
+                  chronoAll.length > 1
+                    ? (hoveredTrendPoint * 300) / (chronoAll.length - 1)
+                    : 150}
+                {@const hy = 120 - ((hp.value - gMin) / gRange) * 120}
+                {@const tipLeft = Math.min(90, Math.max(10, (hx / 312) * 100))}
+                {@const tipOffset = hy < 32 ? "14px" : "calc(-100% - 12px)"}
+                <div
+                  class="pointer-events-none absolute z-20 w-max max-w-[11rem] rounded-xl border border-white/10 bg-surface-950/95 px-2.5 py-2 shadow-xl backdrop-blur"
+                  style="left: {tipLeft}%; top: {(hy / 120) *
+                    100}%; transform: translate(-50%, {tipOffset});"
+                >
+                  <p
+                    class="max-w-[9rem] truncate text-[9px] font-black uppercase tracking-widest text-gray-400"
+                  >
+                    {hp.subject}
+                  </p>
+                  <div class="mt-0.5 flex items-baseline gap-1.5">
+                    <span
+                      class="text-base font-black {gradeTextClass(
+                        hp.grade,
+                        'text-primary-300',
+                      )}">{hp.grade.CijferStr}</span
+                    >
+                    <span class="text-[9px] font-bold text-gray-500"
+                      >{formatDateShort(hp.date)}</span
+                    >
+                  </div>
+                  {#if hp.grade.Weging}
+                    <p class="text-[9px] font-bold text-gray-500">
+                      Weging ×{hp.grade.Weging}
+                    </p>
+                  {/if}
+                  <p class="mt-0.5 text-[8px] font-bold text-primary-300/80">
+                    Tik om het vak te openen
+                  </p>
+                </div>
+              {/if}
             </div>
             <!-- Legend row -->
             <div
@@ -1516,7 +1763,10 @@
               )
               .map((g: any) => getNumericValue(g.CijferStr))}
             {@const trendDir = getTrendDirection(chronoVals)}
-            <div class="glass rounded-2xl overflow-hidden">
+            <div
+              class="glass rounded-2xl overflow-hidden"
+              data-subject={subject.name}
+            >
               <button
                 onclick={() =>
                   (selectedSubject =
@@ -1568,47 +1818,54 @@
                   </div>
                 </div>
                 <div class="flex items-center gap-3">
-                  {#if getTrendPath(subject)}
-                    {@const chartData = getSubjectChartData(subject)}
-                    {#if chartData}
-                      {@const lastP =
-                        chartData.points[chartData.points.length - 1]}
-                      <div class="w-16 h-8 hidden sm:block shrink-0">
-                        <svg
-                          viewBox="0 0 100 40"
-                          class="w-full h-full"
-                          preserveAspectRatio="xMidYMid meet"
-                        >
-                          <defs>
-                            <linearGradient
-                              id="lineGradSmall"
-                              x1="0%"
-                              y1="0%"
-                              x2="100%"
-                              y2="0%"
-                            >
-                              <stop
-                                offset="0%"
-                                stop-color="var(--color-primary-400)"
-                              />
-                              <stop
-                                offset="100%"
-                                stop-color="var(--color-accent-400)"
-                              />
-                            </linearGradient>
-                          </defs>
-                          <path
-                            d={getTrendPath(subject)}
-                            fill="none"
-                            stroke="url(#lineGradSmall)"
-                            stroke-width="2.5"
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                            style="filter: drop-shadow(0px 2px 4px rgba(192, 132, 252, 0.4));"
-                          />
-                        </svg>
-                      </div>
-                    {/if}
+                  {#if getSubjectChartData(subject)}
+                    {@const sparkData = getSubjectChartData(
+                      subject,
+                    ) as ChartData}
+                    {@const lastP =
+                      sparkData.points[sparkData.points.length - 1]}
+                    <div class="w-16 h-8 hidden sm:block shrink-0">
+                      <svg
+                        viewBox="0 0 100 40"
+                        class="w-full h-full overflow-visible"
+                        preserveAspectRatio="xMidYMid meet"
+                        aria-hidden="true"
+                      >
+                        <defs>
+                          <linearGradient
+                            id="lineGradSmall"
+                            x1="0%"
+                            y1="0%"
+                            x2="100%"
+                            y2="0%"
+                          >
+                            <stop
+                              offset="0%"
+                              stop-color="var(--color-primary-400)"
+                            />
+                            <stop
+                              offset="100%"
+                              stop-color="var(--color-accent-400)"
+                            />
+                          </linearGradient>
+                        </defs>
+                        <path
+                          d={buildSmoothPath(sparkData.points)}
+                          fill="none"
+                          stroke="url(#lineGradSmall)"
+                          stroke-width="2.5"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          style="filter: drop-shadow(0px 2px 4px rgba(192, 132, 252, 0.4));"
+                        />
+                        <circle
+                          cx={lastP.x}
+                          cy={lastP.y}
+                          r="1.8"
+                          fill="var(--color-accent-400)"
+                        />
+                      </svg>
+                    </div>
                   {/if}
                   {#if subject.avg > 0}
                     <span
@@ -1817,85 +2074,213 @@
                     {@const chartD = getSubjectChartData(subject)}
                     {#if chartD}
                       {@const subRange = chartD.maxY - chartD.minY || 1}
+                      {@const chartGrades = getSubjectChartGrades(subject)}
+                      {@const chartPath = buildSmoothPath(chartD.points)}
                       <div
-                        class="h-32 w-full relative bg-surface-900/50 rounded-xl p-3 border border-white/5 overflow-hidden"
+                        class="relative bg-surface-900/50 rounded-xl p-3 border border-white/5"
                       >
-                        <p
-                          class="absolute top-2 left-3 text-[9px] font-black uppercase text-gray-500 z-10"
-                        >
-                          Cijferverloop
-                        </p>
-                        <!-- Value labels on right -->
-                        <div
-                          class="absolute top-2 right-3 text-[8px] text-gray-600 font-bold z-10 text-right"
-                        >
-                          <span class="block">{chartD.maxY.toFixed(1)}</span>
-                          <span class="block mt-[78px]"
-                            >{chartD.minY.toFixed(1)}</span
+                        <div class="mb-2 flex items-center justify-between">
+                          <p
+                            class="text-[9px] font-black uppercase text-gray-500"
                           >
+                            Cijferverloop
+                          </p>
+                          <p class="text-[8px] text-gray-600 font-bold">
+                            {chartD.maxY.toFixed(1)} — {chartD.minY.toFixed(1)}
+                          </p>
                         </div>
-                        <svg
-                          viewBox="0 0 100 40"
-                          class="w-full h-full"
-                          preserveAspectRatio="xMidYMid meet"
+                        <div
+                          class="relative mx-auto aspect-[5/2] w-full max-w-xl"
                         >
-                          <defs>
-                            <linearGradient
-                              id="lineGradDetailed"
-                              x1="0%"
-                              y1="0%"
-                              x2="100%"
-                              y2="0%"
-                            >
-                              <stop
-                                offset="0%"
-                                stop-color="var(--color-primary-400)"
-                              />
-                              <stop
-                                offset="100%"
-                                stop-color="var(--color-accent-400)"
-                              />
-                            </linearGradient>
-                            <filter id="glowSub">
-                              <feGaussianBlur
-                                stdDeviation="1.5"
-                                result="blur"
-                              />
-                              <feMerge
-                                ><feMergeNode in="blur" /><feMergeNode
-                                  in="SourceGraphic"
-                                /></feMerge
+                          <svg
+                            viewBox="0 0 100 40"
+                            class="absolute inset-0 h-full w-full overflow-visible"
+                            preserveAspectRatio="xMidYMid meet"
+                          >
+                            <defs>
+                              <linearGradient
+                                id="lineGradDetailed"
+                                x1="0%"
+                                y1="0%"
+                                x2="100%"
+                                y2="0%"
                               >
-                            </filter>
-                          </defs>
+                                <stop
+                                  offset="0%"
+                                  stop-color="var(--color-primary-400)"
+                                />
+                                <stop
+                                  offset="100%"
+                                  stop-color="var(--color-accent-400)"
+                                />
+                              </linearGradient>
+                              <filter id="glowSub">
+                                <feGaussianBlur
+                                  stdDeviation="1.5"
+                                  result="blur"
+                                />
+                                <feMerge
+                                  ><feMergeNode in="blur" /><feMergeNode
+                                    in="SourceGraphic"
+                                  /></feMerge
+                                >
+                              </filter>
+                            </defs>
 
-                          <!-- Grid lines -->
-                          {#each [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as grade}
-                            {@const gy =
-                              40 - ((grade - chartD.minY) / subRange) * 40}
-                            {#if gy >= 0 && gy <= 40}
+                            <!-- Grid lines -->
+                            {#each [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as grade}
+                              {@const gy =
+                                40 - ((grade - chartD.minY) / subRange) * 40}
+                              {#if gy >= 0 && gy <= 40}
+                                <line
+                                  x1="0"
+                                  y1={gy}
+                                  x2="100"
+                                  y2={gy}
+                                  stroke="var(--color-surface-700)"
+                                  stroke-width="0.3"
+                                  opacity="0.3"
+                                />
+                              {/if}
+                            {/each}
+
+                            <path
+                              d={chartPath}
+                              fill="none"
+                              stroke="url(#lineGradDetailed)"
+                              stroke-width="2"
+                              stroke-linecap="round"
+                              stroke-linejoin="round"
+                              filter="url(#glowSub)"
+                            />
+
+                            <!-- Hover guide -->
+                            {#if hoveredSubjectPoint !== null && chartD.points[hoveredSubjectPoint]}
+                              {@const hp = chartD.points[hoveredSubjectPoint]}
                               <line
-                                x1="0"
-                                y1={gy}
-                                x2="100"
-                                y2={gy}
-                                stroke="var(--color-surface-700)"
-                                stroke-width="0.3"
-                                opacity="0.3"
+                                x1={hp.x}
+                                y1="0"
+                                x2={hp.x}
+                                y2="40"
+                                stroke="var(--color-primary-300)"
+                                stroke-width="0.4"
+                                stroke-dasharray="1.5 1.5"
+                                opacity="0.7"
+                              />
+                              <circle
+                                cx={hp.x}
+                                cy={hp.y}
+                                r="2.4"
+                                fill="var(--color-primary-300)"
+                                stroke="var(--color-surface-950)"
+                                stroke-width="0.6"
                               />
                             {/if}
-                          {/each}
 
-                          <path
-                            d={getTrendPath(subject)}
-                            fill="none"
-                            stroke="url(#lineGradDetailed)"
-                            stroke-width="2"
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                            filter="url(#glowSub)"
-                          />
-                        </svg>
+                            <!-- Tappable points: hover for details, tap to mark the grade -->
+                            {#each chartD.points as p, idx (p.x)}
+                              {@const g = chartGrades[idx]}
+                              {#if g}
+                                <g
+                                  role="button"
+                                  tabindex="0"
+                                  aria-label="{g.CijferStr} op {formatDateShort(
+                                    g.DatumIngevoerd,
+                                  )}"
+                                  class="cursor-pointer focus:outline-none"
+                                  onpointerenter={() =>
+                                    (hoveredSubjectPoint = idx)}
+                                  onpointerleave={() =>
+                                    (hoveredSubjectPoint = null)}
+                                  onfocus={() => (hoveredSubjectPoint = idx)}
+                                  onblur={() => (hoveredSubjectPoint = null)}
+                                  onclick={() => focusGrade(g)}
+                                  onkeydown={(e) => {
+                                    if (e.key === "Enter" || e.key === " ") {
+                                      e.preventDefault();
+                                      focusGrade(g);
+                                    }
+                                  }}
+                                >
+                                  <circle
+                                    cx={p.x}
+                                    cy={p.y}
+                                    r="4.5"
+                                    fill="transparent"
+                                  />
+                                  <circle
+                                    cx={p.x}
+                                    cy={p.y}
+                                    r={hoveredSubjectPoint === idx ? 2 : 1.1}
+                                    fill={isVoldoende(g)
+                                      ? "var(--color-primary-300)"
+                                      : "var(--color-red-400)"}
+                                    stroke="var(--color-surface-950)"
+                                    stroke-width="0.5"
+                                    class="transition-all duration-150"
+                                  />
+                                  {#if highlightedGradeId === g.CijferId}
+                                    <circle
+                                      cx={p.x}
+                                      cy={p.y}
+                                      r="2.2"
+                                      fill="none"
+                                      stroke="var(--color-accent-400)"
+                                      stroke-width="0.7"
+                                    />
+                                  {/if}
+                                </g>
+                              {/if}
+                            {/each}
+                          </svg>
+
+                          {#if hoveredSubjectPoint !== null && chartD.points[hoveredSubjectPoint]}
+                            {@const hp = chartD.points[hoveredSubjectPoint]}
+                            {@const hg = chartGrades[hoveredSubjectPoint]}
+                            {#if hg}
+                              {@const tipLeft = Math.min(
+                                82,
+                                Math.max(18, hp.x),
+                              )}
+                              {@const tipOffset =
+                                hp.y < 12 ? "10px" : "calc(-100% - 8px)"}
+                              <div
+                                class="pointer-events-none absolute z-20 w-max max-w-[11rem] rounded-xl border border-white/10 bg-surface-950/95 px-2.5 py-2 shadow-xl backdrop-blur"
+                                style="left: {tipLeft}%; top: {(hp.y / 40) *
+                                  100}%; transform: translate(-50%, {tipOffset});"
+                              >
+                                <p
+                                  class="max-w-[9rem] truncate text-[9px] font-black uppercase tracking-widest text-gray-400"
+                                >
+                                  {hg.CijferKolom?.KolomOmschrijving ??
+                                    "Cijfer"}
+                                </p>
+                                <div class="mt-0.5 flex items-baseline gap-1.5">
+                                  <span
+                                    class="text-base font-black {gradeTextClass(
+                                      hg,
+                                      'text-primary-300',
+                                    )}">{hg.CijferStr}</span
+                                  >
+                                  <span
+                                    class="text-[9px] font-bold text-gray-500"
+                                    >{formatDateShort(hg.DatumIngevoerd)}</span
+                                  >
+                                </div>
+                                {#if hg.Weging}
+                                  <p class="text-[9px] font-bold text-gray-500">
+                                    Weging ×{hg.Weging}
+                                  </p>
+                                {/if}
+                                <p
+                                  class="mt-0.5 text-[8px] font-bold text-primary-300/80"
+                                >
+                                  Tik om het cijfer te markeren
+                                </p>
+                              </div>
+                            {/if}
+                          {/if}
+                        </div>
                       </div>
                     {/if}
                   {/if}
@@ -1903,7 +2288,11 @@
                   <div class="space-y-2">
                     {#each subject.grades as grade}
                       <div
-                        class="p-3 rounded-xl bg-surface-800/50 border border-white/4 space-y-2"
+                        class="p-3 rounded-xl border space-y-2 transition-colors duration-300 {highlightedGradeId ===
+                        grade.CijferId
+                          ? 'bg-primary-500/10 border-primary-400/50 ring-1 ring-primary-400/30'
+                          : 'bg-surface-800/50 border-white/4'}"
+                        data-grade-id={grade.CijferId}
                       >
                         <div class="flex items-center justify-between gap-2">
                           <div class="min-w-0 flex-1">
@@ -2272,15 +2661,31 @@
 
           <!-- Pass/Fail donut -->
           <div class="glass rounded-3xl p-5 border border-white/5">
-            <h3
-              class="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-4"
-            >
-              Slagingspercentage
-            </h3>
+            <div class="flex items-baseline justify-between mb-4">
+              <h3
+                class="text-[10px] font-black text-gray-500 uppercase tracking-widest"
+              >
+                Slagingspercentage
+              </h3>
+              {#if resultFilter}
+                <button
+                  type="button"
+                  onclick={() => {
+                    resultFilter = null;
+                    selectedBucket = null;
+                  }}
+                  class="text-[9px] font-bold text-gray-500 underline underline-offset-2 hover:text-gray-300"
+                >
+                  Filter wissen
+                </button>
+              {/if}
+            </div>
             {#if passFailCount().total > 0}
-              {@const pctVal =
-                (passFailCount().passing / passFailCount().total) * 100}
-              <div class="flex items-center justify-center gap-8">
+              {@const pf = passFailCount()}
+              {@const pctVal = (pf.passing / pf.total) * 100}
+              {@const centerPct =
+                resultFilter === "fail" ? 100 - pctVal : pctVal}
+              <div class="flex flex-wrap items-center justify-center gap-8">
                 <div class="relative w-28 h-28">
                   <svg viewBox="0 0 36 36" class="w-full h-full -rotate-90">
                     <circle
@@ -2291,102 +2696,276 @@
                       stroke="var(--color-surface-800)"
                       stroke-width="3"
                     />
-                    <circle
-                      cx="18"
-                      cy="18"
-                      r="15.9"
-                      fill="none"
-                      stroke="var(--color-accent-400)"
-                      stroke-width="3"
-                      stroke-dasharray="{pctVal} {100 - pctVal}"
-                      stroke-linecap="round"
-                      class="transition-all duration-1000"
-                      style="filter: drop-shadow(0 0 8px rgba(168, 85, 247, 0.4));"
-                    />
-                    <circle
-                      cx="18"
-                      cy="18"
-                      r="15.9"
-                      fill="none"
-                      stroke="var(--color-red-500)"
-                      stroke-width="3"
-                      stroke-dasharray="{100 - pctVal} {pctVal}"
-                      stroke-dashoffset={-pctVal}
-                      stroke-linecap="round"
-                    />
+                    <g
+                      role="button"
+                      tabindex="0"
+                      aria-label="Filter op voldoende cijfers"
+                      aria-pressed={resultFilter === "pass"}
+                      class="cursor-pointer focus:outline-none"
+                      onclick={() => toggleResultFilter("pass")}
+                      onkeydown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          toggleResultFilter("pass");
+                        }
+                      }}
+                    >
+                      <title>Voldoende: {pf.passing}</title>
+                      <circle
+                        cx="18"
+                        cy="18"
+                        r="15.9"
+                        fill="none"
+                        stroke="var(--color-accent-400)"
+                        stroke-width="3"
+                        stroke-dasharray="{pctVal} {100 - pctVal}"
+                        stroke-linecap="round"
+                        class="transition-all duration-300 drop-shadow-[0_0_8px_rgba(168,85,247,0.4)] {resultFilter ===
+                        'fail'
+                          ? 'opacity-30'
+                          : 'hover:brightness-125'}"
+                      />
+                    </g>
+                    <g
+                      role="button"
+                      tabindex="0"
+                      aria-label="Filter op onvoldoende cijfers"
+                      aria-pressed={resultFilter === "fail"}
+                      class="cursor-pointer focus:outline-none"
+                      onclick={() => toggleResultFilter("fail")}
+                      onkeydown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          toggleResultFilter("fail");
+                        }
+                      }}
+                    >
+                      <title>Onvoldoende: {pf.failing}</title>
+                      <circle
+                        cx="18"
+                        cy="18"
+                        r="15.9"
+                        fill="none"
+                        stroke="var(--color-red-500)"
+                        stroke-width="3"
+                        stroke-dasharray="{100 - pctVal} {pctVal}"
+                        stroke-dashoffset={-pctVal}
+                        stroke-linecap="round"
+                        class="transition-all duration-300 {resultFilter ===
+                        'pass'
+                          ? 'opacity-30'
+                          : 'hover:brightness-125'}"
+                      />
+                    </g>
                   </svg>
                   <div
-                    class="absolute inset-0 flex items-center justify-center"
+                    class="pointer-events-none absolute inset-0 flex flex-col items-center justify-center"
                   >
-                    <span class="text-2xl font-black text-white"
-                      >{Math.round(pctVal)}%</span
+                    <span
+                      class="text-2xl font-black text-white"
+                      data-donut-center>{Math.round(centerPct)}%</span
+                    >
+                    <span
+                      class="text-[8px] font-black uppercase tracking-widest text-gray-500"
+                      >{resultFilter === "fail"
+                        ? "onvoldoende"
+                        : "voldoende"}</span
                     >
                   </div>
                 </div>
-                <div class="space-y-2">
-                  <div class="flex items-center gap-2">
-                    <div class="w-3 h-3 rounded-full bg-accent-400"></div>
+                <div class="space-y-1.5">
+                  <button
+                    type="button"
+                    aria-pressed={resultFilter === "pass"}
+                    onclick={() => toggleResultFilter("pass")}
+                    class="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors {resultFilter ===
+                    'pass'
+                      ? 'bg-white/10 ring-1 ring-white/15'
+                      : 'hover:bg-white/5'}"
+                  >
+                    <span
+                      class="w-3 h-3 rounded-full bg-accent-400 {resultFilter ===
+                      'fail'
+                        ? 'opacity-30'
+                        : ''}"
+                    ></span>
                     <span class="text-xs text-gray-400"
                       >Voldoende: <strong class="text-white"
-                        >{passFailCount().passing}</strong
+                        >{pf.passing}</strong
                       ></span
                     >
-                  </div>
-                  <div class="flex items-center gap-2">
-                    <div class="w-3 h-3 rounded-full bg-red-500"></div>
+                  </button>
+                  <button
+                    type="button"
+                    aria-pressed={resultFilter === "fail"}
+                    onclick={() => toggleResultFilter("fail")}
+                    class="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors {resultFilter ===
+                    'fail'
+                      ? 'bg-white/10 ring-1 ring-white/15'
+                      : 'hover:bg-white/5'}"
+                  >
+                    <span
+                      class="w-3 h-3 rounded-full bg-red-500 {resultFilter ===
+                      'pass'
+                        ? 'opacity-30'
+                        : ''}"
+                    ></span>
                     <span class="text-xs text-gray-400"
                       >Onvoldoende: <strong class="text-white"
-                        >{passFailCount().failing}</strong
+                        >{pf.failing}</strong
                       ></span
                     >
-                  </div>
+                  </button>
+                  <p class="px-2 text-[9px] font-bold text-gray-600">
+                    Tik op een segment om te filteren
+                  </p>
                 </div>
               </div>
+            {:else}
+              <p class="text-center text-xs text-gray-600 py-6">
+                Nog geen cijfers om te vergelijken.
+              </p>
             {/if}
           </div>
 
           <!-- Grade distribution histogram -->
           <div class="glass rounded-3xl p-5 border border-white/5">
-            <h3
-              class="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-4"
-            >
-              Cijferverdeling (Alle vakken)
-            </h3>
-            <div class="space-y-2">
-              {#each overallDistribution() as bucket}
-                <div class="flex items-center gap-2 group cursor-pointer">
-                  <span
-                    class="text-[9px] font-black text-gray-500 w-8 text-right shrink-0"
-                    >{bucket.label}</span
-                  >
-                  <div
-                    class="flex-1 h-6 bg-surface-800 rounded-full overflow-hidden relative border border-surface-700/20"
-                  >
-                    <div
-                      class="h-full rounded-full transition-all duration-700 group-hover:brightness-125 {parseInt(
-                        bucket.label,
-                      ) >= passLimit
-                        ? 'bg-gradient-to-r from-primary-500 to-accent-400'
-                        : 'bg-gradient-to-r from-red-500 to-red-400'}"
-                      style="width: {Math.max(
-                        bucket.pct,
-                        bucket.count > 0 ? 4 : 0,
-                      )}%"
-                    ></div>
-                    {#if bucket.count > 0}
-                      <span
-                        class="absolute inset-0 flex items-center justify-start pl-3 text-[10px] font-black text-white drop-shadow-lg"
-                        >{bucket.count}</span
-                      >
-                    {/if}
-                  </div>
-                  <span
-                    class="text-[10px] font-black text-gray-400 w-5 text-left shrink-0"
-                    >{bucket.count}</span
-                  >
-                </div>
-              {/each}
+            <div class="flex items-baseline justify-between mb-4 gap-3">
+              <h3
+                class="text-[10px] font-black text-gray-500 uppercase tracking-widest"
+              >
+                Cijferverdeling
+                {resultFilter === "pass"
+                  ? "(Voldoende)"
+                  : resultFilter === "fail"
+                    ? "(Onvoldoende)"
+                    : "(Alle vakken)"}
+              </h3>
+              <span class="text-[9px] text-gray-600 font-bold shrink-0"
+                >{filteredAnalyticsGrades.length} cijfers</span
+              >
             </div>
+            {#if analyticsGrades.length === 0}
+              <p class="text-center text-xs text-gray-600 py-6">
+                Nog geen cijfers om te verdelen.
+              </p>
+            {:else}
+              <div class="space-y-2">
+                {#each analyticsDistribution as bucket (bucket.label)}
+                  <button
+                    type="button"
+                    data-bucket={bucket.label}
+                    disabled={bucket.count === 0}
+                    aria-pressed={selectedBucket === bucket.label}
+                    onclick={() => selectBucket(bucket.label)}
+                    class="w-full flex items-center gap-2 group rounded-lg px-1 py-0.5 text-left transition-colors disabled:cursor-default disabled:opacity-40 {selectedBucket ===
+                    bucket.label
+                      ? 'bg-primary-500/10 ring-1 ring-primary-500/30'
+                      : 'hover:bg-white/5'}"
+                  >
+                    <span
+                      class="text-[9px] font-black text-gray-500 w-8 text-right shrink-0"
+                      >{bucket.label}</span
+                    >
+                    <div
+                      class="flex-1 h-6 bg-surface-800 rounded-full overflow-hidden relative border border-surface-700/20"
+                    >
+                      <div
+                        class="h-full rounded-full transition-all duration-700 group-hover:brightness-125 {parseInt(
+                          bucket.label,
+                        ) >= passLimit
+                          ? 'bg-gradient-to-r from-primary-500 to-accent-400'
+                          : 'bg-gradient-to-r from-red-500 to-red-400'}"
+                        style="width: {Math.max(
+                          bucket.pct,
+                          bucket.count > 0 ? 4 : 0,
+                        )}%"
+                      ></div>
+                      {#if bucket.count > 0}
+                        <span
+                          class="absolute inset-0 flex items-center justify-start pl-3 text-[10px] font-black text-white drop-shadow-lg"
+                          >{bucket.count}</span
+                        >
+                      {/if}
+                    </div>
+                    <span
+                      class="text-[10px] font-black text-gray-400 w-5 text-left shrink-0"
+                      >{bucket.count}</span
+                    >
+                  </button>
+                {/each}
+              </div>
+
+              {#if selectedBucket && gradesForBucket(selectedBucket).length > 0}
+                <div
+                  class="mt-4 rounded-2xl border border-primary-500/20 bg-surface-900/60 p-3"
+                  data-bucket-detail={selectedBucket}
+                >
+                  <div class="mb-2 flex items-center justify-between">
+                    <p
+                      class="text-[9px] font-black uppercase tracking-widest text-primary-300"
+                    >
+                      Cijfers {selectedBucket}
+                    </p>
+                    <button
+                      type="button"
+                      onclick={() => (selectedBucket = null)}
+                      aria-label="Sluit details"
+                      class="rounded-md p-1 text-gray-600 transition-colors hover:bg-white/5 hover:text-gray-300"
+                    >
+                      <svg
+                        class="h-3.5 w-3.5"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2.5"
+                        ><path d="M18 6 6 18M6 6l12 12" /></svg
+                      >
+                    </button>
+                  </div>
+                  <div class="space-y-1">
+                    {#each gradesForBucket(selectedBucket) as row (row.grade.CijferId)}
+                      <button
+                        type="button"
+                        onclick={() => focusSubject(row.subject)}
+                        class="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-white/5"
+                      >
+                        <span class="min-w-0 flex-1">
+                          <span
+                            class="block truncate text-[11px] font-bold text-gray-300"
+                            >{row.subject}</span
+                          >
+                          <span class="block truncate text-[9px] text-gray-600"
+                            >{row.grade.CijferKolom?.KolomOmschrijving ??
+                              "Cijfer"} ·
+                            {formatDateShort(row.grade.DatumIngevoerd)}</span
+                          >
+                        </span>
+                        <span
+                          class="text-sm font-black {gradeTextClass(
+                            row.grade,
+                            'text-primary-300',
+                          )}">{row.grade.CijferStr}</span
+                        >
+                        <svg
+                          class="h-3 w-3 shrink-0 text-gray-600"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="2.5"><path d="m9 18 6-6-6-6" /></svg
+                        >
+                      </button>
+                    {/each}
+                  </div>
+                </div>
+              {/if}
+
+              {#if filteredAnalyticsGrades.length === 0}
+                <p class="mt-4 text-center text-[10px] font-bold text-gray-600">
+                  Geen cijfers in deze selectie.
+                </p>
+              {/if}
+            {/if}
           </div>
 
           <!-- Subject comparison radar (simplified bar chart) -->
@@ -2404,8 +2983,13 @@
             <div class="space-y-2 max-h-64 overflow-y-auto pr-1">
               {#each [...subjects]
                 .filter((s: any) => s.avg > 0)
-                .sort((a: any, b: any) => b.avg - a.avg) as subject, idx}
-                <div class="flex items-center gap-3">
+                .sort((a: any, b: any) => b.avg - a.avg) as subject, idx (subject.name)}
+                <button
+                  type="button"
+                  onclick={() => focusSubject(subject.name)}
+                  title="Bekijk {subject.name}"
+                  class="w-full flex items-center gap-3 rounded-xl px-2 py-1 -mx-2 text-left transition-colors hover:bg-white/5 focus:outline-none focus-visible:ring-1 focus-visible:ring-primary-500/50"
+                >
                   <span class="text-[9px] font-black text-gray-500 w-5 shrink-0"
                     >{idx + 1}.</span
                   >
@@ -2430,14 +3014,26 @@
                       {fmt(subject.avg)}
                     </span>
                   </div>
-                </div>
+                  <svg
+                    class="h-3 w-3 shrink-0 text-gray-600"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2.5"><path d="m9 18 6-6-6-6" /></svg
+                  >
+                </button>
               {/each}
             </div>
           </div>
 
           <!-- Best/Worst subjects -->
           <div class="grid grid-cols-2 gap-3">
-            <div class="glass rounded-3xl p-5 border border-emerald-500/20">
+            <button
+              type="button"
+              disabled={!bestSubject}
+              onclick={() => bestSubject && focusSubject(bestSubject.name)}
+              class="glass rounded-3xl p-5 border border-emerald-500/20 text-left transition-colors hover:border-emerald-400/40 hover:bg-emerald-500/5 disabled:cursor-default"
+            >
               <div class="flex items-center gap-2 mb-3">
                 <Icon name="trophy" size={18} class="text-emerald-400" />
                 <h3
@@ -2451,11 +3047,20 @@
                 <p class="text-2xl font-black text-emerald-400 mt-1">
                   {fmt(bestSubject.avg)}
                 </p>
+                <span
+                  class="mt-2 block text-[9px] font-bold text-emerald-400/70"
+                  >Bekijk vak →</span
+                >
               {:else}
                 <p class="text-xs text-gray-600">Nog geen data</p>
               {/if}
-            </div>
-            <div class="glass rounded-3xl p-5 border border-red-500/20">
+            </button>
+            <button
+              type="button"
+              disabled={!worstSubject}
+              onclick={() => worstSubject && focusSubject(worstSubject.name)}
+              class="glass rounded-3xl p-5 border border-red-500/20 text-left transition-colors hover:border-red-400/40 hover:bg-red-500/5 disabled:cursor-default"
+            >
               <div class="flex items-center gap-2 mb-3">
                 <Icon name="alert" size={18} class="text-red-400" />
                 <h3
@@ -2469,10 +3074,13 @@
                 <p class="text-2xl font-black text-red-400 mt-1">
                   {fmt(worstSubject.avg)}
                 </p>
+                <span class="mt-2 block text-[9px] font-bold text-red-400/70"
+                  >Bekijk vak →</span
+                >
               {:else}
                 <p class="text-xs text-gray-600">Nog geen data</p>
               {/if}
-            </div>
+            </button>
           </div>
 
           <!-- Trend analysis -->
@@ -2485,21 +3093,24 @@
             <div class="space-y-3">
               {#each [...subjects]
                 .filter((s: any) => s.avg > 0)
-                .sort((a: any, b: any) => Math.abs(getTrendDirection(b.validGrades.map((g: any) => g.value))) - Math.abs(getTrendDirection(a.validGrades.map((g: any) => g.value)))) as subject}
+                .sort((a: any, b: any) => Math.abs(getTrendDirection(b.validGrades.map((g: any) => g.value))) - Math.abs(getTrendDirection(a.validGrades.map((g: any) => g.value)))) as subject (subject.name)}
                 {@const vals = subject.validGrades.map((g: any) => g.value)}
                 {@const dir = getTrendDirection(vals)}
                 {#if dir !== 0}
-                  <div
-                    class="flex items-center justify-between p-3 rounded-xl bg-surface-800/50 border border-white/5"
+                  <button
+                    type="button"
+                    onclick={() => focusSubject(subject.name)}
+                    title="Bekijk {subject.name}"
+                    class="w-full flex items-center justify-between gap-3 p-3 rounded-xl bg-surface-800/50 border border-white/5 text-left transition-colors hover:bg-surface-800/80 hover:border-white/10 focus:outline-none focus-visible:ring-1 focus-visible:ring-primary-500/50"
                   >
-                    <div class="flex items-center gap-3">
+                    <div class="flex min-w-0 items-center gap-3">
                       <Icon
                         name={dir > 0 ? "trend-up" : "trend-down"}
                         size={18}
                         class={dir > 0 ? "text-emerald-400" : "text-red-400"}
                       />
-                      <div>
-                        <p class="text-sm font-bold text-gray-200">
+                      <div class="min-w-0">
+                        <p class="truncate text-sm font-bold text-gray-200">
                           {subject.name}
                         </p>
                         <p class="text-[9px] text-gray-600">
@@ -2507,19 +3118,28 @@
                         </p>
                       </div>
                     </div>
-                    <div class="text-right">
-                      <p
-                        class="text-lg font-black {isVoldoende(subject.avg)
-                          ? 'text-accent-400'
-                          : 'text-red-400'}"
+                    <div class="flex shrink-0 items-center gap-2">
+                      <div class="text-right">
+                        <p
+                          class="text-lg font-black {isVoldoende(subject.avg)
+                            ? 'text-accent-400'
+                            : 'text-red-400'}"
+                        >
+                          {fmt(subject.avg)}
+                        </p>
+                        <p class="text-[9px] text-gray-600">
+                          {vals.length} cijfers
+                        </p>
+                      </div>
+                      <svg
+                        class="h-3 w-3 text-gray-600"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2.5"><path d="m9 18 6-6-6-6" /></svg
                       >
-                        {fmt(subject.avg)}
-                      </p>
-                      <p class="text-[9px] text-gray-600">
-                        {vals.length} cijfers
-                      </p>
                     </div>
-                  </div>
+                  </button>
                 {/if}
               {/each}
               {#if [...subjects]
@@ -4160,26 +4780,56 @@
                   ...historicalAverages.map((h) => h.avg),
                   5,
                 )}
-                <div
-                  class="flex items-end justify-between gap-2 h-32 pt-4 px-2"
-                >
-                  {#each historicalAverages as hist}
+                <div class="flex items-end justify-between gap-2 h-36 px-2">
+                  {#each historicalAverages as hist (hist.year)}
                     {@const heightPct = Math.max(
                       10,
                       ((hist.avg - minAvg + 0.5) / (maxAvg - minAvg + 1)) * 100,
                     )}
-                    <div class="flex flex-col items-center flex-1 group">
+                    <div
+                      role="button"
+                      tabindex="0"
+                      aria-pressed={selectedHistoryYear === hist.year}
+                      aria-label="Schooljaar {hist.year}: gemiddelde {hist.avg.toFixed(
+                        2,
+                      )}"
+                      class="flex flex-col items-center flex-1 h-full group cursor-pointer rounded-lg transition-colors hover:bg-white/5 focus-visible:bg-white/5 focus:outline-none"
+                      onclick={() =>
+                        (selectedHistoryYear =
+                          selectedHistoryYear === hist.year ? null : hist.year)}
+                      onkeydown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          selectedHistoryYear =
+                            selectedHistoryYear === hist.year
+                              ? null
+                              : hist.year;
+                        }
+                      }}
+                    >
                       <span
-                        class="text-xs font-black text-white mb-2 opacity-0 group-hover:opacity-100 transition duration-300"
+                        class="flex h-5 items-end text-xs font-black text-white transition duration-300 {selectedHistoryYear ===
+                        hist.year
+                          ? 'opacity-100'
+                          : 'opacity-0 group-hover:opacity-100 group-focus:opacity-100'}"
                         >{hist.avg.toFixed(2)}</span
                       >
                       <div
-                        class="w-full max-w-[40px] bg-gradient-to-t from-primary-600/50 to-primary-400 rounded-t-xl transition-all duration-700 hover:brightness-125"
-                        style="height: {heightPct}%"
-                      ></div>
+                        class="flex w-full flex-1 items-end justify-center min-h-0"
+                      >
+                        <div
+                          class="w-full max-w-[40px] bg-gradient-to-t from-primary-600/50 to-primary-400 rounded-t-xl transition-all duration-700 hover:brightness-125 {selectedHistoryYear ===
+                          hist.year
+                            ? 'ring-2 ring-primary-300/60'
+                            : ''}"
+                          style="height: {heightPct}%"
+                        ></div>
+                      </div>
                       <span
-                        class="text-[9px] font-black uppercase tracking-tighter text-gray-400 mt-3 truncate w-full text-center"
-                        >{hist.year}</span
+                        class="text-[9px] font-black uppercase tracking-tighter mt-2 truncate w-full text-center {selectedHistoryYear ===
+                        hist.year
+                          ? 'text-primary-300'
+                          : 'text-gray-400'}">{hist.year}</span
                       >
                     </div>
                   {/each}

@@ -19,7 +19,7 @@ import {
   tallyAfterOpening,
   type CardData,
 } from "./cards.ts";
-import type { Grade } from "$lib/types";
+import type { Grade } from "#lib/types.ts";
 
 function mkGrade(
   id: number,

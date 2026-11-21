@@ -1,9 +1,13 @@
 <script lang="ts">
-  import { userSettings, personId } from "$lib/stores";
-  import { offlineStatus, clearOffline } from "$lib/offline";
-  import { runOfflineSync } from "$lib/offline-sync";
-  import { calendarChangesPopup } from "$lib/calendar-changes";
-  import { currentPage, START_PAGE_OPTIONS, getStartPage } from "$lib/stores";
+  import { userSettings, personId } from "#lib/stores.ts";
+  import { offlineStatus, clearOffline } from "#lib/offline.ts";
+  import { runOfflineSync } from "#lib/offline-sync.ts";
+  import { calendarChangesPopup } from "#lib/calendar-changes.ts";
+  import {
+    currentPage,
+    START_PAGE_OPTIONS,
+    getStartPage,
+  } from "#lib/stores.ts";
   import {
     triggerTestNotification,
     notifyNewMessage,
@@ -26,7 +30,7 @@
     exportDebugLog,
     clearDebugLogs,
     isWebBuild,
-  } from "$lib/api";
+  } from "#lib/api.ts";
   import {
     getAiConfig,
     setAiConfig,
@@ -37,8 +41,8 @@
     type AiConfig,
     type AiProviderType,
     AI_PROVIDERS,
-  } from "$lib/ai";
-  import { diagnosticsText, type AiDiagEntry } from "$lib/ai-diagnostics";
+  } from "#lib/ai.ts";
+  import { diagnosticsText, type AiDiagEntry } from "#lib/ai-diagnostics.ts";
   import {
     NOTES_MAX_CHARS,
     clearNotes,
@@ -47,27 +51,27 @@
     restoreNotesRevision,
     saveNotes,
     type NotesRevision,
-  } from "$lib/ai-notes";
-  import { clearAllConversations } from "$lib/ai-chats";
-  import { sectionIcon } from "$lib/icons";
+  } from "#lib/ai-notes.ts";
+  import { clearAllConversations } from "#lib/ai-chats.ts";
+  import { sectionIcon } from "#lib/icons.ts";
   import {
     updateStatus,
     refreshUpdateStatus,
     getCurrentVersion,
-  } from "$lib/updates";
+  } from "#lib/updates.ts";
   import { openUrl } from "@tauri-apps/plugin-opener";
-  import ColorSwatchPicker from "$lib/components/ColorSwatchPicker.svelte";
-  import Switch from "$lib/components/Switch.svelte";
-  import LetterGradesEditor from "$lib/components/LetterGradesEditor.svelte";
-  import CompensationEditor from "$lib/components/CompensationEditor.svelte";
-  import TeacherNamesEditor from "$lib/components/TeacherNamesEditor.svelte";
-  import Button from "$lib/components/Button.svelte";
-  import Icon from "$lib/components/Icon.svelte";
-  import Chip from "$lib/components/Chip.svelte";
-  import IconButton from "$lib/components/IconButton.svelte";
-  import PackReveal from "$lib/components/PackReveal.svelte";
-  import { buildCards } from "$lib/cards";
-  import { resetCollection } from "$lib/grade-reveal";
+  import ColorSwatchPicker from "#lib/components/ColorSwatchPicker.svelte";
+  import Switch from "#lib/components/Switch.svelte";
+  import LetterGradesEditor from "#lib/components/LetterGradesEditor.svelte";
+  import CompensationEditor from "#lib/components/CompensationEditor.svelte";
+  import TeacherNamesEditor from "#lib/components/TeacherNamesEditor.svelte";
+  import Button from "#lib/components/Button.svelte";
+  import Icon from "#lib/components/Icon.svelte";
+  import Chip from "#lib/components/Chip.svelte";
+  import IconButton from "#lib/components/IconButton.svelte";
+  import PackReveal from "#lib/components/PackReveal.svelte";
+  import { buildCards } from "#lib/cards.ts";
+  import { resetCollection } from "#lib/grade-reveal.ts";
   import { fade, fly, slide } from "svelte/transition";
   import { onMount, onDestroy } from "svelte";
   import { open } from "@tauri-apps/plugin-dialog";
@@ -76,7 +80,7 @@
     pickFolderViaBridge,
     isAndroidWebView,
     folderLabelFromUri,
-  } from "$lib/folder-picker";
+  } from "#lib/folder-picker.ts";
 
   let isMobile = $state(false);
   let testingNotification = $state<string | null>(null);
@@ -381,11 +385,12 @@
       [-1, "8,0", "Wiskunde B"],
       [-5, "9,0", "Natuurkunde"],
       [-6, "10", "Biologie"],
+      [-8, "V", "Geschiedenis"],
     ];
     const grades = rows.map(([id, value, subject], i) => ({
       CijferId: id,
       CijferStr: value,
-      IsVoldoende: Number(value.replace(",", ".")) >= 5.5,
+      IsVoldoende: value === "V" || Number(value.replace(",", ".")) >= 5.5,
       DatumIngevoerd: `2026-09-0${i + 1}T10:00:00`,
       Weging: i === 5 ? 3 : 1,
       CijferKolom: {
@@ -1102,10 +1107,10 @@
           id: "weekView",
           label: "Weekweergave",
           description:
-            "Toon een weekoverzicht. Op kleine schermen als lijst per dag, op grotere schermen met tijdlijn.",
+            "Toon een weekoverzicht met tijdlijn. Op mobiel past de hele week op het scherm, net als op desktop.",
           type: "select",
           options: [
-            { value: "auto", label: "Automatisch (desktop)" },
+            { value: "auto", label: "Automatisch (weekweergave op desktop)" },
             { value: "on", label: "Altijd aan" },
             { value: "off", label: "Altijd uit" },
           ],

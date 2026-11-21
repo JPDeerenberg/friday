@@ -12,9 +12,9 @@
   import { onDestroy, onMount, tick, untrack } from "svelte";
   import { fade, fly } from "svelte/transition";
   import { get } from "svelte/store";
-  import GradeCardView from "$lib/components/GradeCardView.svelte";
-  import Icon from "$lib/components/Icon.svelte";
-  import type { IconName } from "$lib/icons";
+  import GradeCardView from "#lib/components/GradeCardView.svelte";
+  import Icon from "#lib/components/Icon.svelte";
+  import type { IconName } from "#lib/icons.ts";
   import {
     ACHIEVEMENTS,
     RARITY_META,
@@ -22,10 +22,18 @@
     countCompleteSets,
     levelInfo,
     type CardData,
-  } from "$lib/cards";
-  import { gradeRevealState, recordOpen } from "$lib/grade-reveal";
-  import { FxEngine } from "$lib/fx";
-  import { buzz, haptic, setSoundEnabled, sfx } from "$lib/card-feedback";
+  } from "#lib/cards.ts";
+  import { gradeRevealState, recordOpen } from "#lib/grade-reveal.ts";
+  import { FxEngine } from "#lib/fx.ts";
+  import { buzz, haptic, setSoundEnabled, sfx } from "#lib/card-feedback.ts";
+  import {
+    impactCues,
+    revealProfile,
+    signatureFx,
+    walkoutCues,
+    type ImpactCue,
+  } from "#lib/reveal-choreography.ts";
+  import { RevealStage } from "#lib/reveal-stage.ts";
 
   let {
     queue,
@@ -99,11 +107,12 @@
   const card = $derived(cards[index]);
   const meta = $derived(RARITY_META[card.rarity]);
   const tier = $derived(meta.tier);
+  const profile = $derived(revealProfile(card, level));
   const effMode = $derived<Mode>(plain ? "tap" : card.mode);
   const rc = $derived(showRarity ? meta.color : NEUTRAL);
   const rc2 = $derived(showRarity ? meta.color2 : NEUTRAL2);
   const cardScale = $derived(
-    Math.max(8, Math.min(15, (viewH - 330) / 22.4, (viewW - 56) / 16)),
+    Math.max(8, Math.min(18, (viewH - 330) / 22.4, (viewW - 56) / 16)),
   );
   const isLast = $derived(index >= total - 1);
   const levelNow = $derived(levelInfo($gradeRevealState.tally.xp));
@@ -111,15 +120,20 @@
   // ---------------------------------------------------------------- plumbing
   let backCanvas: HTMLCanvasElement | undefined = $state();
   let frontCanvas: HTMLCanvasElement | undefined = $state();
+  let stageCanvas: HTMLCanvasElement | undefined = $state();
   let cardEl: HTMLDivElement | undefined = $state();
   let back: FxEngine | undefined;
   let front: FxEngine | undefined;
+  let stage: RevealStage | undefined;
+  let stageOn = $state(false);
   let timers: number[] = [];
   let destroyed = false;
   let holdRaf = 0;
   let autoRaf = 0;
   let autoRun = false;
   let lastBuzz = 0;
+  let lastAttract = 0;
+  let lastTearFx = 0;
   let countRaf = 0;
 
   function later(fn: () => void, ms: number) {
@@ -136,6 +150,16 @@
     holdRaf = autoRaf = 0;
   }
 
+  /** Push the current card's palette into the GPU stage. */
+  function syncStage() {
+    if (!stage?.supported) return;
+    stage.setTier(tier);
+    stage.setColors(meta.color, meta.color2);
+    stage.setGlow(plain ? 0.08 : 0.26 + tier * 0.07);
+    stage.setProgress(0);
+    stage.setWarp(false);
+  }
+
   onMount(() => {
     setSoundEnabled(sound && !plain);
     const q =
@@ -143,7 +167,26 @@
       (level === "normaal" ? 0.6 : 1);
     if (backCanvas) back = new FxEngine(backCanvas, { quality: q });
     if (frontCanvas) front = new FxEngine(frontCanvas, { quality: q });
-    const degrade = () => (lite = true);
+    if (stageCanvas && !plain) {
+      stage = new RevealStage(stageCanvas, {
+        quality: q,
+        onUnsupported: () => {
+          stageOn = false;
+        },
+      });
+      stageOn = stage.supported;
+      if (stage.supported) {
+        stage.setTier(tier);
+        stage.setColors(meta.color, meta.color2);
+        stage.setGlow(0.28 + tier * 0.07);
+        stage.setQuality(q);
+      }
+    }
+    const degrade = () => {
+      lite = true;
+      stage?.stop();
+      stageOn = false;
+    };
     if (back) back.onDegrade = degrade;
     if (front) front.onDegrade = degrade;
     const onResize = () => {
@@ -161,8 +204,22 @@
     cancelAnimationFrame(countRaf);
     back?.destroy();
     front?.destroy();
+    stage?.destroy();
     buzz(0);
   });
+
+  function cardRect():
+    { x: number; y: number; w: number; h: number } | undefined {
+    const r = cardEl?.getBoundingClientRect();
+    const c = frontCanvas?.getBoundingClientRect();
+    if (!r || !c) return undefined;
+    return {
+      x: r.left - c.left,
+      y: r.top - c.top,
+      w: r.width,
+      h: r.height,
+    };
+  }
 
   function center(): { x: number; y: number } {
     const r = cardEl?.getBoundingClientRect();
@@ -199,6 +256,7 @@
     packGone = false;
     releasing = false;
     scratchDone = false;
+    syncStage();
     later(() => (phase = "await"), plain ? 0 : 420);
   }
 
@@ -220,50 +278,94 @@
 
   /** Lights out → beams → slow push-in → impact (Episch and up). */
   function walkout() {
-    const base = tier >= 6 ? 3000 : tier >= 5 ? 2200 : 1500;
-    const dur = base * (full ? 1 : 0.6);
+    const dur = profile.walkoutMs;
+    if (!dur) {
+      showRarity = true;
+      impact();
+      return;
+    }
     cinematic = true;
     pushin = true;
     beamsOn = true;
+    stage?.setWarp(true, full ? 1 : 0.6);
     sfx.riser(dur / 1000, tier);
-    // Rarity colour takes over for the last stretch.
-    later(() => (showRarity = true), dur * 0.62);
-    if (full) {
-      later(() => {
-        const r = cardEl?.getBoundingClientRect();
-        const c = frontCanvas?.getBoundingClientRect();
-        if (!r || !c) return;
-        const rect = {
-          x: r.left - c.left,
-          y: r.top - c.top,
-          w: r.width,
-          h: r.height,
-        };
-        if (tier === 4)
-          front?.setLoop("lightning", true, {
-            rate: 5,
-            color: meta.color,
-            color2: "#fff",
-            rect,
-          });
-        if (tier >= 5)
-          back?.setLoop("embers", true, {
-            rate: 26,
-            color: meta.color,
-            color2: "#fff7d6",
-            rect,
-          });
-        if (tier >= 6) {
-          auroraOn = true;
-          back?.setLoop("stars", true);
-        }
-      }, dur * 0.3);
+    sfx.whoosh(full ? 1.4 : 0.8);
+
+    for (const cue of walkoutCues(profile)) {
+      if (cue.kind === "rarity") {
+        later(() => {
+          showRarity = true;
+          stage?.setProgress(1);
+        }, cue.at);
+      } else if (cue.kind === "ambient") {
+        later(ambientStart, cue.at);
+      } else {
+        later(() => {
+          stage?.setWarp(false);
+          impact();
+        }, cue.at);
+      }
     }
+
     // Rising haptics.
     const steps = 8;
     for (let i = 1; i <= steps; i++)
       later(() => haptic.charge(i / steps), (dur / steps) * i);
-    later(() => impact(), dur);
+  }
+
+  /** The emitters that belong to this rarity's signature. */
+  function ambientStart() {
+    const rect = cardRect();
+    if (!rect) return;
+    const sig = signatureFx(profile);
+    if (sig.lightning) {
+      front?.setLoop("lightning", true, {
+        rate: 5,
+        color: meta.color,
+        color2: "#fff",
+        rect,
+      });
+    }
+    if (sig.embers) {
+      back?.setLoop("embers", true, {
+        rate: 26,
+        color: meta.color,
+        color2: "#fff7d6",
+        rect,
+      });
+    }
+    if (sig.stars) {
+      auroraOn = true;
+      back?.setLoop("stars", true);
+    }
+    if (sig.goldrain) {
+      back?.setLoop("goldrain", true, {
+        rate: 34,
+        color: meta.color,
+        color2: "#fff7d6",
+      });
+    }
+    if (sig.snow) {
+      back?.setLoop("snow", true, {
+        rate: 14,
+        color: "#bae6fd",
+        color2: "#f8fbff",
+      });
+    }
+    if (sig.bubbles) {
+      back?.setLoop("bubbles", true, {
+        rate: 8,
+        color: "#7dd3fc",
+        color2: "#fff",
+      });
+    }
+    if (sig.glitch) {
+      front?.setLoop("dust", true, {
+        rate: 12,
+        color: "#22d3ee",
+        color2: "#fb7185",
+      });
+    }
   }
 
   function fxCounts() {
@@ -274,53 +376,74 @@
   function impact(noFlip = false) {
     if (phase === "impact" || phase === "shown") return;
     phase = "impact";
-    const stop = !plain && tier >= 3 ? (full ? 130 : 70) : 0;
-    if (stop) {
+    const p = noFlip
+      ? { ...profile, revealMs: Math.min(profile.revealMs, 700) }
+      : profile;
+    if (p.stopMs) {
       frozen = true;
-      front?.freeze(stop);
-      back?.freeze(stop);
+      front?.freeze(p.stopMs);
+      back?.freeze(p.stopMs);
+      stage?.freeze(p.stopMs);
     }
     later(() => {
       frozen = false;
-      const k = fxCounts();
       showRarity = true;
-      if (k > 0) {
+      record(card);
+      if (!noFlip) faceDown = false;
+      if (p.k > 0) {
+        stage?.setColors(meta.color, meta.color2);
+        stage?.setProgress(1);
+        particles(p.k);
+      }
+      const cues = impactCues(p, { stamp: p.tier >= 4 });
+      for (const cue of cues) {
+        later(() => runCue(cue, p), cue.at);
+      }
+    }, p.stopMs);
+  }
+
+  function runCue(cue: ImpactCue, p: typeof profile) {
+    switch (cue.kind) {
+      case "flash":
         flash = true;
-        later(() => (flash = false), 520);
+        later(() => (flash = false), cue.ms ?? 520);
+        break;
+      case "shake":
+        shakeLvl = cue.level ?? 1;
+        later(() => (shakeLvl = 0), cue.ms ?? 800);
+        break;
+      case "burst":
         ringKey++;
-        shakeLvl = full
-          ? tier >= 5
-            ? 3
-            : tier >= 3
-              ? 2
-              : 1
-          : tier >= 4
-            ? 1
-            : 0;
-        later(() => (shakeLvl = 0), 800);
-        particles(k);
+        stage?.pulse(1);
+        break;
+      case "hit":
         sfx.hit(tier);
+        sfx.sub(tier);
+        haptic.impact(tier);
+        break;
+      case "chime":
         if (card.rarity === "glitch") sfx.glitch();
         else sfx.chime(tier);
-        haptic.impact(tier);
-        if (tier >= 4 && full) stampText = meta.label.toUpperCase();
-        else if (tier >= 4) stampText = meta.label.toUpperCase();
-        if (stampText) later(() => (stampText = null), 1700);
-      }
-      if (!noFlip) faceDown = false;
-      record(card);
-      later(
-        () => {
-          phase = "shown";
-          cinematic = false;
-          pushin = false;
-          beamsOn = tier >= 5 && full ? beamsOn : false;
-          if (tier < 5) back?.stopLoops();
-          front?.setLoop("lightning", false);
-        },
-        plain ? 450 : noFlip ? 700 : 950,
-      );
-    }, stop);
+        sfx.shimmer(tier);
+        break;
+      case "glitch":
+        sfx.glitch();
+        break;
+      case "stamp":
+        stampText = meta.label.toUpperCase();
+        later(() => (stampText = null), cue.ms ?? 1700);
+        break;
+      case "shown":
+        phase = "shown";
+        cinematic = false;
+        pushin = false;
+        beamsOn = p.tier >= 5 && full;
+        if (p.tier < 5) back?.stopLoops();
+        front?.setLoop("lightning", false);
+        stage?.setWarp(false);
+        stage?.setGlow(0.3 + p.tier * 0.06);
+        break;
+    }
   }
 
   function particles(k: number) {
@@ -329,43 +452,100 @@
     if (!f) return;
     const c1 = meta.color;
     const c2 = meta.color2;
+    f.shockRing(x, y, c1, {
+      radius: 10,
+      speed: 960,
+      width: full ? 3.2 : 2.4,
+      life: 0.8,
+    });
     switch (card.rarity) {
       case "gewoon":
-        f.burst(x, y, { count: 28 * k, color: c1, size: 3.5, speed: 280 });
+        f.burst(x, y, {
+          count: 34 * k,
+          color: c1,
+          color2: "#fff",
+          size: 3.2,
+          speed: 300,
+        });
         break;
       case "speciaal":
-        f.burst(x, y, { count: 40 * k, color: c1, color2: "#fff", speed: 320 });
+        f.burst(x, y, {
+          count: 46 * k,
+          color: c1,
+          color2: "#fff",
+          speed: 340,
+          shape: "shard",
+          size: 3,
+        });
+        f.burst(x, y, {
+          count: 18 * k,
+          color: "#bae6fd",
+          color2: "#fff",
+          speed: 180,
+          gravity: -30,
+          shape: "bokeh",
+          life: 1.8,
+          size: 4,
+        });
         break;
       case "glitch":
         f.burst(x, y, {
-          count: 46 * k,
+          count: 34 * k,
           color: c1,
           color2: c2,
           shape: "rect",
           glow: false,
           size: 5,
-          speed: 380,
-          gravity: 520,
+          speed: 400,
+          gravity: 540,
+        });
+        f.burst(x, y, {
+          count: 24 * k,
+          color: "#22d3ee",
+          color2: "#fb7185",
+          shape: "shard",
+          glow: true,
+          size: 4,
+          speed: 520,
+          gravity: 220,
         });
         break;
       case "zeldzaam":
         f.burst(x, y, {
-          count: 60 * k,
+          count: 58 * k,
           color: c1,
           color2: "#e0f2fe",
-          speed: 340,
+          speed: 360,
         });
-        f.confetti(18 * k, [c1, c2, "#fff"]);
+        f.burst(x, y, {
+          count: 26 * k,
+          color: "#e0f2fe",
+          color2: "#fff",
+          shape: "shard",
+          size: 4,
+          speed: 280,
+          gravity: 90,
+          life: 1.6,
+        });
         break;
       case "episch":
         f.burst(x, y, {
           count: 100 * k,
           color: c1,
           color2: c2,
-          speed: 420,
+          speed: 440,
           size: 5,
         });
-        f.confetti(46 * k, [c1, c2, "#f5d0fe"]);
+        f.burst(x, y, {
+          count: 24 * k,
+          color: c1,
+          color2: "#fff",
+          shape: "ribbon",
+          size: 5,
+          speed: 360,
+          gravity: 60,
+          life: 1.3,
+        });
         if (full)
           for (let i = 0; i < 6; i++)
             later(
@@ -382,11 +562,22 @@
         break;
       case "legendarisch":
         f.burst(x, y, {
-          count: 150 * k,
+          count: 140 * k,
           color: c1,
           color2: "#fff7d6",
           speed: 480,
           size: 5.5,
+        });
+        f.burst(x, y, {
+          count: 46 * k,
+          color: "#fff7d6",
+          color2: c1,
+          shape: "leaf",
+          size: 5,
+          speed: 340,
+          gravity: 130,
+          sway: 30,
+          life: 2,
         });
         f.confetti(90 * k, [c1, c2, "#fff7d6"]);
         if (full) {
@@ -403,7 +594,7 @@
           count: 120 * k,
           color: "#f0abfc",
           color2: "#22d3ee",
-          speed: 520,
+          speed: 540,
           size: 5.5,
         });
         f.burst(x, y, {
@@ -412,6 +603,16 @@
           color2: "#a7f3d0",
           speed: 380,
           size: 5,
+        });
+        f.burst(x, y, {
+          count: 30 * k,
+          color: "#fff",
+          color2: "#f0abfc",
+          shape: "ribbon",
+          size: 5.5,
+          speed: 420,
+          gravity: 40,
+          life: 1.6,
         });
         f.confetti(130 * k, [
           "#ff5f6d",
@@ -493,9 +694,13 @@
 
   function openSummary() {
     phase = "summary";
+    beamsOn = false;
     toastQueue = [];
     currentToast = null;
     back?.stopLoops();
+    front?.stopLoops();
+    stage?.setWarp(false);
+    stage?.setGlow(0.22);
     shownXp = 0;
     const t0 = performance.now();
     const dur = 1100;
@@ -527,10 +732,14 @@
     const step = (t: number) => {
       const k = Math.min(1, (t - t0) / dur);
       progress = Math.max(progress, k);
+      stage?.setProgress(progress);
       if (k < 1) autoRaf = requestAnimationFrame(step);
       else {
         if (effMode === "scratch") scratchDone = true;
-        if (effMode === "tear") torn = true;
+        if (effMode === "tear") {
+          torn = true;
+          later(() => (packGone = true), 650);
+        }
         complete();
       }
     };
@@ -560,6 +769,7 @@
     holding = true;
     sfx.riser(1.4, 2);
     cancelAnimationFrame(holdRaf);
+    lastAttract = 0;
     let last = performance.now();
     const loop = (t: number) => {
       const dt = Math.min(0.05, (t - last) / 1000);
@@ -568,6 +778,21 @@
         0,
         Math.min(1, progress + (holding ? dt / 1.45 : -dt / 0.8)),
       );
+      stage?.setProgress(progress);
+      stage?.setGlow(0.3 + progress * 0.45);
+      if (holding && progress > 0.03 && t - lastAttract > 360) {
+        lastAttract = t;
+        const { x, y } = center();
+        front?.attract(x, y, {
+          count: 10,
+          color: meta.color,
+          color2: meta.color2,
+          radius: Math.max(180, cardScale * 12),
+          life: 1.25,
+          size: 2.4,
+          strength: 900,
+        });
+      }
       if (holding && t - lastBuzz > 330 - 250 * progress) {
         lastBuzz = t;
         haptic.charge(progress);
@@ -612,8 +837,25 @@
         lastTearTick = now;
         haptic.tick();
       }
+      if (now - lastTearFx > 90) {
+        lastTearFx = now;
+        const { x, y } = center();
+        front?.burst(x + (Math.random() - 0.5) * 80, y, {
+          count: 5,
+          color: "#f8fafc",
+          color2: "#cbd5e1",
+          shape: "shard",
+          speed: 180,
+          gravity: 220,
+          life: 0.9,
+          size: 2.2,
+          glow: false,
+        });
+        sfx.paper(0.5);
+      }
     }
     progress = k;
+    stage?.setProgress(k);
     if (k >= 0.9) {
       tearing = false;
       torn = true;
@@ -628,6 +870,7 @@
     tearing = false;
     releasing = true;
     progress = 0;
+    stage?.setProgress(0);
   }
 
   // scratch
@@ -664,6 +907,42 @@
       g.lineTo(x + H, H);
       g.stroke();
     }
+    // Guilloche waves make the foil read as security print, not flat silver.
+    g.strokeStyle = "rgba(255,255,255,0.15)";
+    g.lineWidth = Math.max(1, W * 0.004);
+    for (let row = 0; row < 5; row++) {
+      g.beginPath();
+      for (let x = 0; x <= W; x += 6) {
+        const y =
+          H * 0.5 +
+          Math.sin((x / W) * Math.PI * 6 + row * 0.45) * H * 0.07 +
+          (row - 2) * H * 0.035;
+        if (x === 0) g.moveTo(x, y);
+        else g.lineTo(x, y);
+      }
+      g.stroke();
+    }
+    // Holographic seal.
+    g.save();
+    g.translate(W / 2, H * 0.5);
+    g.rotate(-0.38);
+    g.beginPath();
+    g.arc(0, 0, W * 0.18, 0, 6.283);
+    g.fillStyle = "rgba(30,25,55,0.12)";
+    g.fill();
+    g.strokeStyle = "rgba(255,255,255,0.42)";
+    g.lineWidth = Math.max(1, W * 0.008);
+    g.stroke();
+    g.beginPath();
+    g.arc(0, 0, W * 0.155, 0, 6.283);
+    g.strokeStyle = "rgba(255,255,255,0.2)";
+    g.stroke();
+    g.font = `800 ${W * 0.038}px system-ui, sans-serif`;
+    g.textAlign = "center";
+    g.textBaseline = "middle";
+    g.fillStyle = "rgba(255,255,255,0.55)";
+    g.fillText("FRIDAY", 0, 0);
+    g.restore();
     g.translate(W / 2, H / 2);
     g.rotate(-0.38);
     g.font = `900 ${W * 0.26}px system-ui, sans-serif`;
@@ -689,8 +968,8 @@
     const g = node.getContext("2d")!;
     g.scale(dpr, dpr);
     drawFoil(g, W, H);
-    const MW = 20;
-    const MH = 28;
+    const MW = 28;
+    const MH = 40;
     const mask = document.createElement("canvas");
     mask.width = MW;
     mask.height = MH;
@@ -739,8 +1018,17 @@
       last = null;
       scratchDone = true;
       progress = 1;
+      stage?.setProgress(1);
+      stage?.pulse(0.7);
+      sfx.paper(1.4);
       buzz([20, 20, 40]);
       const { x, y } = center();
+      front?.shockRing(x, y, meta.color, {
+        radius: 6,
+        speed: 720,
+        width: 2.4,
+        life: 0.65,
+      });
       front?.burst(x, y, {
         count: 30 * fxCounts(),
         color: "#e2e8f0",
@@ -776,6 +1064,8 @@
         lastCheck = now;
         const cov = coverage();
         progress = Math.min(1, cov / 0.5);
+        stage?.setProgress(progress);
+        stage?.setGlow(0.3 + progress * 0.35);
         if (cov >= 0.5) finish();
       }
     };
@@ -852,6 +1142,8 @@
   transition:fade|global={{ duration: 220 }}
 >
   <div class="bg"></div>
+  <canvas bind:this={stageCanvas} class="stagefx" class:on={stageOn && !plain}
+  ></canvas>
   <div class="aurora" class:on={auroraOn}></div>
   <div class="beams" class:on={beamsOn}></div>
   <canvas bind:this={backCanvas} class="fx"></canvas>
@@ -874,6 +1166,13 @@
         <span class="modechip"
           ><Icon name={MODE_ICON[effMode]} size={12} /></span
         >
+        {#if total > 1}
+          <span class="pips" aria-hidden="true">
+            {#each cards as _card, i (i)}
+              <i class:on={i < index} class:now={i === index}></i>
+            {/each}
+          </span>
+        {/if}
       </p>
 
       {#key index}
@@ -884,12 +1183,14 @@
         >
           {#if effMode === "hold" && (phase === "await" || phase === "charge")}
             <div class="ring" class:full={progress > 0.97}></div>
+            <div class="orb" class:on={progress > 0.02}></div>
           {/if}
           <div
             class="aura"
             class:charged={showRarity}
             class:on={(phase !== "intro" && phase !== "await") || progress > 0}
           ></div>
+          <div class="floor" aria-hidden="true"></div>
 
           <div
             class="mover"
@@ -924,6 +1225,9 @@
                     effMode === "scratch" &&
                     !scratchDone)}
                 {lite}
+                celebrate={showRarity &&
+                  !plain &&
+                  (phase === "impact" || phase === "shown")}
               />
 
               {#if effMode === "scratch" && !scratchDone}
@@ -946,11 +1250,20 @@
                 >
                   <div class="seam"></div>
                   <div class="half left">
-                    <span class="logo">FRIDAY</span><span class="shine"></span>
+                    <span class="crimp top"></span>
+                    <span class="crimp bottom"></span>
+                    <span class="logo">FRIDAY</span>
+                    <span class="packsub">KAARTEN · 2026</span>
+                    <span class="shine"></span>
                   </div>
                   <div class="half right">
-                    <span class="logo">FRIDAY</span><span class="shine"></span>
+                    <span class="crimp top"></span>
+                    <span class="crimp bottom"></span>
+                    <span class="logo">FRIDAY</span>
+                    <span class="packsub">KAARTEN · 2026</span>
+                    <span class="shine"></span>
                   </div>
+                  <span class="seal" aria-hidden="true">F</span>
                 </div>
               {/if}
             </div>
@@ -1004,18 +1317,26 @@
   {:else}
     <div class="summary" in:fade={{ duration: 300 }}>
       <h2>Pakket geopend!</h2>
-      <div class="bestwrap">
+      <div
+        class="beststage"
+        style="--brc:{RARITY_META[best.rarity].color}; --brc2:{RARITY_META[
+          best.rarity
+        ].color2};"
+      >
+        <div class="bestbeam" aria-hidden="true"></div>
+        <div class="pedestal" aria-hidden="true"></div>
         <GradeCardView
           card={best}
           scale={Math.min(10, cardScale * 0.72)}
           tiltOn
           calm={plain}
           {lite}
+          class="bestcard"
         />
-        <p class="bestlabel">
-          Beste trekking · {RARITY_META[best.rarity].label}
-        </p>
       </div>
+      <p class="bestlabel">
+        Beste trekking · {RARITY_META[best.rarity].label}
+      </p>
       <div class="grid">
         {#each cards as c, i (c.id)}
           <div class="mini" style="animation-delay:{i * 70}ms">
@@ -1122,8 +1443,7 @@
         color-mix(in srgb, var(--rc) 24%, transparent),
         transparent 70%
       ),
-      rgba(5, 4, 12, 0.94);
-    backdrop-filter: blur(10px);
+      #05040c;
     transition: background 0.6s;
   }
   .root.cine .bg {
@@ -1134,6 +1454,20 @@
         transparent 70%
       ),
       #000;
+  }
+  /* GPU stage. Sits above the CSS backdrop and below every effect. */
+  .stagefx {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    transition: opacity 0.9s ease;
+    pointer-events: none;
+  }
+  .stagefx.on {
+    opacity: 1;
   }
   .fx {
     position: absolute;
@@ -1198,6 +1532,30 @@
     padding: 0.1rem 0.45rem;
     border-radius: 99px;
     background: rgba(255, 255, 255, 0.08);
+  }
+  .pips {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.28rem;
+    margin-left: 0.55rem;
+    vertical-align: 0.05em;
+  }
+  .pips i {
+    width: 0.32rem;
+    height: 0.32rem;
+    border-radius: 99px;
+    background: rgba(255, 255, 255, 0.16);
+    transition:
+      width 0.3s,
+      background 0.3s;
+  }
+  .pips i.on {
+    background: color-mix(in srgb, var(--rc) 80%, white);
+  }
+  .pips i.now {
+    width: 0.9rem;
+    background: #fff;
+    box-shadow: 0 0 8px var(--rc);
   }
   .hide {
     opacity: 0;
@@ -1293,6 +1651,54 @@
   .aura.charged {
     animation: aura-pulse 0.9s ease-in-out infinite alternate;
   }
+  .orb {
+    position: absolute;
+    z-index: 2;
+    width: calc(var(--card-w) * 0.62);
+    height: calc(var(--card-w) * 0.62);
+    border-radius: 50%;
+    background: radial-gradient(
+      circle,
+      #fff 0,
+      color-mix(in srgb, var(--rc) 80%, white) 22%,
+      color-mix(in srgb, var(--rc) 35%, transparent) 46%,
+      transparent 70%
+    );
+    opacity: 0;
+    transform: scale(0.4);
+    transition:
+      opacity 0.3s,
+      transform 0.3s;
+    mix-blend-mode: screen;
+    pointer-events: none;
+  }
+  .orb.on {
+    opacity: 0.9;
+    transform: scale(calc(0.6 + var(--p) * 0.55));
+    animation: orb-pulse 0.85s ease-in-out infinite alternate;
+  }
+  .floor {
+    position: absolute;
+    z-index: 2;
+    bottom: -9%;
+    left: 50%;
+    width: calc(var(--card-w) * 1.3);
+    height: calc(var(--card-w) * 0.2);
+    transform: translateX(-50%);
+    border-radius: 50%;
+    background: radial-gradient(
+      ellipse,
+      rgba(0, 0, 0, 0.72),
+      rgba(0, 0, 0, 0.28) 42%,
+      transparent 72%
+    );
+    filter: blur(0.5rem);
+    opacity: 0.7;
+    pointer-events: none;
+  }
+  .root.plain .floor {
+    display: none;
+  }
 
   /* ---------- tear pack ---------- */
   .pack {
@@ -1340,6 +1746,69 @@
       transparent 58%
     );
     animation: sweep 2.8s ease-in-out infinite;
+  }
+  .crimp {
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 8%;
+    background: repeating-linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.55) 0 2px,
+      rgba(0, 0, 0, 0.22) 2px 4px
+    );
+    mix-blend-mode: overlay;
+    opacity: 0.75;
+  }
+  .crimp.top {
+    top: 0;
+  }
+  .crimp.bottom {
+    bottom: 0;
+    transform: rotate(180deg);
+  }
+  .packsub {
+    position: absolute;
+    bottom: 13%;
+    font-size: calc(var(--card-w) * 0.042);
+    font-weight: 700;
+    letter-spacing: 0.28em;
+    color: rgba(255, 255, 255, 0.42);
+    text-transform: uppercase;
+  }
+  .seal {
+    position: absolute;
+    z-index: 2;
+    left: 50%;
+    top: 50%;
+    width: calc(var(--card-w) * 0.2);
+    height: calc(var(--card-w) * 0.2);
+    transform: translate(-50%, -50%) rotate(-12deg);
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    font-size: calc(var(--card-w) * 0.1);
+    font-weight: 900;
+    color: rgba(40, 30, 70, 0.85);
+    background: conic-gradient(
+      from 20deg,
+      #fef3c7,
+      #fca5a5,
+      #c4b5fd,
+      #7dd3fc,
+      #fef3c7
+    );
+    box-shadow:
+      0 0 0 0.14em rgba(255, 255, 255, 0.55),
+      0 0 1.4em rgba(196, 181, 253, 0.55),
+      inset 0 0 0.5em rgba(255, 255, 255, 0.7);
+    transition:
+      opacity 0.5s,
+      transform 0.5s;
+  }
+  .pack.torn .seal {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(1.8) rotate(22deg);
   }
   .half.left {
     clip-path: polygon(
@@ -1419,6 +1888,10 @@
     background: linear-gradient(90deg, transparent, #fff, transparent);
     opacity: calc(var(--p) * 1.2);
     filter: blur(6px);
+    transition: opacity 0.25s;
+  }
+  .pack.torn .seam {
+    opacity: 0;
   }
 
   /* ---------- scratch foil ---------- */
@@ -1616,6 +2089,10 @@
     mix-blend-mode: normal;
     animation: none;
   }
+  .root.lite .stagefx,
+  .root.plain .stagefx {
+    display: none;
+  }
   .lbox {
     position: absolute;
     z-index: 35;
@@ -1705,11 +2182,43 @@
     background-clip: text;
     color: transparent;
   }
-  .bestwrap {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.6rem;
+  .beststage {
+    position: relative;
+    display: grid;
+    place-items: center;
+    padding: 1.1rem 0 0.9rem;
+  }
+  .bestbeam {
+    position: absolute;
+    inset: -45% -25%;
+    background: radial-gradient(
+      48% 58% at 50% 34%,
+      color-mix(in srgb, var(--brc) 52%, transparent),
+      transparent 70%
+    );
+    filter: blur(28px);
+    animation: halo-breathe 5s ease-in-out infinite alternate;
+    pointer-events: none;
+  }
+  .pedestal {
+    position: absolute;
+    bottom: 0.2rem;
+    width: 76%;
+    height: 1.7rem;
+    border-radius: 50%;
+    background: radial-gradient(
+      ellipse,
+      color-mix(in srgb, var(--brc) 45%, transparent),
+      transparent 70%
+    );
+    filter: blur(0.55rem);
+    pointer-events: none;
+  }
+  .bestcard {
+    position: relative;
+    z-index: 1;
+    animation: best-in 0.8s cubic-bezier(0.2, 1.1, 0.3, 1) both;
+    filter: drop-shadow(0 1.2rem 2rem rgba(0, 0, 0, 0.55));
   }
   .bestlabel {
     font-size: 0.75rem;
@@ -1978,6 +2487,24 @@
     }
     100% {
       transform: scale(1);
+      opacity: 1;
+    }
+  }
+  @keyframes orb-pulse {
+    0% {
+      filter: brightness(1);
+    }
+    100% {
+      filter: brightness(1.35);
+    }
+  }
+  @keyframes best-in {
+    0% {
+      transform: translateY(18px) scale(0.94);
+      opacity: 0;
+    }
+    100% {
+      transform: none;
       opacity: 1;
     }
   }

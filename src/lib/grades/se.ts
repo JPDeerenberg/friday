@@ -1,4 +1,4 @@
-import type { Grade } from "$lib/types";
+import type { Grade } from "#lib/types.ts";
 import { parseNumeric } from './scale.ts';
 
 /**

@@ -13,29 +13,40 @@ pub async fn get_schoolyears(
     end: Option<String>,   // yyyy-01-01
 ) -> Result<Vec<Schoolyear>, String> {
     let path = if let (Some(start), Some(end)) = (&start, &end) {
-        let start_date = if start.len() >= 10 { &start[0..10] } else { start };
+        let start_date = if start.len() >= 10 {
+            &start[0..10]
+        } else {
+            start
+        };
         let end_date = if end.len() >= 10 { &end[0..10] } else { end };
         format!("leerlingen/{person_id}/aanmeldingen?begin={start_date}&einde={end_date}")
     } else {
         format!("leerlingen/{person_id}/aanmeldingen/")
     };
 
-    let data = crate::client::get_with_shared(&client, &path).await.map_err(|e| e.to_string())?;
+    let data = crate::client::get_with_shared(&client, &path)
+        .await
+        .map_err(|e| e.to_string())?;
 
     // Handle multiple possible response formats:
     // 1. {"Items": [...]} / {"items": [...]} — paginated wrapper
     // 2. [...] — bare array
-    let items: Vec<Schoolyear> = data["Items"].as_array()
+    let items: Vec<Schoolyear> = data["Items"]
+        .as_array()
         .or_else(|| data["items"].as_array())
         .map(|items| serde_json::from_value(serde_json::to_value(items).unwrap()))
-        .or_else(|| data.as_array().map(|arr| {
-            serde_json::from_value(serde_json::to_value(arr).unwrap())
-        }))
+        .or_else(|| {
+            data.as_array()
+                .map(|arr| serde_json::from_value(serde_json::to_value(arr).unwrap()))
+        })
         .unwrap_or_else(|| {
             serde_json::from_value::<SchoolyearsResponse>(data.clone()).map(|r| r.items)
         })
         .map_err(|e| {
-            log::error!("Failed to parse schoolyears. Raw data keys: {:?}", data.as_object().map(|o| o.keys().collect::<Vec<_>>()));
+            log::error!(
+                "Failed to parse schoolyears. Raw data keys: {:?}",
+                data.as_object().map(|o| o.keys().collect::<Vec<_>>())
+            );
             format!("Failed to parse schoolyears: {}", e)
         })?;
 
@@ -67,7 +78,9 @@ pub async fn get_grades(
          &peildatum={peildatum}"
     );
 
-    let data = crate::client::get_with_shared(&client, &path).await.map_err(|e| e.to_string())?;
+    let data = crate::client::get_with_shared(&client, &path)
+        .await
+        .map_err(|e| e.to_string())?;
 
     // Handle multiple possible response formats:
     // 1. {"Items": [...]} / {"items": [...]} — paginated wrapper
@@ -75,12 +88,19 @@ pub async fn get_grades(
     // 3. {"CijferVakken": [...]} — flat CijferOverzicht structure
     // 4. {"CijferOverzicht": {"CijferVakken": [...]}} — nested CijferOverzicht
     // 5. Other — fallback via GradesResponse struct
-    let items: Vec<Grade> = data["Items"].as_array()
+    let items: Vec<Grade> = data["Items"]
+        .as_array()
         .or_else(|| data["items"].as_array())
-        .map(|items| serde_json::from_value(serde_json::to_value(items).unwrap()).map_err(|e: serde_json::Error| e.to_string()))
-        .or_else(|| data.as_array().map(|arr| {
-            serde_json::from_value(serde_json::to_value(arr).unwrap()).map_err(|e: serde_json::Error| e.to_string())
-        }))
+        .map(|items| {
+            serde_json::from_value(serde_json::to_value(items).unwrap())
+                .map_err(|e: serde_json::Error| e.to_string())
+        })
+        .or_else(|| {
+            data.as_array().map(|arr| {
+                serde_json::from_value(serde_json::to_value(arr).unwrap())
+                    .map_err(|e: serde_json::Error| e.to_string())
+            })
+        })
         .or_else(|| {
             // CijferOverzicht format: extract grades from CijferVakken[*].Cijfers
             extract_grades_from_vakken(data["CijferVakken"].as_array())
@@ -100,12 +120,17 @@ pub async fn get_grades(
 }
 
 /// Helper: extract grades from an optional array of CijferVak objects.
-fn extract_grades_from_vakken(vakken: Option<&Vec<serde_json::Value>>) -> Option<Result<Vec<Grade>, String>> {
+fn extract_grades_from_vakken(
+    vakken: Option<&Vec<serde_json::Value>>,
+) -> Option<Result<Vec<Grade>, String>> {
     vakken.map(|vakken| {
-        let all_grades: Vec<Grade> = vakken.iter()
+        let all_grades: Vec<Grade> = vakken
+            .iter()
             .filter_map(|vak| vak["Cijfers"].as_array())
             .flat_map(|cijfers| {
-                cijfers.iter().filter_map(|c| serde_json::from_value(c.clone()).ok())
+                cijfers
+                    .iter()
+                    .filter_map(|c| serde_json::from_value(c.clone()).ok())
             })
             .collect();
         Ok(all_grades)
@@ -125,7 +150,9 @@ pub async fn get_grade_extra_info(
          cijfers/extracijferkolominfo/{kolom_id}"
     );
 
-    let data = crate::client::get_with_shared(&client, &path).await.map_err(|e| e.to_string())?;
+    let data = crate::client::get_with_shared(&client, &path)
+        .await
+        .map_err(|e| e.to_string())?;
     serde_json::from_value(data).map_err(|e| e.to_string())
 }
 
@@ -152,7 +179,7 @@ pub async fn get_bulk_grade_extra_info(
     };
 
     let api_base = api_endpoint.trim_end_matches('/').to_string();
-    
+
     // Use a stream to process with limited concurrency (e.g., 5 at a time)
     // This prevents triggering rate limits or 500 errors on the server.
     let results = futures::stream::iter(kolom_ids.clone())
@@ -209,28 +236,33 @@ pub async fn get_recent_grades(
     let path = format!("personen/{person_id}/cijfers/laatste?top={limit}&skip=0");
 
     log::debug!("Fetching recent grades: {}", path);
-    let data = crate::client::get_with_shared(&client, &path).await.map_err(|e| {
-        log::error!("Error fetching recent grades: {}", e);
-        e.to_string()
-    })?;
+    let data = crate::client::get_with_shared(&client, &path)
+        .await
+        .map_err(|e| {
+            log::error!("Error fetching recent grades: {}", e);
+            e.to_string()
+        })?;
 
     // Handle multiple possible response formats:
     // 1. {"Items": [...]} / {"items": [...]} — paginated wrapper
     // 2. [...] — bare array
     // 3. {"CijferVakken": [...]} — flat CijferOverzicht structure
     // 4. {"CijferOverzicht": {"CijferVakken": [...]}} — nested CijferOverzicht
-    let items: Vec<Grade> = data["Items"].as_array()
+    let items: Vec<Grade> = data["Items"]
+        .as_array()
         .or_else(|| data["items"].as_array())
-        .map(|items| serde_json::from_value(serde_json::to_value(items).unwrap()).map_err(|e: serde_json::Error| e.to_string()))
-        .or_else(|| data.as_array().map(|arr| {
-            serde_json::from_value(serde_json::to_value(arr).unwrap()).map_err(|e: serde_json::Error| e.to_string())
-        }))
-        .or_else(|| {
-            extract_grades_from_vakken(data["CijferVakken"].as_array())
+        .map(|items| {
+            serde_json::from_value(serde_json::to_value(items).unwrap())
+                .map_err(|e: serde_json::Error| e.to_string())
         })
         .or_else(|| {
-            extract_grades_from_vakken(data["CijferOverzicht"]["CijferVakken"].as_array())
+            data.as_array().map(|arr| {
+                serde_json::from_value(serde_json::to_value(arr).unwrap())
+                    .map_err(|e: serde_json::Error| e.to_string())
+            })
         })
+        .or_else(|| extract_grades_from_vakken(data["CijferVakken"].as_array()))
+        .or_else(|| extract_grades_from_vakken(data["CijferOverzicht"]["CijferVakken"].as_array()))
         .unwrap_or_else(|| {
             serde_json::from_value::<GradesResponse>(data.clone())
                 .map(|r| r.items)

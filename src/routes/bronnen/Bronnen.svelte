@@ -1,10 +1,10 @@
 <script lang="ts">
-  import { personId, resumedAt, userSettings } from "$lib/stores";
+  import { personId, resumedAt, userSettings } from "#lib/stores.ts";
   import { get } from "svelte/store";
-  import { openBron } from "$lib/bron-actions";
-  import { getBronnen, getExternalBronSources } from "$lib/api";
-  import { getFileIcon } from "$lib/icons";
-  import { cacheGet, cacheRefresh } from "$lib/cache";
+  import { openBron } from "#lib/bron-actions.ts";
+  import { getBronnen, getExternalBronSources } from "#lib/api.ts";
+  import { getFileIcon } from "#lib/icons.ts";
+  import { cacheGet, cacheRefresh } from "#lib/cache.ts";
   import { onMount, untrack } from "svelte";
 
   // One open/download at a time; the buttons used to be dead links.
@@ -21,7 +21,7 @@
     }
   }
   import { fade, fly, slide } from "svelte/transition";
-  import IconButton from "$lib/components/IconButton.svelte";
+  import IconButton from "#lib/components/IconButton.svelte";
 
   /** Find the href from a Links array using multiple possible Rel values. */
   function findLink(links: any[], ...rels: string[]): string | undefined {

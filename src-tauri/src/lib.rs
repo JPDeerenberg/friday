@@ -66,11 +66,15 @@ pub fn run() {
     builder
         .setup(move |app| {
             // Initialize AI state with app data directory
-            let app_data_dir = app.path().app_data_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+            let app_data_dir = app
+                .path()
+                .app_data_dir()
+                .unwrap_or_else(|_| std::path::PathBuf::from("."));
             let ai_state = AiState::new(app_data_dir.clone());
             let ai_config = ai_state.config.clone();
             app.manage(ai_state);
-            let ai_schedule_state = commands::ai_schedule::AiScheduleState::new(app_data_dir.clone());
+            let ai_schedule_state =
+                commands::ai_schedule::AiScheduleState::new(app_data_dir.clone());
             app.manage(ai_schedule_state);
             let ai_notes_state = commands::ai_notes::AiNotesState::new(app_data_dir);
             app.manage(ai_notes_state);
@@ -121,6 +125,8 @@ pub fn run() {
             commands::auth::restore_session,
             commands::auth::get_profile_info,
             commands::auth::get_profile_addresses,
+            commands::auth::get_profile_authorization,
+            commands::auth::get_profile_answers,
             commands::auth::get_career_info,
             // Calendar
             commands::calendar::get_calendar_events,
@@ -140,6 +146,8 @@ pub fn run() {
             commands::messages::get_message_folders,
             commands::messages::get_messages,
             commands::messages::get_message_detail,
+            commands::messages::get_message_attachments,
+            commands::messages::upload_message_attachment_bytes,
             commands::messages::send_message,
             commands::messages::mark_messages_as_read,
             commands::messages::move_messages_to_folder,

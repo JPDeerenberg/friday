@@ -1,9 +1,9 @@
-use serde::{Deserialize, Serialize};
-use tauri::AppHandle;
 use crate::client::SharedClient;
-use tauri::State;
-use chrono::{Local, Datelike};
+use chrono::{Datelike, Local};
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+use tauri::AppHandle;
+use tauri::State;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExportResult {
@@ -31,7 +31,9 @@ pub async fn export_all_data(
 
     let person_id = {
         let client = client.lock().await;
-        client.token_set.as_ref()
+        client
+            .token_set
+            .as_ref()
             .and_then(|t| t.person_id)
             .ok_or_else(|| "Niet ingelogd. Log eerst in.".to_string())?
     };
@@ -41,7 +43,8 @@ pub async fn export_all_data(
         #[cfg(desktop)]
         {
             use tauri_plugin_dialog::DialogExt;
-            let dir = app.dialog()
+            let dir = app
+                .dialog()
                 .file()
                 .blocking_pick_folder()
                 .ok_or_else(|| "Geen map geselecteerd.".to_string())?;
@@ -63,12 +66,14 @@ pub async fn export_all_data(
     let end = format!("{}-12-31", today.year());
 
     // Helper to save JSON to file
-    let save_json = |dir: &PathBuf, filename: &str, data: &serde_json::Value| -> Result<String, String> {
-        let path = dir.join(filename);
-        let json = serde_json::to_string_pretty(data).map_err(|e| format!("JSON serialisatie fout: {}", e))?;
-        std::fs::write(&path, &json).map_err(|e| format!("Schrijffout: {}", e))?;
-        Ok(filename.to_string())
-    };
+    let save_json =
+        |dir: &PathBuf, filename: &str, data: &serde_json::Value| -> Result<String, String> {
+            let path = dir.join(filename);
+            let json = serde_json::to_string_pretty(data)
+                .map_err(|e| format!("JSON serialisatie fout: {}", e))?;
+            std::fs::write(&path, &json).map_err(|e| format!("Schrijffout: {}", e))?;
+            Ok(filename.to_string())
+        };
 
     // Each fetch below snapshots its own request context (short lock) via
     // get_with_shared and runs concurrently WITHOUT holding the client
@@ -82,8 +87,14 @@ pub async fn export_all_data(
     let lessons_path = format!("personen/{}/afspraken?van={}&tot={}", person_id, start, end);
     let absences_path = format!("personen/{}/absenties?van={}&tot={}", person_id, start, end);
     let studiewijzer_peildatum = today.format("%Y-%m-%d").to_string();
-    let studiewijzers_path = format!("leerlingen/{}/studiewijzers?peildatum={}", person_id, studiewijzer_peildatum);
-    let projecten_path = format!("leerlingen/{}/projecten?peildatum={}", person_id, studiewijzer_peildatum);
+    let studiewijzers_path = format!(
+        "leerlingen/{}/studiewijzers?peildatum={}",
+        person_id, studiewijzer_peildatum
+    );
+    let projecten_path = format!(
+        "leerlingen/{}/projecten?peildatum={}",
+        person_id, studiewijzer_peildatum
+    );
     let leermiddelen_path = format!("personen/{}/lesmateriaal", person_id);
     let bronnen_path = format!("personen/{}/bronnen?soort=0", person_id);
     let activities_path = format!("personen/{}/activiteiten", person_id);
@@ -149,7 +160,9 @@ pub async fn export_all_data(
         // Paged fetch with the date parameters Magister understands (see
         // `assignments_path`); the old single `van`/`tot` request only returned the
         // server's default window.
-        match crate::commands::assignments::fetch_assignment_items(&client, person_id, &start, &end).await {
+        match crate::commands::assignments::fetch_assignment_items(&client, person_id, &start, &end)
+            .await
+        {
             Ok(items) => {
                 let data = serde_json::json!({ "Items": items });
                 match save_json(&dir_path, "opdrachten.json", &data) {
@@ -174,7 +187,8 @@ pub async fn export_all_data(
                         let path = format!("berichten/mappen/{}/berichten?top=200&skip=0", id);
                         match crate::client::get_with_shared(&client, &path).await {
                             Ok(data) => {
-                                if let Ok(filename) = save_json(&dir_path, "berichten.json", &data) {
+                                if let Ok(filename) = save_json(&dir_path, "berichten.json", &data)
+                                {
                                     files.push(filename);
                                 }
                             }
@@ -212,7 +226,10 @@ pub async fn export_all_data(
 
         match crate::client::get_with_shared(&client, &studiewijzers_path).await {
             Ok(data) => {
-                if let Some(items) = data["Items"].as_array().or_else(|| data["items"].as_array()) {
+                if let Some(items) = data["Items"]
+                    .as_array()
+                    .or_else(|| data["items"].as_array())
+                {
                     all_items.extend(items.clone());
                 }
             }
@@ -221,7 +238,10 @@ pub async fn export_all_data(
 
         match crate::client::get_with_shared(&client, &projecten_path).await {
             Ok(data) => {
-                if let Some(items) = data["Items"].as_array().or_else(|| data["items"].as_array()) {
+                if let Some(items) = data["Items"]
+                    .as_array()
+                    .or_else(|| data["items"].as_array())
+                {
                     all_items.extend(items.clone());
                 }
             }
@@ -277,15 +297,40 @@ pub async fn export_all_data(
         (files, errors)
     };
 
-    let (calendar, grades, assignments, messages, absences, studiewijzers, leermiddelen, bronnen, activities) =
-        tokio::join!(
-            calendar, grades, assignments, messages, absences, studiewijzers, leermiddelen, bronnen, activities
-        );
+    let (
+        calendar,
+        grades,
+        assignments,
+        messages,
+        absences,
+        studiewijzers,
+        leermiddelen,
+        bronnen,
+        activities,
+    ) = tokio::join!(
+        calendar,
+        grades,
+        assignments,
+        messages,
+        absences,
+        studiewijzers,
+        leermiddelen,
+        bronnen,
+        activities
+    );
 
     let mut exported_files: Vec<String> = Vec::new();
     let mut had_errors: Vec<String> = Vec::new();
     for (files, errors) in [
-        calendar, grades, assignments, messages, absences, studiewijzers, leermiddelen, bronnen, activities,
+        calendar,
+        grades,
+        assignments,
+        messages,
+        absences,
+        studiewijzers,
+        leermiddelen,
+        bronnen,
+        activities,
     ] {
         exported_files.extend(files);
         had_errors.extend(errors);
@@ -323,7 +368,8 @@ pub async fn export_all_data(
                 Err(e) => had_errors.push(format!("zip: {}: {}", filename, e)),
             }
         }
-        zip.finish().map_err(|e| format!("Kan zip niet finaliseren: {}", e))?;
+        zip.finish()
+            .map_err(|e| format!("Kan zip niet finaliseren: {}", e))?;
 
         #[cfg(target_os = "android")]
         {
@@ -413,7 +459,11 @@ fn plan_grade_exports(
         item[pascal].as_str().or_else(|| item[lower].as_str())
     }
     fn day(s: &str) -> &str {
-        if s.len() >= 10 { &s[0..10] } else { s }
+        if s.len() >= 10 {
+            &s[0..10]
+        } else {
+            s
+        }
     }
     fn year_of(s: &str) -> Option<&str> {
         let y = s.get(0..4)?;
@@ -479,8 +529,14 @@ mod tests {
 
     #[test]
     fn finds_the_inbox_in_pascalcase_and_bare_arrays() {
-        assert_eq!(find_inbox_id(&json!({ "Items": [ { "Id": 4, "Naam": "Postvak IN" } ] })), Some(4));
-        assert_eq!(find_inbox_id(&json!([ { "id": 8, "naam": "inbox" } ])), Some(8));
+        assert_eq!(
+            find_inbox_id(&json!({ "Items": [ { "Id": 4, "Naam": "Postvak IN" } ] })),
+            Some(4)
+        );
+        assert_eq!(
+            find_inbox_id(&json!([ { "id": 8, "naam": "inbox" } ])),
+            Some(8)
+        );
     }
 
     #[test]
@@ -496,7 +552,10 @@ mod tests {
     fn no_inbox_when_there_are_no_usable_folders() {
         assert_eq!(find_inbox_id(&json!({ "Items": [] })), None);
         assert_eq!(find_inbox_id(&json!({ "oops": true })), None);
-        assert_eq!(find_inbox_id(&json!({ "Items": [ { "naam": "x" } ] })), None);
+        assert_eq!(
+            find_inbox_id(&json!({ "Items": [ { "naam": "x" } ] })),
+            None
+        );
     }
 
     #[test]
@@ -509,7 +568,9 @@ mod tests {
         ]}));
         assert!(warnings.is_empty());
         assert_eq!(
-            jobs.iter().map(|j| (j.schoolyear_id, j.file_name.as_str(), j.peildatum.as_str())).collect::<Vec<_>>(),
+            jobs.iter()
+                .map(|j| (j.schoolyear_id, j.file_name.as_str(), j.peildatum.as_str()))
+                .collect::<Vec<_>>(),
             vec![
                 (13, "cijfers-2025-2026.json", "2026-07-31"),
                 (12, "cijfers-2024-2025.json", "2025-07-31"),
@@ -557,7 +618,9 @@ mod tests {
         assert!(j.is_empty());
         assert!(w[0].contains("onverwacht response-formaat"));
 
-        let (j, w) = jobs(json!({ "Items": [ { "Begin": "2025-08-01T00:00:00Z" }, { "Id": 3, "Begin": "2025-08-01T00:00:00Z", "Einde": "2026-07-31T00:00:00Z" } ]}));
+        let (j, w) = jobs(
+            json!({ "Items": [ { "Begin": "2025-08-01T00:00:00Z" }, { "Id": 3, "Begin": "2025-08-01T00:00:00Z", "Einde": "2026-07-31T00:00:00Z" } ]}),
+        );
         assert_eq!(j.len(), 1);
         assert_eq!(w.len(), 1);
         assert!(w[0].contains("zonder Id"));

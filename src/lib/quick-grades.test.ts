@@ -1,10 +1,21 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { subjectTotals, averageWith, neededGrade, oneDecimal, reactionFor } from "./quick-grades.ts";
+import {
+  subjectTotals,
+  averageWith,
+  neededGrade,
+  oneDecimal,
+  reactionFor,
+} from "./quick-grades.ts";
 import type { Grade } from "./types.ts";
 
 let id = 0;
-function grade(vak: string, str: string | null, weging: number | null = 1, over: Partial<Grade> = {}): Grade {
+function grade(
+  vak: string,
+  str: string | null,
+  weging: number | null = 1,
+  over: Partial<Grade> = {},
+): Grade {
   return {
     CijferId: ++id,
     CijferStr: str,
@@ -36,7 +47,10 @@ describe("subjectTotals", () => {
       grade("Wiskunde", "8,0", 3),
       grade("Engels", "7,5", 2),
     ]);
-    assert.deepEqual(t.map((s) => s.name), ["Engels", "Wiskunde"]);
+    assert.deepEqual(
+      t.map((s) => s.name),
+      ["Engels", "Wiskunde"],
+    );
     const wis = t[1];
     assert.equal(wis.weight, 4);
     assert.equal(wis.count, 2);
@@ -47,7 +61,9 @@ describe("subjectTotals", () => {
     const t = subjectTotals([
       grade("Frans", "V"),
       grade("Frans", null),
-      grade("Frans", "7", 1, { CijferKolom: { KolomSoort: 2 } as Grade["CijferKolom"] }),
+      grade("Frans", "7", 1, {
+        CijferKolom: { KolomSoort: 2 } as Grade["CijferKolom"],
+      }),
       grade("Frans", "7", 1, { Vrijstelling: true }),
       grade("Frans", "7", 1, { TeltMee: false }),
       grade("Frans", "6,5", 1),
@@ -57,11 +73,15 @@ describe("subjectTotals", () => {
     assert.equal(t[0].average, 6.5);
   });
 
-  it("treats a missing or zero weight as 1 and skips grades without a subject", () => {
-    const t = subjectTotals([grade("Nask", "6", null), grade("Nask", "8", 0), grade("", "9")]);
+  it("falls back to weight 1 only when missing, an explicit 0 does not count", () => {
+    const t = subjectTotals([
+      grade("Nask", "6", null),
+      grade("Nask", "8", 0),
+      grade("", "9"),
+    ]);
     assert.equal(t.length, 1);
-    assert.equal(t[0].weight, 2);
-    assert.equal(t[0].average, 7);
+    assert.equal(t[0].weight, 1);
+    assert.equal(t[0].average, 6);
   });
 
   it("returns nothing without grades", () => {
@@ -70,7 +90,10 @@ describe("subjectTotals", () => {
 });
 
 describe("averageWith / neededGrade", () => {
-  const t = subjectTotals([grade("Wiskunde", "6", 1), grade("Wiskunde", "8", 1)])[0]; // avg 7, weight 2
+  const t = subjectTotals([
+    grade("Wiskunde", "6", 1),
+    grade("Wiskunde", "8", 1),
+  ])[0]; // avg 7, weight 2
 
   it("computes the new average for an extra grade", () => {
     assert.equal(averageWith(t, 7, 1), 7);
@@ -95,7 +118,8 @@ describe("averageWith / neededGrade", () => {
   it("feeds its own answer back to the target", () => {
     const n = neededGrade(t, 7.4, 2);
     assert.equal(n.kind, "grade");
-    if (n.kind === "grade") assert.ok(Math.abs(averageWith(t, n.value, 2) - 7.4) < 1e-9);
+    if (n.kind === "grade")
+      assert.ok(Math.abs(averageWith(t, n.value, 2) - 7.4) < 1e-9);
   });
 });
 

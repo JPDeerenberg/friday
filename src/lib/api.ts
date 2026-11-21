@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { sanitizeHtml } from "$lib/sanitize";
+import { sanitizeHtml } from "#lib/sanitize.ts";
 import {
   clearWebSession,
   loadWebSession,
@@ -44,12 +44,16 @@ import type {
   GradeExtraInfo,
   Link,
   Message,
+  MessageAttachment,
+  MessageAttachmentRef,
   MessagesFolder,
   ProfileAddress,
+  ProfileAnswer,
+  ProfileAuthorization,
   ProfileCareer,
   ProfileInfo,
   Schoolyear,
-} from "$lib/types";
+} from "#lib/types.ts";
 
 // Sanitize HTML fields at the boundary where remote data enters the frontend.
 // Every {@html} call site downstream receives already-safe markup.
@@ -97,8 +101,13 @@ function sanitizeAssignment(a: Assignment): Assignment {
 function sanitizeAssignmentVersion(v: AssignmentVersion): AssignmentVersion {
   if (!v) return v;
   const out = { ...v };
-  for (const key of ["LeerlingOpmerking", "DocentOpmerking", "Omschrijving"] as const) {
-    if (typeof out[key] === "string") out[key] = sanitizeHtml(out[key] as string);
+  for (const key of [
+    "LeerlingOpmerking",
+    "DocentOpmerking",
+    "Omschrijving",
+  ] as const) {
+    if (typeof out[key] === "string")
+      out[key] = sanitizeHtml(out[key] as string);
   }
   return out;
 }
@@ -258,6 +267,30 @@ async function getProfileInfoLive(personId: number): Promise<ProfileInfo> {
   return invoke("get_profile_info", { personId });
 }
 
+/** Raw `/adressen` item: the API uses lowercase keys; older payloads PascalCase. */
+interface WebProfileAddress {
+  Id?: number;
+  id?: number;
+  Straat?: string;
+  straat?: string;
+  Huisnummer?: string;
+  huisnummer?: string;
+  Toevoeging?: string | null;
+  toevoeging?: string | null;
+  Postcode?: string;
+  postcode?: string;
+  Woonplaats?: string;
+  woonplaats?: string;
+  Plaats?: string;
+  plaats?: string;
+  Land?: string | null;
+  land?: string | null;
+  Type?: string | number;
+  type?: string | number;
+  IsGeheim?: boolean;
+  isGeheim?: boolean;
+}
+
 async function getProfileAddressesLive(
   personId: number,
 ): Promise<ProfileAddress[]> {
@@ -266,10 +299,21 @@ async function getProfileAddressesLive(
       "GET",
       `personen/${personId}/adressen`,
     )) as unknown as {
-      Items?: ProfileAddress[];
-      items?: ProfileAddress[];
+      Items?: WebProfileAddress[];
+      items?: WebProfileAddress[];
     };
-    return data.Items ?? data.items ?? [];
+    return (data.Items ?? data.items ?? []).map((raw) => ({
+      Id: raw.Id ?? raw.id ?? 0,
+      Straat: raw.Straat ?? raw.straat ?? "",
+      Huisnummer: raw.Huisnummer ?? raw.huisnummer ?? "",
+      Toevoeging: raw.Toevoeging ?? raw.toevoeging ?? null,
+      Postcode: raw.Postcode ?? raw.postcode ?? "",
+      Woonplaats:
+        raw.Woonplaats ?? raw.woonplaats ?? raw.Plaats ?? raw.plaats ?? "",
+      Land: raw.Land ?? raw.land ?? null,
+      Type: String(raw.Type ?? raw.type ?? ""),
+      IsGeheim: raw.IsGeheim ?? raw.isGeheim ?? false,
+    }));
   }
   return invoke("get_profile_addresses", { personId });
 }
@@ -282,6 +326,49 @@ async function getCareerInfoLive(personId: number): Promise<ProfileCareer> {
     )) as unknown as ProfileCareer;
   }
   return invoke("get_career_info", { personId });
+}
+
+async function getProfileAuthorizationLive(
+  personId: number,
+): Promise<ProfileAuthorization> {
+  if (isWebBuild()) {
+    const data = (await webRequest(
+      "GET",
+      `leerlingen/${personId}/autorisatie`,
+    )) as unknown as {
+      OudersMogenGegevensZien?: boolean;
+      oudersMogenGegevensZien?: boolean;
+      MagInzageOudersInstellen?: boolean;
+      magInzageOudersInstellen?: boolean;
+      MeerderJarigeLeeftijd?: number;
+      meerderJarigeLeeftijd?: number;
+    };
+    return {
+      OudersMogenGegevensZien:
+        data.OudersMogenGegevensZien ?? data.oudersMogenGegevensZien ?? false,
+      MagInzageOudersInstellen:
+        data.MagInzageOudersInstellen ?? data.magInzageOudersInstellen ?? false,
+      MeerderJarigeLeeftijd:
+        data.MeerderJarigeLeeftijd ?? data.meerderJarigeLeeftijd ?? 18,
+    };
+  }
+  return invoke("get_profile_authorization", { personId });
+}
+
+async function getProfileAnswersLive(
+  personId: number,
+): Promise<ProfileAnswer[]> {
+  if (isWebBuild()) {
+    const data = (await webRequest(
+      "GET",
+      `toestemmingen/personen/${personId}/antwoorden`,
+    )) as unknown as {
+      Items?: ProfileAnswer[];
+      items?: ProfileAnswer[];
+    };
+    return data.Items ?? data.items ?? [];
+  }
+  return invoke("get_profile_answers", { personId });
 }
 
 // === Calendar ===
@@ -351,14 +438,24 @@ async function downloadFileLive(
         url,
       );
       saveBlobAs(blob, filename);
-      return { path: filename, location: filename, opened: false, inBrowser: true };
+      return {
+        path: filename,
+        location: filename,
+        opened: false,
+        inBrowser: true,
+      };
     } catch (e) {
       // Redirect pages (publisher SSO) aren't files: open in a tab instead.
       const msg = e instanceof Error ? e.message : String(e);
       const marker = "OPEN_IN_BROWSER:";
       if (msg.startsWith(marker)) {
         window.open(msg.slice(marker.length), "_blank", "noopener,noreferrer");
-        return { path: filename, location: filename, opened: false, inBrowser: true };
+        return {
+          path: filename,
+          location: filename,
+          opened: false,
+          inBrowser: true,
+        };
       }
       throw e;
     }
@@ -574,6 +671,48 @@ async function getMessageDetailLive(selfLink: string): Promise<Message> {
   return sanitizeMessage(msg);
 }
 
+/** Attachments of one message (`links.bijlagen`). Online-only: files need the network anyway. */
+export async function getMessageAttachments(
+  bijlagenLink: string,
+): Promise<MessageAttachment[]> {
+  if (isWebBuild())
+    return tierB.webGetMessageAttachments(
+      sessionTierA(),
+      await wtokens(),
+      bijlagenLink,
+    );
+  return invoke("get_message_attachments", { bijlagenLink });
+}
+
+/**
+ * Upload a file for a message. Uses Magister's multipart `POST /bestanden`
+ * (the message composer route), unlike `uploadAssignmentAttachment`'s
+ * 3-step blob upload, and returns the reference `sendMessage` expects.
+ */
+export async function uploadMessageAttachment(
+  file: File,
+): Promise<MessageAttachmentRef> {
+  if (isWebBuild())
+    return tierB.webUploadMessageAttachment(
+      sessionTierA(),
+      await wtokens(),
+      file,
+    );
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const headers: Record<string, string> = {
+    "x-file-name": encodeURIComponent(file.name),
+  };
+  if (file.type) headers["x-content-type"] = file.type;
+  const uploaded = (await invoke("upload_message_attachment_bytes", bytes, {
+    headers,
+  })) as { id: number; naam: string; type?: string };
+  return {
+    id: uploaded.id,
+    naam: uploaded.naam || file.name,
+    type: "upload",
+  };
+}
+
 export async function sendMessage(params: {
   recipients: number[];
   copyRecipients: number[];
@@ -584,7 +723,7 @@ export async function sendMessage(params: {
   isConcept: boolean;
   sendOption?: string;
   relatedMessageId?: number;
-  attachmentIds: number[];
+  attachments: MessageAttachmentRef[];
 }): Promise<void> {
   if (isWebBuild())
     return tierB.webSendMessage(sessionTierA(), await wtokens(), params);
@@ -682,9 +821,15 @@ async function getAssignmentDetailLive(selfUrl: string): Promise<Assignment> {
   return sanitizeAssignment(assignment);
 }
 
-async function getAssignmentVersionLive(selfUrl: string): Promise<AssignmentVersion> {
+async function getAssignmentVersionLive(
+  selfUrl: string,
+): Promise<AssignmentVersion> {
   if (isWebBuild())
-    return tierB.webGetAssignmentVersion(sessionTierA(), await wtokens(), selfUrl);
+    return tierB.webGetAssignmentVersion(
+      sessionTierA(),
+      await wtokens(),
+      selfUrl,
+    );
   const version = (await invoke("get_assignment_version", {
     selfUrl,
   })) as AssignmentVersion;
@@ -700,8 +845,14 @@ export async function fetchAssignmentVersionRaw(
   selfUrl: string,
 ): Promise<AssignmentVersion> {
   if (isWebBuild())
-    return tierB.webGetAssignmentVersionRaw(sessionTierA(), await wtokens(), selfUrl);
-  return (await invoke("get_assignment_version", { selfUrl })) as AssignmentVersion;
+    return tierB.webGetAssignmentVersionRaw(
+      sessionTierA(),
+      await wtokens(),
+      selfUrl,
+    );
+  return (await invoke("get_assignment_version", {
+    selfUrl,
+  })) as AssignmentVersion;
 }
 
 export async function handInAssignment(
@@ -1109,7 +1260,9 @@ export interface ExportResult {
  * `downloadDir` is the folder from Settings > Downloadmap. Only Android uses it
  * (as a folder-picker URI); desktop asks for a folder every time.
  */
-export async function exportAllData(downloadDir?: string): Promise<ExportResult> {
+export async function exportAllData(
+  downloadDir?: string,
+): Promise<ExportResult> {
   if (isWebBuild()) {
     // Browsers can't write a folder of files: same 9 categories as one JSON
     // download instead (see webExportAllData, mirrors export.rs).
@@ -1145,7 +1298,9 @@ export interface LogExportResult {
   error: string | null;
 }
 
-export async function exportDebugLog(downloadDir?: string): Promise<LogExportResult> {
+export async function exportDebugLog(
+  downloadDir?: string,
+): Promise<LogExportResult> {
   return invoke("export_debug_log", { downloadDir: downloadDir || "" });
 }
 
@@ -1274,11 +1429,20 @@ export const getProfileInfo = offlineRead(
 );
 export const getProfileAddresses = offlineRead(
   getProfileAddressesLive,
-  (pid: number) => `addresses:${pid}`,
+  // v2: cache key changed with the lowercase address shape.
+  (pid: number) => `addresses_v2:${pid}`,
 );
 export const getCareerInfo = offlineRead(
   getCareerInfoLive,
   (pid: number) => `career:${pid}`,
+);
+export const getProfileAuthorization = offlineRead(
+  getProfileAuthorizationLive,
+  (pid: number) => `authorization:${pid}`,
+);
+export const getProfileAnswers = offlineRead(
+  getProfileAnswersLive,
+  (pid: number) => `answers:${pid}`,
 );
 export const getAbsences = offlineRead(
   getAbsencesLive,
@@ -1415,7 +1579,9 @@ export function getCalendarEvents(
     dateOf: (e) => e.Start,
   }).then((events) => {
     // Note the teachers so they can be renamed in Settings.
-    registerTeacherNames(events.flatMap((e) => (e.Docenten ?? []).map((d) => d.Naam)));
+    registerTeacherNames(
+      events.flatMap((e) => (e.Docenten ?? []).map((d) => d.Naam)),
+    );
     return events;
   });
 }
@@ -1451,7 +1617,9 @@ export function getAssignments(
     idOf: (a) => a.Id,
     dateOf: (a) => a.InleverenVoor,
   }).then((list) => {
-    registerTeacherNames(list.flatMap((a) => (a.Docenten ?? []).map((d) => d.Naam)));
+    registerTeacherNames(
+      list.flatMap((a) => (a.Docenten ?? []).map((d) => d.Naam)),
+    );
     return list;
   });
 }

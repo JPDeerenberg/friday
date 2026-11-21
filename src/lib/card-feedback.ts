@@ -176,6 +176,73 @@ export const sfx = {
       osc.stop(t + i * 0.045 + 0.06);
     }
   },
+  /** Air moving past the camera during the walkout. */
+  whoosh(power = 1) {
+    const c = audio();
+    if (!c) return;
+    noiseBurst(
+      c,
+      c.currentTime,
+      0.55,
+      0.07 * Math.min(1.6, power),
+      "bandpass",
+      380,
+      2800,
+    );
+    const osc = c.createOscillator();
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(120, c.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(50, c.currentTime + 0.4);
+    osc.connect(envGain(c, c.currentTime, 0.1, 0.08, 0.4));
+    osc.start(c.currentTime);
+    osc.stop(c.currentTime + 0.5);
+  },
+  /** Fibrous crackle when foil or paper gives way. */
+  paper(strength = 1) {
+    const c = audio();
+    if (!c) return;
+    const t = c.currentTime;
+    const n = 4 + Math.round(4 * Math.min(1.5, strength));
+    for (let i = 0; i < n; i++) {
+      noiseBurst(
+        c,
+        t + i * 0.022 + Math.random() * 0.015,
+        0.03,
+        0.05 + Math.random() * 0.06,
+        "bandpass",
+        1400 + Math.random() * 2600,
+        900 + Math.random() * 1200,
+      );
+    }
+  },
+  /** Low tail underneath the impact; rarity adds weight. */
+  sub(tier: number) {
+    const c = audio();
+    if (!c) return;
+    const t = c.currentTime;
+    const osc = c.createOscillator();
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(82, t);
+    osc.frequency.exponentialRampToValueAtTime(28, t + 0.7);
+    osc.connect(envGain(c, t, 0.2 + tier * 0.03, 0.01, 0.85));
+    osc.start(t);
+    osc.stop(t + 0.95);
+  },
+  /** Bright dust after the impact, one note per rarity tier. */
+  shimmer(tier: number) {
+    const c = audio();
+    if (!c) return;
+    const t = c.currentTime + 0.12;
+    const count = Math.min(6, 2 + tier);
+    for (let i = 0; i < count; i++) {
+      const osc = c.createOscillator();
+      osc.type = "sine";
+      osc.frequency.value = NOTES[NOTES.length - 1 - (i % 3)] * (1 + i * 0.003);
+      osc.connect(envGain(c, t + i * 0.06, 0.035, 0.01, 0.55));
+      osc.start(t + i * 0.06);
+      osc.stop(t + i * 0.06 + 0.65);
+    }
+  },
   levelUp() {
     const c = audio();
     if (!c) return;

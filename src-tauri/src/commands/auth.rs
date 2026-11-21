@@ -59,7 +59,12 @@ pub async fn start_login_flow(
 
                     // Spawn async task to handle the callback
                     tauri::async_runtime::spawn(async move {
-                        match handle_auth_callback_internal(client_arc, app_handle.clone(), redirect_url).await
+                        match handle_auth_callback_internal(
+                            client_arc,
+                            app_handle.clone(),
+                            redirect_url,
+                        )
+                        .await
                         {
                             Ok(account) => {
                                 app_handle.emit("auth-success", account).ok();
@@ -69,7 +74,9 @@ pub async fn start_login_flow(
                             }
                         }
                         // Close the login window
-                        if let Some(window) = Manager::<Wry>::get_webview_window(&app_handle, "magister-login") {
+                        if let Some(window) =
+                            Manager::<Wry>::get_webview_window(&app_handle, "magister-login")
+                        {
                             let _ = window.destroy();
                         }
                     });
@@ -80,7 +87,7 @@ pub async fn start_login_flow(
             })
             .build()
             .map_err(|e| format!("Failed to build login window: {}", e))?;
-        
+
         Ok(())
     }
 }
@@ -96,7 +103,8 @@ async fn handle_auth_callback_internal(
     let auth = c.auth_flow.take().ok_or("No auth flow in progress")?;
 
     // Verify the state parameter (CSRF protection) before exchanging the code.
-    auth.verify_state(&redirect_url).map_err(|e| e.to_string())?;
+    auth.verify_state(&redirect_url)
+        .map_err(|e| e.to_string())?;
 
     // Exchange code for tokens
     let token_resp = auth
@@ -182,10 +190,12 @@ pub async fn get_profile_info(
 ) -> Result<crate::models::account::ProfileInfo, String> {
     let url = format!("personen/{}/profiel", person_id);
     log::debug!("Fetching profile info: {}", url);
-    let response = crate::client::get_with_shared(&client, &url).await.map_err(|e| {
-        log::error!("Error fetching profile info: {}", e);
-        e.to_string()
-    })?;
+    let response = crate::client::get_with_shared(&client, &url)
+        .await
+        .map_err(|e| {
+            log::error!("Error fetching profile info: {}", e);
+            e.to_string()
+        })?;
     log::debug!("Profile Info response: {}", response);
     let info: crate::models::account::ProfileInfo = serde_json::from_value(response.clone())
         .map_err(|e| {
@@ -202,12 +212,59 @@ pub async fn get_profile_addresses(
 ) -> Result<Vec<crate::models::account::ProfileAddress>, String> {
     let url = format!("personen/{}/adressen", person_id);
     log::debug!("Fetching profile addresses: {}", url);
-    let response = crate::client::get_with_shared(&client, &url).await.map_err(|e| {
-        log::error!("Error fetching addresses: {}", e);
-        e.to_string()
-    })?;
+    let response = crate::client::get_with_shared(&client, &url)
+        .await
+        .map_err(|e| {
+            log::error!("Error fetching addresses: {}", e);
+            e.to_string()
+        })?;
     let res: crate::models::account::ProfileAddressResponse = serde_json::from_value(response)
-        .map_err(|e| format!("Failed to parse addresses: {}", e))?;
+        .map_err(|e| {
+            log::error!("Failed to parse addresses: {}", e);
+            format!("Failed to parse addresses: {}", e)
+        })?;
+    Ok(res.items)
+}
+
+#[tauri::command]
+pub async fn get_profile_authorization(
+    client: State<'_, SharedClient>,
+    person_id: i64,
+) -> Result<crate::models::account::ProfileAuthorization, String> {
+    let url = format!("leerlingen/{}/autorisatie", person_id);
+    log::debug!("Fetching profile authorization: {}", url);
+    let response = crate::client::get_with_shared(&client, &url)
+        .await
+        .map_err(|e| {
+            log::error!("Error fetching profile authorization: {}", e);
+            e.to_string()
+        })?;
+    let authorization: crate::models::account::ProfileAuthorization =
+        serde_json::from_value(response).map_err(|e| {
+            log::error!("Failed to parse profile authorization: {}", e);
+            format!("Failed to parse profile authorization: {}", e)
+        })?;
+    Ok(authorization)
+}
+
+#[tauri::command]
+pub async fn get_profile_answers(
+    client: State<'_, SharedClient>,
+    person_id: i64,
+) -> Result<Vec<crate::models::account::ProfileAnswer>, String> {
+    let url = format!("toestemmingen/personen/{}/antwoorden", person_id);
+    log::debug!("Fetching profile answers: {}", url);
+    let response = crate::client::get_with_shared(&client, &url)
+        .await
+        .map_err(|e| {
+            log::error!("Error fetching profile answers: {}", e);
+            e.to_string()
+        })?;
+    let res: crate::models::account::ProfileAnswerResponse = serde_json::from_value(response)
+        .map_err(|e| {
+            log::error!("Failed to parse profile answers: {}", e);
+            format!("Failed to parse profile answers: {}", e)
+        })?;
     Ok(res.items)
 }
 
@@ -218,10 +275,12 @@ pub async fn get_career_info(
 ) -> Result<crate::models::account::ProfileCareer, String> {
     let url = format!("personen/{}/opleidinggegevensprofiel", person_id);
     log::debug!("Fetching career info: {}", url);
-    let response = crate::client::get_with_shared(&client, &url).await.map_err(|e| {
-        log::error!("Error fetching career info: {}", e);
-        e.to_string()
-    })?;
+    let response = crate::client::get_with_shared(&client, &url)
+        .await
+        .map_err(|e| {
+            log::error!("Error fetching career info: {}", e);
+            e.to_string()
+        })?;
     log::debug!("Career Info response: {}", response);
     let career: crate::models::account::ProfileCareer = serde_json::from_value(response.clone())
         .map_err(|e| {
@@ -328,7 +387,10 @@ pub async fn restore_session(
         Ok(Some(ts)) => ts,
         Ok(None) => return Ok(RestoreSessionStatus::LoggedOut),
         Err(e) => {
-            log::warn!("restore_session: token store unreadable ({}), keeping tokens", e);
+            log::warn!(
+                "restore_session: token store unreadable ({}), keeping tokens",
+                e
+            );
             return Ok(RestoreSessionStatus::Unavailable);
         }
     };
@@ -342,7 +404,10 @@ pub async fn restore_session(
             Ok(RestoreSessionStatus::Restored)
         }
         Err(e) if e.is_rejected() => {
-            log::warn!("restore_session: refresh rejected ({}), clearing persisted tokens", e);
+            log::warn!(
+                "restore_session: refresh rejected ({}), clearing persisted tokens",
+                e
+            );
             c.token_set = None;
             c.clear_persisted_tokens(&app);
             Ok(RestoreSessionStatus::LoggedOut)
@@ -350,7 +415,10 @@ pub async fn restore_session(
         Err(e) => {
             // Transient or unexpected — keep the on-disk tokens intact so the
             // app recovers once connectivity returns, without forcing re-login.
-            log::warn!("restore_session: transient/unavailable ({}), keeping tokens", e);
+            log::warn!(
+                "restore_session: transient/unavailable ({}), keeping tokens",
+                e
+            );
             Ok(RestoreSessionStatus::Unavailable)
         }
     }

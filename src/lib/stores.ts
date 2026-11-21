@@ -1,5 +1,5 @@
 import { writable, get, derived } from "svelte/store";
-import type { Account } from "$lib/types";
+import type { Account } from "#lib/types.ts";
 import {
   sanitizeRules,
   buildLetterTable,
@@ -111,7 +111,7 @@ export const DEFAULT_SETTINGS = {
   roundedGraphs: true,
   showSummary: true,
   decimalPoints: 1,
-  // Grade maths. See $lib/grades/{scale,rounding,retake,compensation}.
+  // Grade maths. See #lib/grades/{scale,rounding,retake,compensation}.
   /** Table that tells the app what letter grades (V, O, A+ ...) mean. */
   letterGradeRules: [] as LetterRule[],
   /** How retakes count. "magister" = exactly as Magister sends them. */

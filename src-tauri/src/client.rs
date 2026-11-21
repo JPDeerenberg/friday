@@ -253,7 +253,11 @@ impl RequestContext {
         if path.starts_with("http") {
             path.to_string()
         } else {
-            format!("{}/{}", self.api_endpoint.trim_end_matches('/'), path.trim_start_matches('/'))
+            format!(
+                "{}/{}",
+                self.api_endpoint.trim_end_matches('/'),
+                path.trim_start_matches('/')
+            )
         }
     }
 }
@@ -312,7 +316,10 @@ pub fn parse_retry_after(value: Option<&reqwest::header::HeaderValue>) -> Option
 /// `ClientError::Unauthorized`. Prefer `get_with_shared()` over calling
 /// this directly — a raw `TokenExpiredRetryable` must never reach the
 /// frontend.
-pub async fn get_with_context(ctx: &RequestContext, path: &str) -> Result<serde_json::Value, ClientError> {
+pub async fn get_with_context(
+    ctx: &RequestContext,
+    path: &str,
+) -> Result<serde_json::Value, ClientError> {
     let url = ctx.build_url(path);
 
     const MAX_RATE_LIMIT_RETRIES: u32 = 3;
@@ -338,10 +345,17 @@ pub async fn get_with_context(ctx: &RequestContext, path: &str) -> Result<serde_
         if resp.status().as_u16() == 429 {
             if attempt < MAX_RATE_LIMIT_RETRIES {
                 attempt += 1;
-                let retry_after = parse_retry_after(resp.headers().get(reqwest::header::RETRY_AFTER));
+                let retry_after =
+                    parse_retry_after(resp.headers().get(reqwest::header::RETRY_AFTER));
                 let body = resp.text().await.unwrap_or_default();
                 let backoff = rate_limit_delay(attempt, retry_after, parse_seconds_left(&body), 10);
-                log::warn!("API rate limited (GET {}), retrying in {:?} (attempt {}/{})", url, backoff, attempt, MAX_RATE_LIMIT_RETRIES);
+                log::warn!(
+                    "API rate limited (GET {}), retrying in {:?} (attempt {}/{})",
+                    url,
+                    backoff,
+                    attempt,
+                    MAX_RATE_LIMIT_RETRIES
+                );
                 tokio::time::sleep(backoff).await;
                 continue;
             }
@@ -351,11 +365,19 @@ pub async fn get_with_context(ctx: &RequestContext, path: &str) -> Result<serde_
         if !resp.status().is_success() {
             let status = resp.status().as_u16();
             let text = resp.text().await.unwrap_or_default();
-            log::error!("API Error (GET, unlocked): URL={}, Status={}, Body={}", url, status, text);
+            log::error!(
+                "API Error (GET, unlocked): URL={}, Status={}, Body={}",
+                url,
+                status,
+                text
+            );
             return Err(ClientError::ApiError(status, text));
         }
 
-        return resp.json().await.map_err(|e| ClientError::ParseFailed(e.to_string()));
+        return resp
+            .json()
+            .await
+            .map_err(|e| ClientError::ParseFailed(e.to_string()));
     }
 }
 
@@ -363,7 +385,10 @@ pub async fn get_with_context(ctx: &RequestContext, path: &str) -> Result<serde_
 /// A 401 with an expired-token body returns
 /// `ClientError::TokenExpiredRetryable` (see `get_bytes_with_shared()`).
 /// Used for e.g. the profile picture fetch.
-pub async fn get_bytes_with_context(ctx: &RequestContext, path: &str) -> Result<Option<Vec<u8>>, ClientError> {
+pub async fn get_bytes_with_context(
+    ctx: &RequestContext,
+    path: &str,
+) -> Result<Option<Vec<u8>>, ClientError> {
     let url = ctx.build_url(path);
 
     let resp = ctx
@@ -389,7 +414,12 @@ pub async fn get_bytes_with_context(ctx: &RequestContext, path: &str) -> Result<
     if !resp.status().is_success() {
         let status = resp.status().as_u16();
         let text = resp.text().await.unwrap_or_default();
-        log::error!("API Error (BYTES, unlocked): URL={}, Status={}, Body={}", url, status, text);
+        log::error!(
+            "API Error (BYTES, unlocked): URL={}, Status={}, Body={}",
+            url,
+            status,
+            text
+        );
         return Err(ClientError::ApiError(status, text));
     }
 
@@ -498,10 +528,12 @@ pub async fn get_bytes_with_shared(
                 let mut c = client.lock().await;
                 c.request_context().await?
             };
-            get_bytes_with_context(&ctx, path).await.map_err(|e| match e {
-                ClientError::TokenExpiredRetryable(b) => ClientError::Unauthorized(b),
-                other => other,
-            })
+            get_bytes_with_context(&ctx, path)
+                .await
+                .map_err(|e| match e {
+                    ClientError::TokenExpiredRetryable(b) => ClientError::Unauthorized(b),
+                    other => other,
+                })
         }
         other => other,
     }
@@ -585,12 +617,18 @@ impl MagisterClient {
             if resp.status().as_u16() == 429 {
                 if attempt < MAX_RATE_LIMIT_RETRIES {
                     attempt += 1;
-                    let retry_after = parse_retry_after(resp.headers().get(reqwest::header::RETRY_AFTER));
+                    let retry_after =
+                        parse_retry_after(resp.headers().get(reqwest::header::RETRY_AFTER));
                     let body = resp.text().await.unwrap_or_default();
-                    let backoff = rate_limit_delay(attempt, retry_after, parse_seconds_left(&body), 10);
+                    let backoff =
+                        rate_limit_delay(attempt, retry_after, parse_seconds_left(&body), 10);
                     log::warn!(
                         "API rate limited ({} {}), retrying in {:?} (attempt {}/{})",
-                        method, url, backoff, attempt, MAX_RATE_LIMIT_RETRIES
+                        method,
+                        url,
+                        backoff,
+                        attempt,
+                        MAX_RATE_LIMIT_RETRIES
                     );
                     tokio::time::sleep(backoff).await;
                     continue;
@@ -678,7 +716,9 @@ impl MagisterClient {
                 None
             }
             Err(_) => {
-                log::warn!("acquire_refresh_lock timeout after 30s, proceeding without lock (fail-open)");
+                log::warn!(
+                    "acquire_refresh_lock timeout after 30s, proceeding without lock (fail-open)"
+                );
                 None
             }
         }
@@ -697,10 +737,11 @@ impl MagisterClient {
             return Ok(self.token_set.clone().expect("checked Some above"));
         }
 
-        let data_dir = self
-            .data_dir
-            .clone()
-            .or_else(|| self.app_handle.as_ref().and_then(|h| h.path_resolver_data_dir().ok()));
+        let data_dir = self.data_dir.clone().or_else(|| {
+            self.app_handle
+                .as_ref()
+                .and_then(|h| h.path_resolver_data_dir().ok())
+        });
 
         // Cross-instance guard: the UI app and the background SyncWorker
         // each keep their own independent MagisterClient, both reading and
@@ -752,8 +793,16 @@ impl MagisterClient {
         }
 
         let (refresh_token, api_endpoint, person_id, account_uuid) = {
-            let ts = self.token_set.as_ref().ok_or(ClientError::NotAuthenticated)?;
-            (ts.refresh_token.clone(), ts.api_endpoint.clone(), ts.person_id, ts.account_uuid.clone())
+            let ts = self
+                .token_set
+                .as_ref()
+                .ok_or(ClientError::NotAuthenticated)?;
+            (
+                ts.refresh_token.clone(),
+                ts.api_endpoint.clone(),
+                ts.person_id,
+                ts.account_uuid.clone(),
+            )
         };
 
         log::info!("ensure_valid_token: calling refresh_token grant over the network");
@@ -810,7 +859,9 @@ impl MagisterClient {
             Err(e) => {
                 let mapped = match e {
                     crate::auth::AuthError::RequestFailed(msg) => ClientError::RequestFailed(msg),
-                    crate::auth::AuthError::TokenRefreshFailed(msg) => ClientError::TokenRefreshFailed(msg),
+                    crate::auth::AuthError::TokenRefreshFailed(msg) => {
+                        ClientError::TokenRefreshFailed(msg)
+                    }
                     crate::auth::AuthError::ParseFailed(msg) => ClientError::ParseFailed(msg),
                     other => ClientError::TokenRefreshFailed(other.to_string()),
                 };
@@ -847,9 +898,7 @@ impl MagisterClient {
             );
         }
 
-        self.token_set
-            .clone()
-            .ok_or(ClientError::NotAuthenticated)
+        self.token_set.clone().ok_or(ClientError::NotAuthenticated)
 
         // `_lock` drops here (end of scope), releasing the OS lock.
     }
@@ -925,7 +974,12 @@ impl MagisterClient {
         if !resp.status().is_success() {
             let status = resp.status().as_u16();
             let text = resp.text().await.unwrap_or_default();
-            log::error!("API Error (GET): URL={}, Status={}, Body={}", url, status, text);
+            log::error!(
+                "API Error (GET): URL={}, Status={}, Body={}",
+                url,
+                status,
+                text
+            );
             return Err(ClientError::ApiError(status, text));
         }
 
@@ -954,7 +1008,12 @@ impl MagisterClient {
         if !resp.status().is_success() {
             let status = resp.status().as_u16();
             let text = resp.text().await.unwrap_or_default();
-            log::error!("API Error (BYTES): URL={}, Status={}, Body={}", url, status, text);
+            log::error!(
+                "API Error (BYTES): URL={}, Status={}, Body={}",
+                url,
+                status,
+                text
+            );
             return Err(ClientError::ApiError(status, text));
         }
 
@@ -998,7 +1057,12 @@ impl MagisterClient {
         if !resp.status().is_success() {
             let status = resp.status().as_u16();
             let text = resp.text().await.unwrap_or_default();
-            log::error!("API Error (BYTES): URL={}, Status={}, Body={}", url, status, text);
+            log::error!(
+                "API Error (BYTES): URL={}, Status={}, Body={}",
+                url,
+                status,
+                text
+            );
             return Err(ClientError::ApiError(status, text));
         }
 
@@ -1064,7 +1128,12 @@ impl MagisterClient {
         if !resp.status().is_success() {
             let status = resp.status().as_u16();
             let text = resp.text().await.unwrap_or_default();
-            log::error!("API Error (POST): URL={}, Status={}, Body={}", url, status, text);
+            log::error!(
+                "API Error (POST): URL={}, Status={}, Body={}",
+                url,
+                status,
+                text
+            );
             return Err(ClientError::ApiError(status, text));
         }
 
@@ -1074,6 +1143,81 @@ impl MagisterClient {
         } else {
             serde_json::from_str(&text).map_err(|e| ClientError::ParseFailed(e.to_string()))
         };
+    }
+
+    /// Make an authenticated multipart POST — Magister's `/bestanden`
+    /// attachment upload expects a form with a single `file` part. The token
+    /// lifecycle matches `post` (429 retry via `send_with_retry`, one forced
+    /// refresh-and-retry on an expired-token 401); the form is rebuilt for every
+    /// attempt because reqwest consumes it.
+    pub async fn post_multipart(
+        &mut self,
+        path: &str,
+        file_name: &str,
+        mime_type: &str,
+        file_bytes: Vec<u8>,
+    ) -> Result<serde_json::Value, ClientError> {
+        let token = self.ensure_valid_token().await?;
+        let url = Self::build_url(&token.api_endpoint, path);
+
+        let build_form = || {
+            let part = reqwest::multipart::Part::bytes(file_bytes.clone())
+                .file_name(file_name.to_string());
+            let part = part.mime_str(mime_type).unwrap_or_else(|_| {
+                reqwest::multipart::Part::bytes(file_bytes.clone()).file_name(file_name.to_string())
+            });
+            reqwest::multipart::Form::new().part("file", part)
+        };
+
+        let resp = self
+            .send_with_retry("POST", &url, || {
+                self.http
+                    .post(&url)
+                    .header("Authorization", format!("Bearer {}", token.access_token))
+                    .header("Accept", "application/json")
+                    .multipart(build_form())
+            })
+            .await?;
+
+        let resp = if resp.status().as_u16() == 401 {
+            let text = resp.text().await.unwrap_or_default();
+            if !Self::is_expired_token_body(&text) {
+                return Err(ClientError::Unauthorized(text));
+            }
+            if let Some(ts) = self.token_set.as_mut() {
+                ts.expires_at = Utc::now();
+            }
+            let token = self.ensure_valid_token().await?;
+            self.http
+                .post(&url)
+                .header("Authorization", format!("Bearer {}", token.access_token))
+                .header("Accept", "application/json")
+                .multipart(build_form())
+                .send()
+                .await
+                .map_err(|e| ClientError::RequestFailed(e.to_string()))?
+        } else {
+            resp
+        };
+
+        if !resp.status().is_success() {
+            let status = resp.status().as_u16();
+            let text = resp.text().await.unwrap_or_default();
+            log::error!(
+                "API Error (POST multipart): URL={}, Status={}, Body={}",
+                url,
+                status,
+                text
+            );
+            return Err(ClientError::ApiError(status, text));
+        }
+
+        let text = resp.text().await.unwrap_or_default();
+        if text.is_empty() {
+            Ok(serde_json::Value::Null)
+        } else {
+            serde_json::from_str(&text).map_err(|e| ClientError::ParseFailed(e.to_string()))
+        }
     }
 
     /// Make an authenticated PUT request.
@@ -1118,7 +1262,12 @@ impl MagisterClient {
         if !resp.status().is_success() {
             let status = resp.status().as_u16();
             let text = resp.text().await.unwrap_or_default();
-            log::error!("API Error (PUT): URL={}, Status={}, Body={}", url, status, text);
+            log::error!(
+                "API Error (PUT): URL={}, Status={}, Body={}",
+                url,
+                status,
+                text
+            );
             return Err(ClientError::ApiError(status, text));
         }
         Ok(())
@@ -1181,7 +1330,12 @@ impl MagisterClient {
         if !resp.status().is_success() {
             let status = resp.status().as_u16();
             let text = resp.text().await.unwrap_or_default();
-            log::error!("API Error (DELETE): URL={}, Status={}, Body={}", url, status, text);
+            log::error!(
+                "API Error (DELETE): URL={}, Status={}, Body={}",
+                url,
+                status,
+                text
+            );
             return Err(ClientError::ApiError(status, text));
         }
         Ok(())
@@ -1229,7 +1383,12 @@ impl MagisterClient {
         if !resp.status().is_success() {
             let status = resp.status().as_u16();
             let text = resp.text().await.unwrap_or_default();
-            log::error!("API Error (PATCH): URL={}, Status={}, Body={}", url, status, text);
+            log::error!(
+                "API Error (PATCH): URL={}, Status={}, Body={}",
+                url,
+                status,
+                text
+            );
             return Err(ClientError::ApiError(status, text));
         }
         Ok(())
@@ -1254,7 +1413,7 @@ impl MagisterClient {
             .map_err(|e| ClientError::RequestFailed(e.to_string()))?;
 
         let status = resp.status().as_u16();
-        
+
         if resp.status().is_redirection() {
             if let Some(loc) = resp.headers().get(reqwest::header::LOCATION) {
                 return Ok(loc.to_str().unwrap_or_default().to_string());
@@ -1377,7 +1536,10 @@ impl ClientError {
     /// `invalid_grant` — refresh token is dead). Callers must wipe the
     /// stored session on this, but must NOT wipe on transient failures.
     pub fn is_rejected(&self) -> bool {
-        matches!(self, ClientError::TokenRefreshRejected(_) | ClientError::NotAuthenticated)
+        matches!(
+            self,
+            ClientError::TokenRefreshRejected(_) | ClientError::NotAuthenticated
+        )
     }
 
     /// True for a transient/retriable refresh failure (no network, timeout,
@@ -1386,7 +1548,9 @@ impl ClientError {
     pub fn is_transient_refresh_failure(&self) -> bool {
         matches!(
             self,
-            ClientError::TokenRefreshFailed(_) | ClientError::RequestFailed(_) | ClientError::ParseFailed(_)
+            ClientError::TokenRefreshFailed(_)
+                | ClientError::RequestFailed(_)
+                | ClientError::ParseFailed(_)
         )
     }
 }
@@ -1448,7 +1612,10 @@ mod tests {
         let mut client = MagisterClient::new();
         client.token_set = Some(create_mock_token_set(&mock_server.uri()));
 
-        let result = client.get("/api/test").await.expect("Expected successful get");
+        let result = client
+            .get("/api/test")
+            .await
+            .expect("Expected successful get");
         assert_eq!(result, expected_body);
     }
 
@@ -1641,16 +1808,32 @@ mod tests {
     fn test_rate_limit_delay_prefers_header_then_body_then_backoff() {
         // Header wins over body and backoff.
         let d = crate::client::rate_limit_delay(1, Some(4), Some(9), 10);
-        assert!(d.as_millis() >= 3000 && d.as_millis() <= 5000, "got {:?}", d);
+        assert!(
+            d.as_millis() >= 3000 && d.as_millis() <= 5000,
+            "got {:?}",
+            d
+        );
         // Body used when no header.
         let d = crate::client::rate_limit_delay(1, None, Some(4), 10);
-        assert!(d.as_millis() >= 3000 && d.as_millis() <= 5000, "got {:?}", d);
+        assert!(
+            d.as_millis() >= 3000 && d.as_millis() <= 5000,
+            "got {:?}",
+            d
+        );
         // Fallback 2s on attempt 1.
         let d = crate::client::rate_limit_delay(1, None, None, 10);
-        assert!(d.as_millis() >= 1500 && d.as_millis() <= 2500, "got {:?}", d);
+        assert!(
+            d.as_millis() >= 1500 && d.as_millis() <= 2500,
+            "got {:?}",
+            d
+        );
         // Fallback 8s on attempt 3.
         let d = crate::client::rate_limit_delay(3, None, None, 10);
-        assert!(d.as_millis() >= 6000 && d.as_millis() <= 10000, "got {:?}", d);
+        assert!(
+            d.as_millis() >= 6000 && d.as_millis() <= 10000,
+            "got {:?}",
+            d
+        );
     }
 
     #[test]
@@ -1666,7 +1849,11 @@ mod tests {
         }
         // Background cap allows longer waits.
         let d = crate::client::rate_limit_delay(1, Some(25), None, 30);
-        assert!(d.as_millis() >= 18750 && d.as_millis() <= 31250, "got {:?}", d);
+        assert!(
+            d.as_millis() >= 18750 && d.as_millis() <= 31250,
+            "got {:?}",
+            d
+        );
     }
 
     #[test]
@@ -1708,8 +1895,7 @@ mod tests {
             .await;
 
         let mut client = MagisterClient::new();
-        client.token_endpoint_override =
-            Some(format!("{}/connect/token", mock_server.uri()));
+        client.token_endpoint_override = Some(format!("{}/connect/token", mock_server.uri()));
         let mut dead = create_mock_token_set(&mock_server.uri());
         dead.expires_at = Utc::now() - Duration::seconds(60);
         client.token_set = Some(dead);
@@ -1747,7 +1933,10 @@ mod bearer_policy_tests {
     #[test]
     fn the_token_only_goes_to_the_magister_host() {
         let api = "https://school.magister.net/api";
-        assert!(bearer_allowed_for(api, "https://school.magister.net/api/personen/1/x"));
+        assert!(bearer_allowed_for(
+            api,
+            "https://school.magister.net/api/personen/1/x"
+        ));
         assert!(bearer_allowed_for(api, "https://SCHOOL.magister.net/other"));
         // Pre-signed Azure Blob URL: must not get the token.
         assert!(!bearer_allowed_for(
@@ -1755,10 +1944,16 @@ mod bearer_policy_tests {
             "https://magisterfiles.blob.core.windows.net/c/f.pdf?sv=2023&sig=abc"
         ));
         // Look-alike hosts and downgrade attempts.
-        assert!(!bearer_allowed_for(api, "https://school.magister.net.evil.example/x"));
+        assert!(!bearer_allowed_for(
+            api,
+            "https://school.magister.net.evil.example/x"
+        ));
         assert!(!bearer_allowed_for(api, "http://school.magister.net/x"));
         assert!(!bearer_allowed_for(api, "not a url"));
-        assert!(!bearer_allowed_for("also not a url", "https://school.magister.net/x"));
+        assert!(!bearer_allowed_for(
+            "also not a url",
+            "https://school.magister.net/x"
+        ));
     }
 
     #[test]
