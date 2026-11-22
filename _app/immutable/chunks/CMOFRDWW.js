@@ -1,1 +1,0 @@
-var e={nbsp:` `,"#160":` `,amp:`&`,lt:`<`,gt:`>`,quot:`"`,"#39":`'`,apos:`'`};function t(t){return t.replace(/&(nbsp|#160|amp|lt|gt|quot|#39|apos);/gi,(t,n)=>e[n.toLowerCase()]??t)}function n(e){let t=e,n;do n=t,t=t.replace(/<\/?[a-z][^>]*>/gi,``);while(t!==n);return t.replace(/[<>]/g,``)}export{n,t};
