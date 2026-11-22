@@ -1,0 +1,1 @@
+export{t as component,i as universal}from"../chunks/3es7a8e7.js";
