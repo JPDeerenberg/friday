@@ -4,20 +4,17 @@
  * cleaning the translation request. No network and no Svelte, so it is testable.
  */
 
+import { decodeEntities, stripTags } from "./html-text.ts";
+
 /** Homework markup -> plain text with line breaks kept. */
 export function htmlToText(html: string | null | undefined): string {
   if (!html) return "";
-  return html
-    .replace(/<\s*br\s*\/?\s*>/gi, "\n")
-    .replace(/<\/(p|div|li|h[1-6]|tr)\s*>/gi, "\n")
-    .replace(/<li[^>]*>/gi, "• ")
-    .replace(/<[^>]*>/g, "")
-    .replace(/&nbsp;|&#160;/gi, " ")
-    .replace(/&amp;/gi, "&")
-    .replace(/&lt;/gi, "<")
-    .replace(/&gt;/gi, ">")
-    .replace(/&quot;/gi, '"')
-    .replace(/&#39;|&apos;/gi, "'")
+  return stripTags(
+    decodeEntities(html)
+      .replace(/<\s*br\s*\/?\s*>/gi, "\n")
+      .replace(/<\/(p|div|li|h[1-6]|tr)\s*>/gi, "\n")
+      .replace(/<li[^>]*>/gi, "• "),
+  )
     .replace(/[ \t\u00a0]+/g, " ")
     .replace(/ *\n */g, "\n")
     .replace(/\n{3,}/g, "\n\n")

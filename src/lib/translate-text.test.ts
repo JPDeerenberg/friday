@@ -20,6 +20,16 @@ describe("htmlToText", () => {
     assert.equal(htmlToText(undefined), "");
     assert.equal(htmlToText(""), "");
   });
+  it("leaves no tag fragments behind", () => {
+    const out = htmlToText(
+      "<p>Bonjour<scr<script>ipt>alert(1)</scr</script>ipt></p>",
+    );
+    assert.equal(out.includes("<"), false);
+    assert.match(out, /Bonjour/);
+  });
+  it("unescapes entities once, so &amp;lt; does not become a tag", () => {
+    assert.equal(htmlToText("<p>A &amp;lt; B</p>"), "A &lt; B");
+  });
 });
 
 describe("shouldOfferTranslation", () => {

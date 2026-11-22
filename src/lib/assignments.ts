@@ -17,6 +17,7 @@ import type {
   AssignmentLink,
   AssignmentVersion,
 } from "./types.ts";
+import { decodeEntities, stripTags } from "./html-text.ts";
 
 // ─── Status ────────────────────────────────────────────────────────────────
 
@@ -129,10 +130,8 @@ export function selfHref(
 export function htmlHasContent(html: string | null | undefined): boolean {
   if (!html) return false;
   if (/<img\b/i.test(html)) return true;
-  const text = html
-    .replace(/<[^>]*>/g, "")
-    .replace(/&nbsp;|&#160;/gi, " ")
-    .replace(/[\s\u00a0\u200b]+/g, "");
+  const plain = stripTags(decodeEntities(html));
+  const text = plain.replace(/[\s\u00a0\u200b]+/g, "");
   return text.length > 0;
 }
 

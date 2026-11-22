@@ -403,44 +403,46 @@ def main() -> None:
                 f"{cell(a.get('published_at'))} | {cell(a.get('summary'))} |"
             )
     lines.append("")
-    lines.append("## Triage notes (hand-written, last reviewed 2026-11-20)")
+    lines.append("## Triage notes (hand-written, last reviewed 2026-11-22)")
     lines.append("")
     lines.append(
-        "Reading of the open code-scanning findings against the code they point at. "
+        "Reading of the code-scanning findings against the code they point at. "
         "Re-check these after refactors — the alerts are re-raised on every CodeQL run."
     )
     lines.append("")
     lines.append("| Rule | Verdict | Why |")
     lines.append("|---|---|---|")
     lines.append(
-        "| `rust/hard-coded-cryptographic-value` (18) | false positive | Every hit is a `#[test]` "
-        "fixture (`\"abc123\"` state, `\"nonce-123\"` nonce) in `src-tauri/src/auth.rs` and "
-        "`crates/magister-core/src/auth.rs`. No production key material is hard-coded. Safe to dismiss with "
-        "\"used in tests\". |"
+        "| `rust/hard-coded-cryptographic-value` (18) | false positive — dismissed \"used in tests\" | Every hit is a "
+        "`#[test]` fixture (`\"abc123\"` state, `\"nonce-123\"` nonce) in `src-tauri/src/auth.rs` and "
+        "`crates/magister-core/src/auth.rs`. No production key material is hard-coded. |"
     )
     lines.append(
-        "| `rust/cleartext-logging` (6) | false positive | 5 hits are in `crates/spike-password-login`, "
-        "which is not shipped (see AGENTS.md). The sixth hit in `src-tauri/src/client.rs` logs the keyring "
-        "*entry name* and the error, never the token value. |"
+        "| `rust/cleartext-logging` (6) | false positive — dismissed | 5 hits are in `crates/spike-password-login`, "
+        "which is not shipped (see AGENTS.md) and only prints label + length via `secret_len()`. The sixth hit in "
+        "`src-tauri/src/client.rs` logs the keyring *entry name* and the error, never the token value. |"
     )
     lines.append(
-        "| `rust/cleartext-transmission` (3) | fixed locally | The Gemini key now travels in the "
-        "`x-goog-api-key` header in `src-tauri/src/ai/providers/gemini.rs` and `crates/web-api/src/ai.rs`, "
-        "not the `?key=` query string. GitHub will close these after the next CodeQL run on a push. |"
+        "| `rust/cleartext-transmission` (3) | fixed | The Gemini key travels in the `x-goog-api-key` header in "
+        "`src-tauri/src/ai/providers/gemini.rs` and `crates/web-api/src/ai.rs`, not the `?key=` query string. |"
     )
     lines.append(
-        "| `rust/request-forgery` (1) | false positive | The Gemini URL in `crates/web-api/src/ai.rs` is "
-        "fixed; `check_base_url()` already constrains user-supplied base URLs. |"
+        "| `rust/request-forgery` (1) | false positive | The Gemini URL in `crates/web-api/src/ai.rs` is fixed; "
+        "`check_base_url()` already constrains user-supplied base URLs. |"
     )
     lines.append(
-        "| `js/incomplete-multi-character-sanitization` (2), `js/double-escaping` (1) | false positive | "
-        "`src/lib/translate-text.ts:10` (`htmlToText`) and `src/lib/assignments.ts:132` (`htmlHasContent`) "
-        "strip markup to produce *plain text*, they are not sanitizers feeding an HTML sink. "
-        "`htmlToText` output only goes to the AI request and the translate preview; HTML that reaches the "
-        "DOM still goes through `sanitize.ts`/DOMPurify. |"
+        "| `js/incomplete-multi-character-sanitization` (2), `js/double-escaping` (1) | fixed in 2.19.2 | "
+        "`src/lib/html-text.ts` strips tags until nothing tag-shaped is left (then drops stray `<`/`>`) and "
+        "decodes entities in a single pass, so `&amp;lt;` can no longer turn into markup. "
+        "`htmlToText`/`htmlHasContent` produce plain text only; anything reaching the DOM still goes through "
+        "`sanitize.ts`/DOMPurify. |"
+    )
+    lines.append(
+        "| `py/clear-text-storage-sensitive-data` (1) | false positive — dismissed | `scripts/security-report.py` "
+        "writes public advisory metadata from read-only `gh api` GETs; no secret values are read or stored. |"
     )
     lines.append("")
-    lines.append("Local remediation status (2026-11-20, not yet pushed):")
+    lines.append("Remediation status (2.19.2, pushed 2026-11-22):")
     lines.append("")
     lines.append(
         "1. `dompurify` 3.4.16 → 3.4.18 (patched >= 3.4.17) — the XSS boundary for `{@html}`."
@@ -448,20 +450,27 @@ def main() -> None:
     lines.append(
         "2. `zip` = 8.6.0 → 9.8.1 in `src-tauri/Cargo.lock`; `ZipFile::name()` now returns a `Result`."
     )
-    lines.append(
-        "3. `rustls` 0.23.43/0.23.44 → 0.23.46 in all four lockfiles."
-    )
+    lines.append("3. `rustls` 0.23.43/0.23.44 → 0.23.46 in all four lockfiles.")
     lines.append(
         "4. `vite` 8.3.1 → 8.3.8; `@sveltejs/kit` ^2.70.3 → ^3.4.0 with `@sveltejs/adapter-static` 4.0.1 "
         "(SvelteKit 3 migration completed, not a drive-by bump)."
     )
     lines.append(
         "5. `glib` 0.18.5 remains upstream-blocked: Tauri 2.12.1 still pulls `gtk` 0.18.2, which needs "
-        "`glib` 0.18. No released Tauri/GTK stack accepts `glib` 0.20 yet."
+        "`glib` 0.18. No released Tauri/GTK stack accepts `glib` 0.20, so alert #23 is dismissed "
+        "`tolerable_risk` until Tauri ships a GTK 0.20 stack."
+    )
+    lines.append(
+        "6. Dependabot PRs #30 (rustls 0.23.45) and #31 (vite 8.3.3) closed as superseded by the newer "
+        "versions above; no open Dependabot PRs remain."
+    )
+    lines.append(
+        "7. Secret scanning and push protection enabled on the public repo (2026-11-22)."
     )
     lines.append("")
     lines.append(
-        "GitHub alerts stay open until these changes are pushed and Dependabot/CodeQL re-scan the manifests."
+        "Any remaining open CodeQL hit is re-raised per push; fix it in code or dismiss it from "
+        "Security → Code scanning with a reason."
     )
     lines.append("")
     lines.append("---")
