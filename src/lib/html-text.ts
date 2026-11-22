@@ -33,8 +33,9 @@ export function decodeEntities(text: string): string {
 
 /**
  * Removes tags until nothing tag-shaped is left — one pass alone leaves
- * `<scr<script>ipt>` as `<script>` — then drops stray angle brackets. The
- * result never contains `<` or `>`.
+ * `<scr<script>ipt>` as `<script>` — and then drops tag openers that never
+ * closed (a truncated `<script`). A bare `<` before a space, digit or punctuation
+ * is a comparison operator in maths homework (`2 < x < 5`), not markup, so it stays.
  */
 export function stripTags(html: string): string {
   let text = html;
@@ -43,5 +44,5 @@ export function stripTags(html: string): string {
     previous = text;
     text = text.replace(/<\/?[a-z][^>]*>/gi, "");
   } while (text !== previous);
-  return text.replace(/[<>]/g, "");
+  return text.replace(/<\/?[a-z][^>]*$/gi, "");
 }

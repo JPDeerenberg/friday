@@ -23,12 +23,17 @@ describe("stripTags", () => {
   it("removes plain and nested markup", () => {
     assert.equal(stripTags("<p>Hoi <b>wereld</b></p>"), "Hoi wereld");
   });
-  it("keeps stripping until no tag-shaped text is left", () => {
+  it("keeps stripping until no tag opener is left", () => {
     const out = stripTags("<scr<script>ipt>alert(1)</scr</script>ipt>");
     assert.equal(out.includes("<"), false);
-    assert.equal(out.includes(">"), false);
+    assert.match(out, /alert\(1\)/);
   });
-  it("drops a tag that never closes so no angle brackets survive", () => {
-    assert.equal(stripTags("2 < 3 en <script"), "2  3 en script");
+  it("drops a tag that never closes, so no tag opener survives", () => {
+    assert.equal(stripTags("2 < 3 en <script"), "2 < 3 en ");
+    assert.equal(stripTags('<script src="x"'), "");
+  });
+  it("keeps comparison operators in maths homework", () => {
+    assert.equal(stripTags("2 < x < 5 en y > 3"), "2 < x < 5 en y > 3");
+    assert.equal(stripTags("<3 en 5>4"), "<3 en 5>4");
   });
 });
