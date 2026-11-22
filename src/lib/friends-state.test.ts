@@ -1,6 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
+  adoptSnapshot,
   emptyState,
   importFriend,
   removeFriend,
@@ -98,6 +99,36 @@ describe("importFriend", () => {
     const before = emptyState(ME);
     importFriend(before, snap("aaaaaaaa"));
     assert.equal(before.friends.length, 0);
+  });
+});
+
+describe("adoptSnapshot", () => {
+  it("adopts a new id for the same person without duplicating or losing settings", () => {
+    let s = importFriend(emptyState(ME), snap("aaaaaaaa")).state;
+    s = renameFriend(s, "aaaaaaaa", "Annie");
+    s = setEnabled(s, "aaaaaaaa", false);
+    s = adoptSnapshot(
+      s,
+      "aaaaaaaa",
+      snap("bbbbbbbb", { createdAt: 2000, lessons: [lesson(1, 600)] }),
+      9,
+    );
+    assert.equal(s.friends.length, 1);
+    assert.equal(s.friends[0].id, "bbbbbbbb");
+    assert.deepEqual(
+      [s.friends[0].nickname, s.friends[0].enabled, s.friends[0].importedAt],
+      ["Annie", false, 9],
+    );
+    assert.deepEqual(s.friends[0].snapshot.lessons, [lesson(1, 600)]);
+  });
+  it("refuses an id that is already another friend or your own", () => {
+    let s = importFriend(emptyState(ME), snap("aaaaaaaa")).state;
+    s = importFriend(s, snap("bbbbbbbb", { name: "Ben" })).state;
+    assert.equal(
+      adoptSnapshot(s, "aaaaaaaa", snap("bbbbbbbb")).friends.length,
+      2,
+    );
+    assert.equal(adoptSnapshot(s, "aaaaaaaa", snap(ME)).friends.length, 2);
   });
 });
 

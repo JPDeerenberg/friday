@@ -95,6 +95,35 @@ export function importFriend(
   };
 }
 
+/**
+ * Replace the snapshot of an existing friend in place and adopt the new link's
+ * id. Used when the same person shares a link from a new install or another
+ * device (their random sender id changed): keeps the nickname, the toggle and
+ * the list position instead of adding a second entry.
+ */
+export function adoptSnapshot(
+  state: FriendsState,
+  friendId: string,
+  snapshot: ScheduleSnapshot,
+  now: number = Date.now(),
+): FriendsState {
+  if (snapshot.id === state.myId) return state;
+  if (state.friends.some((f) => f.id === snapshot.id)) return state;
+  let adopted = false;
+  const friends = state.friends.map((f) => {
+    if (f.id !== friendId) return f;
+    adopted = true;
+    return {
+      ...f,
+      id: snapshot.id,
+      name: snapshot.name,
+      snapshot,
+      importedAt: now,
+    };
+  });
+  return adopted ? { ...state, friends } : state;
+}
+
 export function removeFriend(state: FriendsState, id: string): FriendsState {
   return { ...state, friends: state.friends.filter((f) => f.id !== id) };
 }

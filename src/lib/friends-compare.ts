@@ -343,9 +343,20 @@ export function bestMomentFor(
   );
 }
 
+export interface TimelineBlock {
+  /**
+   * Unique within its row. Two lessons can start at the same minute (parallel
+   * groups, two subjects at once), so `start` alone is not a safe render key.
+   */
+  key: string;
+  start: number;
+  end: number;
+  subject: string;
+}
+
 export interface TimelineRow {
   person: Person;
-  blocks: { start: number; end: number; subject: string }[];
+  blocks: TimelineBlock[];
 }
 
 export interface Timeline {
@@ -368,7 +379,8 @@ export function dayTimeline(
   const at = day.getTime();
   const rows: TimelineRow[] = people.map((person) => ({
     person,
-    blocks: lessonsOnDay(person.lessons, at).map((l) => ({
+    blocks: lessonsOnDay(person.lessons, at).map((l, i) => ({
+      key: `${l.start}:${i}`,
       start: l.start,
       end: l.end,
       subject: l.subject,

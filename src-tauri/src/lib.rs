@@ -19,6 +19,18 @@ use tokio::sync::Mutex;
 
 use tauri::Manager;
 
+/// A friend link that arrived before the webview was ready (cold start via an
+/// App Link / QR). Tauri does not replay events to listeners that register
+/// late, so the URL is queued here and drained by `take_friend_link` once the
+/// frontend listens.
+#[derive(Default)]
+pub struct PendingFriendLink(std::sync::Mutex<Option<String>>);
+
+#[tauri::command]
+fn take_friend_link(state: tauri::State<'_, PendingFriendLink>) -> Option<String> {
+    state.0.lock().ok().and_then(|mut pending| pending.take())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let client: SharedClient = Arc::new(Mutex::new(MagisterClient::new()));
@@ -104,16 +116,29 @@ pub fn run() {
                 let app_handle = app.handle().clone();
                 app.deep_link().on_open_url(move |event| {
                     for url in event.urls() {
+                        let raw = url.as_str();
                         if url.scheme() == "m6loapp" {
-                            app_handle.emit("auth-callback", url.as_str()).ok();
+                            app_handle.emit("auth-callback", raw).ok();
+                        } else if raw.contains("friend=") {
+                            // Friend link (https://fridayapp.nl/#friend=…): queue it for
+                            // the cold-start case and notify a running webview.
+                            if let Some(state) = app_handle.try_state::<PendingFriendLink>() {
+                                if let Ok(mut pending) = state.0.lock() {
+                                    *pending = Some(raw.to_string());
+                                }
+                            }
+                            app_handle.emit("friend-link", raw).ok();
                         }
                     }
                 });
             }
             Ok(())
         })
+        .manage(PendingFriendLink::default())
         .manage(client)
         .invoke_handler(tauri::generate_handler![
+            // Deep links (friend links opened from another app / QR)
+            take_friend_link,
             // Auth
             commands::auth::start_login_flow,
             commands::auth::handle_auth_callback,

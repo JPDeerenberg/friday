@@ -67,21 +67,31 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="m6loapp" />
             </intent-filter>
-            <!-- Friend links: https://fridayapp.nl/#friend=… (QR scan or a shared link).
-                 Not auto-verified: Android offers "open with Friday" or the browser. -->
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="https" android:host="fridayapp.nl" />
-            </intent-filter>
+            <!-- https://fridayapp.nl/#friend=… is declared in tauri.conf.json
+                 (plugins.deep-link.mobile), which generates the App Link filter
+                 with autoVerify + static/.well-known/assetlinks.json below. -->
             <!-- DEEP LINK PLUGIN. AUTO-GENERATED. DO NOT REMOVE. -->
             <intent-filter >
                 <action android:name="android.intent.action.VIEW" />
+                <!-- ChromeOS ARC++ uses a different action for deep links -->
+                <action android:name="org.chromium.arc.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="m6loapp" />
                 <data android:host="oauth2redirect" />
+                
+                
+                
+                
+            </intent-filter>
+            <intent-filter android:autoVerify="true" >
+                <action android:name="android.intent.action.VIEW" />
+                <!-- ChromeOS ARC++ uses a different action for deep links -->
+                <action android:name="org.chromium.arc.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" />
+                <data android:host="fridayapp.nl" />
                 
                 
                 

@@ -1,6 +1,7 @@
 <script lang="ts">
   import "../app.css";
   import { onMount } from "svelte";
+  import { invoke } from "@tauri-apps/api/core";
   import { listen } from "@tauri-apps/api/event";
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import { attachConsole } from "@tauri-apps/plugin-log";
@@ -48,12 +49,15 @@
   import { runOfflineSync } from "#lib/offline-sync.ts";
   import CalendarChangesDialog from "#lib/components/CalendarChangesDialog.svelte";
   import QuestToast from "#lib/components/QuestToast.svelte";
-  import { offerFriendLink } from "#lib/friends-store.ts";
+  import { offerFriendLink, pendingFriendLink } from "#lib/friends-store.ts";
   import {
     calendarChangesPopup,
     consumeNotificationTap,
   } from "#lib/calendar-changes.ts";
-  import { clearGradeMemory, setHiddenGradeRestore } from "#lib/hidden-grades.ts";
+  import {
+    clearGradeMemory,
+    setHiddenGradeRestore,
+  } from "#lib/hidden-grades.ts";
 
   let { children } = $props();
 
@@ -148,6 +152,8 @@
     const pid = await getPersonId();
     personId.set(pid);
     isLoggedIn.set(true);
+    // A friend link opened before login must still land on the Friends page.
+    if (get(pendingFriendLink)) currentPage.set("friends");
     try {
       const pic = await getProfilePicture(pid);
       profilePicture.set(pic);
@@ -356,7 +362,10 @@
     const openFriendLink = (url: string | null | undefined) => {
       if (offerFriendLink(url)) {
         currentPage.set("friends");
-        if (typeof history !== "undefined" && location.hash.includes("friend=")) {
+        if (
+          typeof history !== "undefined" &&
+          location.hash.includes("friend=")
+        ) {
           history.replaceState(null, "", location.pathname + location.search);
         }
       }
@@ -371,6 +380,23 @@
           await dl.onOpenUrl((urls) => urls.forEach(openFriendLink));
         })
         .catch((e) => console.warn("Deep links niet beschikbaar:", e));
+
+      // Friend links that arrived during a cold start are queued in Rust
+      // (Tauri does not replay events to listeners that register late).
+      // Register the listener first, then drain the queue: both take from the
+      // same slot, so a URL is handled exactly once.
+      void (async () => {
+        try {
+          await listen("friend-link", async () => {
+            const url = await invoke<string | null>("take_friend_link");
+            if (url) openFriendLink(url);
+          });
+          const url = await invoke<string | null>("take_friend_link");
+          if (url) openFriendLink(url);
+        } catch (e) {
+          console.warn("Friend-link listener niet beschikbaar:", e);
+        }
+      })();
     }
 
     if (!isTauri) {

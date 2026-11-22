@@ -165,6 +165,17 @@ describe("dayTimeline", () => {
     assert.equal(late.startMin, 7 * 60);
     assert.equal(late.endMin, 18 * 60);
   });
+  it("keeps parallel lessons at the same start apart with unique keys", () => {
+    const twin = person("twin", [
+      lesson(10, 30, 11, 20, "Wiskunde B"),
+      lesson(10, 30, 11, 20, "Economie"),
+    ]);
+    const t = dayTimeline([twin], new Date(MON(8)));
+    const blocks = t.rows[0].blocks;
+    assert.equal(blocks.length, 2);
+    assert.equal(new Set(blocks.map((b) => b.key)).size, 2);
+    assert.equal(blocks[0].start, blocks[1].start);
+  });
 });
 
 describe("helpers", () => {

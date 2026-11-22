@@ -48,6 +48,10 @@
         {
           "host": "oauth2redirect",
           "scheme": ["m6loapp"]
+        },
+        {
+          "host": "fridayapp.nl",
+          "scheme": ["https"]
         }
       ]
     }

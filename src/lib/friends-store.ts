@@ -4,16 +4,31 @@
  */
 import { writable } from "svelte/store";
 import {
-  emptyState, importFriend, markShared, removeFriend, renameFriend, sanitizeState, setEnabled, setMyName,
-  type FriendsState, type ImportStatus,
+  adoptSnapshot,
+  emptyState,
+  importFriend,
+  markShared,
+  removeFriend,
+  renameFriend,
+  sanitizeState,
+  setEnabled,
+  setMyName,
+  type FriendsState,
+  type ImportStatus,
 } from "./friends-state.ts";
-import { extractPayload, newSenderId, type ScheduleSnapshot, type SharedLesson } from "./friends-share.ts";
+import {
+  extractPayload,
+  newSenderId,
+  type ScheduleSnapshot,
+  type SharedLesson,
+} from "./friends-share.ts";
 
 const KEY = "friday_friends_v1";
 
 function load(): FriendsState {
   try {
-    const raw = typeof localStorage !== "undefined" ? localStorage.getItem(KEY) : null;
+    const raw =
+      typeof localStorage !== "undefined" ? localStorage.getItem(KEY) : null;
     const state = raw ? sanitizeState(JSON.parse(raw)) : null;
     if (state) return state;
   } catch {
@@ -46,20 +61,35 @@ export const friendsActions = {
     });
     return status;
   },
+  /** Updates an existing friend in place when their sender id changed. */
+  adopt: (id: string, snapshot: ScheduleSnapshot) =>
+    friends.update((s) => adoptSnapshot(s, id, snapshot)),
   remove: (id: string) => friends.update((s) => removeFriend(s, id)),
-  setEnabled: (id: string, on: boolean) => friends.update((s) => setEnabled(s, id, on)),
-  rename: (id: string, nickname: string) => friends.update((s) => renameFriend(s, id, nickname)),
+  setEnabled: (id: string, on: boolean) =>
+    friends.update((s) => setEnabled(s, id, on)),
+  rename: (id: string, nickname: string) =>
+    friends.update((s) => renameFriend(s, id, nickname)),
   setMyName: (name: string) => friends.update((s) => setMyName(s, name)),
-  markShared: (snapshot: { windowStart: string; lessons: SharedLesson[] }, signature: string) =>
-    friends.update((s) => markShared(s, snapshot, signature)),
+  markShared: (
+    snapshot: { windowStart: string; lessons: SharedLesson[] },
+    signature: string,
+  ) => friends.update((s) => markShared(s, snapshot, signature)),
 };
 
 /**
  * Called with any URL or text the app was opened with: when it carries a friend
  * link, hands it to the Friends page. Returns true when it did.
  */
+let lastOffered = "";
+let lastOfferedAt = 0;
 export function offerFriendLink(text: string | null | undefined): boolean {
   if (!text || !extractPayload(text)) return false;
+  // The same link can arrive twice (Android App Link + the deep-link plugin's
+  // getCurrent()/onOpenUrl). Handle it once, but allow a real re-open later.
+  const now = Date.now();
+  if (text === lastOffered && now - lastOfferedAt < 5000) return true;
+  lastOffered = text;
+  lastOfferedAt = now;
   pendingFriendLink.set(text);
   return true;
 }

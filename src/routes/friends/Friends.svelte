@@ -272,16 +272,62 @@
   // ── adding a friend ─────────────────────────────────────────────────────
   let pasted = $state("");
   let incoming = $state<ScheduleSnapshot | null>(null);
+  /** Set when the incoming link belongs to someone already in the list. */
+  let incomingExisting = $state<FriendRecord | null>(null);
   let importError = $state<string | null>(null);
   let importNote = $state<string | null>(null);
+
+  function noteForStatus(name: string, status: string): string {
+    return status === "added"
+      ? `${name} is toegevoegd.`
+      : status === "updated"
+        ? `Het rooster van ${name} is bijgewerkt.`
+        : status === "older"
+          ? `Je hebt al een nieuwere versie van ${name}.`
+          : status === "self"
+            ? "Dit is je eigen link."
+            : "Je lijst is vol. Verwijder eerst een vriend.";
+  }
 
   async function stage(text: string) {
     importError = null;
     importNote = null;
     incoming = null;
+    incomingExisting = null;
     if (!text.trim()) return;
     try {
-      incoming = await readShareLink(text);
+      const snapshot = await readShareLink(text);
+      const state = get(friends);
+      if (snapshot.id === state.myId) {
+        importNote = "Dit is je eigen link.";
+        return;
+      }
+      // Known friend: a new link updates the existing entry, never adds a second.
+      const known = state.friends.find((f) => f.id === snapshot.id);
+      if (known) {
+        if (snapshot.createdAt > known.snapshot.createdAt) {
+          friendsActions.add(snapshot);
+          importNote = `Rooster van ${friendLabel(known)} is bijgewerkt.`;
+        } else {
+          importNote = `Je hebt al de nieuwste versie van ${friendLabel(known)}.`;
+        }
+        return;
+      }
+      // Same name, different id (reinstall or another device): offer to update
+      // that friend instead of quietly creating a duplicate.
+      const name = snapshot.name.trim().toLowerCase();
+      const sameName = state.friends.filter(
+        (f) => f.snapshot.name.trim().toLowerCase() === name,
+      );
+      if (sameName.length === 1) {
+        const existing = sameName[0];
+        if (snapshot.createdAt <= existing.snapshot.createdAt) {
+          importNote = `Je hebt al de nieuwste versie van ${friendLabel(existing)}.`;
+          return;
+        }
+        incomingExisting = existing;
+      }
+      incoming = snapshot;
     } catch (e) {
       importError =
         e instanceof FriendLinkError
@@ -302,20 +348,30 @@
 
   function confirmAdd() {
     if (!incoming) return;
-    const name = incoming.name;
-    const status = friendsActions.add(incoming);
+    const snapshot = incoming;
+    const existing = incomingExisting;
     incoming = null;
+    incomingExisting = null;
     pasted = "";
-    importNote =
-      status === "added"
-        ? `${name} is toegevoegd.`
-        : status === "updated"
-          ? `Het rooster van ${name} is bijgewerkt.`
-          : status === "older"
-            ? `Je hebt al een nieuwere versie van ${name}.`
-            : status === "self"
-              ? "Dit is je eigen link."
-              : "Je lijst is vol. Verwijder eerst een vriend.";
+    if (existing) {
+      friendsActions.adopt(existing.id, snapshot);
+      importNote = `Rooster van ${friendLabel(existing)} is bijgewerkt.`;
+      return;
+    }
+    const status = friendsActions.add(snapshot);
+    importNote = noteForStatus(snapshot.name, status);
+    if (status === "added") recordQuestEvent("friend_added");
+  }
+
+  /** "Dit is iemand anders": keep the same-named friend and add this link as new. */
+  function addAsNew() {
+    if (!incoming) return;
+    const snapshot = incoming;
+    incoming = null;
+    incomingExisting = null;
+    pasted = "";
+    const status = friendsActions.add(snapshot);
+    importNote = noteForStatus(snapshot.name, status);
     if (status === "added") recordQuestEvent("friend_added");
   }
 
@@ -582,9 +638,22 @@
   {#if incoming}
     <section class="card confirm" aria-live="polite">
       <div class="card-head">
-        <h2>{incoming.name} toevoegen?</h2>
-        <span class="pill primary"><UserPlus size={14} /> Nieuwe vriend</span>
+        <h2>
+          {incomingExisting
+            ? `${friendLabel(incomingExisting)} bijwerken?`
+            : `${incoming.name} toevoegen?`}
+        </h2>
+        <span class="pill primary">
+          <UserPlus size={14} />
+          {incomingExisting ? "Bijwerken" : "Nieuwe vriend"}
+        </span>
       </div>
+      {#if incomingExisting}
+        <p class="fine">
+          Er staat al een vriend met de naam {incoming.name}. Bijwerken vervangt
+          het oude rooster; er komt geen tweede bij.
+        </p>
+      {/if}
       <p class="muted">
         Rooster van {incoming.lessons.length}
         {incoming.lessons.length === 1 ? "les" : "lessen"} in
@@ -601,17 +670,28 @@
       {#if incomingExpired}
         <div class="banner warn" role="status">
           <span
-            >Dit rooster is van een eerdere week. Je kunt het toevoegen, maar
-            het verschijnt pas weer als {incoming.name} een nieuwe link deelt.</span
+            >Dit rooster is van een eerdere week. Je kunt het
+            {incomingExisting ? "bijwerken" : "toevoegen"}, maar het verschijnt
+            pas weer als {incoming.name} een nieuwe link deelt.</span
           >
         </div>
       {:else}
         <p class="fine">Je ziet alleen lestijden en vakken.</p>
       {/if}
       <div class="row">
-        <Button onclick={confirmAdd}>Toevoegen</Button>
-        <Button variant="text" onclick={() => (incoming = null)}
-          >Annuleren</Button
+        <Button onclick={confirmAdd}
+          >{incomingExisting ? "Bijwerken" : "Toevoegen"}</Button
+        >
+        {#if incomingExisting}
+          <Button variant="text" onclick={addAsNew}>Dit is iemand anders</Button
+          >
+        {/if}
+        <Button
+          variant="text"
+          onclick={() => {
+            incoming = null;
+            incomingExisting = null;
+          }}>Annuleren</Button
         >
       </div>
     </section>
@@ -846,7 +926,7 @@
                     )}–{clock(f.end)}"
                   ></i>
                 {/each}
-                {#each row.blocks as b (b.start)}
+                {#each row.blocks as b (b.key)}
                   <i
                     class="block"
                     style="left:{pct(b.start)}%;width:{pct(b.end) -
@@ -959,7 +1039,7 @@
                 </span>
               </div>
               <ul>
-                {#each row.blocks as b (b.start)}
+                {#each row.blocks as b (b.key)}
                   <li>
                     <span class="time">{clock(b.start)}–{clock(b.end)}</span>
                     <span>{b.subject}</span>
