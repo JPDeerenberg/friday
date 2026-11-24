@@ -21,6 +21,7 @@
   import { displayTeacherName } from "#lib/teachers.ts";
   import TranslateButton from "#lib/components/TranslateButton.svelte";
   import { recordQuestEvent } from "#lib/quests-store.ts";
+  import { clearAiPageContext, setAiPageContext } from "#lib/ai-context.ts";
   import { onMount, tick, untrack } from "svelte";
   import { fade, fly, slide, scale } from "svelte/transition";
   import type { CalendarAttachment, CalendarEvent, Link } from "#lib/types.ts";
@@ -57,6 +58,28 @@
   let loading = $state(true);
   let showDetail = $state(false);
   let selectedAppointment = $state<CalendarEvent | null>(null);
+
+  function localIsoDate(date: Date): string {
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+  }
+
+  $effect(() => {
+    const app = selectedAppointment;
+    setAiPageContext({
+      page: "calendar",
+      selectedDate: localIsoDate(selectedDate),
+      selectedLessonId: showDetail && app ? app.Id : null,
+      selectedSubject: app?.Vakken?.[0]?.Naam || app?.Omschrijving || null,
+      extra: app
+        ? {
+            "Geselecteerde afspraak": app.Omschrijving || "Afspraak",
+            Tijd: `${formatTime(app.Start)}–${formatTime(app.Einde)}`,
+            InfoType: String(app.InfoType ?? 0),
+          }
+        : undefined,
+    });
+  });
+  $effect(() => () => clearAiPageContext("calendar"));
   let loadingDetail = $state(false);
   let editMode = $state(false);
   let editContent = $state("");

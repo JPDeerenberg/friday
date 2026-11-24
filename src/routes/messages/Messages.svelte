@@ -13,6 +13,7 @@
   } from "#lib/api.ts";
   import { cacheGet, cacheRefresh } from "#lib/cache.ts";
   import { resumedAt, userSettings } from "#lib/stores.ts";
+  import { clearAiPageContext, setAiPageContext } from "#lib/ai-context.ts";
   import { onMount, untrack } from "svelte";
   import { get } from "svelte/store";
   import { slide, fade } from "svelte/transition";
@@ -53,6 +54,22 @@
   let msgFilter = $state<"all" | "unread" | "priority">("all");
   let searchQuery = $state("");
   let searchOpen = $state(false);
+
+  $effect(() => {
+    const m = selectedMessage;
+    setAiPageContext({
+      page: "messages",
+      extra: {
+        Map: selectedFolder?.naam ?? null,
+        "Bericht-id": m?.id ?? null,
+        Onderwerp: m?.onderwerp ?? null,
+        Afzender: m?.afzender?.naam ?? null,
+        Filter: msgFilter,
+      },
+    });
+  });
+
+  $effect(() => () => clearAiPageContext("messages"));
 
   const filteredMessages = $derived(() => {
     let list = messages;

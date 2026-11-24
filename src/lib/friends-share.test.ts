@@ -241,8 +241,22 @@ describe("building from the agenda", () => {
       }),
     ];
     assert.deepEqual(lessonsFromEvents(events, WS, 14), [
-      { day: 0, start: 8 * 60 + 30, end: 9 * 60 + 20, subject: "Wiskunde" },
-      { day: 1, start: 10 * 60 + 30, end: 11 * 60 + 20, subject: "Nederlands" },
+      {
+        day: 0,
+        start: 8 * 60 + 30,
+        end: 9 * 60 + 20,
+        subject: "Wiskunde",
+        teacher: "J. Jansen (JAN)",
+        room: "B214",
+      },
+      {
+        day: 1,
+        start: 10 * 60 + 30,
+        end: 11 * 60 + 20,
+        subject: "Nederlands",
+        teacher: "J. Jansen (JAN)",
+        room: "B214",
+      },
     ]);
   });
   it("ignores lessons outside the window", () => {
@@ -258,10 +272,12 @@ describe("building from the agenda", () => {
     });
     assert.deepEqual(lessonsFromEvents([before, after], WS, 14), []);
   });
-  it("shortens long subject names and never shares the room or the teacher", async () => {
+  it("shortens long subject names and caps shared details", async () => {
     const e = event({
       Id: 1,
       Vakken: [{ Id: 1, Naam: "Lichamelijke opvoeding en sport" }],
+      InfoType: 1,
+      Inhoud: `<p>${"heel veel huiswerk ".repeat(40)}</p>`,
     });
     const snap = buildSnapshot({
       id: "a1b2c3d4",
@@ -269,10 +285,13 @@ describe("building from the agenda", () => {
       events: [e],
       windowStart: WS,
     });
-    assert.ok(snap.lessons[0].subject.length <= 14);
-    const payload = await encodeSnapshot(snap);
-    const text = new TextDecoder("latin1").decode(fromBase64Url(payload));
-    assert.ok(!text.includes("B214") && !text.includes("Jansen"));
+    assert.ok(snap.lessons[0].subject.length <= 24);
+    assert.equal(snap.lessons[0].teacher, "J. Jansen (JAN)");
+    assert.equal(snap.lessons[0].room, "B214");
+    assert.ok((snap.lessons[0].homework?.length ?? 0) <= 240);
+    assert.ok(!snap.lessons[0].homework?.includes("<p>"));
+    const decoded = await decodeSnapshot(await encodeSnapshot(snap));
+    assert.deepEqual(decoded.lessons[0], snap.lessons[0]);
   });
   it("converts back to absolute local times", () => {
     const snap = buildSnapshot({
@@ -330,6 +349,56 @@ describe("change detection", () => {
       removed: 1,
       changed: true,
     });
+  });
+});
+
+describe("v2 lesson details", () => {
+  const detailed = snapshot({
+    lessons: [
+      {
+        day: 0,
+        start: 510,
+        end: 560,
+        subject: "Wiskunde",
+        teacher: "Mevrouw Jansen",
+        room: "B204",
+        homework: "Maak opdracht 12 t/m 18",
+        test: "Proefwerk",
+        note: "Neem je rekenmachine mee",
+      },
+      { day: 1, start: 600, end: 650, subject: "Engels" },
+    ],
+  });
+
+  it("round-trips teachers, rooms, homework and tests", async () => {
+    const encoded = await encodeSnapshot(detailed);
+    const decoded = await decodeSnapshot(encoded);
+    assert.deepEqual(decoded, detailed);
+  });
+
+  it("keeps the lesson details in absolute lessons", () => {
+    const abs = absoluteLessons(detailed);
+    assert.equal(abs[0].teacher, "Mevrouw Jansen");
+    assert.equal(abs[0].room, "B204");
+    assert.equal(abs[0].homework, "Maak opdracht 12 t/m 18");
+    assert.equal(abs[0].test, "Proefwerk");
+    assert.equal(abs[1].teacher, undefined);
+  });
+
+  it("changes the schedule signature when homework changes", () => {
+    assert.notEqual(
+      scheduleSignature(detailed.lessons),
+      scheduleSignature([
+        { ...detailed.lessons[0], homework: "Ander huiswerk" },
+        detailed.lessons[1],
+      ]),
+    );
+  });
+
+  it("still reads a v1 binary link", async () => {
+    const legacy = snapshot();
+    const encoded = await encodeSnapshot(legacy);
+    assert.deepEqual(await decodeSnapshot(encoded), legacy);
   });
 });
 

@@ -1,19 +1,35 @@
 <script lang="ts">
   import { onMount, untrack } from "svelte";
-  import { Moon } from "@lucide/svelte";
+  import { Moon, X } from "@lucide/svelte";
   import { personId, userSettings, resumedAt } from "#lib/stores.ts";
   import { get } from "svelte/store";
   import { formatTime } from "#lib/format.ts";
   import { displayTeacherName } from "#lib/teachers.ts";
   import * as schedApi from "#lib/ai-schedule.ts";
   import type { AiScheduleItem } from "#lib/ai-schedule-types.ts";
-  import type { CalendarEvent } from "#lib/types.ts";
+  import type {
+    Absence,
+    CalendarAttachment,
+    CalendarEvent,
+  } from "#lib/types.ts";
+  import {
+    createCalendarEvent,
+    deleteCalendarEvent,
+    downloadFile,
+    getCalendarEvent,
+    toggleCalendarEventDone,
+  } from "#lib/api.ts";
+  import { pickDownloadHref, describeDownload } from "#lib/attachments.ts";
+  import { recordQuestEvent } from "#lib/quests-store.ts";
+  import HtmlRenderer from "#lib/components/HtmlRenderer.svelte";
+  import TranslateButton from "#lib/components/TranslateButton.svelte";
   import Button from "#lib/components/Button.svelte";
   import IconButton from "#lib/components/IconButton.svelte";
   import DropdownMenu from "#lib/components/DropdownMenu.svelte";
   import AddAiScheduleItemModal from "#lib/components/ai-schedule/AddAiScheduleItemModal.svelte";
   import { on } from "svelte/events";
   import { fly, slide } from "svelte/transition";
+  import { clearAiPageContext, setAiPageContext } from "#lib/ai-context.ts";
 
   let appointments = $state<CalendarEvent[]>([]);
   let aiItems = $state<AiScheduleItem[]>([]);
@@ -21,9 +37,107 @@
   let loading = $state(true);
   let updating = $state(false);
   let error = $state<string | null>(null);
+  let updateNote = $state<string | null>(null);
   let showAddModal = $state(false);
   let now = $state(new Date());
   let viewMenuOpen = $state(false);
+
+  // ---- lesson detail (agenda parity) ----
+  let showDetail = $state(false);
+  let selectedAppointment = $state<CalendarEvent | null>(null);
+  let loadingDetail = $state(false);
+  let editMode = $state(false);
+  let editContent = $state("");
+  let localOverrides = $state<Record<string, string>>({});
+  let deletingAppointment = $state(false);
+  let downloadingFile = $state<string | null>(null);
+  let isCreating = $state(false);
+  let createError = $state("");
+  let newApp = $state({
+    omschrijving: "",
+    lokatie: "",
+    inhoud: "",
+    start: "",
+    einde: "",
+  });
+  let showTimeCalculator = $state(false);
+  let calcMode = $state<"lopen" | "fiets" | "auto">("fiets");
+  let calcTravelMinutes = $state(15);
+  let calcVisitMinutes = $state(30);
+  let calcAppointmentTime = $state("");
+
+  const calcResult = $derived.by(() => {
+    if (!/^\d{2}:\d{2}$/.test(calcAppointmentTime)) return null;
+    const [h, m] = calcAppointmentTime.split(":").map(Number);
+    const base = new Date(selectedDate);
+    base.setHours(h, m, 0, 0);
+    const depart = new Date(base.getTime() - calcTravelMinutes * 60_000);
+    const back = new Date(
+      base.getTime() + (calcVisitMinutes + calcTravelMinutes) * 60_000,
+    );
+    return { depart, back };
+  });
+
+  function applyCalculatedTime() {
+    if (!calcResult) return;
+    const pad = (n: number) => String(n).padStart(2, "0");
+    newApp.start = `${pad(calcResult.depart.getHours())}:${pad(calcResult.depart.getMinutes())}`;
+    newApp.einde = `${pad(calcResult.back.getHours())}:${pad(calcResult.back.getMinutes())}`;
+    const modeLabel =
+      calcMode === "lopen" ? "Lopen" : calcMode === "fiets" ? "Fiets" : "Auto";
+    const note = `Vervoer: ${modeLabel} (${calcTravelMinutes} min heen, ${calcTravelMinutes} min terug), ${calcVisitMinutes} min ter plaatse.`;
+    newApp.inhoud = newApp.inhoud ? `${newApp.inhoud}\n${note}` : note;
+    showTimeCalculator = false;
+  }
+
+  // Latest plan mutation, excluding sleep/free-time fillers. Used for the
+  // compact freshness line and the AI page context.
+  const lastPlanUpdate = $derived.by(() => {
+    const stamps = aiItems
+      .filter((i) => i.item_type !== "free_time" && i.item_type !== "sleep")
+      .map((i) => i.updated_at)
+      .filter(Boolean)
+      .sort();
+    return stamps.at(-1) ?? null;
+  });
+
+  const planIsStale = $derived.by(() => {
+    if (!lastPlanUpdate) return false;
+    const t = new Date(lastPlanUpdate).getTime();
+    return !isNaN(t) && now.getTime() - t > 24 * 60 * 60 * 1000;
+  });
+
+  const lastPlanLabel = $derived.by(() => {
+    if (!lastPlanUpdate) return "Plan nog niet bijgewerkt";
+    const d = new Date(lastPlanUpdate);
+    if (isNaN(d.getTime())) return "Plan bijgewerkt";
+    const day = d.toLocaleDateString("nl-NL", {
+      day: "numeric",
+      month: "short",
+    });
+    const time = d.toLocaleTimeString("nl-NL", {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+    return `Plan bijgewerkt: ${day} ${time}`;
+  });
+
+  $effect(() => {
+    setAiPageContext({
+      page: "ai-schedule",
+      selectedDate: selectedDate.toISOString().slice(0, 10),
+      selectedLessonId: showDetail ? (selectedAppointment?.Id ?? null) : null,
+      selectedSubject:
+        (showDetail
+          ? selectedAppointment?.Vakken?.[0]?.Naam ||
+            selectedAppointment?.Omschrijving
+          : null) ?? null,
+      planItemCount: aiItems.filter(
+        (i) => i.item_type !== "free_time" && i.item_type !== "sleep",
+      ).length,
+      lastPlanUpdate,
+    });
+  });
 
   $effect(() => {
     const t = setInterval(() => {
@@ -55,7 +169,44 @@
   let loadedStart = $state<Date | null>(null);
   let loadedEnd = $state<Date | null>(null);
 
+  function skipWeekendForward(d: Date): Date {
+    const next = new Date(d);
+    if (next.getDay() === 6) next.setDate(next.getDate() + 2);
+    else if (next.getDay() === 0) next.setDate(next.getDate() + 1);
+    return next;
+  }
+
+  // Today, or the next school day when weekends are hidden. Keeps the
+  // "Vandaag" button consistent with the weekend-skip navigation.
+  const todayTarget = $derived.by(() => {
+    const t = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    return $userSettings.showWeekend ? t : skipWeekendForward(t);
+  });
+
+  const isOnToday = $derived(
+    selectedDate.toDateString() === todayTarget.toDateString(),
+  );
+
+  // If weekends are hidden while the plan sits on Sat/Sun, jump to Monday.
+  $effect(() => {
+    if (!$userSettings.showWeekend) {
+      const day = selectedDate.getDay();
+      if (day === 0 || day === 6)
+        selectedDate = skipWeekendForward(selectedDate);
+    }
+  });
+
   onMount(() => {
+    try {
+      const saved = localStorage.getItem("calendar_overrides");
+      if (saved) localOverrides = JSON.parse(saved);
+    } catch {
+      localOverrides = {};
+    }
+    if (!$userSettings.showWeekend) {
+      const skipped = skipWeekendForward(selectedDate);
+      if (skipped.getTime() !== selectedDate.getTime()) selectedDate = skipped;
+    }
     loadMerged(true);
     // Live refresh after AI plan mutations (Phase 7 item 4): web CustomEvent
     // from the facade, Tauri event from the Rust arms.
@@ -75,6 +226,7 @@
     return () => {
       window.removeEventListener(schedApi.AI_SCHEDULE_CHANGED_EVENT, onChanged);
       unlisten?.();
+      clearAiPageContext("ai-schedule");
     };
   });
 
@@ -129,9 +281,10 @@
     if (updating) return;
     updating = true;
     error = null;
+    updateNote = null;
     try {
       const s = get(userSettings);
-      await schedApi.updateAiSchedule({
+      const items = await schedApi.updateAiSchedule({
         bedtime: s.aiSchedule.bedtime,
         wakeTime: s.aiSchedule.wakeTime,
         blockedTimes: s.aiSchedule.blockedTimes,
@@ -141,10 +294,178 @@
       loadedStart = null;
       loadedEnd = null;
       await loadMerged(true);
+      const planned = items.filter(
+        (i) => i.item_type !== "free_time" && i.item_type !== "sleep",
+      );
+      const homework = planned.filter(
+        (i) =>
+          i.item_type === "assignment_work" ||
+          i.item_type === "homework_review" ||
+          i.item_type === "study_block",
+      ).length;
+      updateNote =
+        planned.length === 0
+          ? "Planning bijgewerkt — er staat niets open voor deze periode."
+          : `Planning bijgewerkt: ${planned.length} blokken, waarvan ${homework} voor huiswerk of toetsen.`;
     } catch (e) {
       error = String(e);
     } finally {
       updating = false;
+    }
+  }
+
+  async function openLesson(app: CalendarEvent) {
+    if (!app.Id) return;
+    loadingDetail = true;
+    showDetail = true;
+    selectedAppointment = app;
+    try {
+      const pid = get(personId);
+      if (pid) {
+        const fetched = await getCalendarEvent(pid, app.Id);
+        // The detail endpoint does not merge absences; keep the list-level
+        // absence so the badge does not vanish when the sheet opens.
+        selectedAppointment = {
+          ...fetched,
+          merged_absence: fetched.merged_absence ?? app.merged_absence,
+          Afwezigheid: fetched.Afwezigheid ?? app.Afwezigheid,
+        };
+      }
+    } catch {
+      selectedAppointment = app;
+    }
+    const override = localOverrides[String(selectedAppointment?.Id)];
+    if (override && selectedAppointment)
+      selectedAppointment = { ...selectedAppointment, Inhoud: override };
+    editContent = selectedAppointment?.Inhoud || "";
+    editMode = false;
+    loadingDetail = false;
+  }
+
+  function closeDetail() {
+    showDetail = false;
+    selectedAppointment = null;
+    editMode = false;
+  }
+
+  function saveLocalOverride() {
+    const sel = selectedAppointment;
+    if (!sel) return;
+    localOverrides[String(sel.Id)] = editContent;
+    localStorage.setItem("calendar_overrides", JSON.stringify(localOverrides));
+    sel.Inhoud = editContent;
+    editMode = false;
+    appointments = appointments.map((a) =>
+      a.Id === sel.Id ? { ...a, Inhoud: editContent } : a,
+    );
+    selectedAppointment = { ...sel, Inhoud: editContent };
+  }
+
+  async function toggleDone(app: CalendarEvent) {
+    try {
+      await toggleCalendarEventDone(app);
+      app.Afgerond = !app.Afgerond;
+      if (app.Afgerond) recordQuestEvent("homework_done");
+      appointments = [...appointments];
+    } catch (e) {
+      error = `Huiswerk bijwerken mislukt: ${e}`;
+    }
+  }
+
+  async function deleteAppointment() {
+    const sel = selectedAppointment;
+    if (!sel) return;
+    const selfUrl =
+      sel.self_url ||
+      sel.Links?.find((l) => l.Rel === "Self")?.Href?.replace("/api/", "");
+    if (!selfUrl) {
+      error = "Kan afspraak niet verwijderen: geen link gevonden.";
+      return;
+    }
+    if (!confirm(`"${sel.Omschrijving || "Afspraak"}" verwijderen?`)) return;
+    deletingAppointment = true;
+    try {
+      await deleteCalendarEvent(selfUrl);
+      appointments = appointments.filter((a) => a.Id !== sel.Id);
+      closeDetail();
+    } catch (e) {
+      error = `Verwijderen mislukt: ${e}`;
+    } finally {
+      deletingAppointment = false;
+    }
+  }
+
+  async function downloadAttachment(bijlage: CalendarAttachment) {
+    if (downloadingFile) return;
+    const url = pickDownloadHref(bijlage.Links);
+    if (!url) {
+      error = "Deze bijlage heeft geen downloadlink.";
+      return;
+    }
+    downloadingFile = bijlage.Naam;
+    try {
+      const outcome = await downloadFile(
+        url,
+        bijlage.Naam,
+        get(userSettings).downloadDir || "",
+      );
+      const note = describeDownload(outcome);
+      if (note) alert(note);
+    } catch (e) {
+      error = `Download mislukt: ${e}`;
+    } finally {
+      downloadingFile = null;
+    }
+  }
+
+  async function createAppointment() {
+    const pid = get(personId);
+    if (!pid) return;
+    createError = "";
+    if (!newApp.omschrijving.trim()) {
+      createError = "Vul een omschrijving in.";
+      return;
+    }
+    const start = new Date(selectedDate);
+    start.setSeconds(0, 0);
+    if (/^\d{2}:\d{2}$/.test(newApp.start)) {
+      const [h, m] = newApp.start.split(":").map(Number);
+      start.setHours(h, m);
+    } else start.setHours(9, 0);
+    const end = new Date(selectedDate);
+    end.setSeconds(0, 0);
+    if (/^\d{2}:\d{2}$/.test(newApp.einde)) {
+      const [h, m] = newApp.einde.split(":").map(Number);
+      end.setHours(h, m);
+    } else end.setHours(start.getHours() + 1, start.getMinutes());
+    if (end <= start) {
+      createError = "Eindtijd moet na begintijd liggen.";
+      return;
+    }
+    try {
+      await createCalendarEvent({
+        personId: pid,
+        start: start.toISOString(),
+        einde: end.toISOString(),
+        duurtHeleDag: false,
+        omschrijving: newApp.omschrijving.trim(),
+        lokatie: newApp.lokatie || undefined,
+        inhoud: newApp.inhoud || undefined,
+        eventType: 1,
+      });
+      newApp = {
+        omschrijving: "",
+        lokatie: "",
+        inhoud: "",
+        start: "",
+        einde: "",
+      };
+      isCreating = false;
+      loadedStart = null;
+      loadedEnd = null;
+      await loadMerged(true);
+    } catch (e) {
+      createError = `Fout bij aanmaken: ${e}`;
     }
   }
 
@@ -174,7 +495,8 @@
     stepDays(showWeekView ? -7 : -1);
   }
   function goToToday() {
-    navigateToDay(new Date());
+    if (isOnToday) return;
+    navigateToDay(new Date(todayTarget));
   }
 
   function lessonsOn(dayStr: string): CalendarEvent[] {
@@ -186,7 +508,28 @@
     if ($userSettings.hideCancelled) {
       list = list.filter((a) => a.Status !== 4 && a.Status !== 5);
     }
-    return list.sort((a, b) => (a.Start ?? "").localeCompare(b.Start ?? ""));
+    list.sort((a, b) => (a.Start ?? "").localeCompare(b.Start ?? ""));
+    if (!$userSettings.combineLessons) return list;
+
+    const out: CalendarEvent[] = [];
+    for (const app of list) {
+      const last = out.at(-1);
+      const same =
+        last &&
+        last.Vakken?.[0]?.Naam === app.Vakken?.[0]?.Naam &&
+        last.Docenten?.[0]?.Naam === app.Docenten?.[0]?.Naam &&
+        last.Lokatie === app.Lokatie;
+      if (same && last.Einde && app.Start && last.Einde === app.Start) {
+        out[out.length - 1] = {
+          ...last,
+          Einde: app.Einde,
+          LesuurTotMet: app.LesuurTotMet || app.LesuurVan,
+        };
+      } else {
+        out.push({ ...app });
+      }
+    }
+    return out;
   }
 
   function aiOn(isoDay: string, forGrid = false): AiScheduleItem[] {
@@ -251,23 +594,58 @@
   type MergedItem =
     | { kind: "lesson"; event: CalendarEvent; sortKey: string }
     | { kind: "ai"; item: AiScheduleItem; sortKey: string }
+    | { kind: "break"; minutes: number; sortKey: string }
     | { kind: "now" };
 
-  const dayMerged = $derived.by((): MergedItem[] => {
-    const dayStr = selectedDate.toDateString();
-    const lessons = lessonsOn(dayStr);
-    const isoDay = selectedDate.toISOString().slice(0, 10);
-    const ai = aiOn(isoDay);
+  /** Gaps between consecutive lessons — same rule as the agenda. */
+  function dayBreaks(
+    lessons: CalendarEvent[],
+  ): { minutes: number; start: string }[] {
+    if (!$userSettings.showBreakSeparator) return [];
+    const out: { minutes: number; start: string }[] = [];
+    for (let i = 1; i < lessons.length; i++) {
+      const prev = lessons[i - 1];
+      const curr = lessons[i];
+      if (!prev.Einde || !curr.Start) continue;
+      const diff = Math.round(
+        (new Date(curr.Start).getTime() - new Date(prev.Einde).getTime()) /
+          60000,
+      );
+      if (diff > 0 && diff < 240)
+        out.push({ minutes: diff, start: prev.Einde });
+    }
+    return out;
+  }
 
+  /** Interleave lessons, AI blocks and breaks chronologically. */
+  function mergeItems(
+    lessons: CalendarEvent[],
+    ai: AiScheduleItem[],
+    breaks: { minutes: number; start: string }[],
+  ): Exclude<MergedItem, { kind: "now" }>[] {
     const merged: Exclude<MergedItem, { kind: "now" }>[] = [
       ...lessons.map((e) => ({
         kind: "lesson" as const,
         event: e,
         sortKey: e.Start ?? "",
       })),
+      ...breaks.map((b) => ({
+        kind: "break" as const,
+        minutes: b.minutes,
+        sortKey: b.start,
+      })),
       ...ai.map((i) => ({ kind: "ai" as const, item: i, sortKey: i.start })),
     ];
     merged.sort((a, b) => (a.sortKey ?? "").localeCompare(b.sortKey ?? ""));
+    return merged;
+  }
+
+  const dayMerged = $derived.by((): MergedItem[] => {
+    const dayStr = selectedDate.toDateString();
+    const lessons = lessonsOn(dayStr);
+    const isoDay = selectedDate.toISOString().slice(0, 10);
+    const ai = aiOn(isoDay);
+    const merged = mergeItems(lessons, ai, dayBreaks(lessons));
 
     // Now-marker for today
     const out: MergedItem[] = [];
@@ -317,6 +695,17 @@
     const d = new Date(iso);
     if (isNaN(d.getTime())) return null;
     return d.getHours() * 60 + d.getMinutes();
+  }
+
+  /** ISO-8601 week number, shown in the week grid's top-left corner. */
+  function isoWeekNumber(date: Date): number {
+    const d = new Date(
+      Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()),
+    );
+    const day = d.getUTCDay() || 7;
+    d.setUTCDate(d.getUTCDate() + 4 - day);
+    const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+    return Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
   }
 
   function assignLanes(slots: WeekSlot[]): WeekSlot[] {
@@ -372,8 +761,11 @@
       date.setDate(date.getDate() + i);
       const dayStr = date.toDateString();
       const isoDay = date.toISOString().slice(0, 10);
+      const lessons = lessonsOn(dayStr);
+      const ai = aiOn(isoDay, true);
+      const breaks = dayBreaks(lessons);
       const raw: WeekSlot[] = [
-        ...lessonsOn(dayStr).map((e) => ({
+        ...lessons.map((e) => ({
           id: `les-${e.Id}`,
           kind: "lesson" as const,
           event: e,
@@ -382,7 +774,7 @@
           _column: 0,
           _columnCount: 1,
         })),
-        ...aiOn(isoDay, true).map((item) => ({
+        ...ai.map((item) => ({
           id: `ai-${item.id}`,
           kind: "ai" as const,
           item,
@@ -397,6 +789,8 @@
         isToday: dayStr === new Date().toDateString(),
         isSelected: dayStr === selectedDate.toDateString(),
         slots: assignLanes(raw),
+        breaks,
+        merged: mergeItems(lessons, ai, breaks),
       };
     });
   });
@@ -423,9 +817,10 @@
     return ((s.startMin - grid.minH * 60) / 60) * PX_PER_HOUR;
   }
   function slotHeightPx(s: WeekSlot): number {
-    if (s.startMin === null) return 26;
+    if (s.startMin === null) return 40;
     const dur = (s.endMin ?? s.startMin + 50) - s.startMin;
-    return Math.max(24, Math.round((dur / 60) * PX_PER_HOUR) - 3);
+    // Same floor as the agenda: a 40px block still fits two readable lines.
+    return Math.max(40, Math.round((dur / 60) * PX_PER_HOUR) - 3);
   }
 
   const nowMinutes = $derived.by(() => now.getHours() * 60 + now.getMinutes());
@@ -451,6 +846,34 @@
       return "border-red-400/60 text-red-200 bg-red-500/25";
     return "border-surface-600 text-gray-300 bg-surface-700/50";
   }
+
+  // ---- absence (agenda parity) ----
+  // The web transport merges absences into `merged_absence`; some Magister
+  // payloads already carry `Afwezigheid` on the event itself.
+  function absenceOf(app: CalendarEvent): Absence | null {
+    return app.merged_absence ?? app.Afwezigheid ?? null;
+  }
+  function absenceLabel(a: Absence): string {
+    if (a.Verantwoordingtype === 2 || a.Code === "L") return "Te laat";
+    if (a.Verantwoordingtype === 3 || a.Code === "S" || a.Code === "Z")
+      return "Ziek";
+    if (a.Verantwoordingtype === 4 || a.Code === "V") return "Verwijderd";
+    if (a.Verantwoordingtype === 7) return "Boeken vergeten";
+    if (a.Verantwoordingtype === 8) return "Huiswerk vergeten";
+    return "Afwezig";
+  }
+  function absenceRange(a: Absence): string {
+    const from = a.Start ? formatTime(a.Start) : "";
+    const to = a.Eind ? formatTime(a.Eind) : "";
+    if (from && to) return `${from}–${to}`;
+    if (from) return from;
+    if (a.Lesuur) return `lesuur ${a.Lesuur}`;
+    return "";
+  }
+  function absenceDetail(a: Absence): string {
+    return [absenceRange(a), a.Omschrijving].filter(Boolean).join(" · ");
+  }
+
   function aiTypeLabel(t: string) {
     const m: Record<string, string> = {
       assignment_work: "Huiswerk",
@@ -729,7 +1152,7 @@
                 /><path d="M21 3v5h-5" /></svg
               >
               <span class="text-label-medium text-gray-200"
-                >Update AI Schedule</span
+                >Bijwerken (huiswerk &amp; toetsen)</span
               >
             </button>
             <button
@@ -771,7 +1194,9 @@
                   d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"
                 /><path d="M21 3v5h-5" /></svg
               >
-              <span class="text-label-medium text-gray-200">Verversen</span>
+              <span class="text-label-medium text-gray-200"
+                >Alleen agenda verversen</span
+              >
             </button>
             <div class="h-px bg-white/5 my-1"></div>
             <button
@@ -924,10 +1349,10 @@
         <!-- Desktop: view buttons (same as Agenda) -->
         <div class="hidden md:flex items-center gap-1.5">
           <IconButton
-            onclick={refreshAll}
+            onclick={handleUpdate}
             class="hover:rotate-180 duration-500 shrink-0"
-            title="Verversen"
-            aria-label="Verversen"
+            title="Bijwerken — huiswerk, toetsen en vrije tijd opnieuw plannen"
+            aria-label="Bijwerken"
           >
             <svg
               class="w-3.5 h-3.5"
@@ -1087,8 +1512,8 @@
             class="text-primary-400 hover:text-primary-300 shrink-0 {updating
               ? 'animate-spin'
               : ''}"
-            title="Update AI Schedule — plan deze + volgende week"
-            aria-label="Update AI Schedule"
+            title="Bijwerken — plan deze + volgende week opnieuw"
+            aria-label="Bijwerken"
           >
             <svg
               class="w-3.5 h-3.5"
@@ -1117,6 +1542,22 @@
               stroke-width="2.5"><path d="M12 5v14M5 12h14" /></svg
             >
           </IconButton>
+          <IconButton
+            onclick={() => (isCreating = true)}
+            aria-label="Nieuwe agenda-afspraak"
+            title="Nieuwe agenda-afspraak"
+          >
+            <svg
+              class="w-3.5 h-3.5"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2.5"
+              ><rect x="3" y="5" width="18" height="16" rx="2" /><path
+                d="M16 3v4M8 3v4M3 11h18M12 15v4M10 17h4"
+              /></svg
+            >
+          </IconButton>
         </div>
       </div>
 
@@ -1125,8 +1566,8 @@
         <div class="flex md:hidden items-center gap-1.5">
           <IconButton
             onclick={handleUpdate}
-            title="Update AI Schedule"
-            aria-label="Update AI Schedule"
+            title="Bijwerken"
+            aria-label="Bijwerken"
             class="bg-primary-500/15! border! border-primary-500/25! text-primary-400 hover:bg-primary-500/25! {updating
               ? 'animate-spin'
               : ''}"
@@ -1174,8 +1615,13 @@
             stroke-linejoin="round"><path d="m15 18-6-6 6-6" /></svg
           >
         </IconButton>
-        <Button variant="tonal" onclick={goToToday} class="px-4 h-8!"
-          >Vandaag</Button
+        <Button
+          variant="tonal"
+          onclick={goToToday}
+          disabled={isOnToday}
+          title="Naar vandaag"
+          aria-label="Naar vandaag"
+          class="px-4 h-8!">Vandaag</Button
         >
         <IconButton
           onclick={nextDay}
@@ -1233,6 +1679,28 @@
         </button>
       {/each}
     </div>
+
+    <!-- Plan freshness — compact, one line, also on mobile -->
+    <div
+      class="mt-1.5 flex items-center gap-1.5 text-label-small {planIsStale
+        ? 'text-amber-400/80'
+        : 'text-gray-600'}"
+      title={planIsStale
+        ? "De planning is meer dan 24 uur geleden bijgewerkt."
+        : lastPlanLabel}
+    >
+      <svg
+        class="w-3 h-3 shrink-0"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2.5"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        ><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg
+      >
+      <span class="truncate">{lastPlanLabel}</span>
+    </div>
   </header>
 
   <main
@@ -1247,6 +1715,19 @@
         class="bg-red-500/10 border border-red-500/20 rounded-m3-md p-3 text-body-small text-red-300"
       >
         {error}
+      </div>
+    {/if}
+    {#if updateNote}
+      <div
+        class="bg-emerald-500/10 border border-emerald-500/20 rounded-m3-md p-3 text-body-small text-emerald-300 flex items-start justify-between gap-3"
+        transition:slide
+      >
+        <span>{updateNote}</span>
+        <button
+          class="text-emerald-400/70 hover:text-emerald-300 shrink-0"
+          onclick={() => (updateNote = null)}
+          aria-label="Melding sluiten"><X size={16} /></button
+        >
       </div>
     {/if}
     {#if hiddenCancelledCount > 0 && !loading && !showWeekView}
@@ -1338,8 +1819,12 @@
             <div class="min-w-full flex">
               <div class="w-16 shrink-0 flex flex-col">
                 <div
-                  class="shrink-0 h-[52px] border-b border-surface-800/40 bg-surface-900/40"
-                ></div>
+                  class="shrink-0 h-[52px] border-b border-surface-800/40 bg-surface-900/40 flex items-end justify-center pb-1.5"
+                >
+                  <span class="text-label-small text-gray-600 tabular-nums"
+                    >wk {isoWeekNumber(weekViewDays[0].date)}</span
+                  >
+                </div>
                 <div class="relative" style="height: {grid.heightPx}px;">
                   {#each grid.hours as h}
                     <div
@@ -1411,11 +1896,28 @@
                         </div>
                       </div>
                     {/if}
+                    {#each day.breaks as br}
+                      <div
+                        class="absolute left-1 right-1 pointer-events-none"
+                        style="top: {(((minutesOf(br.start) ?? 0) -
+                          grid.minH * 60) /
+                          60) *
+                          PX_PER_HOUR}px;"
+                        title="{br.minutes} min pauze"
+                      >
+                        <div
+                          class="border-t border-dashed border-surface-500/40"
+                        ></div>
+                      </div>
+                    {/each}
                     {#each day.slots as s}
                       {#if s.kind === "lesson" && s.event}
                         {@const app = s.event}
-                        <div
-                          class="absolute rounded-m3-sm border px-2 py-1.5 text-left overflow-hidden {app.InfoType ===
+                        {@const absence = absenceOf(app)}
+                        <button
+                          type="button"
+                          onclick={() => openLesson(app)}
+                          class="absolute rounded-m3-sm border px-2 py-1.5 text-left overflow-hidden transition-colors hover:border-primary-500/60 {app.InfoType ===
                             1 && !app.Afgerond
                             ? 'bg-primary-500/16 border-primary-500/40'
                             : app.Status === 4 || app.Status === 5
@@ -1441,11 +1943,14 @@
                               "Vrij"}
                           </p>
                           <p
-                            class="text-label-medium text-gray-400 tabular-nums"
+                            class="text-label-medium tabular-nums truncate {absence
+                              ? 'text-amber-300'
+                              : 'text-gray-400'}"
                           >
-                            {formatTime(app.Start)}
+                            {#if absence}{absenceLabel(absence)} ·
+                            {/if}{formatTime(app.Start)}
                           </p>
-                        </div>
+                        </button>
                       {:else if s.kind === "ai" && s.item}
                         {@const item = s.item}
                         <button
@@ -1517,11 +2022,14 @@
                 {/if}
               </button>
               <div class="divide-y divide-surface-800/40">
-                {#each day.slots as s}
+                {#each day.merged as s}
                   {#if s.kind === "lesson" && s.event}
                     {@const app = s.event}
-                    <div
-                      class="w-full flex items-center gap-2 px-3 py-2 text-left"
+                    {@const absence = absenceOf(app)}
+                    <button
+                      type="button"
+                      onclick={() => openLesson(app)}
+                      class="w-full flex items-center gap-2 px-3 py-2.5 text-left hover:bg-surface-800/50 transition-colors"
                     >
                       <span
                         class="text-label-small tabular-nums {app.Status ===
@@ -1539,10 +2047,32 @@
                           app.Omschrijving ||
                           "Vrij"}</span
                       >
+                      {#if absence}
+                        <span
+                          class="text-label-small text-amber-300 shrink-0 px-1.5 py-0.5 rounded-m3-full bg-amber-500/15 border border-amber-500/30"
+                          title={absenceDetail(absence)}
+                          >{absenceLabel(absence)}</span
+                        >
+                      {/if}
                       {#if app.Lokatie}<span
                           class="text-label-small text-gray-500 shrink-0"
                           >{app.Lokatie}</span
                         >{/if}
+                      {#if app.InfoType === 1 && !app.Afgerond}
+                        <span
+                          class="w-1.5 h-1.5 rounded-full bg-primary-400 shrink-0"
+                          title="Huiswerk"
+                        ></span>
+                      {/if}
+                    </button>
+                  {:else if s.kind === "break"}
+                    <div class="w-full flex items-center gap-2 px-3 py-1">
+                      <span class="w-10 shrink-0"></span>
+                      <div class="h-px flex-1 bg-surface-600/50"></div>
+                      <span
+                        class="text-label-small text-gray-500 tabular-nums shrink-0"
+                        >{s.minutes} min pauze</span
+                      >
                     </div>
                   {:else if s.kind === "ai" && s.item}
                     {@const item = s.item}
@@ -1630,12 +2160,18 @@
           </div>
         {:else if m.kind === "lesson"}
           {@const app = m.event}
-          <div
+          {@const absence = absenceOf(app)}
+          <button
+            type="button"
             in:fly={{ y: 12, duration: 200, delay: Math.min(i * 20, 200) }}
+            onclick={() => openLesson(app)}
+            aria-label="Open les {app.Vakken?.[0]?.Naam ||
+              app.Omschrijving ||
+              'vrij'}"
             class="w-full text-left rounded-m3-md {$userSettings.compactView
               ? 'p-2 flex gap-2'
-              : 'p-3 md:p-4 flex gap-3 md:gap-4'} border {app.InfoType === 1 &&
-            !app.Afgerond
+              : 'p-3 md:p-4 flex gap-3 md:gap-4'} border transition-colors hover:border-primary-500/50 {app.InfoType ===
+              1 && !app.Afgerond
               ? 'bg-primary-500/14 border-primary-500/40'
               : app.Status === 4 || app.Status === 5
                 ? 'bg-red-500/8 border-red-500/30'
@@ -1674,8 +2210,23 @@
                 class="flex items-center gap-2.5 text-label-small text-gray-400"
               >
                 <span class="truncate">{app.Lokatie || "—"}</span>
-                <span>Tot {formatTime(app.Einde)}</span>
+                <span class="shrink-0">Tot {formatTime(app.Einde)}</span>
+                {#if absence && $userSettings.compactView}
+                  <span
+                    class="text-amber-300 truncate"
+                    title={absenceDetail(absence)}>{absenceLabel(absence)}</span
+                  >
+                {/if}
               </div>
+              {#if absence && !$userSettings.compactView}
+                <div class="mt-1.5 flex">
+                  <span
+                    class="px-2 py-0.5 rounded-m3-sm text-label-small border border-amber-500/40 text-amber-300 bg-amber-500/10"
+                    title={absenceDetail(absence)}
+                    >Afwezig · {absenceLabel(absence)}</span
+                  >
+                </div>
+              {/if}
               {#if !$userSettings.compactView}
                 {#if app.Status === 4 || app.Status === 5}
                   <div class="mt-1.5 flex">
@@ -1696,6 +2247,15 @@
                 {/if}
               {/if}
             </div>
+          </button>
+        {:else if m.kind === "break"}
+          <div class="flex items-center gap-3 px-4 py-0.5 opacity-60">
+            <div class="w-8 flex justify-center">
+              <div class="h-4 w-px bg-surface-600"></div>
+            </div>
+            <span class="text-label-small text-gray-500"
+              >Pauze · {m.minutes} min</span
+            >
           </div>
         {:else}
           {@const item = m.item}
@@ -1804,6 +2364,338 @@
   </main>
 
   <AddAiScheduleItemModal bind:open={showAddModal} onCreate={doCreate} />
+
+  {#if showDetail && selectedAppointment}
+    {@const sel = selectedAppointment}
+    {@const absence = absenceOf(sel)}
+    <div
+      class="fixed inset-0 z-50 flex items-end md:items-center justify-center"
+    >
+      <button
+        type="button"
+        aria-label="Sluiten"
+        class="absolute inset-0 bg-black/80 backdrop-blur-sm"
+        onclick={closeDetail}
+      ></button>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Lesdetails"
+        class="relative w-full md:max-w-lg max-h-[88vh] overflow-y-auto custom-scrollbar bg-surface-900 border border-white/10 rounded-t-m3-xl md:rounded-m3-xl p-4 md:p-6 space-y-4 md:space-y-5 shadow-2xl"
+      >
+        <div class="flex items-start justify-between gap-3">
+          <div class="min-w-0">
+            <p class="text-label-small text-primary-400">
+              {sel.LesuurVan
+                ? `Lesuur ${lesuurLabel(sel)}`
+                : getInfoLabel(sel.InfoType)}
+            </p>
+            <h2 class="text-title-large text-white truncate">
+              {sel.Vakken?.[0]?.Naam || sel.Omschrijving || "Afspraak"}
+            </h2>
+            <p class="text-body-small text-gray-400">
+              {formatTime(sel.Start)} – {formatTime(sel.Einde)}
+              {sel.Lokatie ? ` · ${sel.Lokatie}` : ""}
+            </p>
+          </div>
+          <IconButton onclick={closeDetail} aria-label="Sluiten">
+            <svg
+              class="w-5 h-5"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="3"><path d="M18 6 6 18M6 6l12 12" /></svg
+            >
+          </IconButton>
+        </div>
+
+        {#if sel.Docenten?.length}
+          <div class="flex flex-wrap gap-1.5">
+            {#each sel.Docenten as docent}
+              <span
+                class="text-label-small px-2 py-1 rounded-m3-sm bg-surface-800 border border-white/5 text-gray-300"
+                >{displayTeacherName(docent.Naam)}</span
+              >
+            {/each}
+          </div>
+        {/if}
+
+        {#if sel.Status === 4 || sel.Status === 5}
+          <p
+            class="text-body-small text-red-400 bg-red-500/10 border border-red-500/30 rounded-m3-sm p-2.5"
+          >
+            Deze les is uitgevallen.
+          </p>
+        {/if}
+
+        {#if absence}
+          <div
+            class="rounded-m3-sm border border-amber-500/30 bg-amber-500/10 p-2.5 space-y-0.5"
+          >
+            <p class="text-label-medium text-amber-300">
+              Afwezig · {absenceLabel(absence)}{!absence.Geoorloofd
+                ? " · ongeoorloofd"
+                : ""}
+            </p>
+            {#if absenceDetail(absence)}
+              <p class="text-label-small text-amber-200/70">
+                {absenceDetail(absence)}
+              </p>
+            {/if}
+          </div>
+        {/if}
+
+        {#if sel.InfoType === 1}
+          <Button
+            variant="filled"
+            onclick={() => toggleDone(sel)}
+            class="w-full {sel.Afgerond
+              ? 'bg-emerald-500/10! text-emerald-400! border-2 border-emerald-500/50!'
+              : ''}"
+          >
+            {sel.Afgerond ? "Huiswerk voltooid" : "Markeren als klaar"}
+          </Button>
+        {/if}
+
+        <div class="space-y-2">
+          <div class="flex items-center justify-between">
+            <h3 class="text-label-medium text-gray-100">Huiswerk & inhoud</h3>
+            {#if sel.Type === 1}
+              <button
+                type="button"
+                class="text-label-small text-primary-400 hover:text-primary-300"
+                onclick={() => (editMode = !editMode)}
+                >{editMode ? "Annuleren" : "Bewerken"}</button
+              >
+            {/if}
+          </div>
+          {#if loadingDetail}
+            <p class="text-body-small text-gray-500">Laden…</p>
+          {:else if editMode}
+            <textarea
+              bind:value={editContent}
+              class="w-full h-36 bg-surface-950 border border-primary-500/30 rounded-m3-xs p-3 text-body-medium text-gray-200 focus:outline-none focus:border-primary-500"
+              placeholder="Huiswerk bewerken..."></textarea>
+            <Button variant="filled" onclick={saveLocalOverride} class="w-full"
+              >Opslaan (lokaal)</Button
+            >
+          {:else if sel.Inhoud}
+            <div
+              class="p-3 md:p-4 rounded-m3-md bg-surface-950 border border-white/5 prose prose-sm prose-invert max-w-none"
+            >
+              <HtmlRenderer html={sel.Inhoud} />
+              <TranslateButton source={sel.Inhoud} />
+            </div>
+          {:else}
+            <p class="text-body-medium text-gray-600">
+              Geen inhoud beschikbaar.
+            </p>
+          {/if}
+        </div>
+
+        {#if sel.Aantekening}
+          <div>
+            <h3 class="text-label-medium text-gray-100 mb-1">Aantekening</h3>
+            <p class="text-body-small text-gray-400">{sel.Aantekening}</p>
+          </div>
+        {/if}
+        {#if sel.Opmerking}
+          <div>
+            <h3 class="text-label-medium text-gray-100 mb-1">Opmerking</h3>
+            <p class="text-body-small text-gray-400">{sel.Opmerking}</p>
+          </div>
+        {/if}
+
+        {#if sel.Bijlagen?.length}
+          <div class="space-y-2">
+            <h3 class="text-label-medium text-gray-100">
+              Bijlagen ({sel.Bijlagen.length})
+            </h3>
+            {#each sel.Bijlagen as bijlage}
+              <button
+                type="button"
+                onclick={() => downloadAttachment(bijlage)}
+                disabled={downloadingFile === bijlage.Naam}
+                class="w-full flex items-center justify-between gap-2 p-2.5 rounded-m3-md bg-surface-950 border border-white/5 hover:border-white/15 text-left disabled:opacity-50"
+              >
+                <span class="text-body-small text-gray-200 truncate"
+                  >{bijlage.Naam}</span
+                >
+                <span class="text-label-small text-gray-500 shrink-0"
+                  >{downloadingFile === bijlage.Naam
+                    ? "Bezig…"
+                    : bijlage.Grootte
+                      ? `${Math.round(bijlage.Grootte / 1024)} KB`
+                      : "Download"}</span
+                >
+              </button>
+            {/each}
+          </div>
+        {/if}
+
+        {#if sel.Type === 1}
+          <Button
+            variant="tonal"
+            onclick={deleteAppointment}
+            disabled={deletingAppointment}
+            class="w-full text-red-400!"
+          >
+            {deletingAppointment ? "Verwijderen…" : "Afspraak verwijderen"}
+          </Button>
+        {/if}
+      </div>
+    </div>
+  {/if}
+
+  {#if isCreating}
+    <div
+      class="fixed inset-0 z-50 flex items-end md:items-center justify-center"
+    >
+      <button
+        type="button"
+        aria-label="Sluiten"
+        class="absolute inset-0 bg-black/80 backdrop-blur-sm"
+        onclick={() => (isCreating = false)}
+      ></button>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Nieuwe afspraak"
+        class="relative w-full md:max-w-md max-h-[88vh] overflow-y-auto bg-surface-900 border border-white/10 rounded-t-m3-xl md:rounded-m3-xl p-4 md:p-6 space-y-3 md:space-y-4 shadow-2xl"
+      >
+        <div class="flex items-center justify-between">
+          <h2 class="text-title-large text-white">Nieuwe afspraak</h2>
+          <IconButton onclick={() => (isCreating = false)} aria-label="Sluiten">
+            <svg
+              class="w-5 h-5"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="3"><path d="M18 6 6 18M6 6l12 12" /></svg
+            >
+          </IconButton>
+        </div>
+        <p class="text-body-small text-gray-400">
+          {selectedDate.toLocaleDateString("nl-NL", {
+            weekday: "long",
+            day: "numeric",
+            month: "long",
+          })}
+        </p>
+        <input
+          bind:value={newApp.omschrijving}
+          class="w-full bg-surface-950 border border-white/10 rounded-m3-xs px-3 py-2.5 text-body-medium text-white focus:outline-none focus:border-primary-500"
+          placeholder="Omschrijving"
+        />
+        <div class="grid grid-cols-2 gap-2">
+          <input
+            bind:value={newApp.start}
+            type="time"
+            class="w-full bg-surface-950 border border-white/10 rounded-m3-xs px-3 py-2.5 text-body-medium text-white focus:outline-none focus:border-primary-500"
+          />
+          <input
+            bind:value={newApp.einde}
+            type="time"
+            class="w-full bg-surface-950 border border-white/10 rounded-m3-xs px-3 py-2.5 text-body-medium text-white focus:outline-none focus:border-primary-500"
+          />
+        </div>
+        <button
+          type="button"
+          onclick={() => (showTimeCalculator = !showTimeCalculator)}
+          class="text-label-medium text-primary-400 hover:text-primary-300 text-left"
+        >
+          {showTimeCalculator ? "Verberg tijdcalculator" : "Tijdcalculator"}
+        </button>
+        {#if showTimeCalculator}
+          <div
+            class="space-y-3 rounded-m3-md border border-white/10 bg-surface-950/70 p-3"
+          >
+            <div class="grid grid-cols-3 gap-2">
+              {#each ["lopen", "fiets", "auto"] as mode (mode)}
+                <button
+                  type="button"
+                  onclick={() =>
+                    (calcMode = mode as "lopen" | "fiets" | "auto")}
+                  class="py-1.5 rounded-m3-xs text-label-medium border transition-colors {calcMode ===
+                  mode
+                    ? 'bg-primary-500/15 border-primary-500/40 text-primary-400'
+                    : 'bg-surface-900 border-white/5 text-gray-500'}"
+                >
+                  {mode === "lopen"
+                    ? "Lopen"
+                    : mode === "fiets"
+                      ? "Fiets"
+                      : "Auto"}
+                </button>
+              {/each}
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+              <label class="space-y-1 text-label-small text-gray-500">
+                <span>Reistijd (min)</span>
+                <input
+                  type="number"
+                  min="0"
+                  bind:value={calcTravelMinutes}
+                  class="w-full bg-surface-900 border border-white/5 rounded-m3-xs px-3 py-2 text-body-medium text-white focus:outline-none"
+                />
+              </label>
+              <label class="space-y-1 text-label-small text-gray-500">
+                <span>Duur ter plaatse (min)</span>
+                <input
+                  type="number"
+                  min="0"
+                  bind:value={calcVisitMinutes}
+                  class="w-full bg-surface-900 border border-white/5 rounded-m3-xs px-3 py-2 text-body-medium text-white focus:outline-none"
+                />
+              </label>
+            </div>
+            <label class="space-y-1 block text-label-small text-gray-500">
+              <span>Tijd van de afspraak</span>
+              <input
+                type="time"
+                bind:value={calcAppointmentTime}
+                class="w-full bg-surface-900 border border-white/5 rounded-m3-xs px-3 py-2 text-body-medium text-white focus:outline-none"
+              />
+            </label>
+            {#if calcResult}
+              <p class="text-label-small text-gray-400">
+                Weg om <span class="text-primary-400 tabular-nums"
+                  >{formatTime(calcResult.depart.toISOString())}</span
+                >, terug om
+                <span class="text-primary-400 tabular-nums"
+                  >{formatTime(calcResult.back.toISOString())}</span
+                >
+              </p>
+            {/if}
+            <Button
+              variant="tonal"
+              type="button"
+              disabled={!calcResult}
+              onclick={applyCalculatedTime}
+              class="w-full h-9!"
+            >
+              Toepassen
+            </Button>
+          </div>
+        {/if}
+        <input
+          bind:value={newApp.lokatie}
+          class="w-full bg-surface-950 border border-white/10 rounded-m3-xs px-3 py-2.5 text-body-medium text-white focus:outline-none focus:border-primary-500"
+          placeholder="Locatie (optioneel)"
+        />
+        <textarea
+          bind:value={newApp.inhoud}
+          class="w-full h-24 bg-surface-950 border border-white/10 rounded-m3-xs px-3 py-2.5 text-body-medium text-white focus:outline-none focus:border-primary-500"
+          placeholder="Inhoud (optioneel)"></textarea>
+        {#if createError}
+          <p class="text-body-small text-red-400">{createError}</p>
+        {/if}
+        <Button variant="filled" onclick={createAppointment} class="w-full"
+          >Afspraak aanmaken</Button
+        >
+      </div>
+    </div>
+  {/if}
 </div>
 
 <style>

@@ -18,6 +18,7 @@
     type LoopTurnTrace,
   } from "#lib/ai-loop.ts";
   import { getNotes } from "#lib/ai-notes.ts";
+  import { formatNowBlock } from "#lib/ai-time.ts";
   import {
     appendMessage,
     createConversation,
@@ -34,6 +35,7 @@
     setConversationSummary,
     setLastConversationId,
     shouldSaveChats,
+    stripEmbeddedTrace,
     summarizeDropped,
     summarySystemMessage,
     traceBlock,
@@ -41,6 +43,8 @@
     type ThreadMessage,
   } from "#lib/ai-chats.ts";
   import { currentPage, accountInfo, personId } from "#lib/stores.ts";
+  import { aiPageContext, describeAiPageContext } from "#lib/ai-context.ts";
+  import { get } from "svelte/store";
   import { onMount, untrack } from "svelte";
   import { fly, scale } from "svelte/transition";
   import MarkdownRenderer from "#lib/components/MarkdownRenderer.svelte";
@@ -58,6 +62,7 @@
   let isLoading = $state(false);
   let messagesContainer: HTMLDivElement | undefined = $state();
   let isConfigured = $state(false);
+  let aiModelLabel = $state("");
   let firstOpen = $state(true);
   let pendingActions = $state<PendingActionInfo[]>([]);
   let confirmingActionId = $state<string | null>(null);
@@ -101,8 +106,21 @@
       leermiddelen: "Leermiddelen - digitale schoolboeken en lesmateriaal",
       studiewijzers:
         "Studiewijzers - studiehandleidingen en planningen per vak",
+      "ai-schedule":
+        "Friday's Plan - de AI-planning met huiswerk, toetsen en vrije blokken",
+      friends: "Vrienden - gedeelde roosters, vrije momenten en vriendgegevens",
     };
-    return `Huidige gebruiker: ${name}\nHuidige pagina: ${pageNames[page] || page}`;
+    const pageContext = get(aiPageContext);
+    const screen =
+      pageContext?.page === page ? describeAiPageContext(pageContext) : null;
+    return [
+      `Huidige gebruiker: ${name}`,
+      formatNowBlock(),
+      `Huidige pagina: ${pageNames[page] || page}`,
+      screen,
+    ]
+      .filter(Boolean)
+      .join("\n");
   }
 
   let useDataAccess = $state(false);
@@ -119,11 +137,41 @@
       const config = await getAiConfig();
       isConfigured = config.enabled && config.has_api_key;
       useDataAccess = config.use_data_access;
+      aiModelLabel = config.model;
       if (isConfigured) preloadMarkdown();
     } catch {
       isConfigured = false;
       useDataAccess = false;
+      aiModelLabel = "";
     }
+  }
+
+  /** Korte Nederlandse labels voor bekende tool-namen (bron-chips). */
+  const TOOL_SOURCE_LABELS: Record<string, string> = {
+    get_grades: "Cijfers",
+    get_full_grade_overview: "Cijfers",
+    get_calendar_events: "Agenda",
+    get_calendar_event_detail: "Agenda",
+    get_assignments: "Opdrachten",
+    get_assignment_detail: "Opdrachten",
+    get_ai_schedule: "Plan",
+    get_messages: "Berichten",
+    get_message_content: "Berichten",
+    get_today_summary: "Dagoverzicht",
+    read_attachment_text: "Bijlage",
+  };
+
+  /** Bron-chips uit de tool-trace: gelabeld, gededupliceerd, max 6. */
+  function sourcesFor(m: AiMessage): string[] {
+    const labels: string[] = [];
+    for (const turn of m.trace ?? []) {
+      for (const call of turn.calls) {
+        const label = TOOL_SOURCE_LABELS[call.name] ?? call.name;
+        if (label && !labels.includes(label)) labels.push(label);
+        if (labels.length >= 6) return labels;
+      }
+    }
+    return labels;
   }
 
   // Render markdown for assistant messages only — cached per content, never re-parses.
@@ -471,14 +519,34 @@
         .filter((m) => !isEmptyAssistant(m))
         .map((m) => ({
           role: m.role,
-          content: m.content,
+          content: stripEmbeddedTrace(m.content),
           trace: m.trace,
         }));
       const fitted = fitHistoryForRequest(thread);
+      // Tool traces stay in the UI/persistence. Replaying every old trace in
+      // assistant content made the model repeat itself; send one compact
+      // fact block from the most recent tool turns instead.
       const messagePayload = fitted.messages.map((m) => ({
         role: m.role,
-        content: m.content + traceBlock(m.trace),
+        content: m.content,
       }));
+      const recentFacts = fitted.messages
+        .slice(-6)
+        .map((m) => traceBlock(m.trace))
+        .filter(Boolean)
+        .join("\n")
+        .slice(0, 2400);
+      const factMessage = recentFacts
+        ? [
+            {
+              role: "system" as const,
+              content:
+                "Feiten uit recente toolresultaten. Herhaal ze niet uit jezelf; " +
+                "gebruik ze alleen als de gebruiker ernaar vraagt:\n" +
+                recentFacts,
+            },
+          ]
+        : [];
       // Rolling summary over dropped history (item 5); failure → truncation.
       if (fitted.dropped.length > convSummaryThrough) {
         const fresh = await summarizeDropped(fitted.dropped, (prompt) =>
@@ -496,15 +564,18 @@
           }
         }
       }
-      const payloadWithSummary = convSummary
-        ? [
-            {
-              role: summarySystemMessage(convSummary).role,
-              content: summarySystemMessage(convSummary).content,
-            },
-            ...messagePayload,
-          ]
-        : messagePayload;
+      const payloadWithSummary = [
+        ...(convSummary
+          ? [
+              {
+                role: summarySystemMessage(convSummary).role,
+                content: summarySystemMessage(convSummary).content,
+              },
+            ]
+          : []),
+        ...factMessage,
+        ...messagePayload,
+      ];
 
       // Use aiChatWithTools when data access is enabled AND we have a personId
       const canUseTools = useDataAccess && currentPersonId !== null;
@@ -765,18 +836,28 @@
               /><path d="M12 14l-2 6h4l-2-6z" /></svg
             >
           </div>
-          <div>
+          <div class="min-w-0">
             <h3 class="text-sm font-black text-white uppercase tracking-tight">
               Friday AI
             </h3>
-            <p
-              class="text-[9px] font-bold text-emerald-400 uppercase tracking-widest flex items-center gap-1"
-            >
-              <span
-                class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"
-              ></span>
-              Online
-            </p>
+            <div class="flex min-w-0 items-center gap-1.5">
+              <p
+                class="text-[9px] font-bold text-emerald-400 uppercase tracking-widest flex items-center gap-1"
+              >
+                <span
+                  class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"
+                ></span>
+                Online
+              </p>
+              {#if isConfigured && aiModelLabel}
+                <span
+                  class="max-w-[150px] truncate rounded-full bg-surface-800 px-1.5 py-0.5 text-[9px] font-medium text-gray-400"
+                  title="Model: {aiModelLabel}"
+                >
+                  Model: {aiModelLabel}
+                </span>
+              {/if}
+            </div>
           </div>
         </div>
         <div class="flex items-center gap-1">
@@ -1017,6 +1098,7 @@
                     </div>
                   </div>
                 {:else}
+                  {@const sources = sourcesFor(msg)}
                   {#if msg.stopped}
                     <p
                       class="mb-1 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-amber-400"
@@ -1029,6 +1111,22 @@
                     content={msg.content}
                     html={renderedHtml[i] ?? null}
                   />
+                  {#if sources.length > 0}
+                    <div
+                      class="mt-2 flex flex-wrap items-center gap-1.5 border-t border-white/5 pt-2"
+                    >
+                      <span
+                        class="text-[10px] font-semibold uppercase tracking-wider text-gray-500"
+                        >Bronnen:</span
+                      >
+                      {#each sources as source}
+                        <span
+                          class="rounded-full bg-surface-700/60 px-2 py-0.5 text-[10px] text-gray-400"
+                          >{source}</span
+                        >
+                      {/each}
+                    </div>
+                  {/if}
                 {/if}
               </div>
             </div>

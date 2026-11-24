@@ -42,7 +42,7 @@ function getDb(): Promise<IDBPDatabase> {
 export const DEFAULT_WEB_AI: WebAiStoredConfig = {
   provider: "openai",
   baseUrl: "https://api.openai.com/v1",
-  model: "gpt-4o-mini",
+  model: "gpt-4.1-mini",
   enabled: false,
   useDataAccess: true,
   notesAiCanEdit: true,
@@ -58,7 +58,11 @@ export async function loadWebAiConfig(): Promise<WebAiStoredConfig> {
     const stored = (await db.get(STORE_NAME, CONFIG_KEY)) as
       Partial<WebAiStoredConfig> | undefined;
     if (!stored) return { ...DEFAULT_WEB_AI };
-    return { ...DEFAULT_WEB_AI, ...stored };
+    const merged = { ...DEFAULT_WEB_AI, ...stored };
+    if (merged.model === "gpt-4o-mini" && merged.provider === "openai") {
+      merged.model = DEFAULT_WEB_AI.model;
+    }
+    return merged;
   } catch {
     return { ...DEFAULT_WEB_AI };
   }

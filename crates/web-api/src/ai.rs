@@ -545,8 +545,7 @@ pub async fn chat(http: &reqwest::Client, mut req: ChatRequest) -> Result<ChatRe
             let mut body = serde_json::json!({
                 "model": req.model,
                 "messages": openai_messages(&req.messages),
-                "temperature": 0.7,
-                "max_tokens": 4096,
+                "max_tokens": 8192,
             });
             if !openai_tools.is_empty() {
                 body["tools"] = serde_json::Value::Array(openai_tools);
@@ -562,7 +561,7 @@ pub async fn chat(http: &reqwest::Client, mut req: ChatRequest) -> Result<ChatRe
             let (system, rest) = anthropic_messages(&req.messages);
             let mut body = serde_json::json!({
                 "model": req.model,
-                "max_tokens": 4096,
+                "max_tokens": 8192,
                 "messages": rest,
             });
             if !system.is_empty() {
@@ -593,7 +592,7 @@ pub async fn chat(http: &reqwest::Client, mut req: ChatRequest) -> Result<ChatRe
             let (system, contents) = gemini_contents(&req.messages);
             let mut body = serde_json::json!({
                 "contents": contents,
-                "generationConfig": { "temperature": 0.7, "maxOutputTokens": 4096 },
+                "generationConfig": { "maxOutputTokens": 8192 },
             });
             if !system.is_empty() {
                 body["systemInstruction"] = serde_json::json!({ "parts": [{"text": system.join("\n\n")}] });
@@ -651,7 +650,7 @@ pub async fn validate(http: &reqwest::Client, mut req: ValidateRequest) -> Resul
     let resp = match req.provider.as_str() {
         "anthropic" => {
             let body = serde_json::json!({
-                "model": if req.model.is_empty() { "claude-sonnet-4-20250514".to_string() } else { req.model.clone() },
+                "model": if req.model.is_empty() { "claude-sonnet-4-5".to_string() } else { req.model.clone() },
                 "max_tokens": 1,
                 "messages": [{"role": "user", "content": "Hi"}],
             });
@@ -955,8 +954,7 @@ pub async fn chat_stream(
     let mut body = serde_json::json!({
         "model": req.model,
         "messages": openai_messages(&req.messages),
-        "temperature": 0.7,
-        "max_tokens": 4096,
+        "max_tokens": 8192,
         "stream": true,
     });
     if !openai_tools.is_empty() {

@@ -178,7 +178,7 @@
             type="button"
             class="sm:order-last w-9 h-9 rounded-full text-gray-500 hover:text-red-400 hover:bg-surface-800 transition-colors justify-self-end"
             aria-label="Verwijder {row.token}"
-            onclick={() => removeRow(i)}>✕</button
+            onclick={() => removeRow(i)}>×</button
           >
           <select
             class="{fieldClass} sm:col-auto"

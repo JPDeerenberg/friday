@@ -236,25 +236,35 @@ export function trimHistory(
   keep = 4,
 ): LoopChatMessage[] {
   if (messages.length === 0) return messages;
-  const [first, ...rest] = messages;
-  let tail = rest.slice(-keep);
+  // Keep every leading system message: the main prompt and the rolling
+  // conversation summary both live there. Dropping the summary on a retry
+  // made the assistant forget the start of the conversation.
+  let systemCount = 0;
+  while (
+    systemCount < messages.length &&
+    messages[systemCount].role === "system"
+  ) {
+    systemCount += 1;
+  }
+  const head = messages.slice(0, systemCount);
+  let tail = messages.slice(systemCount).slice(-keep);
   while (tail.length > 0) {
-    const head = tail[0];
-    if (head.role === "tool") {
+    const first = tail[0];
+    if (first.role === "tool") {
       tail = tail.slice(1);
       continue;
     }
     if (
-      head.role === "assistant" &&
-      head.tool_calls !== undefined &&
-      head.tool_calls.length > 0
+      first.role === "assistant" &&
+      first.tool_calls !== undefined &&
+      first.tool_calls.length > 0
     ) {
       tail = tail.slice(1);
       continue;
     }
     break;
   }
-  return first.role === "system" ? [first, ...tail] : tail.slice(-keep);
+  return [...head, ...tail];
 }
 
 /**

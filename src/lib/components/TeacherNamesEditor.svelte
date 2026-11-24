@@ -103,7 +103,7 @@
               class="shrink-0 px-2 py-1 text-label-large text-gray-500 hover:text-gray-200"
               aria-label="Terug naar {row.name}"
               title="Terug naar de originele naam"
-              onclick={() => save(row.name, "")}>✕</button
+              onclick={() => save(row.name, "")}>×</button
             >
           {/if}
         </li>

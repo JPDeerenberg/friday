@@ -123,7 +123,7 @@ export interface AiChatWithToolsResult {
 export const DEFAULT_AI_CONFIG: AiConfig = {
   api_key: "",
   base_url: "https://api.openai.com/v1",
-  model: "gpt-4o-mini",
+  model: "gpt-4.1-mini",
   enabled: false,
   provider: "openai",
   use_data_access: true,
@@ -138,43 +138,52 @@ export const AI_PROVIDERS: Record<
   {
     label: string;
     defaultModel: string;
+    /** Suggested model IDs for the Settings datalist (examples, not a whitelist). */
+    models: string[];
     defaultBaseUrl: string;
     description: string;
   }
 > = {
   openai: {
     label: "OpenAI",
-    defaultModel: "gpt-4o-mini",
+    defaultModel: "gpt-4.1-mini",
+    models: ["gpt-4.1-mini", "gpt-4.1", "gpt-4o-mini"],
     defaultBaseUrl: "https://api.openai.com/v1",
-    description: "GPT-4o, GPT-4o-mini, o1, o3",
+    description: "GPT-4.1, GPT-4.1-mini",
   },
   anthropic: {
     label: "Anthropic Claude",
-    defaultModel: "claude-sonnet-4-20250514",
+    defaultModel: "claude-sonnet-4-5",
+    models: ["claude-sonnet-4-5", "claude-opus-4-1", "claude-3-5-haiku-latest"],
     defaultBaseUrl: "https://api.anthropic.com",
-    description: "Claude Sonnet, Claude Haiku",
+    description: "Claude Sonnet 4.5, Claude Haiku",
   },
   gemini: {
     label: "Google Gemini",
-    defaultModel: "gemini-2.0-flash",
+    defaultModel: "gemini-2.5-flash",
+    models: ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash"],
     defaultBaseUrl: "https://generativelanguage.googleapis.com",
-    description: "Gemini 1.5/2.0 Flash, Gemini 2.0 Pro",
+    description: "Gemini 2.5 Flash, Gemini 2.5 Pro",
   },
   deepseek: {
     label: "DeepSeek",
     defaultModel: "deepseek-chat",
+    models: ["deepseek-chat"],
     defaultBaseUrl: "https://api.deepseek.com/v1",
     description: "DeepSeek-V3, DeepSeek-R1",
   },
   mistral: {
     label: "Mistral",
     defaultModel: "mistral-large-latest",
+    models: ["mistral-large-latest", "mistral-small-latest"],
     defaultBaseUrl: "https://api.mistral.ai/v1",
     description: "Mistral Large, Mistral Small, Codestral",
   },
   openai_compatible: {
     label: "OpenAI-compatibel (Groq, OpenRouter, Ollama, etc.)",
-    defaultModel: "mixtral-8x7b-32768",
+    defaultModel: "llama-3.3-70b-versatile",
+    // Vrij model-ID: de lijst blijft leeg, het veld accepteert elke naam.
+    models: [],
     defaultBaseUrl: "https://api.groq.com/openai/v1",
     description: "Elke OpenAI-compatibele API",
   },
@@ -236,8 +245,8 @@ export async function setAiConfig(
     enabled,
     provider: provider || "openai",
     useDataAccess: useDataAccess ?? true,
-    ai_notes_ai_can_edit: notesAiCanEdit ?? true,
-    ai_notes_use_in_chats: notesUseInChats ?? true,
+    aiNotesAiCanEdit: notesAiCanEdit ?? true,
+    aiNotesUseInChats: notesUseInChats ?? true,
   });
 }
 

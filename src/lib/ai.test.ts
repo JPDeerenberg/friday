@@ -50,3 +50,15 @@ test("plain prompt has no tool section, keeps page context and NOW block", () =>
   assert.ok(p.includes("Pagina: Cijfers"), "page context kept");
   assert.ok(p.includes("NU:"), "NOW block present without tools too");
 });
+
+test("set_ai_config invoke uses camelCase note flags", async () => {
+  const { readFileSync } = await import("node:fs");
+  const source = readFileSync(new URL("./ai.ts", import.meta.url), "utf8");
+  const start = source.indexOf('invoke("set_ai_config"');
+  assert.ok(start >= 0, "set_ai_config invoke present");
+  const block = source.slice(start, start + 500);
+  assert.match(block, /aiNotesAiCanEdit/);
+  assert.match(block, /aiNotesUseInChats/);
+  assert.doesNotMatch(block, /ai_notes_ai_can_edit\s*[,}:]/);
+  assert.doesNotMatch(block, /ai_notes_use_in_chats\s*[,}:]/);
+});

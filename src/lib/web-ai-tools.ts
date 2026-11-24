@@ -41,6 +41,7 @@ import {
   unsupportedReason,
   validateAttachmentUrl,
 } from "./ai-files.ts";
+import { SYNC_DESCRIPTION } from "./sync-types.ts";
 import type { AiScheduleItem } from "./ai-schedule-types.ts";
 import {
   aiCreatePlanItem,
@@ -539,6 +540,11 @@ function itemsOf(data: unknown): unknown[] {
   return [];
 }
 
+/** Hidden cross-device sync chunks must never reach the model. */
+function isHiddenSync(item: unknown): boolean {
+  return (asRecord(item) ?? {})["Omschrijving"] === SYNC_DESCRIPTION;
+}
+
 async function get(
   be: TierA,
   tokens: SessionTokens,
@@ -890,6 +896,7 @@ export async function executeWebTool(
           `personen/${pid}/afspraken?tot=${range.effectiveEnd}&van=${range.start}`,
         );
         const sorted = itemsOf(data)
+          .filter((item) => !isHiddenSync(item))
           .map(slimCalendarEvent)
           .sort((a, b) => {
             const sa = `${a["start"] ?? ""}`;
@@ -942,7 +949,7 @@ export async function executeWebTool(
           `personen/${pid}/afspraken?tot=${dateArg}&van=${dateArg}`,
         );
         const found = itemsOf(data).find(
-          (item) => (asRecord(item) ?? {})["Id"] === id,
+          (item) => !isHiddenSync(item) && (asRecord(item) ?? {})["Id"] === id,
         );
         if (!found) {
           return fail(
@@ -1499,16 +1506,18 @@ export async function executeWebTool(
             ctx.tokens,
             `personen/${pid}/afspraken?tot=${today}&van=${today}`,
           );
-          summary["vandaag_lessen"] = itemsOf(events).map((item) => {
-            const r = asRecord(item) ?? {};
-            const docenten = r["Docenten"];
-            return {
-              ...r,
-              Docenten: Array.isArray(docenten)
-                ? redactDocentenArray(docenten)
-                : [],
-            };
-          });
+          summary["vandaag_lessen"] = itemsOf(events)
+            .filter((item) => !isHiddenSync(item))
+            .map((item) => {
+              const r = asRecord(item) ?? {};
+              const docenten = r["Docenten"];
+              return {
+                ...r,
+                Docenten: Array.isArray(docenten)
+                  ? redactDocentenArray(docenten)
+                  : [],
+              };
+            });
         } catch {
           /* omit section */
         }
@@ -1707,6 +1716,7 @@ export async function executeWebTool(
               `personen/${pid}/afspraken?tot=${range.effectiveEnd}&van=${range.start}`,
             );
             for (const item of itemsOf(data)) {
+              if (isHiddenSync(item)) continue;
               const r = asRecord(item) ?? {};
               const bijlagen =
                 (r["Bijlagen"] as unknown[]) ??

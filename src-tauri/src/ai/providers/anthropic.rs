@@ -92,7 +92,7 @@ impl AiProvider for AnthropicProvider {
 
         let mut request_body = serde_json::json!({
             "model": config.model,
-            "max_tokens": 4096,
+            "max_tokens": 8192,
             "messages": non_system_messages,
         });
 

@@ -25,6 +25,7 @@
     Star,
     UserPlus,
     Users,
+    X,
   } from "@lucide/svelte";
   import { personId, resumedAt } from "#lib/stores.ts";
   import { getCalendarEvents, formatDate } from "#lib/api.ts";
@@ -66,13 +67,16 @@
     hueForId,
     joinNames,
     lessonsOnDay,
+    presenceAt,
     presenceOf,
     sharedFreeSlots,
     upcomingSchoolDays,
     type Person,
     type Presence,
+    type TimelineBlock,
   } from "#lib/friends-compare.ts";
   import { recordQuestEvent } from "#lib/quests-store.ts";
+  import { clearAiPageContext, setAiPageContext } from "#lib/ai-context.ts";
   import Button from "#lib/components/Button.svelte";
   import Switch from "#lib/components/Switch.svelte";
   import QrCode from "#lib/components/QrCode.svelte";
@@ -396,6 +400,29 @@
   const people = $derived([me, ...friendPeople]);
 
   let pickedDay = $state<string | null>(null);
+  let selectedFriendId = $state<string | null>(null);
+  let lessonDetail = $state<{
+    name: string;
+    hue: number;
+    day: string;
+    block: TimelineBlock;
+  } | null>(null);
+
+  function openLessonDetail(person: Person, block: TimelineBlock): void {
+    if (person.id !== me.id) selectedFriendId = person.id;
+    lessonDetail = {
+      name: person.name,
+      hue: person.hue,
+      day: day.toLocaleDateString("nl-NL", {
+        weekday: "long",
+        day: "numeric",
+        month: "long",
+      }),
+      block,
+    };
+  }
+
+  $effect(() => () => clearAiPageContext("friends"));
   const firstCovered = $derived(
     days.findIndex((d) => friendPeople.some((p) => coversDay(p, d))),
   );
@@ -414,6 +441,40 @@
     friendPeople.filter((p) => !coversDay(p, day)),
   );
   const timeline = $derived(dayTimeline(dayPeople, day));
+
+  $effect(() => {
+    const friend = $friends.friends.find((f) => f.id === selectedFriendId);
+    const line = (row: (typeof timeline.rows)[number] | undefined) => {
+      if (!row?.blocks.length) return "geen lessen";
+      return row.blocks
+        .map(
+          (b) =>
+            `${clock(b.start)} ${b.subject}${b.room ? ` @${b.room}` : ""}${
+              b.teacher ? ` (${b.teacher})` : ""
+            }${b.homework ? " [huiswerk]" : ""}${b.test ? ` [${b.test}]` : ""}`,
+        )
+        .join("; ")
+        .slice(0, 700);
+    };
+    const mine = timeline.rows.find((row) => row.person.id === me.id);
+    const selected = timeline.rows.find(
+      (row) => row.person.id === selectedFriendId,
+    );
+    setAiPageContext({
+      page: "friends",
+      selectedDate: pickedDay,
+      selectedFriendId,
+      selectedFriendName: friend?.nickname || friend?.name || null,
+      extra: {
+        "Aantal vrienden": $friends.friends.filter((f) => f.enabled).length,
+        "Jouw lessen op gekozen dag": line(mine),
+        ...(selected
+          ? { "Lessen gekozen vriend op gekozen dag": line(selected) }
+          : {}),
+      },
+    });
+  });
+
   const span = $derived(timeline.endMin - timeline.startMin);
   const hourCount = $derived(Math.max(1, span / 60));
   const hourLabels = $derived(
@@ -590,479 +651,564 @@
       month: "short",
     }),
   );
+
+  const canShare = $derived(
+    !loading &&
+      !shareError &&
+      shareLink.length > 0 &&
+      $friends.myName.trim().length > 0 &&
+      mySnapshot.lessons.length > 0,
+  );
+
+  const initials = (name: string) =>
+    name
+      .trim()
+      .split(/\s+/)
+      .slice(0, 2)
+      .map((part) => part.charAt(0).toUpperCase())
+      .join("") || "?";
+
+  function friendStatusLine(f: FriendRecord): string {
+    if (!f.enabled) return "Uit in de vergelijking";
+    if (freshness(f.snapshot, now) === "expired") return "Rooster verlopen";
+    const person = friendPeople.find((p) => p.id === f.id);
+    if (!person) return "Geen rooster";
+    if (!coversDay(person, new Date(now))) return "Geen rooster voor vandaag";
+    return describePresence(presenceAt(person.lessons, now));
+  }
 </script>
 
 <div class="page">
-  <header class="head">
-    <div class="head-copy">
-      <h1>Vrienden</h1>
-      <p>
-        Vergelijk je rooster met dat van je vrienden en zie meteen wanneer
-        jullie samen vrij zijn. Alleen jij bepaalt wat je deelt: lestijden en
-        vakken, geen cijfers, docenten of lokalen.
-      </p>
-    </div>
-    <button
-      type="button"
-      class="icon-btn"
-      onclick={() => {
-        now = Date.now();
-        void loadEvents(windowStart, true);
-      }}
-      disabled={loading}
-      aria-label="Rooster vernieuwen"
-      title="Rooster vernieuwen"
-    >
-      <span class="refresh-icon" class:spinning={loading}>
-        <RefreshCw size={18} />
-      </span>
-    </button>
-  </header>
-
-  {#if loadError}
-    <div class="banner bad" role="alert">
-      <span>{loadError}</span>
-      <button
-        type="button"
-        class="text-btn"
-        onclick={() => {
-          now = Date.now();
-          void loadEvents(windowStart, true);
-        }}
-      >
-        Opnieuw proberen
-      </button>
-    </div>
-  {/if}
-
-  {#if incoming}
-    <section class="card confirm" aria-live="polite">
-      <div class="card-head">
-        <h2>
-          {incomingExisting
-            ? `${friendLabel(incomingExisting)} bijwerken?`
-            : `${incoming.name} toevoegen?`}
-        </h2>
-        <span class="pill primary">
-          <UserPlus size={14} />
-          {incomingExisting ? "Bijwerken" : "Nieuwe vriend"}
-        </span>
-      </div>
-      {#if incomingExisting}
-        <p class="fine">
-          Er staat al een vriend met de naam {incoming.name}. Bijwerken vervangt
-          het oude rooster; er komt geen tweede bij.
+  <div class="main">
+    <header class="head">
+      <div class="head-copy">
+        <h1>Vrienden</h1>
+        <p class="head-desc">
+          Zie wanneer je vrienden les hebben en jullie samen vrij zijn.
         </p>
-      {/if}
-      <p class="muted">
-        Rooster van {incoming.lessons.length}
-        {incoming.lessons.length === 1 ? "les" : "lessen"} in
-        {incoming.days === 7
-          ? "1 week"
-          : incoming.days === 14
-            ? "2 weken"
-            : `${incoming.days} dagen`}, gedeeld {ageText(
-          incoming.createdAt,
-          now,
-        )}.
-        {#if incomingEnd}Geldig tot {dayLabel(incomingEnd)}.{/if}
-      </p>
-      {#if incomingExpired}
-        <div class="banner warn" role="status">
-          <span
-            >Dit rooster is van een eerdere week. Je kunt het
-            {incomingExisting ? "bijwerken" : "toevoegen"}, maar het verschijnt
-            pas weer als {incoming.name} een nieuwe link deelt.</span
-          >
-        </div>
-      {:else}
-        <p class="fine">Je ziet alleen lestijden en vakken.</p>
-      {/if}
-      <div class="row">
-        <Button onclick={confirmAdd}
-          >{incomingExisting ? "Bijwerken" : "Toevoegen"}</Button
-        >
-        {#if incomingExisting}
-          <Button variant="text" onclick={addAsNew}>Dit is iemand anders</Button
-          >
-        {/if}
-        <Button
-          variant="text"
+      </div>
+      <div class="head-actions">
+        <button
+          type="button"
+          class="refresh-btn"
           onclick={() => {
-            incoming = null;
-            incomingExisting = null;
-          }}>Annuleren</Button
+            now = Date.now();
+            void loadEvents(windowStart, true);
+          }}
+          disabled={loading}
+          aria-label="Rooster vernieuwen"
+          title="Rooster vernieuwen"
         >
+          <span class="refresh-icon" class:spinning={loading}>
+            <RefreshCw size={16} />
+          </span>
+          <span>{loading ? "Verversen…" : "Verversen"}</span>
+        </button>
+        <Button onclick={shareNative} disabled={!canShare}>
+          {#if copied}<Check size={16} /> Gekopieerd{:else}<Share2 size={16} /> Delen{/if}
+        </Button>
       </div>
-    </section>
-  {/if}
+    </header>
 
-  {#if notice}
-    <section class="banner notice" role="status">
-      <Bell size={16} class="shrink-0" />
-      <span>{describeNotice(notice)}</span>
-      <button
-        type="button"
-        class="text-btn"
-        onclick={() => {
-          showQr = true;
-          markShared();
-          scrollTo("share");
-        }}
-      >
-        Nieuwe QR tonen
-      </button>
-    </section>
-  {/if}
-
-  <!-- Compare -->
-  <section class="card compare" aria-labelledby="compare-title">
-    <div class="card-head">
-      <div>
-        <h2 id="compare-title">Wie heeft wanneer les?</h2>
-        <p class="sub muted">
-          {dayLong(day)} · tik op een dag om te wisselen<span class="days-hint"
-            >{" · veeg voor meer dagen"}</span
-          >
-        </p>
-      </div>
-      {#if friendPeople.length > 0}
-        <div class="legend" aria-hidden="true">
-          <span><i class="sw band"></i> iedereen vrij</span>
-          <span><i class="sw shared"></i> jij + deze persoon</span>
-        </div>
-      {/if}
-    </div>
-
-    {#if loading}
-      <div class="loading" role="status">
-        <span class="spinner" aria-hidden="true"></span>
-        Je rooster wordt geladen…
-      </div>
-    {:else if $friends.friends.length > 0 && friendPeople.length === 0}
-      <div class="empty">
-        <span class="empty-icon warn"><Users size={22} /></span>
-        <div>
-          <h3>Alle vrienden staan uit</h3>
-          <p class="muted">
-            Zet bij “Mijn vrienden” minstens één vriend aan om zijn rooster hier
-            te vergelijken.
-          </p>
-        </div>
-        <div class="row">
-          <Button variant="tonal" onclick={() => scrollTo("friends")}>
-            Naar mijn vrienden
-          </Button>
-        </div>
-      </div>
-    {:else if friendPeople.length === 0}
-      <div class="empty">
-        <span class="empty-icon"><Users size={22} /></span>
-        <div>
-          <h3>Nog geen vrienden</h3>
-          <p class="muted">
-            Deel je rooster met een vriend en voeg zijn link toe. Daarna zie je
-            hier elkaars lessen, tussenuren en de momenten waarop jullie allebei
-            vrij zijn.
-          </p>
-        </div>
-        <div class="row">
-          <Button onclick={() => scrollTo("share")}>
-            <Share2 size={16} /> Mijn rooster delen
-          </Button>
-          <Button variant="tonal" onclick={() => scrollTo("add")}>
-            <UserPlus size={16} /> Vriend toevoegen
-          </Button>
-        </div>
-        <p class="fine">Alleen lestijden en vakken; niets wordt geüpload.</p>
-      </div>
-    {:else if friendPeopleWithData.length === 0}
-      <div class="empty">
-        <span class="empty-icon warn"><Clock size={22} /></span>
-        <div>
-          <h3>De gedeelde roosters zijn verlopen</h3>
-          <p class="muted">
-            Je vrienden deelden een rooster van een eerdere week. Vraag een
-            nieuwe QR of link, dan kun je weer vergelijken.
-          </p>
-        </div>
-        <div class="row">
-          <Button variant="tonal" onclick={() => scrollTo("friends")}>
-            Bekijk mijn vrienden
-          </Button>
-          <Button variant="text" onclick={() => scrollTo("share")}>
-            Mijn eigen QR
-          </Button>
-        </div>
-      </div>
-    {:else}
-      <div class="days no-scrollbar" role="tablist" aria-label="Kies een dag">
-        {#each days as d, i (d.getTime())}
-          {@const wb = weekBest[i]}
-          <button
-            type="button"
-            role="tab"
-            aria-selected={i === activeIndex}
-            class="day"
-            class:on={i === activeIndex}
-            onclick={() => (pickedDay = dayKey(d))}
-            title="{dayLong(d)}{wb ? ` — ${wb.minutes} min samen vrij` : ''}"
-          >
-            <b>{weekday(d)}</b>
-            <small>{dayLabel(d)}</small>
-            {#if wb}
-              <em class:all={wb.busy.length === 0}>{wb.minutes}m</em>
-            {:else}
-              <em class="none">–</em>
-            {/if}
-          </button>
-        {/each}
-      </div>
-
-      {#if isToday && dayPeople.length > 1}
-        <ul class="presence no-scrollbar" aria-label="Status van nu">
-          {#each presence as e (e.person.id)}
-            <li style="--hue:{e.person.hue}" class:me={e.person.id === me.id}>
-              <i class="dot" aria-hidden="true"></i>
-              <b>{e.person.name}</b>
-              <span class="muted">{describePresence(e.presence)}</span>
-            </li>
-          {/each}
-        </ul>
-      {/if}
-
-      {#if nowInfo}
-        <div
-          class="now-box"
-          class:good={nowInfo.tone === "good"}
-          class:busy={nowInfo.tone === "busy"}
+    {#if loadError}
+      <div class="banner bad" role="alert">
+        <span>{loadError}</span>
+        <button
+          type="button"
+          class="text-btn"
+          onclick={() => {
+            now = Date.now();
+            void loadEvents(windowStart, true);
+          }}
         >
-          <Clock size={16} class="shrink-0" />
-          <div>
-            <b>{nowInfo.headline}</b>
-            {#if nowInfo.sub}<small>{nowInfo.sub}</small>{/if}
-          </div>
+          Opnieuw proberen
+        </button>
+      </div>
+    {/if}
+
+    {#if incoming}
+      <section class="card confirm" aria-live="polite">
+        <div class="card-head">
+          <h2>
+            {incomingExisting
+              ? `${friendLabel(incomingExisting)} bijwerken?`
+              : `${incoming.name} toevoegen?`}
+          </h2>
+          <span class="pill primary">
+            <UserPlus size={14} />
+            {incomingExisting ? "Bijwerken" : "Nieuwe vriend"}
+          </span>
         </div>
-        {#if nextWindow}
-          <p class="next">
-            <Sparkles size={14} />
-            <span>
-              Eerstvolgende moment samen vrij:
-              <b>{freeWindow(nextWindow)}</b> met {joinNames(
-                nextWindow.free
-                  .filter((p) => p.id !== me.id)
-                  .map((p) => p.name),
-              )}.
-            </span>
+        {#if incomingExisting}
+          <p class="fine">
+            Er staat al een vriend met de naam {incoming.name}. Bijwerken
+            vervangt het oude rooster; er komt geen tweede bij.
           </p>
         {/if}
-      {/if}
-
-      {#if dayPeople.length === 1}
-        <div class="banner info" role="status">
-          <span>Je vrienden deelden geen rooster dat deze dag dekt.</span>
-          {#if firstCovered >= 0}
-            <button
-              type="button"
-              class="text-btn"
-              onclick={() => (pickedDay = dayKey(days[firstCovered]))}
-            >
-              Ga naar een dag met gegevens
-            </button>
-          {/if}
-        </div>
-      {/if}
-
-      <div class="tl-wrap">
-        <div class="tl" style="--hour-count:{hourCount}">
-          <div class="tl-row axis" aria-hidden="true">
-            <span class="who"></span>
-            <span class="track">
-              {#each hourLabels as label, i (label)}
-                <em style="left:{(i * 100) / hourCount}%">{label}</em>
-              {/each}
-            </span>
-          </div>
-
-          <div class="tl-row band">
-            <span class="who"><span class="band-label">Iedereen</span></span>
-            <span class="track">
-              {#each common.slots as s (s.start)}
-                <i
-                  class="free"
-                  style="left:{pct(s.start)}%;width:{pct(s.end) -
-                    pct(s.start)}%"
-                  title="Samen vrij {clock(s.start)}–{clock(s.end)}"
-                ></i>
-              {/each}
-              {#if common.slots.length === 0}
-                <span class="hint">
-                  {common.withLessons === 0
-                    ? "niemand heeft les"
-                    : "geen gaatje tussen de lessen"}
-                </span>
-              {/if}
-            </span>
-          </div>
-
-          {#each timeline.rows as row (row.person.id)}
-            {@const shared =
-              row.person.id === me.id
-                ? []
-                : sharedFreeSlots(me, row.person, day)}
-            <div class="tl-row line" style="--hue:{row.person.hue}">
-              <span class="who" title={row.person.name}>
-                <i class="dot" aria-hidden="true"></i>
-                <span>{row.person.name}</span>
-              </span>
-              <span class="track">
-                {#each shared as f (f.start)}
-                  <i
-                    class="shared"
-                    style="left:{pct(f.start)}%;width:{pct(f.end) -
-                      pct(f.start)}%"
-                    title="Jij en {row.person.name} vrij {clock(
-                      f.start,
-                    )}–{clock(f.end)}"
-                  ></i>
-                {/each}
-                {#each row.blocks as b (b.key)}
-                  <i
-                    class="block"
-                    style="left:{pct(b.start)}%;width:{pct(b.end) -
-                      pct(b.start)}%"
-                    title="{b.subject} {clock(b.start)}–{clock(b.end)}"
-                  >
-                    <span>{b.subject}</span>
-                  </i>
-                {/each}
-                {#if row.blocks.length === 0}
-                  <span class="hint">Geen les</span>
-                {/if}
-              </span>
-            </div>
-          {/each}
-
-          {#if nowPct >= 0 && nowPct <= 100}
-            <div class="now-layer" aria-hidden="true">
-              <i class="nowline" style="left:{nowPct}%" title="Nu, {clock(now)}"
-              ></i>
-            </div>
-          {/if}
-        </div>
-      </div>
-      <p class="fine tl-hint">Veeg opzij om de hele dag te zien.</p>
-
-      {#if missingPeople.length > 0}
-        <p class="fine">
-          Geen gegevens voor deze dag van
-          {joinNames(missingPeople.map((p) => p.name))}. Hun rooster dekt deze
-          week niet.
+        <p class="muted">
+          Rooster van {incoming.lessons.length}
+          {incoming.lessons.length === 1 ? "les" : "lessen"} in
+          {incoming.days === 7
+            ? "1 week"
+            : incoming.days === 14
+              ? "2 weken"
+              : `${incoming.days} dagen`}, gedeeld {ageText(
+            incoming.createdAt,
+            now,
+          )}.
+          {#if incomingEnd}Geldig tot {dayLabel(incomingEnd)}.{/if}
         </p>
-      {/if}
-
-      <div class="summary">
-        {#if best}
-          <div class="best" class:all={best.busy.length === 0}>
-            <span class="best-label"><Star size={14} /> Beste moment</span>
-            <span class="best-time">{freeWindow(best)}</span>
-            <span class="best-who">
-              {namesOf(best.free)} · {best.minutes} min
-              {#if best.busy.length > 0}
-                · {namesOf(best.busy)}
-                {best.busy.length === 1 ? "heeft" : "hebben"} les
-              {/if}
-            </span>
+        {#if incomingExpired}
+          <div class="banner warn" role="status">
+            <span
+              >Dit rooster is van een eerdere week. Je kunt het
+              {incomingExisting ? "bijwerken" : "toevoegen"}, maar het
+              verschijnt pas weer als {incoming.name} een nieuwe link deelt.</span
+            >
           </div>
         {:else}
-          <div class="best none">
-            <span class="best-label"><Clock size={14} /> Samen vrij</span>
-            <span class="best-time">–</span>
-            <span class="best-who">
-              {#if dayPeople.length === 1}
-                Geen vrienden met gegevens voor deze dag.
-              {:else if common.withLessons === 0}
-                Niemand heeft les op deze dag.
-              {:else}
-                Geen moment van minstens {MIN_FREE} min waarin jij en een vriend tegelijk
-                vrij zijn.
-                {#if common.allDoneAt}Na {clock(common.allDoneAt)} is iedereen klaar.{/if}
-              {/if}
-            </span>
+          <p class="fine">
+            Je ziet lestijden, vakken, docenten, lokalen, huiswerk, toetsen en
+            notities — geen cijfers of berichten.
+          </p>
+        {/if}
+        <div class="row">
+          <Button onclick={confirmAdd}
+            >{incomingExisting ? "Bijwerken" : "Toevoegen"}</Button
+          >
+          {#if incomingExisting}
+            <Button variant="text" onclick={addAsNew}
+              >Dit is iemand anders</Button
+            >
+          {/if}
+          <Button
+            variant="text"
+            onclick={() => {
+              incoming = null;
+              incomingExisting = null;
+            }}>Annuleren</Button
+          >
+        </div>
+      </section>
+    {/if}
+
+    {#if notice}
+      <section class="banner notice" role="status">
+        <Bell size={16} class="shrink-0" />
+        <span>{describeNotice(notice)}</span>
+        <button
+          type="button"
+          class="text-btn"
+          onclick={() => {
+            showQr = true;
+            markShared();
+            scrollTo("share");
+          }}
+        >
+          Nieuwe QR tonen
+        </button>
+      </section>
+    {/if}
+
+    <!-- Compare -->
+    <section class="card compare" aria-labelledby="compare-title">
+      <div class="card-head">
+        <div>
+          <h2 id="compare-title">Wie heeft wanneer les?</h2>
+          <p class="sub muted">
+            {dayLong(day)} · tik op een dag om te wisselen<span
+              class="days-hint">{" · veeg voor meer dagen"}</span
+            >
+          </p>
+        </div>
+        {#if friendPeople.length > 0}
+          <div class="legend" aria-hidden="true">
+            <span><i class="sw band"></i> iedereen vrij</span>
+            <span><i class="sw shared"></i> jij + deze persoon</span>
           </div>
         {/if}
+      </div>
 
-        {#if alternatives.length > 0}
-          <ul class="windows" aria-label="Andere vrije momenten">
-            {#each alternatives as w (w.start)}
-              <li class:all={w.busy.length === 0}>
-                <span class="w-time">{freeWindow(w)}</span>
-                <span class="w-dur">{w.minutes} min</span>
-                <span class="w-who">{namesOf(w.free)}</span>
-                <span class="w-tag" class:ok={w.busy.length === 0}>
-                  {w.busy.length === 0
-                    ? "iedereen"
-                    : `${w.busy.length} ${w.busy.length === 1 ? "persoon" : "mensen"} in les`}
-                </span>
+      {#if loading}
+        <div class="loading" role="status">
+          <span class="spinner" aria-hidden="true"></span>
+          Je rooster wordt geladen…
+        </div>
+      {:else if $friends.friends.length > 0 && friendPeople.length === 0}
+        <div class="empty">
+          <span class="empty-icon warn"><Users size={22} /></span>
+          <div>
+            <h3>Alle vrienden staan uit</h3>
+            <p class="muted">
+              Zet bij “Mijn vrienden” minstens één vriend aan om zijn rooster
+              hier te vergelijken.
+            </p>
+          </div>
+          <div class="row">
+            <Button variant="tonal" onclick={() => scrollTo("friends")}>
+              Naar mijn vrienden
+            </Button>
+          </div>
+        </div>
+      {:else if friendPeople.length === 0}
+        <div class="empty">
+          <span class="empty-icon"><Users size={22} /></span>
+          <div>
+            <h3>Nog geen vrienden</h3>
+            <p class="muted">
+              Deel je rooster met een vriend en voeg zijn link toe. Daarna zie
+              je hier elkaars lessen, tussenuren en de momenten waarop jullie
+              allebei vrij zijn.
+            </p>
+          </div>
+          <div class="row">
+            <Button onclick={() => scrollTo("share")}>
+              <Share2 size={16} /> Mijn rooster delen
+            </Button>
+            <Button variant="tonal" onclick={() => scrollTo("add")}>
+              <UserPlus size={16} /> Vriend toevoegen
+            </Button>
+          </div>
+          <p class="fine">
+            Lestijden, vakken, docenten, lokalen, huiswerk, toetsen en notities;
+            niets wordt geüpload.
+          </p>
+        </div>
+      {:else if friendPeopleWithData.length === 0}
+        <div class="empty">
+          <span class="empty-icon warn"><Clock size={22} /></span>
+          <div>
+            <h3>De gedeelde roosters zijn verlopen</h3>
+            <p class="muted">
+              Je vrienden deelden een rooster van een eerdere week. Vraag een
+              nieuwe QR of link, dan kun je weer vergelijken.
+            </p>
+          </div>
+          <div class="row">
+            <Button variant="tonal" onclick={() => scrollTo("friends")}>
+              Bekijk mijn vrienden
+            </Button>
+            <Button variant="text" onclick={() => scrollTo("share")}>
+              Mijn eigen QR
+            </Button>
+          </div>
+        </div>
+      {:else}
+        <div class="days no-scrollbar" role="tablist" aria-label="Kies een dag">
+          {#each days as d, i (d.getTime())}
+            {@const wb = weekBest[i]}
+            <button
+              type="button"
+              role="tab"
+              aria-selected={i === activeIndex}
+              class="day"
+              class:on={i === activeIndex}
+              onclick={() => (pickedDay = dayKey(d))}
+              title="{dayLong(d)}{wb ? ` — ${wb.minutes} min samen vrij` : ''}"
+            >
+              <b>{weekday(d)}</b>
+              <small>{dayLabel(d)}</small>
+              {#if wb}
+                <em class:all={wb.busy.length === 0}>{wb.minutes}m</em>
+              {:else}
+                <em class="none">–</em>
+              {/if}
+            </button>
+          {/each}
+        </div>
+
+        {#if isToday && dayPeople.length > 1}
+          <ul class="presence no-scrollbar" aria-label="Status van nu">
+            {#each presence as e (e.person.id)}
+              <li style="--hue:{e.person.hue}" class:me={e.person.id === me.id}>
+                <i class="dot" aria-hidden="true"></i>
+                <b>{e.person.name}</b>
+                <span class="muted">{describePresence(e.presence)}</span>
               </li>
             {/each}
           </ul>
         {/if}
-      </div>
 
-      {#if common.allDoneAt && common.slots.length > 0}
-        <p class="fine">
-          Na {clock(common.allDoneAt)} is iedereen klaar. Alleen momenten van minstens
-          {MIN_FREE} minuten staan hierboven.
-        </p>
-      {/if}
+        {#if nowInfo}
+          <div
+            class="now-box"
+            class:good={nowInfo.tone === "good"}
+            class:busy={nowInfo.tone === "busy"}
+          >
+            <Clock size={16} class="shrink-0" />
+            <div>
+              <b>{nowInfo.headline}</b>
+              {#if nowInfo.sub}<small>{nowInfo.sub}</small>{/if}
+            </div>
+          </div>
+          {#if nextWindow}
+            <p class="next">
+              <Sparkles size={14} />
+              <span>
+                Eerstvolgende moment samen vrij:
+                <b>{freeWindow(nextWindow)}</b> met {joinNames(
+                  nextWindow.free
+                    .filter((p) => p.id !== me.id)
+                    .map((p) => p.name),
+                )}.
+              </span>
+            </p>
+          {/if}
+        {/if}
 
-      <details class="agenda">
-        <summary>
-          <CalendarDays size={15} />
-          Agenda per persoon
-        </summary>
-        <div class="agenda-list">
-          {#each timeline.rows as row (row.person.id)}
-            {@const free =
-              row.person.id === me.id
-                ? []
-                : sharedFreeSlots(me, row.person, day)}
-            <div class="agenda-person" style="--hue:{row.person.hue}">
-              <div class="agenda-head">
-                <i class="dot" aria-hidden="true"></i>
-                <b>{row.person.name}</b>
-                <span class="muted">
-                  {row.blocks.length === 0
-                    ? "Geen les"
-                    : `${row.blocks.length} ${row.blocks.length === 1 ? "les" : "lessen"}`}
+        {#if dayPeople.length === 1}
+          <div class="banner info" role="status">
+            <span>Je vrienden deelden geen rooster dat deze dag dekt.</span>
+            {#if firstCovered >= 0}
+              <button
+                type="button"
+                class="text-btn"
+                onclick={() => (pickedDay = dayKey(days[firstCovered]))}
+              >
+                Ga naar een dag met gegevens
+              </button>
+            {/if}
+          </div>
+        {/if}
+
+        <div class="tl-wrap">
+          <div class="tl" style="--hour-count:{hourCount}">
+            <div class="tl-row axis" aria-hidden="true">
+              <span class="who"></span>
+              <span class="track">
+                {#each hourLabels as label, i (label)}
+                  <em style="left:{(i * 100) / hourCount}%">{label}</em>
+                {/each}
+              </span>
+            </div>
+
+            <div class="tl-row band">
+              <span class="who"><span class="band-label">Iedereen</span></span>
+              <span class="track">
+                {#each common.slots as s (s.start)}
+                  <i
+                    class="free"
+                    style="left:{pct(s.start)}%;width:{pct(s.end) -
+                      pct(s.start)}%"
+                    title="Samen vrij {clock(s.start)}–{clock(s.end)}"
+                  ></i>
+                {/each}
+                {#if common.slots.length === 0}
+                  <span class="hint">
+                    {common.withLessons === 0
+                      ? "niemand heeft les"
+                      : "geen gaatje tussen de lessen"}
+                  </span>
+                {/if}
+              </span>
+            </div>
+
+            {#each timeline.rows as row (row.person.id)}
+              {@const shared =
+                row.person.id === me.id
+                  ? []
+                  : sharedFreeSlots(me, row.person, day)}
+              <div class="tl-row line" style="--hue:{row.person.hue}">
+                <span class="who" title={row.person.name}>
+                  <i class="dot" aria-hidden="true"></i>
+                  <span>{row.person.name}</span>
+                </span>
+                <span class="track">
+                  {#each shared as f (f.start)}
+                    <i
+                      class="shared"
+                      style="left:{pct(f.start)}%;width:{pct(f.end) -
+                        pct(f.start)}%"
+                      title="Jij en {row.person.name} vrij {clock(
+                        f.start,
+                      )}–{clock(f.end)}"
+                    ></i>
+                  {/each}
+                  {#each row.blocks as b (b.key)}
+                    <i
+                      class="block"
+                      style="left:{pct(b.start)}%;width:{pct(b.end) -
+                        pct(b.start)}%"
+                      title="{b.subject} {clock(b.start)}–{clock(b.end)}"
+                    >
+                      <span>{b.subject}</span>
+                    </i>
+                  {/each}
+                  {#if row.blocks.length === 0}
+                    <span class="hint">Geen les</span>
+                  {/if}
                 </span>
               </div>
-              <ul>
-                {#each row.blocks as b (b.key)}
-                  <li>
-                    <span class="time">{clock(b.start)}–{clock(b.end)}</span>
-                    <span>{b.subject}</span>
-                  </li>
-                {/each}
-                {#each free as f (f.start)}
-                  <li class="free-line">
-                    <span class="time">{clock(f.start)}–{clock(f.end)}</span>
-                    <span>Samen vrij</span>
-                  </li>
-                {/each}
-                {#if row.blocks.length === 0 && free.length === 0}
-                  <li class="muted">Geen lessen vandaag.</li>
-                {/if}
-              </ul>
-            </div>
-          {/each}
-        </div>
-      </details>
-    {/if}
-  </section>
+            {/each}
 
-  <div class="lower">
+            {#if nowPct >= 0 && nowPct <= 100}
+              <div class="now-layer" aria-hidden="true">
+                <i
+                  class="nowline"
+                  style="left:{nowPct}%"
+                  title="Nu, {clock(now)}"
+                ></i>
+              </div>
+            {/if}
+          </div>
+        </div>
+        <p class="fine tl-hint">Veeg opzij om de hele dag te zien.</p>
+
+        {#if missingPeople.length > 0}
+          <p class="fine">
+            Geen gegevens voor deze dag van
+            {joinNames(missingPeople.map((p) => p.name))}. Hun rooster dekt deze
+            week niet.
+          </p>
+        {/if}
+
+        <div class="summary">
+          {#if best}
+            <div class="best" class:all={best.busy.length === 0}>
+              <span class="best-label"><Star size={14} /> Beste moment</span>
+              <span class="best-time">{freeWindow(best)}</span>
+              <span class="best-who">
+                {namesOf(best.free)} · {best.minutes} min
+                {#if best.busy.length > 0}
+                  · {namesOf(best.busy)}
+                  {best.busy.length === 1 ? "heeft" : "hebben"} les
+                {/if}
+              </span>
+            </div>
+          {:else}
+            <div class="best none">
+              <span class="best-label"><Clock size={14} /> Samen vrij</span>
+              <span class="best-time">–</span>
+              <span class="best-who">
+                {#if dayPeople.length === 1}
+                  Geen vrienden met gegevens voor deze dag.
+                {:else if common.withLessons === 0}
+                  Niemand heeft les op deze dag.
+                {:else}
+                  Geen moment van minstens {MIN_FREE} min waarin jij en een vriend
+                  tegelijk vrij zijn.
+                  {#if common.allDoneAt}Na {clock(common.allDoneAt)} is iedereen klaar.{/if}
+                {/if}
+              </span>
+            </div>
+          {/if}
+
+          {#if alternatives.length > 0}
+            <ul class="windows" aria-label="Andere vrije momenten">
+              {#each alternatives as w (w.start)}
+                <li class:all={w.busy.length === 0}>
+                  <span class="w-time">{freeWindow(w)}</span>
+                  <span class="w-dur">{w.minutes} min</span>
+                  <span class="w-who">{namesOf(w.free)}</span>
+                  <span class="w-tag" class:ok={w.busy.length === 0}>
+                    {w.busy.length === 0
+                      ? "iedereen"
+                      : `${w.busy.length} ${w.busy.length === 1 ? "persoon" : "mensen"} in les`}
+                  </span>
+                </li>
+              {/each}
+            </ul>
+          {/if}
+        </div>
+
+        {#if common.allDoneAt && common.slots.length > 0}
+          <p class="fine">
+            Na {clock(common.allDoneAt)} is iedereen klaar. Alleen momenten van minstens
+            {MIN_FREE} minuten staan hierboven.
+          </p>
+        {/if}
+
+        <details class="agenda" open>
+          <summary>
+            <CalendarDays size={16} />
+            <span>Agenda per persoon</span>
+            <span class="agenda-total"
+              >{timeline.rows.length}
+              {timeline.rows.length === 1 ? "persoon" : "personen"}</span
+            >
+          </summary>
+          <div class="agenda-list">
+            {#each timeline.rows as row (row.person.id)}
+              {@const free =
+                row.person.id === me.id
+                  ? []
+                  : sharedFreeSlots(me, row.person, day)}
+              {@const hw = row.blocks.filter((b) => b.homework).length}
+              {@const tests = row.blocks.filter((b) => b.test).length}
+              <div class="agenda-person" style="--hue:{row.person.hue}">
+                <div class="agenda-head">
+                  <span class="avatar avatar-sm" aria-hidden="true"
+                    >{initials(row.person.name)}</span
+                  >
+                  <b>{row.person.name}</b>
+                  <span class="agenda-counts">
+                    {row.blocks.length === 0
+                      ? "Geen les"
+                      : `${row.blocks.length} ${row.blocks.length === 1 ? "les" : "lessen"}`}
+                    {#if hw > 0}
+                      <span class="mini hw">{hw} huiswerk</span>
+                    {/if}
+                    {#if tests > 0}
+                      <span class="mini test"
+                        >{tests} {tests === 1 ? "toets" : "toetsen"}</span
+                      >
+                    {/if}
+                  </span>
+                </div>
+                <ul>
+                  {#each row.blocks as b (b.key)}
+                    <li>
+                      <button
+                        type="button"
+                        class="lesson-line"
+                        onclick={() => openLessonDetail(row.person, b)}
+                        aria-label="Details van {b.subject} om {clock(b.start)}"
+                      >
+                        <span class="lesson-time">
+                          <b>{clock(b.start)}</b>
+                          <span>{clock(b.end)}</span>
+                        </span>
+                        <span class="lesson-main">
+                          <span class="lesson-subject">{b.subject}</span>
+                          <span class="lesson-meta">
+                            {#if b.teacher}<span class="meta-teacher"
+                                >{b.teacher}</span
+                              >{/if}
+                            {#if b.room}<span class="meta-room"
+                                >Lokaal {b.room}</span
+                              >{/if}
+                            {#if b.homework}<span class="mini hw">Huiswerk</span
+                              >{/if}
+                            {#if b.test}<span class="mini test">{b.test}</span
+                              >{/if}
+                          </span>
+                        </span>
+                        <span class="chev" aria-hidden="true">›</span>
+                      </button>
+                    </li>
+                  {/each}
+                  {#each free as f (f.start)}
+                    <li class="free-line">
+                      <span class="lesson-time">
+                        <b>{clock(f.start)}</b>
+                        <span>{clock(f.end)}</span>
+                      </span>
+                      <span class="free-label">Samen vrij</span>
+                    </li>
+                  {/each}
+                  {#if row.blocks.length === 0 && free.length === 0}
+                    <li class="agenda-empty">Geen lessen vandaag.</li>
+                  {/if}
+                </ul>
+              </div>
+            {/each}
+          </div>
+        </details>
+      {/if}
+    </section>
+  </div>
+
+  <aside class="rail" aria-label="Vrienden en delen">
     {#if $friends.friends.length > 0}
       <section
         class="card friends"
@@ -1086,15 +1232,18 @@
         <ul class="friends-list">
           {#each $friends.friends as f (f.id)}
             {@const fresh = freshness(f.snapshot, now)}
+            {@const hw = f.snapshot.lessons.filter((l) => l.homework).length}
+            {@const tests = f.snapshot.lessons.filter((l) => l.test).length}
             <li class="friend" class:disabled={!f.enabled}>
               <div class="friend-head">
-                <i class="dot" style="--hue:{hueForId(f.id)}" aria-hidden="true"
-                ></i>
+                <span
+                  class="avatar"
+                  style="--hue:{hueForId(f.id)}"
+                  aria-hidden="true">{initials(friendLabel(f))}</span
+                >
                 <div class="friend-titles">
                   <b>{friendLabel(f)}</b>
-                  <small>
-                    {f.snapshot.lessons.length} lessen · t/m {rangeEndLabel(f)}
-                  </small>
+                  <small class="friend-status">{friendStatusLine(f)}</small>
                 </div>
                 <span
                   class="tag"
@@ -1110,6 +1259,26 @@
                       : "verlopen"}
                 </span>
               </div>
+              <div class="friend-stats">
+                <span class="stat">
+                  <b>{f.snapshot.lessons.length}</b>
+                  <span>lessen</span>
+                </span>
+                <span class="stat hw" class:empty={hw === 0}>
+                  <b>{hw}</b>
+                  <span>huiswerk</span>
+                </span>
+                <span class="stat test" class:empty={tests === 0}>
+                  <b>{tests}</b>
+                  <span>toets{tests === 1 ? "" : "en"}</span>
+                </span>
+                <span class="stat when">
+                  t/m {rangeEndLabel(f)}
+                </span>
+              </div>
+              <p class="friend-meta">
+                Gedeeld {ageText(f.snapshot.createdAt, now)} · alleen op dit apparaat
+              </p>
               <div class="friend-actions">
                 <label class="nick">
                   <span>Naam</span>
@@ -1158,10 +1327,17 @@
 
     <div class="side">
       <!-- Share -->
-      <section class="card" id="share" aria-labelledby="share-title">
+      <section class="card share-card" id="share" aria-labelledby="share-title">
         <div class="card-head">
-          <h2 id="share-title">Deel mijn rooster</h2>
-          <span class="pill primary"><QrCodeIcon size={14} /> QR of link</span>
+          <div class="card-title">
+            <span class="card-icon" aria-hidden="true"
+              ><QrCodeIcon size={18} /></span
+            >
+            <div>
+              <h2 id="share-title">Deel mijn rooster</h2>
+              <p class="fine">Link of QR · alleen-lezen</p>
+            </div>
+          </div>
         </div>
         <p class="muted">
           Je rooster zit in de link zelf. Er wordt niets geüpload en niemand kan
@@ -1192,7 +1368,7 @@
             er valt niets te delen.
           </p>
         {:else}
-          <div class="row">
+          <div class="share-actions">
             <Button onclick={shareNative} disabled={!shareLink}>
               <Share2 size={16} /> Deel link
             </Button>
@@ -1201,7 +1377,11 @@
                   size={16}
                 /> Kopieer{/if}
             </Button>
-            <Button variant="outlined" onclick={toggleQr} disabled={!shareLink}>
+            <Button
+              variant="outlined"
+              onclick={toggleQr}
+              disabled={!shareLink || shareLink.length > 2200}
+            >
               <QrCodeIcon size={16} />
               {showQr ? "Verberg QR" : "Toon QR"}
             </Button>
@@ -1209,7 +1389,13 @@
           {#if actionError}
             <p class="banner bad" role="alert">{actionError}</p>
           {/if}
-          {#if showQr && shareLink}
+          {#if showQr && shareLink && shareLink.length > 2200}
+            <p class="banner warn" role="status">
+              Deze link met alle lesdetails is te groot voor een betrouwbare
+              QR-code ({Math.round(shareLink.length / 1024)} kB). Kopieer of deel
+              de link zelf; die werkt wel.
+            </p>
+          {:else if showQr && shareLink}
             <div class="qrbox">
               <QrCode
                 text={shareLink}
@@ -1222,11 +1408,23 @@
               </p>
             </div>
           {/if}
-          <p class="fine">
-            Geldig t/m {shareValidUntil}. Gedeeld: lestijden en vakken van
-            {mySnapshot.lessons.length} lessen. Niet gedeeld: cijfers, docenten, lokalen,
-            huiswerk.
-          </p>
+          <ul class="share-facts">
+            <li>
+              <span>Geldig</span>
+              <b>t/m {shareValidUntil}</b>
+            </li>
+            <li>
+              <span>Gedeeld</span>
+              <b
+                >{mySnapshot.lessons.length} lessen · lestijden, vakken, docenten,
+                lokalen, huiswerk, toetsen en notities</b
+              >
+            </li>
+            <li>
+              <span>Niet gedeeld</span>
+              <b>Cijfers en berichten</b>
+            </li>
+          </ul>
         {/if}
         <p class="fine link-hint">
           <Link2 size={13} /> Geen camera? Deel de link via WhatsApp of kopieer hem.
@@ -1234,9 +1432,17 @@
       </section>
 
       <!-- Add -->
-      <section class="card" id="add" aria-labelledby="add-title">
+      <section class="card add-card" id="add" aria-labelledby="add-title">
         <div class="card-head">
-          <h2 id="add-title">Vriend toevoegen</h2>
+          <div class="card-title">
+            <span class="card-icon" aria-hidden="true"
+              ><UserPlus size={18} /></span
+            >
+            <div>
+              <h2 id="add-title">Vriend toevoegen</h2>
+              <p class="fine">Plak de link die je kreeg</p>
+            </div>
+          </div>
         </div>
         <p class="muted">
           Scan zijn QR met je camera, of plak hier de link die hij je stuurde.
@@ -1262,12 +1468,88 @@
         {/if}
       </section>
     </div>
-  </div>
+  </aside>
+
+  {#if lessonDetail}
+    <div
+      class="sheet-overlay"
+      role="presentation"
+      onclick={() => (lessonDetail = null)}
+    ></div>
+    <div
+      class="lesson-sheet"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="lesson-sheet-title"
+      style="--hue:{lessonDetail.hue}"
+    >
+      <div class="sheet-grip" aria-hidden="true"></div>
+      <div class="sheet-head">
+        <div>
+          <p class="sheet-who">{lessonDetail.name} · {lessonDetail.day}</p>
+          <h2 id="lesson-sheet-title">{lessonDetail.block.subject}</h2>
+          <p class="sheet-time">
+            {clock(lessonDetail.block.start)}–{clock(lessonDetail.block.end)}
+          </p>
+        </div>
+        <button
+          type="button"
+          class="sheet-close"
+          onclick={() => (lessonDetail = null)}
+          aria-label="Sluiten"><X size={18} strokeWidth={2.5} /></button
+        >
+      </div>
+
+      <div class="sheet-chips">
+        {#if lessonDetail.block.room}
+          <span class="sheet-chip">Lokaal {lessonDetail.block.room}</span>
+        {/if}
+        {#if lessonDetail.block.teacher}
+          <span class="sheet-chip">{lessonDetail.block.teacher}</span>
+        {/if}
+        {#if lessonDetail.block.test}
+          <span class="sheet-chip test">{lessonDetail.block.test}</span>
+        {/if}
+        {#if lessonDetail.block.homework}
+          <span class="sheet-chip hw">Huiswerk</span>
+        {/if}
+      </div>
+
+      {#if lessonDetail.block.homework}
+        <section class="sheet-section">
+          <h3>Huiswerk</h3>
+          <p>{lessonDetail.block.homework}</p>
+        </section>
+      {/if}
+      {#if lessonDetail.block.note}
+        <section class="sheet-section">
+          <h3>Notitie</h3>
+          <p>{lessonDetail.block.note}</p>
+        </section>
+      {/if}
+      {#if !lessonDetail.block.homework && !lessonDetail.block.note}
+        <p class="sheet-empty">
+          {lessonDetail.block.test
+            ? "Geen huiswerk doorgegeven voor deze les."
+            : "Deze vriend deelt geen huiswerk of notities bij deze les."}
+        </p>
+      {/if}
+      <p class="sheet-fine">
+        Gedeeld door {lessonDetail.name}. Alleen-lezen; je kunt dit niet
+        aanpassen.
+      </p>
+    </div>
+  {/if}
 </div>
 
 <style>
   .page {
     --card: var(--color-surface-900);
+    --card-soft: color-mix(
+      in oklch,
+      var(--color-surface-900),
+      var(--color-surface-950) 35%
+    );
     --border: color-mix(in oklch, var(--color-gray-100) 12%, transparent);
     --muted: var(--color-gray-400);
     --grid: color-mix(in oklch, var(--color-gray-100) 10%, transparent);
@@ -1279,18 +1561,16 @@
     --bad-bg: rgb(248 113 113 / 0.12);
 
     width: 100%;
-    max-width: 64rem;
+    max-width: 78rem;
     margin: 0 auto;
     padding: clamp(1rem, 2.5vw, 2rem) clamp(0.8rem, 3vw, 1.75rem) 3rem;
-    display: flex;
-    flex-direction: column;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
     gap: 1rem;
     color: var(--color-gray-100);
   }
   :global(html.mode-light) .page {
-    --border: color-mix(in oklch, var(--color-gray-100) 14%, transparent);
-    --muted: var(--color-gray-500);
-    --grid: color-mix(in oklch, var(--color-gray-100) 12%, transparent);
     --ok: #047857;
     --ok-bg: rgb(5 150 105 / 0.12);
     --warn: #b45309;
@@ -1298,48 +1578,77 @@
     --bad: #b91c1c;
     --bad-bg: rgb(185 28 28 / 0.09);
   }
+  .main,
+  .rail,
+  .side {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+  @media (min-width: 64rem) {
+    .page {
+      grid-template-columns: minmax(0, 1.55fr) minmax(19rem, 22rem);
+      gap: 1.25rem;
+    }
+  }
 
   .head {
     display: flex;
-    align-items: flex-start;
+    flex-wrap: wrap;
+    align-items: flex-end;
     justify-content: space-between;
-    gap: 1rem;
+    gap: 0.85rem 1rem;
+    padding: 0.15rem 0 0.35rem;
   }
   .head-copy {
+    flex: 1 1 20rem;
     min-width: 0;
   }
   h1 {
-    font-size: clamp(1.6rem, 4vw, 2.2rem);
+    font-size: clamp(1.55rem, 3vw, 2rem);
     font-weight: 800;
     letter-spacing: -0.03em;
     line-height: 1.1;
   }
-  .head p {
+  .head-desc {
     margin-top: 0.4rem;
-    max-width: 46rem;
+    max-width: 44rem;
     color: var(--muted);
-    font-size: 0.88rem;
+    font-size: 0.9rem;
     line-height: 1.5;
   }
-  .icon-btn {
+  .head-actions {
     flex: 0 0 auto;
-    display: grid;
-    place-items: center;
-    width: 2.5rem;
-    height: 2.5rem;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .head-actions :global(button) {
+    min-height: 2.75rem;
+  }
+  .refresh-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    min-height: 2.75rem;
+    padding: 0 0.9rem;
     border-radius: 9999px;
     border: 1px solid var(--border);
     background: var(--card);
-    color: var(--color-gray-300);
+    color: var(--color-gray-200);
+    font-size: 0.85rem;
+    font-weight: 650;
     transition: background 0.15s ease;
   }
-  .icon-btn:hover {
-    background: color-mix(in oklch, var(--color-primary-500) 16%, var(--card));
+  .refresh-btn:hover {
+    background: color-mix(in oklch, var(--color-primary-500) 12%, var(--card));
   }
-  .icon-btn:disabled {
-    opacity: 0.5;
+  .refresh-btn:disabled {
+    opacity: 0.55;
   }
-  .icon-btn:focus-visible,
+  .refresh-btn:focus-visible,
   .day:focus-visible,
   .text-btn:focus-visible,
   .remove:focus-visible,
@@ -1376,6 +1685,28 @@
     justify-content: space-between;
     gap: 0.75rem;
     flex-wrap: wrap;
+  }
+  .card-title {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.6rem;
+    min-width: 0;
+  }
+  .card-title > div {
+    min-width: 0;
+  }
+  .card-title .fine {
+    margin-top: 0.1rem;
+  }
+  .card-icon {
+    flex: 0 0 auto;
+    display: grid;
+    place-items: center;
+    width: 2.2rem;
+    height: 2.2rem;
+    border-radius: 0.7rem;
+    background: color-mix(in oklch, var(--color-primary-500) 14%, transparent);
+    color: var(--m3-primary);
   }
   h2 {
     font-size: 1.05rem;
@@ -1442,13 +1773,9 @@
     white-space: nowrap;
   }
   .pill.primary {
-    border-color: color-mix(
-      in oklch,
-      var(--color-primary-500) 40%,
-      transparent
-    );
-    background: color-mix(in oklch, var(--color-primary-500) 14%, transparent);
-    color: var(--color-primary-400);
+    border-color: color-mix(in oklch, var(--m3-primary) 38%, transparent);
+    background: var(--m3-primary-container);
+    color: var(--m3-on-primary-container);
   }
 
   .banner {
@@ -1543,9 +1870,9 @@
       color-mix(in oklch, var(--color-primary-500) 25%, transparent);
   }
   .input.small {
-    min-height: 2.2rem;
-    padding: 0.3rem 0.55rem;
-    font-size: 0.85rem;
+    min-height: 2.75rem;
+    padding: 0.45rem 0.55rem;
+    font-size: 1rem;
   }
 
   .loading {
@@ -1595,15 +1922,17 @@
   }
   .day {
     flex: 0 0 auto;
-    min-width: 4.6rem;
+    min-width: 4.8rem;
+    min-height: 3.5rem;
     display: flex;
     flex-direction: column;
+    justify-content: center;
     align-items: flex-start;
     gap: 0.05rem;
-    padding: 0.45rem 0.6rem;
+    padding: 0.45rem 0.65rem;
     border-radius: 0.9rem;
     border: 1px solid var(--border);
-    background: transparent;
+    background: var(--card-soft);
     color: var(--muted);
     scroll-snap-align: start;
     transition: background 0.15s ease;
@@ -1629,16 +1958,18 @@
     opacity: 0.55;
   }
   .day.on {
-    border-color: color-mix(
-      in oklch,
-      var(--color-primary-500) 55%,
-      transparent
-    );
-    background: color-mix(in oklch, var(--color-primary-500) 18%, transparent);
-    color: var(--color-gray-200);
+    border-color: transparent;
+    background: var(--m3-primary-container);
+    color: var(--m3-on-primary-container);
   }
   .day.on b {
-    color: var(--color-gray-100);
+    color: var(--m3-on-primary-container);
+  }
+  .day.on em {
+    color: inherit;
+  }
+  .day.on em.all {
+    color: inherit;
   }
 
   .presence {
@@ -1650,17 +1981,19 @@
   .presence li {
     flex: 0 1 auto;
     display: inline-flex;
+    flex-wrap: wrap;
     align-items: baseline;
     gap: 0.35rem;
+    max-width: 100%;
     padding: 0.3rem 0.6rem;
     border-radius: 9999px;
     border: 1px solid var(--border);
     background: color-mix(in oklch, var(--color-surface-950), transparent 45%);
     font-size: 0.76rem;
-    white-space: nowrap;
   }
   .presence li b {
     font-weight: 700;
+    overflow-wrap: anywhere;
   }
   .presence li.me {
     border-color: color-mix(
@@ -1716,6 +2049,10 @@
     gap: 0.4rem;
     font-size: 0.78rem;
     color: var(--muted);
+  }
+  .next span {
+    min-width: 0;
+    overflow-wrap: anywhere;
   }
   .next b {
     color: var(--color-gray-200);
@@ -2039,32 +2376,38 @@
     color: var(--ok);
   }
 
-  /* per-person agenda */
+  /* per-person agenda — the primary readable view on phones */
   .agenda {
     border-top: 1px solid var(--border);
-    padding-top: 0.6rem;
+    padding-top: 0.35rem;
   }
   .agenda summary {
     display: flex;
     align-items: center;
-    gap: 0.4rem;
-    min-height: 2.25rem;
+    gap: 0.45rem;
+    min-height: 2.75rem;
     cursor: pointer;
     list-style: none;
-    color: var(--muted);
-    font-size: 0.78rem;
+    color: var(--color-gray-200);
+    font-size: 0.9rem;
     font-weight: 700;
   }
   .agenda summary::-webkit-details-marker {
     display: none;
   }
   .agenda summary:hover {
-    color: var(--color-gray-200);
+    color: var(--color-gray-100);
+  }
+  .agenda-total {
+    margin-left: auto;
+    color: var(--muted);
+    font-size: 0.76rem;
+    font-weight: 600;
   }
   .agenda-list {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
-    gap: 0.55rem;
+    gap: 0.7rem;
     padding: 0.35rem 0 0.15rem;
   }
   @media (min-width: 42rem) {
@@ -2074,84 +2417,103 @@
   }
   .agenda-person {
     min-width: 0;
-    padding: 0.55rem 0.65rem;
-    border-radius: 0.7rem;
-    background: color-mix(in oklch, var(--color-surface-950), transparent 55%);
+    padding: 0.75rem 0.8rem;
+    border: 1px solid var(--border);
+    border-radius: 0.9rem;
+    background: var(--card-soft);
   }
   .agenda-head {
     display: flex;
     align-items: center;
-    gap: 0.35rem;
-    font-size: 0.78rem;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+    font-size: 0.9rem;
   }
   .agenda-head b {
     font-weight: 700;
   }
-  .agenda-head .muted {
-    margin-left: auto;
-    font-size: 0.68rem;
-  }
-  .agenda-person ul {
-    margin-top: 0.35rem;
-    display: flex;
-    flex-direction: column;
-    gap: 0.2rem;
-  }
-  .agenda-person li {
-    display: flex;
-    gap: 0.5rem;
-    font-size: 0.74rem;
-    min-width: 0;
-  }
-  .agenda-person li .time {
-    flex: 0 0 5.2rem;
-    color: var(--muted);
-    font-variant-numeric: tabular-nums;
-  }
-  .agenda-person li.free-line {
-    color: var(--ok);
-  }
-
-  /* lower grid */
-  .lower {
+  .agenda-counts {
     display: flex;
     flex-wrap: wrap;
-    align-items: flex-start;
-    gap: 1rem;
+    align-items: center;
+    gap: 0.3rem;
+    margin-left: auto;
+    color: var(--muted);
+    font-size: 0.76rem;
   }
-  .lower > .friends {
-    flex: 1.15 1 22rem;
+  .agenda-person ul {
+    margin-top: 0.45rem;
+    display: flex;
+    flex-direction: column;
   }
-  .lower > .side {
-    flex: 1 1 20rem;
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
-    align-content: start;
-    gap: 1rem;
+  .agenda-person li {
     min-width: 0;
   }
+  .agenda-person li + li {
+    border-top: 1px solid color-mix(in oklch, var(--border) 60%, transparent);
+  }
+  .agenda-person li.free-line {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    min-height: 2.75rem;
+    padding: 0.35rem 0.45rem;
+    color: var(--ok);
+    font-size: 0.88rem;
+  }
+  .free-label {
+    font-weight: 650;
+  }
+  .agenda-empty {
+    display: flex;
+    align-items: center;
+    min-height: 2.75rem;
+    padding: 0.35rem 0.45rem;
+    color: var(--muted);
+    font-size: 0.85rem;
+  }
+  .avatar {
+    flex: 0 0 auto;
+    display: grid;
+    place-items: center;
+    width: 2.4rem;
+    height: 2.4rem;
+    border-radius: 9999px;
+    background: hsl(var(--hue, 270) 52% 36%);
+    color: #fff;
+    font-size: 0.82rem;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.16);
+  }
+  .avatar-sm {
+    width: 1.65rem;
+    height: 1.65rem;
+    font-size: 0.64rem;
+  }
 
-  /* friends list */
+  /* friends rail */
   .friends-list {
     display: flex;
     flex-direction: column;
-    gap: 0.55rem;
+    gap: 0.65rem;
   }
   .friend {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
-    padding: 0.6rem 0.7rem;
+    gap: 0.55rem;
+    padding: 0.8rem 0.85rem;
     border: 1px solid var(--border);
-    border-radius: 0.85rem;
+    border-radius: 1rem;
+    background: var(--card-soft);
   }
   .friend.disabled {
-    opacity: 0.65;
+    opacity: 0.62;
   }
   .friend-head {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: 0.6rem;
     min-width: 0;
   }
   .friend-titles {
@@ -2161,20 +2523,79 @@
     flex: 1;
   }
   .friend-titles b {
-    font-size: 0.88rem;
+    font-size: 1rem;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .friend-titles small {
+  .friend-titles small,
+  .friend-status {
     color: var(--muted);
-    font-size: 0.7rem;
+    font-size: 0.78rem;
+  }
+  .friend-titles small {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .friend-status {
+    white-space: normal;
+    display: -webkit-box;
+    line-clamp: 2;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .friend-stats {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.35rem;
+  }
+  .stat {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.25rem;
+    padding: 0.2rem 0.5rem;
+    border-radius: 0.5rem;
+    background: color-mix(in oklch, var(--color-gray-100) 6%, transparent);
+    color: var(--muted);
+    font-size: 0.74rem;
+  }
+  .stat b {
+    color: var(--color-gray-100);
+    font-size: 0.86rem;
+    font-variant-numeric: tabular-nums;
+  }
+  .stat.hw b {
+    color: var(--warn);
+  }
+  .stat.test b {
+    color: var(--bad);
+  }
+  .stat.empty {
+    opacity: 0.55;
+  }
+  .stat.empty b {
+    color: inherit;
+  }
+  .stat.when {
+    margin-left: auto;
+    background: none;
+    padding-inline: 0.1rem;
+    font-size: 0.72rem;
+    white-space: nowrap;
+  }
+  .friend-meta {
+    color: var(--muted);
+    font-size: 0.74rem;
+    line-height: 1.4;
   }
   .tag {
     flex: 0 0 auto;
-    padding: 0.12rem 0.45rem;
+    padding: 0.18rem 0.5rem;
     border-radius: 9999px;
-    font-size: 0.62rem;
+    font-size: 0.7rem;
     font-weight: 800;
     white-space: nowrap;
   }
@@ -2194,7 +2615,9 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 0.4rem 0.8rem;
+    gap: 0.5rem 0.75rem;
+    padding-top: 0.55rem;
+    border-top: 1px solid var(--border);
   }
   .nick {
     display: flex;
@@ -2203,7 +2626,7 @@
     flex: 1 1 9rem;
     min-width: 0;
     color: var(--muted);
-    font-size: 0.68rem;
+    font-size: 0.78rem;
     font-weight: 600;
   }
   .nick .input {
@@ -2213,25 +2636,38 @@
     display: flex;
     align-items: center;
     gap: 0.4rem;
+    min-height: 2.75rem;
     color: var(--muted);
-    font-size: 0.7rem;
+    font-size: 0.8rem;
     cursor: pointer;
   }
+  .toggle :global(button) {
+    position: relative;
+  }
+  .toggle :global(button)::before {
+    content: "";
+    position: absolute;
+    inset: -0.375rem;
+    border-radius: 9999px;
+  }
   .remove {
-    min-height: 2.5rem;
-    padding: 0 0.3rem;
-    border: 0;
+    min-height: 2.75rem;
+    padding: 0 0.6rem;
+    border: 1px solid transparent;
+    border-radius: 0.6rem;
     background: none;
     color: var(--muted);
-    font-size: 0.7rem;
+    font-size: 0.8rem;
     font-weight: 700;
   }
   .remove:hover {
+    background: var(--bad-bg);
     color: var(--bad);
   }
   .remove.confirm {
+    border-color: color-mix(in oklch, var(--bad) 45%, transparent);
+    background: var(--bad-bg);
     color: var(--bad);
-    text-decoration: underline;
   }
 
   .add-row {
@@ -2241,6 +2677,44 @@
   }
   .add-row .input {
     flex: 1 1 12rem;
+    min-height: 2.75rem;
+    font-size: 1rem;
+  }
+  .add-row :global(button) {
+    min-height: 2.75rem;
+  }
+  .share-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+  .share-actions :global(button) {
+    flex: 1 1 8rem;
+    min-height: 2.75rem;
+  }
+  .share-facts {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    margin-top: 0.15rem;
+    padding: 0.65rem 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: 0.8rem;
+    background: var(--card-soft);
+  }
+  .share-facts li {
+    display: grid;
+    grid-template-columns: 5.6rem minmax(0, 1fr);
+    gap: 0.5rem;
+    font-size: 0.78rem;
+    line-height: 1.45;
+  }
+  .share-facts span {
+    color: var(--muted);
+  }
+  .share-facts b {
+    color: var(--color-gray-200);
+    font-weight: 600;
   }
   .qrbox {
     display: flex;
@@ -2248,8 +2722,9 @@
     align-items: center;
     gap: 0.5rem;
     padding: 0.75rem;
+    border: 1px solid var(--border);
     border-radius: 0.9rem;
-    background: color-mix(in oklch, var(--color-surface-950), transparent 45%);
+    background: var(--card-soft);
   }
   .qrbox .fine {
     text-align: center;
@@ -2261,10 +2736,482 @@
     gap: 0.3rem;
   }
 
+  /* ---- lesson rows + detail sheet (v2) ---- */
+  .lesson-line {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    padding: 0.45rem 0.45rem;
+    border: 0;
+    border-radius: 0.6rem;
+    background: none;
+    color: inherit;
+    text-align: left;
+    min-height: 2.75rem;
+  }
+  .lesson-line:hover,
+  .lesson-line:focus-visible {
+    background: color-mix(in oklch, var(--color-gray-100) 7%, transparent);
+    outline: none;
+  }
+  .lesson-line:focus-visible {
+    outline: 2px solid var(--color-primary-500);
+    outline-offset: -2px;
+  }
+  .lesson-time {
+    flex: 0 0 4.6rem;
+    display: flex;
+    flex-direction: column;
+    line-height: 1.15;
+    font-variant-numeric: tabular-nums;
+  }
+  .lesson-time b {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--color-gray-100);
+  }
+  .lesson-time span {
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: var(--muted);
+  }
+  .lesson-main {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+  }
+  .lesson-subject {
+    font-size: 0.95rem;
+    font-weight: 650;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .lesson-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.3rem 0.45rem;
+    color: var(--muted);
+    font-size: 0.78rem;
+  }
+  .meta-teacher {
+    color: var(--color-gray-300);
+  }
+  .meta-room {
+    color: var(--muted);
+  }
+  .lesson-meta .mini {
+    padding: 0.1rem 0.38rem;
+    border-radius: 0.35rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+  }
+  .mini.hw {
+    color: var(--warn);
+    background: var(--warn-bg);
+  }
+  .mini.test {
+    color: var(--bad);
+    background: var(--bad-bg);
+  }
+  .chev {
+    flex: 0 0 auto;
+    color: var(--muted);
+    font-size: 1.15rem;
+    line-height: 1;
+  }
+
+  .sheet-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    background: rgb(0 0 0 / 0.55);
+    backdrop-filter: blur(2px);
+  }
+  .lesson-sheet {
+    position: fixed;
+    z-index: 61;
+    left: 50%;
+    bottom: 0;
+    transform: translateX(-50%);
+    width: min(34rem, 100%);
+    max-height: 88dvh;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 0.7rem max(1rem, env(safe-area-inset-right))
+      calc(1.2rem + env(safe-area-inset-bottom))
+      max(1rem, env(safe-area-inset-left));
+    border: 1px solid var(--border);
+    border-bottom: 0;
+    border-radius: 1.2rem 1.2rem 0 0;
+    background: var(--card);
+    color: var(--color-gray-100);
+    box-shadow: 0 -1rem 3rem rgb(0 0 0 / 0.35);
+    --hue-local: oklch(0.72 0.15 var(--hue));
+  }
+  .sheet-grip {
+    width: 2.4rem;
+    height: 0.28rem;
+    margin: 0.15rem auto 0.7rem;
+    border-radius: 999px;
+    background: color-mix(in oklch, var(--color-gray-100) 25%, transparent);
+  }
+  .sheet-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+  .sheet-head > div {
+    min-width: 0;
+  }
+  .sheet-head h2 {
+    margin: 0.1rem 0 0;
+    font-size: 1.3rem;
+    line-height: 1.2;
+    overflow-wrap: anywhere;
+  }
+  .sheet-who {
+    margin: 0;
+    color: color-mix(in oklch, var(--hue-local), var(--color-gray-100) 30%);
+    font-size: 0.86rem;
+    font-weight: 800;
+    text-transform: capitalize;
+  }
+  .sheet-time {
+    margin: 0.25rem 0 0;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+    font-size: 0.86rem;
+  }
+  .sheet-close {
+    flex: 0 0 auto;
+    display: grid;
+    place-items: center;
+    width: 2.75rem;
+    height: 2.75rem;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: color-mix(in oklch, var(--color-gray-100) 8%, transparent);
+    color: var(--color-gray-100);
+    font-size: 1.1rem;
+  }
+  .sheet-close:hover {
+    background: color-mix(in oklch, var(--color-gray-100) 14%, transparent);
+  }
+  .sheet-close:focus-visible {
+    outline: 2px solid var(--color-primary-500);
+    outline-offset: 2px;
+  }
+  .sheet-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin: 0.9rem 0 0.2rem;
+  }
+  .sheet-chip {
+    padding: 0.28rem 0.55rem;
+    border-radius: 999px;
+    background: color-mix(in oklch, var(--color-gray-100) 8%, transparent);
+    color: var(--color-gray-200);
+    font-size: 0.74rem;
+    font-weight: 650;
+  }
+  .sheet-chip.hw {
+    color: var(--warn);
+    background: var(--warn-bg);
+  }
+  .sheet-chip.test {
+    color: var(--bad);
+    background: var(--bad-bg);
+  }
+  .sheet-section {
+    margin-top: 1rem;
+    padding: 0.75rem 0.85rem;
+    border-radius: 0.75rem;
+    background: color-mix(in oklch, var(--color-gray-100) 5%, transparent);
+  }
+  .sheet-section h3 {
+    margin: 0 0 0.3rem;
+    font-size: 0.72rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .sheet-section p {
+    margin: 0;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    font-size: 0.86rem;
+    line-height: 1.55;
+  }
+  .sheet-empty {
+    margin: 1rem 0 0;
+    color: var(--muted);
+    font-size: 0.82rem;
+  }
+  .sheet-fine {
+    margin: 1.1rem 0 0;
+    color: var(--muted);
+    font-size: 0.76rem;
+  }
+  @media (max-width: 39.99rem) {
+    /* The gantt chart needs width; on phones the per-person agenda below is
+       the readable view, so hide the chart instead of forcing a sideways scroll. */
+    .tl-wrap,
+    .tl-hint {
+      display: none;
+    }
+    .agenda {
+      margin-top: 0.5rem;
+    }
+    .lesson-line {
+      padding: 0.55rem 0.35rem;
+    }
+  }
+  @media (min-width: 40rem) {
+    .lesson-sheet {
+      bottom: auto;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      border: 1px solid var(--border);
+      border-radius: 1.2rem;
+      padding-bottom: 1.2rem;
+      max-height: 82vh;
+    }
+  }
   @media (prefers-reduced-motion: reduce) {
     .refresh-icon.spinning,
     .spinner {
       animation: none;
+    }
+  }
+
+  /* ── Readability pass ──────────────────────────────────────────────────
+     The first version used very small type to fit the gantt chart. The chart
+     is now desktop-only, so phones get readable cards, bigger times and
+     comfortable touch targets. */
+  h2 {
+    font-size: 1.15rem;
+  }
+  .sub,
+  .muted {
+    font-size: 0.9rem;
+  }
+  .fine {
+    font-size: 0.8rem;
+  }
+  .pill {
+    font-size: 0.74rem;
+    padding: 0.25rem 0.65rem;
+  }
+  .banner {
+    font-size: 0.88rem;
+    padding: 0.75rem 0.9rem;
+  }
+  .text-btn {
+    font-size: 0.82rem;
+    padding: 0.4rem 0.7rem;
+  }
+  .day {
+    min-width: 5rem;
+    padding: 0.55rem 0.7rem;
+  }
+  .day b {
+    font-size: 0.86rem;
+  }
+  .day small,
+  .day em {
+    font-size: 0.75rem;
+  }
+  .presence li {
+    font-size: 0.84rem;
+    padding: 0.35rem 0.7rem;
+  }
+  .now-box {
+    font-size: 0.92rem;
+    padding: 0.75rem 0.9rem;
+  }
+  .now-box small,
+  .next {
+    font-size: 0.84rem;
+  }
+  .legend {
+    font-size: 0.76rem;
+  }
+  .best-label {
+    font-size: 0.72rem;
+  }
+  .best-time {
+    font-size: 1.5rem;
+  }
+  .best-who {
+    font-size: 0.86rem;
+  }
+  .windows li {
+    font-size: 0.86rem;
+    padding: 0.5rem 0.65rem;
+  }
+  .w-dur,
+  .w-tag {
+    font-size: 0.74rem;
+  }
+  .agenda summary {
+    font-size: 0.88rem;
+    min-height: 2.75rem;
+  }
+  .agenda-head {
+    font-size: 0.88rem;
+    margin-bottom: 0.35rem;
+  }
+  .agenda-person {
+    padding: 0.7rem 0.8rem;
+    border-radius: 0.85rem;
+  }
+  .agenda-person li {
+    font-size: 0.86rem;
+  }
+  .lesson-line {
+    min-height: 2.9rem;
+    gap: 0.7rem;
+    padding: 0.55rem 0.45rem;
+  }
+  .lesson-main > span:first-child {
+    font-size: 1rem;
+    font-weight: 650;
+  }
+  .lesson-meta {
+    font-size: 0.76rem;
+  }
+  .friend-titles b {
+    font-size: 1rem;
+  }
+  .friend-titles small {
+    font-size: 0.78rem;
+  }
+  .tag {
+    font-size: 0.7rem;
+    padding: 0.18rem 0.5rem;
+  }
+  .nick,
+  .toggle,
+  .remove {
+    font-size: 0.8rem;
+  }
+  .axis em {
+    font-size: 0.72rem;
+  }
+  .who {
+    font-size: 0.82rem;
+  }
+  .block {
+    font-size: 0.74rem;
+  }
+  .hint {
+    font-size: 0.78rem;
+  }
+  .sheet-who,
+  .sheet-time {
+    font-size: 0.86rem;
+  }
+  .sheet-chip {
+    font-size: 0.82rem;
+    padding: 0.32rem 0.65rem;
+  }
+  .sheet-section p {
+    font-size: 0.94rem;
+  }
+  .sheet-fine {
+    font-size: 0.78rem;
+  }
+
+  @media (max-width: 39.99rem) {
+    .page {
+      padding: 1rem 0.85rem 4rem;
+      gap: 0.85rem;
+    }
+    .main,
+    .rail,
+    .side {
+      gap: 0.85rem;
+    }
+    .head {
+      align-items: flex-start;
+      gap: 0.7rem;
+    }
+    .head-copy {
+      flex-basis: 100%;
+    }
+    .head-desc {
+      font-size: 0.88rem;
+    }
+    .head-actions {
+      width: 100%;
+    }
+    .head-actions :global(button) {
+      flex: 1 1 8rem;
+      justify-content: center;
+    }
+    h1 {
+      font-size: 1.75rem;
+    }
+    .card {
+      padding: 1rem 0.9rem;
+      border-radius: 1.1rem;
+    }
+    .legend,
+    .days-hint {
+      display: none;
+    }
+    .days {
+      gap: 0.35rem;
+    }
+    .day {
+      min-width: 4.7rem;
+      padding: 0.55rem 0.6rem;
+    }
+    .friend-actions {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 0.55rem 0.75rem;
+    }
+    .nick {
+      grid-column: 1 / -1;
+      font-size: 0.78rem;
+    }
+    .toggle {
+      min-height: 2.75rem;
+    }
+    .remove {
+      min-height: 2.75rem;
+      padding: 0 0.6rem;
+    }
+    .agenda-list {
+      gap: 0.7rem;
+    }
+    .agenda-counts {
+      margin-left: 0;
+      width: 100%;
+    }
+    .lesson-time {
+      flex-basis: 4.35rem;
+    }
+    .summary {
+      gap: 0.75rem;
+    }
+    .best {
+      padding: 0.85rem 0.9rem;
+    }
+    .lesson-sheet {
+      width: 100%;
+      max-height: 92dvh;
+      border-radius: 1.4rem 1.4rem 0 0;
+      border-left: 0;
+      border-right: 0;
     }
   }
 </style>

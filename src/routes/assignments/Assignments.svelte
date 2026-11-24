@@ -46,6 +46,7 @@
   import Button from "#lib/components/Button.svelte";
   import Chip from "#lib/components/Chip.svelte";
   import IconButton from "#lib/components/IconButton.svelte";
+  import { clearAiPageContext, setAiPageContext } from "#lib/ai-context.ts";
   import type {
     Assignment,
     AssignmentAttachment,
@@ -69,6 +70,22 @@
   let loadingVersions = $state(false);
   let listError = $state<string | null>(null);
   let detailError = $state<string | null>(null);
+
+  $effect(() => {
+    const a = selectedAssignment;
+    setAiPageContext({
+      page: "assignments",
+      selectedAssignmentId: a ? a.Id : null,
+      selectedSubject: a?.Vak || null,
+      extra: a
+        ? {
+            Opdracht: a.Titel || "Opdracht",
+            Inleveren: a.InleverenVoor || "geen deadline",
+          }
+        : undefined,
+    });
+  });
+  $effect(() => () => clearAiPageContext("assignments"));
 
   // List filters. `yearBegin === null` means "all school years".
   let statusFilter = $state<StatusFilter>("all");
@@ -174,7 +191,9 @@
     yearBegin ? (schoolyears.find((y) => y.begin === yearBegin) ?? null) : null,
   );
   const yearRange = $derived(
-    selectedYear ? { begin: selectedYear.begin, einde: selectedYear.einde } : null,
+    selectedYear
+      ? { begin: selectedYear.begin, einde: selectedYear.einde }
+      : null,
   );
   // Everything except the status chip, so the chip counts match the list.
   const baseList = $derived(
@@ -195,8 +214,9 @@
     open: baseList.filter((a) => getAssignmentStatus(a).key === "open").length,
     overdue: baseList.filter((a) => getAssignmentStatus(a).key === "overdue")
       .length,
-    submitted: baseList.filter((a) => getAssignmentStatus(a).key === "submitted")
-      .length,
+    submitted: baseList.filter(
+      (a) => getAssignmentStatus(a).key === "submitted",
+    ).length,
     graded: baseList.filter((a) => getAssignmentStatus(a).key === "graded")
       .length,
   });
@@ -219,7 +239,9 @@
     versions.filter(
       (v) =>
         v.failed ||
-        (v.data && (versionHasStudentContent(v.data) || versionHasTeacherContent(v.data))),
+        (v.data &&
+          (versionHasStudentContent(v.data) ||
+            versionHasTeacherContent(v.data))),
     ),
   );
 
@@ -377,11 +399,7 @@
         comment: submissionText,
         files: attachments,
       });
-      await handInAssignment(
-        href,
-        selectedAssignment.Id,
-        JSON.stringify(body),
-      );
+      await handInAssignment(href, selectedAssignment.Id, JSON.stringify(body));
       const id = selectedAssignment.Id;
       resetForm();
       await loadAssignments(true);
@@ -410,7 +428,10 @@
   }
 </script>
 
-{#snippet attachmentList(files: AssignmentAttachment[], tone: "blue" | "emerald")}
+{#snippet attachmentList(
+  files: AssignmentAttachment[],
+  tone: "blue" | "emerald",
+)}
   <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
     {#each files as file}
       <button
@@ -672,7 +693,9 @@
         : 'block'} flex-1 overflow-y-auto bg-surface-950 p-4 md:p-8 custom-scrollbar relative"
     >
       {#if loadingDetail}
-        <div class="absolute inset-0 z-20 overflow-hidden custom-scrollbar bg-surface-950">
+        <div
+          class="absolute inset-0 z-20 overflow-hidden custom-scrollbar bg-surface-950"
+        >
           <div class="p-4 md:p-8 max-w-4xl mx-auto space-y-8">
             <div class="space-y-4">
               <div class="flex items-center gap-2">
@@ -820,7 +843,9 @@
           <!-- Teacher attachments -->
           {#if sel.Bijlagen?.length}
             <div class="space-y-3">
-              <h3 class="text-title-small text-gray-300">Bijlagen van docent</h3>
+              <h3 class="text-title-small text-gray-300">
+                Bijlagen van docent
+              </h3>
               {@render attachmentList(sel.Bijlagen, "blue")}
             </div>
           {/if}
@@ -864,7 +889,10 @@
                           </div>
                         {/if}
                         {#if v.data.LeerlingBijlagen?.length}
-                          {@render attachmentList(v.data.LeerlingBijlagen, "blue")}
+                          {@render attachmentList(
+                            v.data.LeerlingBijlagen,
+                            "blue",
+                          )}
                         {/if}
                       </div>
                     {/if}
@@ -893,7 +921,10 @@
                           </div>
                         {/if}
                         {#if v.data.FeedbackBijlagen?.length}
-                          {@render attachmentList(v.data.FeedbackBijlagen, "emerald")}
+                          {@render attachmentList(
+                            v.data.FeedbackBijlagen,
+                            "emerald",
+                          )}
                         {/if}
                       </div>
                     {/if}

@@ -101,8 +101,7 @@ fn build_request_body(
     let mut request_body = serde_json::json!({
         "model": config.model,
         "messages": chat_messages,
-        "temperature": 0.7,
-        "max_tokens": 4096,
+        "max_tokens": 8192,
     });
 
     // Add tools if available
@@ -452,7 +451,7 @@ mod tests {
         AiConfig {
             api_key: "k".to_string(),
             base_url: "https://api.openai.com/v1".to_string(),
-            model: "gpt-4o-mini".to_string(),
+            model: "gpt-4.1-mini".to_string(),
             enabled: true,
             provider: AiProviderType::OpenAI,
             use_data_access: true,
@@ -469,7 +468,7 @@ mod tests {
         let (url, streamed) = build_request_body(&test_config(), &[], &[], true);
         assert!(url.ends_with("/chat/completions"));
         assert_eq!(streamed["stream"], true);
-        assert_eq!(streamed["model"], "gpt-4o-mini");
+        assert_eq!(streamed["model"], "gpt-4.1-mini");
     }
 
     #[test]

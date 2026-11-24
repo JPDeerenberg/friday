@@ -352,6 +352,11 @@ export interface TimelineBlock {
   start: number;
   end: number;
   subject: string;
+  teacher?: string;
+  room?: string;
+  homework?: string;
+  test?: string;
+  note?: string;
 }
 
 export interface TimelineRow {
@@ -384,6 +389,11 @@ export function dayTimeline(
       start: l.start,
       end: l.end,
       subject: l.subject,
+      ...(l.teacher ? { teacher: l.teacher } : {}),
+      ...(l.room ? { room: l.room } : {}),
+      ...(l.homework ? { homework: l.homework } : {}),
+      ...(l.test ? { test: l.test } : {}),
+      ...(l.note ? { note: l.note } : {}),
     })),
   }));
   let startMin = 8 * 60;

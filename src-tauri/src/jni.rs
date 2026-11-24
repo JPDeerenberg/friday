@@ -1009,7 +1009,14 @@ async fn fetch_calendar(
                 .or(data.get("Items"))
                 .filter(|v| v.is_array())
             {
-                Ok(items.clone())
+                let mut items = items.clone();
+                if let Some(arr) = items.as_array_mut() {
+                    // Hidden Friday Sync chunks are not real calendar events.
+                    arr.retain(|item| {
+                        item.get("Omschrijving").and_then(|v| v.as_str()) != Some("Friday Sync")
+                    });
+                }
+                Ok(items)
             } else {
                 Ok(data)
             }

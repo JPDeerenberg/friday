@@ -239,6 +239,7 @@ pub fn run() {
             commands::ai_schedule::create_ai_schedule_item,
             commands::ai_schedule::update_ai_schedule_item,
             commands::ai_schedule::delete_ai_schedule_item,
+            commands::ai_schedule::replace_ai_schedule_items,
             commands::ai_schedule::complete_ai_schedule_item,
             commands::ai_schedule::dismiss_ai_schedule_item,
             commands::ai_schedule::get_merged_schedule,

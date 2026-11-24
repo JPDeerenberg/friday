@@ -58,6 +58,34 @@ function isNumberArray(v: unknown): v is number[] {
   );
 }
 
+/** Validate a state coming from sync before putting it in the live store. */
+export function sanitizeGradeRevealState(
+  value: unknown,
+): GradeRevealState | null {
+  if (!value || typeof value !== "object") return null;
+  const p = value as Partial<GradeRevealState>;
+  if (!isNumberArray(p.opened)) return null;
+  const base = emptyTally();
+  const unlocked: Record<string, number> = {};
+  if (p.unlocked && typeof p.unlocked === "object") {
+    for (const [id, at] of Object.entries(p.unlocked)) {
+      if (typeof at === "number" && Number.isFinite(at)) unlocked[id] = at;
+    }
+  }
+  return {
+    opened: p.opened.slice(0, MAX_OPENED),
+    unlocked,
+    showcase: isNumberArray(p.showcase)
+      ? p.showcase.slice(0, MAX_SHOWCASE)
+      : [],
+    tally: {
+      ...base,
+      ...(p.tally ?? {}),
+      byRarity: { ...base.byRarity, ...(p.tally?.byRarity ?? {}) },
+    },
+  };
+}
+
 export function loadGradeRevealState(): GradeRevealState {
   const fresh = (): GradeRevealState => ({
     opened: [],

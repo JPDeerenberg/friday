@@ -1568,21 +1568,30 @@ export function getCalendarEvents(
   personId: number,
   start: string,
   end: string,
+  includeSync = false,
+  skipCache = false,
 ): Promise<CalendarEvent[]> {
-  return withOfflineRange<CalendarEvent>({
-    kind: "calendar",
-    pid: personId,
-    start: formatDate(start),
-    end: formatDate(end),
-    fetcher: () => getCalendarEventsLive(personId, start, end),
-    idOf: (e) => e.Id,
-    dateOf: (e) => e.Start,
-  }).then((events) => {
+  const load = skipCache
+    ? getCalendarEventsLive(personId, start, end)
+    : withOfflineRange<CalendarEvent>({
+        kind: "calendar",
+        pid: personId,
+        start: formatDate(start),
+        end: formatDate(end),
+        fetcher: () => getCalendarEventsLive(personId, start, end),
+        idOf: (e) => e.Id,
+        dateOf: (e) => e.Start,
+      });
+  return load.then((events) => {
     // Note the teachers so they can be renamed in Settings.
     registerTeacherNames(
-      events.flatMap((e) => (e.Docenten ?? []).map((d) => d.Naam)),
+      events
+        .filter((e) => includeSync || e.Omschrijving !== "Friday Sync")
+        .flatMap((e) => (e.Docenten ?? []).map((d) => d.Naam)),
     );
-    return events;
+    return includeSync
+      ? events
+      : events.filter((e) => e.Omschrijving !== "Friday Sync");
   });
 }
 

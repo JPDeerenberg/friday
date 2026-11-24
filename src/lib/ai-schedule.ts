@@ -25,6 +25,8 @@ import {
 } from "./web-planner.ts";
 import { loadSettings } from "./stores.ts";
 import { loadWebSession, sessionTierA } from "./web-session.ts";
+import { webGetCalendarEvents } from "./web-tier-b.ts";
+import { SYNC_DESCRIPTION } from "./sync-types.ts";
 
 function isWeb(): boolean {
   return typeof window !== "undefined" && !(window as any).__TAURI__;
@@ -110,6 +112,27 @@ export async function getAiSchedule(
     return (await loadScheduleItems()).filter((item) => inRange(item, s, e));
   }
   return invoke("get_ai_schedule", { start, end });
+}
+
+/**
+ * Every plan item, for cross-device sync. The facade keeps desktop on the
+ * Rust store and the browser on IndexedDB; sync must never read the wrong one.
+ */
+export async function getAllAiScheduleItems(): Promise<AiScheduleItem[]> {
+  return getAiSchedule("2000-01-01T00:00:00", "2100-01-01T00:00:00");
+}
+
+/** Replace the whole plan after a merged sync (desktop uses one Rust command). */
+export async function replaceAiScheduleItems(
+  items: AiScheduleItem[],
+): Promise<void> {
+  if (isWeb()) {
+    await saveScheduleItems(items);
+    dispatchScheduleChanged();
+    return;
+  }
+  await invoke("replace_ai_schedule_items", { items });
+  dispatchScheduleChanged();
 }
 
 export async function createAiScheduleItem(
@@ -269,19 +292,16 @@ export async function getMergedSchedule(
     let magister_events: MergedSchedule["magister_events"] = [];
     try {
       const tokens = await loadWebSession();
-      if (tokens) {
-        const data = await sessionTierA().magister<{
-          Items?: unknown[];
-          items?: unknown[];
-        }>(
-          tokens,
-          "GET",
-          `personen/${personId}/afspraken?tot=${end.slice(0, 10)}&van=${start.slice(0, 10)}`,
-        );
-        magister_events = (data.Items ??
-          data.items ??
-          []) as MergedSchedule["magister_events"];
-      }
+      if (tokens)
+        magister_events = (
+          (await webGetCalendarEvents(
+            sessionTierA(),
+            tokens,
+            personId,
+            start,
+            end,
+          )) as MergedSchedule["magister_events"]
+        ).filter((e) => e.Omschrijving !== SYNC_DESCRIPTION);
     } catch (err) {
       console.warn(
         "getMergedSchedule: Magister fetch failed, showing AI items only",
@@ -466,10 +486,10 @@ async function webPerformUpdate(
       dayKey(s) <= windowEndDay;
     if (!inWindow) return true;
     if (lockedIds.has(item.id)) return true;
-    if (item.item_type === "free_time" || item.item_type === "sleep")
-      return false;
-    if (item.status === "planned" && item.source === "ai_chat") return false;
-    return true;
+    // Anything else in the planning window is regenerated, matching the
+    // desktop planner. Leaving old planned blocks behind caused duplicate and
+    // stale homework blocks after pressing "Bijwerken".
+    return false;
   });
   const toAiItem = (p: PlanItem): AiScheduleItem => ({
     id: p.id,
@@ -663,24 +683,26 @@ function slotJson(slot: FreeSlot): FreeSlotJson {
 
 /** Map raw Magister afspraken to planner lessons (same as the Update flow). */
 export function toPlanLessons(raw: unknown[]): PlanLesson[] {
-  return ((raw ?? []) as Array<Record<string, unknown>>).map((ev) => ({
-    id: (ev["Id"] as number) ?? 0,
-    start: (ev["Start"] as string) ?? "",
-    einde: (ev["Einde"] as string) ?? "",
-    status: (ev["Status"] as number) ?? 0,
-    event_type: (ev["Type"] as number) ?? 0,
-    info_type: (ev["InfoType"] as number) ?? 0,
-    afgerond: (ev["Afgerond"] as boolean) ?? false,
-    omschrijving: (ev["Omschrijving"] as string | null) ?? null,
-    inhoud: (ev["Inhoud"] as string | null) ?? null,
-    aantekening: (ev["Aantekening"] as string | null) ?? null,
-    opmerking: (ev["Opmerking"] as string | null) ?? null,
-    vakken: Array.isArray(ev["Vakken"])
-      ? (ev["Vakken"] as Array<Record<string, unknown>>).map((v) => ({
-          naam: (v["Naam"] as string | undefined) ?? null,
-        }))
-      : null,
-  }));
+  return ((raw ?? []) as Array<Record<string, unknown>>)
+    .filter((ev) => ev["Omschrijving"] !== "Friday Sync")
+    .map((ev) => ({
+      id: (ev["Id"] as number) ?? 0,
+      start: (ev["Start"] as string) ?? "",
+      einde: (ev["Einde"] as string) ?? "",
+      status: (ev["Status"] as number) ?? 0,
+      event_type: (ev["Type"] as number) ?? 0,
+      info_type: (ev["InfoType"] as number) ?? 0,
+      afgerond: (ev["Afgerond"] as boolean) ?? false,
+      omschrijving: (ev["Omschrijving"] as string | null) ?? null,
+      inhoud: (ev["Inhoud"] as string | null) ?? null,
+      aantekening: (ev["Aantekening"] as string | null) ?? null,
+      opmerking: (ev["Opmerking"] as string | null) ?? null,
+      vakken: Array.isArray(ev["Vakken"])
+        ? (ev["Vakken"] as Array<Record<string, unknown>>).map((v) => ({
+            naam: (v["Naam"] as string | undefined) ?? null,
+          }))
+        : null,
+    }));
 }
 
 /** Locked items for an ms range (web twin of Rust locked_items_in_window). */

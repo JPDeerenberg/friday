@@ -298,6 +298,20 @@ pub async fn update_ai_schedule_item(
 }
 
 #[tauri::command]
+pub async fn replace_ai_schedule_items(
+    state: State<'_, AiScheduleState>,
+    items: Vec<AiScheduleItem>,
+) -> Result<(), String> {
+    for item in &items {
+        validate_item(item)?;
+    }
+    state.save(&items);
+    *state.items.write().await = items;
+    state.undo.lock().unwrap().clear();
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn delete_ai_schedule_item(
     state: State<'_, AiScheduleState>,
     id: String,
@@ -420,8 +434,12 @@ async fn fetch_magister_events(
     let events_resp: crate::models::calendar::CalendarEventsResponse =
         serde_json::from_value(events_data).map_err(|e| e.to_string())?;
 
-    // Note: we skip absences merging for merged schedule (not critical); could add
-    Ok(events_resp.items)
+    // The hidden cross-device sync appointments must never influence planning.
+    Ok(events_resp
+        .items
+        .into_iter()
+        .filter(|e| e.omschrijving.as_deref() != Some("Friday Sync"))
+        .collect())
 }
 
 pub(crate) async fn fetch_magister_events_inner(
@@ -457,8 +475,12 @@ pub(crate) async fn fetch_magister_events_inner(
     let events_resp: crate::models::calendar::CalendarEventsResponse =
         serde_json::from_value(events_data).map_err(|e| e.to_string())?;
 
-    // Note: we skip absences merging for merged schedule (not critical); could add
-    Ok(events_resp.items)
+    // The hidden cross-device sync appointments must never influence planning.
+    Ok(events_resp
+        .items
+        .into_iter()
+        .filter(|e| e.omschrijving.as_deref() != Some("Friday Sync"))
+        .collect())
 }
 
 async fn fetch_assignments_inner(

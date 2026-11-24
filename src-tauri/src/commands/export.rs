@@ -109,7 +109,17 @@ pub async fn export_all_data(
         let mut files = Vec::new();
         let mut errors = Vec::new();
         match crate::client::get_with_shared(&client, &lessons_path).await {
-            Ok(data) => {
+            Ok(mut data) => {
+                if let Some(obj) = data.as_object_mut() {
+                    for key in ["Items", "items"] {
+                        if let Some(arr) = obj.get_mut(key).and_then(|v| v.as_array_mut()) {
+                            arr.retain(|item| {
+                                item.get("Omschrijving").and_then(|v| v.as_str())
+                                    != Some("Friday Sync")
+                            });
+                        }
+                    }
+                }
                 if let Ok(filename) = save_json(&dir_path, "lessen.json", &data) {
                     files.push(filename);
                 }

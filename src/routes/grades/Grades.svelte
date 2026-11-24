@@ -6,6 +6,7 @@
     recordLetterScan,
     effectiveLetterRules,
   } from "#lib/stores.ts";
+  import { clearAiPageContext, setAiPageContext } from "#lib/ai-context.ts";
   import {
     getSchoolyears,
     getGrades,
@@ -749,6 +750,20 @@
   // === Per-period breakdown (cijfer_periode) ===
   const periods = $derived(getPeriods(grades));
   let selectedPeriod = $state<GradePeriod | null>(null);
+
+  $effect(() => {
+    setAiPageContext({
+      page: "grades",
+      selectedSubject,
+      extra: {
+        Tab: currentTab,
+        Schooljaar: selectedYear?.studie?.code ?? null,
+        Periode: selectedPeriod?.Naam ?? null,
+      },
+    });
+  });
+
+  $effect(() => () => clearAiPageContext("grades"));
   const displaySubjects = $derived.by(() => {
     if (!selectedPeriod) return subjects;
     const periodId = selectedPeriod.Id;

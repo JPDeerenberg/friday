@@ -25,6 +25,7 @@ import {
   setConversationSummary,
   summarizeDropped,
   summarySystemMessage,
+  stripEmbeddedTrace,
   traceBlock,
   type ThreadMessage,
 } from "./ai-chats.ts";
@@ -160,6 +161,34 @@ test("fit keeps system-plus-latest under budget, drops the front", () => {
   assert.strictEqual(all.dropped.length, 0);
 });
 
+test("fit budget ignores trace metadata that is not sent", () => {
+  const withTrace: ThreadMessage[] = [
+    { role: "user", content: "x".repeat(100) },
+    {
+      role: "assistant",
+      content: "y".repeat(100),
+      trace: [
+        {
+          text: "",
+          calls: [
+            {
+              name: "get_grades",
+              args: {},
+              ok: true,
+              text: "z".repeat(100_000),
+            },
+          ],
+        },
+      ],
+    },
+  ];
+  // 200 content chars fit the 60-token (~210 char) budget; the huge trace
+  // must not evict the user's message.
+  const out = fitHistoryForRequest(withTrace, 60);
+  assert.strictEqual(out.messages.length, 2);
+  assert.strictEqual(out.dropped.length, 0);
+});
+
 test("trace replay block carries previews, never raw dumps", () => {
   const block = traceBlock([
     {
@@ -179,6 +208,19 @@ test("trace replay block carries previews, never raw dumps", () => {
   assert.match(block, /niet opnieuw op/);
   assert.strictEqual(traceBlock([]), "");
   assert.strictEqual(traceBlock(undefined), "");
+});
+
+test("legacy traces embedded in assistant content are stripped", () => {
+  const embedded =
+    "Je hebt morgen een toets." +
+    "\n\n[Eerdere toolresultaten uit dit gesprek — gebruik deze, haal ze niet opnieuw op:\n" +
+    "- get_grades({}) → cijfer 7,5\n]";
+  assert.strictEqual(stripEmbeddedTrace(embedded), "Je hebt morgen een toets.");
+  assert.strictEqual(
+    stripEmbeddedTrace("Gewoon antwoord."),
+    "Gewoon antwoord.",
+  );
+  assert.strictEqual(stripEmbeddedTrace(""), "");
 });
 
 // ─── Summary fallback (item 5) ─────────────────────────────────────────────

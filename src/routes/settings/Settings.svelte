@@ -35,6 +35,7 @@
     getAiConfig,
     setAiConfig,
     validateAiKey,
+    aiChatWithTools,
     listAiModels,
     getAiDiagnostics,
     clearAiDiagnostics,
@@ -53,6 +54,16 @@
     type NotesRevision,
   } from "#lib/ai-notes.ts";
   import { clearAllConversations } from "#lib/ai-chats.ts";
+  import {
+    isSyncUnlocked,
+    loadSyncSettings,
+    resetSyncMeta,
+    runSync,
+    saveSyncSettings,
+    syncStatus,
+    unlockSync,
+  } from "#lib/sync-service.ts";
+  import type { SyncCategory, SyncSettings } from "#lib/sync-types.ts";
   import { sectionIcon } from "#lib/icons.ts";
   import {
     updateStatus,
@@ -90,6 +101,91 @@
   let isDesktopLayout = $state(true);
   // Mobile master–detail: 'list' shows the section list, 'detail' shows a section page
   let mobilePanel = $state<"list" | "detail">("list");
+  let syncSettings = $state<SyncSettings>(loadSyncSettings());
+  let syncBusy = $state(false);
+  let syncPassphrase = $state("");
+  let syncKeyReady = $state(isSyncUnlocked());
+  const syncCategoryOptions: Array<{ id: SyncCategory; label: string }> = [
+    { id: "settings", label: "Instellingen" },
+    { id: "plan", label: "Friday's Plan (inclusief planinstellingen)" },
+    { id: "friends", label: "Vrienden en gedeelde roosters" },
+    { id: "notes", label: "AI-geheugen" },
+    { id: "quests", label: "XP, quests en badges" },
+    { id: "cards", label: "Cijferkaarten en collectie" },
+    { id: "ai", label: "AI-instellingen (zonder API-sleutel)" },
+    { id: "letterScan", label: "Automatisch gevonden lettercijfers" },
+    { id: "calendar", label: "Lokale agendabewerkingen" },
+    { id: "grades", label: "Cijfercombinaties" },
+    { id: "chats", label: "AI-gesprekken" },
+  ];
+
+  function patchSync(patch: Partial<SyncSettings>): void {
+    syncSettings = { ...syncSettings, ...patch };
+    saveSyncSettings(syncSettings);
+  }
+
+  function setSyncCategory(category: SyncCategory, enabled: boolean): void {
+    patchSync({
+      categories: {
+        ...syncSettings.categories,
+        [category]: { enabled },
+      },
+    });
+  }
+
+  async function doSync(direction: "both" | "push" | "pull"): Promise<void> {
+    if ($personId == null) return;
+    syncBusy = true;
+    try {
+      if (
+        (syncSettings.encrypted || syncSettings.remoteEncrypted) &&
+        !isSyncUnlocked()
+      ) {
+        if (!syncPassphrase.trim()) {
+          syncStatus.set({
+            state: "error",
+            message: "Voer eerst je sync-wachtwoord in.",
+            at: Date.now(),
+            lastResult: null,
+          });
+          return;
+        }
+        try {
+          await unlockSync(syncPassphrase);
+          syncPassphrase = "";
+          syncKeyReady = true;
+        } catch (err) {
+          syncStatus.set({
+            state: "error",
+            message: `Sync ontgrendelen mislukt: ${err}`,
+            at: Date.now(),
+            lastResult: null,
+          });
+          return;
+        }
+      }
+      await runSync($personId, { direction });
+    } catch {
+      // syncStatus already carries the error message
+    } finally {
+      syncBusy = false;
+      // A fresh device may have adopted the remote date from the index.
+      syncSettings = loadSyncSettings();
+      syncKeyReady = isSyncUnlocked();
+    }
+  }
+
+  // Auto-sync can discover that the remote document is encrypted (or that a
+  // fresh device adopted a remote date) while this section is open. Reload the
+  // persisted settings whenever sync status changes so the password field and
+  // date reflect reality without requiring a manual refresh.
+  $effect(() => {
+    const state = $syncStatus.state;
+    if (state === "error" || state === "ok") {
+      syncSettings = loadSyncSettings();
+      syncKeyReady = isSyncUnlocked();
+    }
+  });
 
   // Section navigation items (sidebar on desktop, list on mobile)
   // Web build additionally hides native-only sections (hideOnWeb).
@@ -194,11 +290,12 @@
   // --- AI config state ---
   let aiApiKey = $state("");
   let aiBaseUrl = $state("https://api.openai.com/v1");
-  let aiModel = $state("gpt-4o-mini");
+  let aiModel = $state("gpt-4.1-mini");
   let aiEnabled = $state(false);
   let aiProvider = $state<AiProviderType>("openai");
   let aiUseDataAccess = $state(true); // Whether to use tool calling with Magister data
   let aiTesting = $state(false);
+  let aiToolsTesting = $state(false);
   let aiTestResult = $state<string | null>(null);
   let aiTestSuccess = $state(false);
   let aiSaving = $state(false);
@@ -853,11 +950,64 @@
     }
   }
 
-  const aiBaseUrlPresets = [
-    { value: "https://api.openai.com/v1", label: "OpenAI" },
-    { value: "http://localhost:11434/v1", label: "Ollama (lokaal)" },
-    { value: "http://localhost:1234/v1", label: "LM Studio (lokaal)" },
-  ];
+  /** Probeert één tool-aanroep: alleen bruikbaar met data-toegang en een persoon. */
+  async function testAiTools() {
+    const pid = $personId;
+    if (pid == null) {
+      aiTestResult = "Log eerst in om tools te testen (persoon-ID ontbreekt).";
+      aiTestSuccess = false;
+      return;
+    }
+    if (!aiUseDataAccess) {
+      aiTestResult =
+        "Zet eerst 'Toegang tot schoolgegevens' aan om tools te testen.";
+      aiTestSuccess = false;
+      return;
+    }
+    aiToolsTesting = true;
+    aiTestResult = null;
+    try {
+      // Save first, then test — same contract as testAiConnection.
+      await setAiConfig(
+        aiApiKey,
+        aiBaseUrl,
+        aiModel,
+        true,
+        aiProvider,
+        aiUseDataAccess,
+        aiNotesAiCanEdit,
+        aiNotesUseInChats,
+      );
+      const result = await aiChatWithTools(
+        [
+          {
+            role: "user",
+            content:
+              "Roep de tool get_current_time aan en antwoord daarna met precies: OK.",
+          },
+        ],
+        "Test vanuit Instellingen: controleer of tool calling werkt.",
+        pid,
+      );
+      const toolCalls = result.trace.reduce(
+        (total, turn) => total + turn.calls.length,
+        0,
+      );
+      if (toolCalls > 0) {
+        aiTestResult = "Tool-aanroep gelukt! Het model kan tools gebruiken.";
+        aiTestSuccess = true;
+      } else {
+        aiTestResult =
+          "Model ondersteunt geen tools of de test gaf geen tool-aanroep.";
+        aiTestSuccess = false;
+      }
+    } catch (e) {
+      aiTestResult = `Fout: ${e}`;
+      aiTestSuccess = false;
+    } finally {
+      aiToolsTesting = false;
+    }
+  }
 
   // --- AI Geheugen (notes) ---
   function applyNotesSnapshot(snap: {
@@ -1073,6 +1223,13 @@
       description:
         "Beheer slaaptijden en blokkades voor de AI-planning (Friday's Plan).",
       isAiSchedule: true,
+    },
+    {
+      id: "sync",
+      title: "Synchronisatie",
+      description:
+        "Kies welke gegevens tussen je apparaten synchroniseren via een verborgen Magister-afspraak.",
+      isSync: true,
     },
     {
       id: "algemeen",
@@ -1755,17 +1912,10 @@
                           bind:value={aiBaseUrl}
                           class="w-full bg-surface-800/80 border border-white/10 rounded-m3-xs px-4 py-3 text-body-medium text-white placeholder-gray-600 focus:outline-none focus:border-primary-500/50 transition-all font-mono"
                         />
-                        <div class="flex flex-wrap gap-2 mt-2">
-                          {#each aiBaseUrlPresets as preset}
-                            <Chip
-                              variant="filter"
-                              selected={aiBaseUrl === preset.value}
-                              onclick={() => (aiBaseUrl = preset.value)}
-                            >
-                              {preset.label}
-                            </Chip>
-                          {/each}
-                        </div>
+                        <p class="text-label-small text-gray-600">
+                          Alleen nodig voor een eigen proxy of een lokaal model.
+                          De provider hierboven vult dit automatisch in.
+                        </p>
                       </div>
 
                       <!-- Provider -->
@@ -1807,9 +1957,19 @@
                           id="aiModel"
                           type="text"
                           bind:value={aiModel}
-                          placeholder="gpt-4o-mini"
+                          list="aiModelSuggestions"
+                          placeholder={AI_PROVIDERS[aiProvider].defaultModel}
                           class="w-full bg-surface-800/80 border border-white/10 rounded-m3-xs px-4 py-3 text-body-medium text-white placeholder-gray-600 focus:outline-none focus:border-primary-500/50 transition-all"
                         />
+                        <datalist id="aiModelSuggestions">
+                          {#each AI_PROVIDERS[aiProvider].models as model}
+                            <option value={model}></option>
+                          {/each}
+                        </datalist>
+                        <p class="text-label-small text-gray-600">
+                          Suggesties zijn voorbeelden; elk model-ID dat je
+                          provider accepteert werkt.
+                        </p>
                       </div>
 
                       <div class="w-full h-px bg-white/5"></div>
@@ -1867,12 +2027,12 @@
                       {/if}
 
                       <!-- Actions -->
-                      <div class="flex gap-3 pt-2">
+                      <div class="flex flex-wrap gap-3 pt-2">
                         <Button
                           variant="filled"
                           onclick={saveAiConfig}
                           disabled={aiSaving}
-                          class="flex-1"
+                          class="flex-1 min-w-[8rem]"
                         >
                           {#if aiSaving}<Icon
                               name="loader"
@@ -1884,13 +2044,28 @@
                           variant="tonal"
                           onclick={testAiConnection}
                           disabled={aiTesting || (!aiApiKey && !aiHasKey)}
-                          class="flex-1 bg-emerald-500/10! text-emerald-400! border border-emerald-500/20! hover:bg-emerald-500/20!"
+                          class="flex-1 min-w-[8rem] bg-emerald-500/10! text-emerald-400! border border-emerald-500/20! hover:bg-emerald-500/20!"
                         >
                           {#if aiTesting}<Icon
                               name="loader"
                               size={14}
                               class="animate-spin"
                             /> Testen...{:else}Test verbinding{/if}
+                        </Button>
+                        <Button
+                          variant="tonal"
+                          onclick={testAiTools}
+                          disabled={aiToolsTesting ||
+                            !aiUseDataAccess ||
+                            $personId == null ||
+                            (!aiApiKey && !aiHasKey)}
+                          class="flex-1 min-w-[8rem]"
+                        >
+                          {#if aiToolsTesting}<Icon
+                              name="loader"
+                              size={14}
+                              class="animate-spin"
+                            /> Tools testen...{:else}Test met tools{/if}
                         </Button>
                       </div>
 
@@ -2508,6 +2683,201 @@
                         class="w-full">Blokkade toevoegen</Button
                       >
                     </div>
+                  </div>
+                {:else if section.isSync}
+                  <div
+                    class="glass p-6 rounded-m3-md border-primary-500/20 space-y-6"
+                  >
+                    <p class="text-body-medium text-gray-500 leading-relaxed">
+                      Friday bewaart je instellingen, planning, vrienden,
+                      notities, quests en meer in een verborgen persoonlijke
+                      Magister-afspraak. Op een nieuw apparaat of na opnieuw
+                      inloggen haalt de app die automatisch op. De afspraak
+                      verschijnt niet in de agenda.
+                    </p>
+
+                    <div class="flex items-center justify-between gap-4">
+                      <div>
+                        <p class="text-title-small text-gray-100">
+                          Synchronisatie inschakelen
+                        </p>
+                        <p class="text-label-medium text-gray-500 mt-1">
+                          Automatisch na inloggen en elke 10 minuten
+                        </p>
+                      </div>
+                      <Switch
+                        checked={syncSettings.enabled}
+                        onCheckedChange={(v) => patchSync({ enabled: v })}
+                        ariaLabel="Synchronisatie inschakelen"
+                      />
+                    </div>
+
+                    <div class="space-y-2">
+                      <label
+                        for="syncDate"
+                        class="text-label-small text-gray-500"
+                        >Datum van de verborgen afspraak</label
+                      >
+                      <input
+                        id="syncDate"
+                        type="date"
+                        value={syncSettings.date}
+                        onchange={(e) => {
+                          const value = e.currentTarget.value;
+                          if (/^\d{4}-\d{2}-\d{2}$/.test(value))
+                            patchSync({ date: value });
+                        }}
+                        class="w-full bg-surface-800 border border-white/10 rounded-m3-xs px-3 py-2.5 text-body-small text-white"
+                      />
+                      <p class="text-label-small text-gray-600">
+                        Kies een vaste datum (bijvoorbeeld 1 september). Een
+                        nieuw apparaat vindt deze datum automatisch via een
+                        kleine index-afspraak; je hoeft daar niets in te
+                        stellen. Bij het wijzigen van de datum verplaatst de
+                        volgende sync de gegevens.
+                      </p>
+                    </div>
+
+                    <div class="flex items-center justify-between gap-4">
+                      <div>
+                        <p class="text-title-small text-gray-100">
+                          Versleutelen met een wachtwoord
+                        </p>
+                        <p class="text-label-medium text-gray-500 mt-1">
+                          AES-GCM; het wachtwoord wordt nooit opgeslagen
+                        </p>
+                      </div>
+                      <Switch
+                        checked={syncSettings.encrypted}
+                        onCheckedChange={(v) => patchSync({ encrypted: v })}
+                        ariaLabel="Synchronisatie versleutelen"
+                      />
+                    </div>
+
+                    {#if syncSettings.encrypted || syncSettings.remoteEncrypted}
+                      <div class="space-y-2">
+                        <label
+                          for="syncPassphrase"
+                          class="text-label-small text-gray-500"
+                          >Sync-wachtwoord</label
+                        >
+                        <input
+                          id="syncPassphrase"
+                          type="password"
+                          autocomplete="current-password"
+                          bind:value={syncPassphrase}
+                          placeholder={syncKeyReady
+                            ? "Ontgrendeld voor deze sessie"
+                            : "Voer je sync-wachtwoord in"}
+                          class="w-full bg-surface-800 border border-white/10 rounded-m3-xs px-3 py-2.5 text-body-small text-white"
+                        />
+                        <p class="text-label-small text-gray-600">
+                          {syncKeyReady
+                            ? "Ontgrendeld. Het wachtwoord blijft alleen in het geheugen tot de app sluit."
+                            : syncSettings.remoteEncrypted &&
+                                !syncSettings.encrypted
+                              ? "Het bestaande sync-document is versleuteld. Vul je wachtwoord in om te ontgrendelen; met versleuteling uit wordt het na deze sync onversleuteld opgeslagen."
+                              : "Vergrendeld. Vul je wachtwoord in en synchroniseer. Zonder wachtwoord is versleutelde sync-data niet te herstellen."}
+                        </p>
+                      </div>
+                    {/if}
+
+                    <div class="space-y-2">
+                      <p class="text-title-small text-gray-100">
+                        Wat synchroniseert mee
+                      </p>
+                      {#each syncCategoryOptions as option (option.id)}
+                        <div
+                          class="flex items-center justify-between gap-3 py-2 border-b border-white/5 last:border-0"
+                        >
+                          <span class="text-body-small text-gray-300"
+                            >{option.label}</span
+                          >
+                          <Switch
+                            checked={syncSettings.categories[option.id]
+                              ?.enabled !== false}
+                            onCheckedChange={(v) =>
+                              setSyncCategory(option.id, v)}
+                            ariaLabel="Synchroniseer {option.label}"
+                          />
+                        </div>
+                      {/each}
+                    </div>
+
+                    <div
+                      class="rounded-m3-sm border border-amber-500/25 bg-amber-500/5 p-3 text-label-medium text-amber-200/80 leading-relaxed"
+                    >
+                      {#if syncSettings.encrypted}
+                        De blokken zijn versleuteld, maar Magister ziet nog
+                        steeds dat er sync-afspraken bestaan. Bewaar je
+                        wachtwoord veilig: zonder wachtwoord zijn de gegevens
+                        niet te herstellen. Je AI-API-sleutel wordt nooit
+                        gesynchroniseerd.
+                      {:else if syncSettings.remoteEncrypted}
+                        Het bestaande sync-document is nog versleuteld.
+                        Ontgrendel het met je wachtwoord; daarna wordt het
+                        onversleuteld opgeslagen. Je AI-API-sleutel wordt nooit
+                        gesynchroniseerd.
+                      {:else}
+                        De gegevens staan leesbaar in Magister. Zet gevoelige
+                        categorieën uit of versleutel de sync hierboven. Je
+                        AI-API-sleutel wordt nooit gesynchroniseerd.
+                      {/if}
+                    </div>
+
+                    <div class="flex flex-wrap gap-2">
+                      <Button
+                        variant="filled"
+                        onclick={() => doSync("both")}
+                        disabled={syncBusy || $personId == null}
+                      >
+                        {syncBusy ? "Bezig…" : "Nu synchroniseren"}
+                      </Button>
+                      <Button
+                        variant="tonal"
+                        onclick={() => doSync("pull")}
+                        disabled={syncBusy || $personId == null}
+                        >Alleen ophalen</Button
+                      >
+                      <Button
+                        variant="text"
+                        onclick={() => doSync("push")}
+                        disabled={syncBusy || $personId == null}
+                        >Alleen versturen</Button
+                      >
+                      <Button
+                        variant="text"
+                        onclick={() => {
+                          resetSyncMeta();
+                          syncStatus.set({
+                            state: "idle",
+                            message: "Lokale sync-administratie gewist.",
+                            at: Date.now(),
+                            lastResult: null,
+                          });
+                        }}>Lokale administratie wissen</Button
+                      >
+                    </div>
+
+                    {#if $syncStatus.state !== "idle"}
+                      <p
+                        class="text-body-small {$syncStatus.state === 'error'
+                          ? 'text-red-400'
+                          : $syncStatus.state === 'ok'
+                            ? 'text-emerald-400'
+                            : 'text-gray-400'}"
+                      >
+                        {$syncStatus.message}
+                      </p>
+                    {/if}
+                    {#if syncSettings.lastSyncAt}
+                      <p class="text-label-small text-gray-600">
+                        Laatst gesynchroniseerd:
+                        {new Date(syncSettings.lastSyncAt).toLocaleString(
+                          "nl-NL",
+                        )}
+                      </p>
+                    {/if}
                   </div>
                 {:else}
                   <div class="space-y-2">

@@ -30,7 +30,7 @@ pub struct AiState {
 impl AiState {
     pub fn new(app_data_dir: PathBuf) -> Self {
         let config_path = app_data_dir.join("ai_config.json");
-        let config = if config_path.exists() {
+        let mut config: AiConfig = if config_path.exists() {
             std::fs::read_to_string(&config_path)
                 .ok()
                 .and_then(|s| serde_json::from_str(&s).ok())
@@ -39,11 +39,23 @@ impl AiState {
             AiConfig::default()
         };
 
-        Self {
+        // Users who never changed the old default should get the better
+        // tool-calling model without having to edit their settings.
+        let migrated_default =
+            config.model == "gpt-4o-mini" && matches!(config.provider, AiProviderType::OpenAI);
+        if migrated_default {
+            config.model = "gpt-4.1-mini".to_string();
+        }
+
+        let state = Self {
             config: Arc::new(Mutex::new(config)),
             pending_actions: Mutex::new(HashMap::new()),
             config_path,
+        };
+        if migrated_default {
+            state.save();
         }
+        state
     }
 
     /// Load the API key after Tauri's Android UI context has had time to initialize.

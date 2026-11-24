@@ -155,7 +155,7 @@
     {/each}
   </div>
   <button type="button" class="close" onclick={onclose} aria-label="Sluiten"
-    >✕</button
+    >×</button
   >
 
   <button type="button" class="zone left" onclick={prev} aria-label="Vorige"

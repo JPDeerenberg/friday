@@ -50,6 +50,7 @@
   import CalendarChangesDialog from "#lib/components/CalendarChangesDialog.svelte";
   import QuestToast from "#lib/components/QuestToast.svelte";
   import { offerFriendLink, pendingFriendLink } from "#lib/friends-store.ts";
+  import { scheduleAutoSync, stopAutoSync } from "#lib/sync-service.ts";
   import {
     calendarChangesPopup,
     consumeNotificationTap,
@@ -71,6 +72,14 @@
     if (!offlineWasOn && on && $personId)
       void runOfflineSync($personId, { force: true });
     offlineWasOn = on;
+  });
+
+  // Cross-device sync: na login, bij terugkeer naar de app en periodiek.
+  $effect(() => {
+    const pid = $personId;
+    void $resumedAt;
+    if (pid != null) scheduleAutoSync(pid);
+    else if (!$isLoggedIn) stopAutoSync();
   });
 
   // Verborgen cijfers terughalen: aan/uit voor de hele app.

@@ -265,12 +265,27 @@ function sanitizeLessons(v: unknown, days: number): SharedLesson[] | null {
   const out: SharedLesson[] = [];
   for (const l of v) {
     if (!l || typeof l !== "object") return null;
-    const { day, start, end, subject } = l as Record<string, unknown>;
+    const { day, start, end, subject, teacher, room, homework, test, note } =
+      l as Record<string, unknown>;
     if (!isNum(day) || !isNum(start) || !isNum(end) || !isStr(subject))
       return null;
     if (day < 0 || day >= days || start < 0 || end <= start || end > 24 * 60)
       return null;
-    out.push({ day, start, end, subject: subject.slice(0, 14) });
+    const text = (value: unknown, max: number) =>
+      isStr(value)
+        ? Array.from(value.replace(/\s+/g, " ").trim()).slice(0, max).join("")
+        : undefined;
+    out.push({
+      day,
+      start,
+      end,
+      subject: subject.slice(0, 24),
+      ...(isStr(teacher) ? { teacher: text(teacher, 32) } : {}),
+      ...(isStr(room) ? { room: text(room, 20) } : {}),
+      ...(isStr(homework) ? { homework: text(homework, 240) } : {}),
+      ...(isStr(test) ? { test: text(test, 32) } : {}),
+      ...(isStr(note) ? { note: text(note, 120) } : {}),
+    });
   }
   return out;
 }

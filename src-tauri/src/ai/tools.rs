@@ -795,10 +795,20 @@ pub async fn execute_tool(
             {
                 Ok(data) => {
                     let items = data.get("Items").cloned().unwrap_or(Value::Array(vec![]));
-                    let mut slimmed: Vec<Value> = items
+                    let filtered: Vec<Value> = items
                         .as_array()
-                        .map(|arr| arr.iter().map(slim_calendar_item).collect())
+                        .map(|arr| {
+                            arr.iter()
+                                .filter(|item| {
+                                    item.get("Omschrijving").and_then(|v| v.as_str())
+                                        != Some("Friday Sync")
+                                })
+                                .cloned()
+                                .collect()
+                        })
                         .unwrap_or_default();
+                    let mut slimmed: Vec<Value> =
+                        filtered.iter().map(slim_calendar_item).collect();
                     slimmed.sort_by(|a, b| {
                         let sa = a.get("start").and_then(|v| v.as_str()).unwrap_or("");
                         let sb = b.get("start").and_then(|v| v.as_str()).unwrap_or("");
@@ -891,8 +901,11 @@ pub async fn execute_tool(
                         .get("Items")
                         .and_then(|v| v.as_array())
                         .and_then(|arr| {
-                            arr.iter()
-                                .find(|item| item.get("Id").and_then(|v| v.as_i64()) == Some(id))
+                            arr.iter().find(|item| {
+                                item.get("Id").and_then(|v| v.as_i64()) == Some(id)
+                                    && item.get("Omschrijving").and_then(|v| v.as_str())
+                                        != Some("Friday Sync")
+                            })
                         })
                         .cloned();
                     match found {
@@ -1590,6 +1603,9 @@ pub async fn execute_tool(
                 let mut items = events.get("Items").cloned().unwrap_or(Value::Array(vec![]));
                 // Privacy: redact teacher names in today's lessons
                 if let Some(arr) = items.as_array_mut() {
+                    arr.retain(|item| {
+                        item.get("Omschrijving").and_then(|v| v.as_str()) != Some("Friday Sync")
+                    });
                     for item in arr.iter_mut() {
                         if let Some(docenten) =
                             item.get("Docenten").and_then(|v| v.as_array()).cloned()

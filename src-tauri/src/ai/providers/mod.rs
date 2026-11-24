@@ -116,7 +116,7 @@ impl Default for AiConfig {
         Self {
             api_key: String::new(),
             base_url: "https://api.openai.com/v1".to_string(),
-            model: "gpt-4o-mini".to_string(),
+            model: "gpt-4.1-mini".to_string(),
             enabled: false,
             provider: AiProviderType::OpenAI,
             use_data_access: true,

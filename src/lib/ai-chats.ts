@@ -20,8 +20,8 @@ import {
   dbPutConversation,
 } from "./web-ai-chats-store.ts";
 
-/** History budget for one request (~12k tokens at ~3.5 chars/token). */
-export const HISTORY_BUDGET_TOKENS = 12000;
+/** History budget for one request (~24k tokens at ~3.5 chars/token). */
+export const HISTORY_BUDGET_TOKENS = 24000;
 export const CHARS_PER_TOKEN = 3.5;
 /** Tool-result preview kept per call (~500 chars or key facts). */
 export const TRACE_PREVIEW_CHARS = 500;
@@ -351,7 +351,21 @@ export function traceBlock(trace: LoopTurnTrace[] | undefined): string {
 }
 
 function threadMessageSize(m: ThreadMessage): number {
-  return m.content.length + traceBlock(m.trace).length;
+  // Trace metadata stays in the UI and persistence. Chat turns send at most
+  // one compact recent-facts block, so counting every old trace here would
+  // evict real conversation messages from the budget.
+  return m.content.length;
+}
+
+/**
+ * Older app versions appended the trace text directly to assistant content.
+ * Strip that block before replaying a stored conversation, otherwise the
+ * model sees the same tool output twice and starts repeating old answers.
+ */
+export function stripEmbeddedTrace(content: string): string {
+  const marker = "\n\n[Eerdere toolresultaten";
+  const idx = content.indexOf(marker);
+  return idx >= 0 ? content.slice(0, idx).trimEnd() : content;
 }
 
 export interface FittedPayload {
@@ -384,14 +398,18 @@ export function fitHistoryForRequest(
 }
 
 export function summaryPromptFor(dropped: ThreadMessage[]): string {
-  const lines = dropped.map(
-    (m) => `${m.role}: ${m.content}${traceBlock(m.trace)}`,
-  );
+  const lines = dropped
+    .map((m) => `${m.role}: ${m.content}${traceBlock(m.trace)}`)
+    .join("\n");
+  // Keep the summarizer inside a normal context window even after a very long
+  // conversation; the newest dropped turns matter most for continuity.
+  const capped =
+    lines.length > 14_000 ? lines.slice(lines.length - 14_000) : lines;
   return (
-    "Vat het voorgaande gesprek samen in één alinea (max ~120 woorden) met alleen " +
+    "Vat het voorgaande gesprek samen in één alinea (max ~180 woorden) met alleen " +
     "de feiten die nodig zijn om het gesprek voort te zetten " +
     "(voorkeuren, afspraken, cijfers of plannen die genoemd zijn):\n\n" +
-    lines.join("\n")
+    capped
   );
 }
 

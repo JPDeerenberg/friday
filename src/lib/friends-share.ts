@@ -26,6 +26,12 @@ export interface SharedLesson {
   start: number;
   end: number;
   subject: string;
+  /** v2 detail fields. Older links simply omit them. */
+  teacher?: string;
+  room?: string;
+  homework?: string;
+  test?: string;
+  note?: string;
 }
 
 export interface ScheduleSnapshot {
@@ -49,7 +55,12 @@ export class FriendLinkError extends Error {
 }
 
 const MAX_NAME_CHARS = 24;
-const MAX_SUBJECT_CHARS = 14;
+const MAX_SUBJECT_CHARS = 24;
+const MAX_TEACHER_CHARS = 32;
+const MAX_ROOM_CHARS = 20;
+const MAX_HOMEWORK_CHARS = 240;
+const MAX_TEST_CHARS = 32;
+const MAX_NOTE_CHARS = 120;
 const MAX_DAYS = 14;
 const MAX_LESSONS_PER_DAY = 24;
 const MAX_SUBJECTS = 40;
@@ -58,6 +69,8 @@ const UNIT = 5; // minutes per time unit
 
 const FORMAT_RAW = 1;
 const FORMAT_DEFLATE = 2;
+const FORMAT_JSON = 3;
+const FORMAT_JSON_DEFLATE = 4;
 
 // ---------------------------------------------------------------- bytes
 
@@ -249,6 +262,40 @@ function cleanSubject(name: string): string {
     .join("");
 }
 
+function plainText(value: string | undefined | null): string {
+  return (value ?? "")
+    .replace(/<br\s*\/?>/gi, " ")
+    .replace(/<\/(p|div|li|tr)>/gi, " ")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&#39;/gi, "'")
+    .replace(/&quot;/gi, '"')
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function cleanText(value: string | undefined | null, max: number): string {
+  return Array.from(plainText(value)).slice(0, max).join("").trim();
+}
+
+const testLabel = (infoType: number | undefined): string => {
+  switch (infoType) {
+    case 2:
+      return "Proefwerk";
+    case 3:
+      return "Tentamen";
+    case 4:
+      return "SO";
+    case 5:
+      return "Mondeling";
+    default:
+      return "";
+  }
+};
+
 /** A random 8-character id for the sender. */
 export function newSenderId(): string {
   const bytes = new Uint8Array(4);
@@ -293,7 +340,45 @@ export function lessonsFromEvents(
       continue;
     const subject =
       cleanSubject(e.Vakken?.[0]?.Naam || e.Omschrijving || "Les") || "Les";
-    out.push({ day, start: startMin, end: endMin, subject });
+    const teacher = cleanText(
+      (e.Docenten ?? []).map((d) => d.Naam).join(", "),
+      MAX_TEACHER_CHARS,
+    );
+    const room = cleanText(
+      e.Lokalen?.[0]?.Naam || e.Lokatie || "",
+      MAX_ROOM_CHARS,
+    );
+    const homework =
+      e.InfoType === 1 && !e.Afgerond
+        ? cleanText(e.Inhoud || e.Omschrijving, MAX_HOMEWORK_CHARS) ||
+          "Huiswerk"
+        : "";
+    const test = cleanText(
+      testLabel(e.InfoType) ||
+        (e.InfoType != null && e.InfoType >= 2 && e.InfoType <= 5
+          ? e.Omschrijving
+          : ""),
+      MAX_TEST_CHARS,
+    );
+    const note =
+      e.InfoType !== 1 &&
+      e.InfoType !== 2 &&
+      e.InfoType !== 3 &&
+      e.InfoType !== 4 &&
+      e.InfoType !== 5
+        ? cleanText(e.Inhoud, MAX_NOTE_CHARS)
+        : "";
+    out.push({
+      day,
+      start: startMin,
+      end: endMin,
+      subject,
+      ...(teacher ? { teacher } : {}),
+      ...(room ? { room } : {}),
+      ...(homework ? { homework } : {}),
+      ...(test ? { test } : {}),
+      ...(note ? { note } : {}),
+    });
   }
   return out.sort((a, b) => a.day - b.day || a.start - b.start);
 }
@@ -322,6 +407,11 @@ export interface AbsoluteLesson {
   start: number; // ms
   end: number;
   subject: string;
+  teacher?: string;
+  room?: string;
+  homework?: string;
+  test?: string;
+  note?: string;
 }
 
 export function absoluteLessons(s: ScheduleSnapshot): AbsoluteLesson[] {
@@ -335,7 +425,16 @@ export function absoluteLessons(s: ScheduleSnapshot): AbsoluteLesson[] {
         Math.floor(min / 60),
         min % 60,
       ).getTime();
-    return { start: at(l.start), end: at(l.end), subject: l.subject };
+    return {
+      start: at(l.start),
+      end: at(l.end),
+      subject: l.subject,
+      ...(l.teacher ? { teacher: l.teacher } : {}),
+      ...(l.room ? { room: l.room } : {}),
+      ...(l.homework ? { homework: l.homework } : {}),
+      ...(l.test ? { test: l.test } : {}),
+      ...(l.note ? { note: l.note } : {}),
+    };
   });
 }
 
@@ -398,8 +497,124 @@ function writeBody(s: ScheduleSnapshot): Uint8Array {
   return out;
 }
 
+interface JsonSnapshot {
+  v: 2;
+  id: string;
+  name: string;
+  createdAt: number;
+  windowStart: string;
+  days: number;
+  lessons: SharedLesson[];
+}
+
+function appendCrc(body: Uint8Array): Uint8Array {
+  const crc = crc16(body);
+  const out = new Uint8Array(body.length + 2);
+  out.set(body);
+  out[body.length] = crc >> 8;
+  out[body.length + 1] = crc & 0xff;
+  return out;
+}
+
+async function encodeJsonSnapshot(s: ScheduleSnapshot): Promise<string> {
+  const doc: JsonSnapshot = {
+    v: 2,
+    id: s.id,
+    name: cleanName(s.name),
+    createdAt: s.createdAt,
+    windowStart: s.windowStart,
+    days: s.days,
+    lessons: s.lessons,
+  };
+  const json = new TextEncoder().encode(JSON.stringify(doc));
+  const body = appendCrc(json);
+  const packed = await deflate(body);
+  const useDeflate = packed !== null && packed.length < body.length;
+  const data = useDeflate ? packed : body;
+  const out = new Uint8Array(data.length + 1);
+  out[0] = useDeflate ? FORMAT_JSON_DEFLATE : FORMAT_JSON;
+  out.set(data, 1);
+  return toBase64Url(out);
+}
+
+function decodeJsonSnapshot(withCrc: Uint8Array): ScheduleSnapshot {
+  if (withCrc.length < 4)
+    throw new FriendLinkError("De link is niet compleet. Kopieer hem opnieuw.");
+  const body = withCrc.slice(0, -2);
+  const crc = (withCrc[withCrc.length - 2] << 8) | withCrc[withCrc.length - 1];
+  if (crc16(body) !== crc)
+    throw new FriendLinkError(
+      "De link is beschadigd of afgekapt. Kopieer hem opnieuw.",
+    );
+  let doc: JsonSnapshot;
+  try {
+    doc = JSON.parse(new TextDecoder().decode(body)) as JsonSnapshot;
+  } catch {
+    throw new FriendLinkError("De link is beschadigd.");
+  }
+  if (
+    !doc ||
+    doc.v !== 2 ||
+    !/^[0-9a-f]{8}$/i.test(doc.id ?? "") ||
+    !/^\d{4}-\d{2}-\d{2}$/.test(doc.windowStart ?? "") ||
+    !Number.isInteger(doc.days) ||
+    doc.days < 1 ||
+    doc.days > MAX_DAYS ||
+    !Array.isArray(doc.lessons)
+  ) {
+    throw new FriendLinkError("De link is beschadigd.");
+  }
+  const lessons: SharedLesson[] = [];
+  for (const raw of doc.lessons) {
+    if (lessons.length >= MAX_DAYS * MAX_LESSONS_PER_DAY) break;
+    const day = Number(raw.day);
+    const start = Number(raw.start);
+    const end = Number(raw.end);
+    if (
+      !Number.isInteger(day) ||
+      !Number.isInteger(start) ||
+      !Number.isInteger(end) ||
+      day < 0 ||
+      day >= doc.days ||
+      start < 0 ||
+      end <= start ||
+      end > 24 * 60
+    ) {
+      continue;
+    }
+    lessons.push({
+      day,
+      start,
+      end,
+      subject: cleanSubject(raw.subject || "Les") || "Les",
+      ...(raw.teacher
+        ? { teacher: cleanText(raw.teacher, MAX_TEACHER_CHARS) }
+        : {}),
+      ...(raw.room ? { room: cleanText(raw.room, MAX_ROOM_CHARS) } : {}),
+      ...(raw.homework
+        ? { homework: cleanText(raw.homework, MAX_HOMEWORK_CHARS) }
+        : {}),
+      ...(raw.test ? { test: cleanText(raw.test, MAX_TEST_CHARS) } : {}),
+      ...(raw.note ? { note: cleanText(raw.note, MAX_NOTE_CHARS) } : {}),
+    });
+  }
+  return {
+    id: doc.id.toLowerCase(),
+    name: cleanName(doc.name ?? "") || "Vriend",
+    createdAt: Number.isFinite(doc.createdAt) ? doc.createdAt : 0,
+    windowStart: doc.windowStart,
+    days: doc.days,
+    lessons: lessons.sort((a, b) => a.day - b.day || a.start - b.start),
+  };
+}
+
 /** The text after `#friend=` in a share link. */
 export async function encodeSnapshot(s: ScheduleSnapshot): Promise<string> {
+  if (
+    s.lessons.some((l) => l.teacher || l.room || l.homework || l.test || l.note)
+  ) {
+    return encodeJsonSnapshot(s);
+  }
   const body = writeBody(s);
   const packed = await deflate(body);
   const useDeflate = packed !== null && packed.length < body.length;
@@ -417,6 +632,13 @@ export async function decodeSnapshot(
   if (raw.length < 4 || raw.length > 32 * 1024)
     throw new FriendLinkError("Dit is geen geldige Friday-link.");
   const format = raw[0];
+  if (format === FORMAT_JSON || format === FORMAT_JSON_DEFLATE) {
+    const withCrc =
+      format === FORMAT_JSON_DEFLATE
+        ? await inflate(raw.slice(1))
+        : raw.slice(1);
+    return decodeJsonSnapshot(withCrc);
+  }
   if (format !== FORMAT_RAW && format !== FORMAT_DEFLATE) {
     throw new FriendLinkError(
       "Deze link komt van een nieuwere versie van Friday. Werk je app bij.",
@@ -502,7 +724,9 @@ export async function readShareLink(text: string): Promise<ScheduleSnapshot> {
 // ---------------------------------------------------------------- changes
 
 const lessonKey = (l: SharedLesson) =>
-  `${l.day}|${l.start}|${l.end}|${l.subject}`;
+  `${l.day}|${l.start}|${l.end}|${l.subject}|${l.teacher ?? ""}|${
+    l.room ?? ""
+  }|${l.homework ?? ""}|${l.test ?? ""}|${l.note ?? ""}`;
 
 /** Same schedule => same signature. Used to notice that a new QR is needed. */
 export function scheduleSignature(
