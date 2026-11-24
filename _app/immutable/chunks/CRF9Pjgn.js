@@ -1,4 +1,4 @@
-import{$ as e,F as t,G as n,J as r,T as i,U as a,V as o,W as s,Y as c,bt as l,ct as u,dt as d,ft as f,it as p,lt as m,mt as h,ot as g,rt as _,st as v,t as y,vt as b,xt as x,yt as S}from"./DGKacHS1.js";import{n as C,t as w}from"./BF1s27cL.js";import{n as T,s as E}from"./UnzyMfs9.js";import{r as D}from"./FL9XrGN8.js";import{t as O}from"./CvLZi8mK.js";function k(e){return e?C(w(e).replace(/<\s*br\s*\/?\s*>/gi,`
+import{$ as e,F as t,G as n,J as r,T as i,U as a,V as o,W as s,Y as c,bt as l,ct as u,dt as d,ft as f,it as p,lt as m,mt as h,ot as g,rt as _,st as v,t as y,vt as b,xt as x,yt as S}from"./DGKacHS1.js";import{n as C,t as w}from"./BF1s27cL.js";import{n as T,s as E}from"./UnzyMfs9.js";import{a as D}from"./BO0WjOMT.js";import{t as O}from"./DYIlnFfX.js";function k(e){return e?C(w(e).replace(/<\s*br\s*\/?\s*>/gi,`
 `).replace(/<\/(p|div|li|h[1-6]|tr)\s*>/gi,`
 `).replace(/<li[^>]*>/gi,`• `)).replace(/[ \t\u00a0]+/g,` `).replace(/ *\n */g,`
 `).replace(/\n{3,}/g,`
