@@ -1,1 +1,0 @@
-export{n as getCurrent,r as onOpenUrl}from"./3es7a8e7.js";
