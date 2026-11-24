@@ -196,7 +196,7 @@ export function wrappedShareText(
         `${s.opened} ${s.opened === 1 ? "kaart" : "kaarten"} geopend${s.rarest ? `, zeldzaamst: ${RARITY_META[s.rarest].label}` : ""}`,
       );
     else if (s.kind === "missions")
-      lines.push(`${s.points} missiepunten (${s.tier})`);
+      lines.push(`${s.points} XP dit seizoen (${s.tier})`);
     else if (s.kind === "outro") lines.push(`Level ${s.level}: ${s.title}`);
   }
   return lines.join("\n");

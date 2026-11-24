@@ -525,6 +525,7 @@
   }
 
   onMount(() => {
+    recordQuestEvent("grades_checked");
     // Restore persisted UI state
     const savedFilters = localStorage.getItem("grades_ui_state");
     if (savedFilters) {
@@ -5002,7 +5003,6 @@
     collection={cardList}
     intensity={cardIntensity}
     sound={$userSettings.cardSound === true}
-    onrevealed={() => recordQuestEvent("pack_opened")}
     onclose={() => (revealQueue = null)}
   />
 {/if}

@@ -1,19 +1,22 @@
 <script lang="ts">
   /**
-   * Home-screen missions: today's three small goals, this week's two, the season
-   * pass and the week streak. Friendly by design — nothing is ever taken away.
+   * Home-screen missions: today's three small goals, this week's two and the
+   * season XP meter. Friendly by design — missions never take XP away.
    * Opening the home screen counts as the daily check-in.
+   *
+   * The same wallet is fed by missions, opened grade cards and Blackjack, so
+   * the level shown here is the same level as the cards page.
    */
   import { onMount } from "svelte";
   import Icon from "#lib/components/Icon.svelte";
   import { quests, recordQuestEvent } from "#lib/quests-store.ts";
   import {
-    tierInfo,
     todaysRows,
     weekRows,
     weekStreak,
     DAILY_XP_CAP,
   } from "#lib/quests.ts";
+  import { levelInfo } from "#lib/cards.ts";
 
   onMount(() => recordQuestEvent("app_open"));
 
@@ -25,7 +28,7 @@
 
   const today = $derived(todaysRows($quests, now));
   const week = $derived(weekRows($quests, now));
-  const tier = $derived(tierInfo($quests.xp));
+  const level = $derived(levelInfo($quests.xp));
   const streak = $derived(weekStreak($quests, now));
   const allDone = $derived(today.every((r) => r.done));
 </script>
@@ -33,19 +36,18 @@
 <section class="quests" aria-label="Missies">
   <div class="head">
     <h2><Icon name="target" size={18} /> Missies</h2>
-    <span class="tier" title="Missiepunten dit seizoen">
-      {tier.title}
-      <small class="tabular-nums">{$quests.xp} MP</small>
+    <span class="tier" title="Seizoens-XP">
+      Level {level.level}
+      <small class="tabular-nums">{$quests.xp} XP</small>
     </span>
   </div>
 
   <div class="bar" aria-hidden="true">
-    <i style="width:{tier.pct * 100}%"></i>
+    <i style="width:{level.pct * 100}%"></i>
   </div>
   <p class="sub tabular-nums">
-    Nog {tier.need - tier.into} MP tot {tier.tier + 1 > 10
-      ? "de volgende rang"
-      : "rang " + (tier.tier + 1)}
+    Nog {level.need - level.into} XP tot level {level.level + 1} · ook cijfers en
+    Blackjack geven XP
   </p>
 
   <ul class="list" aria-label="Missies van vandaag">
@@ -97,7 +99,7 @@
         {streak}
         {streak === 1 ? "week" : "weken"} op rij actief</span
       > ·{/if}
-    max. {DAILY_XP_CAP} MP per dag
+    max. {DAILY_XP_CAP} missie-XP per dag
   </p>
 </section>
 

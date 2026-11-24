@@ -35,10 +35,12 @@
   import LevelCard from "#lib/components/LevelCard.svelte";
   import QuickGradeSliders from "#lib/components/QuickGradeSliders.svelte";
   import QuestsCard from "#lib/components/QuestsCard.svelte";
+  import BlackjackCard from "#lib/components/BlackjackCard.svelte";
   import FriendsCard from "#lib/components/FriendsCard.svelte";
   import WrappedCard from "#lib/components/WrappedCard.svelte";
   import WrappedStory from "#lib/components/WrappedStory.svelte";
   import { recordQuestEvent } from "#lib/quests-store.ts";
+  import { homeworkKey } from "#lib/quests.ts";
   import {
     gradePeek,
     gradeRevealState,
@@ -473,7 +475,7 @@
       // If marked as done, collapse the lesson
       if (event.Afgerond) {
         expandedLesson = null;
-        recordQuestEvent("homework_done");
+        recordQuestEvent("homework_done", 1, homeworkKey(event.Id));
       }
     } catch (e) {
       console.error("Failed to toggle lesson done:", e);
@@ -484,7 +486,6 @@
     const doc = new DOMParser().parseFromString(html, "text/html");
     return doc.body.textContent || "";
   }
-
 </script>
 
 <div
@@ -777,7 +778,9 @@
                         </span>
                         {#if event.Docenten?.[0]?.Naam}
                           <span class="text-label-small text-gray-600"
-                            >· {displayTeacherName(event.Docenten[0].Naam)}</span
+                            >· {displayTeacherName(
+                              event.Docenten[0].Naam,
+                            )}</span
                           >
                         {/if}
                       </div>
@@ -1231,8 +1234,11 @@
       <LevelCard />
       <QuickGradeSliders />
       <QuestsCard />
+      <BlackjackCard />
       <FriendsCard events={heroEvents} />
-      <div class="md:col-span-2"><WrappedCard onopen={() => (showWrapped = true)} /></div>
+      <div class="md:col-span-2">
+        <WrappedCard onopen={() => (showWrapped = true)} />
+      </div>
     </section>
     {#if showWrapped}
       <WrappedStory onclose={() => (showWrapped = false)} />
@@ -1272,10 +1278,6 @@
     animation: header-pulse 10s ease-in-out infinite;
   }
 
-
-
-
-
   .glass {
     background: color-mix(in oklch, var(--color-surface-900), transparent 40%);
     backdrop-filter: blur(40px) saturate(180%);
@@ -1290,6 +1292,4 @@
     background-color: var(--color-surface-950);
     overflow-x: hidden;
   }
-
-
 </style>

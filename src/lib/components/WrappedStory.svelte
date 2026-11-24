@@ -8,7 +8,11 @@
   import Icon from "#lib/components/Icon.svelte";
   import { fade, fly } from "svelte/transition";
   import { personId, userSettings } from "#lib/stores.ts";
-  import { gradePeek, gradeRevealState, splitGrades } from "#lib/grade-reveal.ts";
+  import {
+    gradePeek,
+    gradeRevealState,
+    splitGrades,
+  } from "#lib/grade-reveal.ts";
   import { loadCurrentYearGrades } from "#lib/current-year-grades.ts";
   import {
     buildCards,
@@ -17,10 +21,9 @@
     RARITY_META,
     seasonLabel,
     seasonOf,
-    seasonXp,
   } from "#lib/cards.ts";
   import { quests, recordQuestEvent } from "#lib/quests-store.ts";
-  import { tierInfo, weekStreak } from "#lib/quests.ts";
+  import { weekStreak } from "#lib/quests.ts";
   import {
     buildWrapped,
     wrappedShareText,
@@ -53,7 +56,7 @@
     }).values(),
   ]);
   const opened = $derived(new Set($gradeRevealState.opened));
-  const li = $derived(levelInfo(seasonXp(cards, opened, season)));
+  const li = $derived(levelInfo($quests.xp));
   const slides = $derived<WrappedSlide[]>(
     buildWrapped({
       season,
@@ -64,7 +67,7 @@
       level: li.level,
       levelTitle: li.title,
       missionPoints: $quests.xp,
-      missionTier: tierInfo($quests.xp).title,
+      missionTier: li.title,
       weekStreak: weekStreak($quests, new Date()),
     }),
   );
@@ -212,9 +215,9 @@
               </p>{/if}
             <p class="small">Level {slide.level} · {slide.title}</p>
           {:else if slide.kind === "missions"}
-            <p class="small">Je missies</p>
+            <p class="small">Je seizoen</p>
             <div class="huge tabular-nums">{slide.points}</div>
-            <p class="lead">missiepunten · {slide.tier}</p>
+            <p class="lead">XP dit seizoen · {slide.tier}</p>
             {#if slide.weeks > 0}<p class="small">
                 <Icon name="flame" size={14} />
                 {slide.weeks}

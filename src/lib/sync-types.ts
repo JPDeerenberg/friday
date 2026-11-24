@@ -13,6 +13,7 @@ export type SyncCategory =
   | "friends"
   | "notes"
   | "quests"
+  | "casino"
   | "cards"
   | "ai"
   | "letterScan"

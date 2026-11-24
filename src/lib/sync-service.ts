@@ -22,6 +22,7 @@ import { friends } from "./friends-store.ts";
 import { sanitizeState } from "./friends-state.ts";
 import { quests } from "./quests-store.ts";
 import { sanitizeQuestState } from "./quests.ts";
+import { casino, sanitizeCasinoState } from "./casino-store.ts";
 import { gradeRevealState, sanitizeGradeRevealState } from "./grade-reveal.ts";
 import {
   dbAddMessage,
@@ -87,6 +88,7 @@ const DEFAULT_CATEGORIES: Record<SyncCategory, { enabled: boolean }> = {
   friends: { enabled: true },
   notes: { enabled: true },
   quests: { enabled: true },
+  casino: { enabled: true },
   cards: { enabled: true },
   ai: { enabled: true },
   letterScan: { enabled: true },
@@ -369,6 +371,7 @@ async function collectLocal(
 
   add("friends.state", "friends", get(friends));
   add("quests.state", "quests", get(quests));
+  add("casino.state", "casino", get(casino));
   add("cards.state", "cards", get(gradeRevealState));
   add("letterScan.state", "letterScan", get(letterScan));
   add(
@@ -416,6 +419,7 @@ async function applyEntries(entries: SyncEntry[]): Promise<void> {
   let planChanged = false;
   let friendsState: FriendsState | null = null;
   let questState: QuestState | null = null;
+  let casinoState: unknown = null;
   let cardsState: unknown = null;
   let letterScanState: unknown = null;
   let aiState: AiConfig | null = null;
@@ -450,6 +454,8 @@ async function applyEntries(entries: SyncEntry[]): Promise<void> {
       friendsState = entry.value as FriendsState;
     } else if (entry.key === "quests.state") {
       questState = entry.value as QuestState;
+    } else if (entry.key === "casino.state") {
+      casinoState = entry.value;
     } else if (entry.key === "cards.state") {
       cardsState = entry.value;
     } else if (entry.key === "letterScan.state") {
@@ -485,6 +491,7 @@ async function applyEntries(entries: SyncEntry[]): Promise<void> {
   const safeFriends = sanitizeState(friendsState);
   if (safeFriends) friends.set(safeFriends);
   if (questState) quests.set(sanitizeQuestState(questState, new Date()));
+  if (casinoState) casino.set(sanitizeCasinoState(casinoState));
   const safeCards = sanitizeGradeRevealState(cardsState);
   if (safeCards) gradeRevealState.set(safeCards);
   if (Array.isArray(letterScanState)) {

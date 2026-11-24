@@ -24,6 +24,11 @@
     type CardData,
   } from "#lib/cards.ts";
   import { gradeRevealState, recordOpen } from "#lib/grade-reveal.ts";
+  import {
+    creditCardXpOnce,
+    quests,
+    recordQuestEvent,
+  } from "#lib/quests-store.ts";
   import { FxEngine } from "#lib/fx.ts";
   import { buzz, haptic, setSoundEnabled, sfx } from "#lib/card-feedback.ts";
   import {
@@ -87,6 +92,7 @@
   let frozen = $state(false);
   let shakeLvl = $state(0);
   let ringKey = $state(0);
+  let packQuestCounted = false;
   let stampText = $state<string | null>(null);
   let xpGain = $state(0);
   let levelUpTitle = $state<string | null>(null);
@@ -656,7 +662,7 @@
   }
 
   function record(c: CardData) {
-    const beforeXp = get(gradeRevealState).tally.xp;
+    const beforeXp = get(quests).xp;
     if (!preview) {
       const opened = new Set(get(gradeRevealState).opened);
       opened.add(c.id);
@@ -667,12 +673,20 @@
         packAchievements = [...packAchievements, ...res.newlyUnlocked];
         pushToasts(res.newlyUnlocked);
       }
-      onrevealed?.(c);
+      if (res.openedNow) {
+        if (!packQuestCounted) {
+          recordQuestEvent("pack_opened");
+          packQuestCounted = true;
+        }
+        creditCardXpOnce(c.id, c.xp);
+        recordQuestEvent("card_opened");
+        onrevealed?.(c);
+      }
     }
     xpGain = c.xp;
     packXp += c.xp;
     if (!preview) {
-      const afterXp = get(gradeRevealState).tally.xp;
+      const afterXp = get(quests).xp;
       if (levelInfo(afterXp).level > levelInfo(beforeXp).level) {
         levelUpTitle = levelInfo(afterXp).title;
         later(() => sfx.levelUp(), 500);
@@ -749,14 +763,25 @@
   /** Reveal everything that is left without the show, then close. */
   function revealAllNow() {
     clearTimers();
-    for (let i = index; i < total; i++) {
-      const c = cards[i];
-      if (preview) continue;
-      const opened = new Set(get(gradeRevealState).opened);
-      if (opened.has(c.id)) continue;
-      opened.add(c.id);
-      recordOpen(c, { completeSets: countCompleteSets(collection, opened) });
-      onrevealed?.(c);
+    if (!preview) {
+      if (!packQuestCounted) {
+        recordQuestEvent("pack_opened");
+        packQuestCounted = true;
+      }
+      for (let i = index; i < total; i++) {
+        const c = cards[i];
+        const opened = new Set(get(gradeRevealState).opened);
+        if (opened.has(c.id)) continue;
+        opened.add(c.id);
+        const res = recordOpen(c, {
+          completeSets: countCompleteSets(collection, opened),
+        });
+        if (res.openedNow) {
+          creditCardXpOnce(c.id, c.xp);
+          recordQuestEvent("card_opened");
+          onrevealed?.(c);
+        }
+      }
     }
     onclose();
   }

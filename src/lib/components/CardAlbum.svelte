@@ -17,6 +17,7 @@
     countCompleteSets,
     levelInfo,
     seasonLabel,
+    seasonOf,
     seasonXp,
     seasonsOf,
     type CardData,
@@ -33,6 +34,7 @@
     type CatalogStatus,
   } from "#lib/card-catalog.ts";
   import { gradeRevealState, toggleShowcase } from "#lib/grade-reveal.ts";
+  import { quests, seedCardXpOnce } from "#lib/quests-store.ts";
 
   let {
     cards,
@@ -62,11 +64,21 @@
     season && seasons.includes(season) ? season : seasons[0],
   );
   const seasonPoints = $derived(seasonXp(cards, openedSet, activeSeason));
+  const currentSeason = seasonOf(null);
+  const gradeXp = $derived(seasonXp(cards, openedSet, currentSeason));
   /** Opened within the album currently shown (one school year), not all time. */
   const openedCount = $derived(cards.filter((c) => openedSet.has(c.id)).length);
-  const li = $derived(levelInfo(seasonPoints));
+  // The current season shows the shared wallet (missions + cards + Blackjack);
+  // older season tabs stay grade-only.
+  const li = $derived(
+    levelInfo(activeSeason === currentSeason ? $quests.xp : seasonPoints),
+  );
   const career = $derived(careerInfo(tally.xp));
   const completeSets = $derived(countCompleteSets(cards, openedSet));
+
+  $effect(() => {
+    if (cards.length > 0) seedCardXpOnce(gradeXp);
+  });
 
   const bySubject = $derived.by(() => {
     const map = new Map<string, CardData[]>();
@@ -185,10 +197,13 @@
         class="mt-1 flex justify-between text-label-small text-gray-500 tabular-nums"
       >
         <span>{li.into} / {li.need} XP</span>
-        <span>{seasonPoints} XP dit seizoen</span>
+        <span title="Alleen XP uit cijferkaarten, zonder missies en Blackjack"
+          >Cijfer-XP: {seasonPoints}</span
+        >
       </div>
       <p class="mt-1 text-label-small text-gray-500">
-        Levels starten elk schooljaar opnieuw, zodat iedereen gelijk begint.
+        Je level telt cijfers, missies en Blackjack mee; cijfer-XP is alleen wat
+        je met kaarten verdient. Elk schooljaar begin je opnieuw.
       </p>
     </div>
     {#if seasons.length > 1}

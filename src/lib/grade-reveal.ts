@@ -204,15 +204,18 @@ export function splitGrades(
 /**
  * Mark a card as opened: updates the opened list, XP/streak tally and any newly
  * earned achievements in one step. Idempotent per card id.
- * Returns the ids of achievements unlocked by this card.
+ * Returns the ids of achievements unlocked by this card, plus whether this call
+ * actually opened it (so callers can credit XP exactly once).
  */
 export function recordOpen(
   card: CardData,
   ctx: AchievementContext = { completeSets: 0 },
-): { newlyUnlocked: string[] } {
+): { newlyUnlocked: string[]; openedNow: boolean } {
   let newlyUnlocked: string[] = [];
+  let openedNow = false;
   gradeRevealState.update((state) => {
     if (state.opened.includes(card.id)) return state;
+    openedNow = true;
     const tally = tallyAfterOpening(state.tally, card);
     const opened = [...state.opened, card.id];
     const earned = earnedAchievementIds(tally, ctx).filter(
@@ -229,7 +232,7 @@ export function recordOpen(
       unlocked,
     };
   });
-  return { newlyUnlocked };
+  return { newlyUnlocked, openedNow };
 }
 
 /** Pin / unpin a card in the showcase (max 3, oldest pin drops off first). */

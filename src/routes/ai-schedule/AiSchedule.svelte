@@ -21,6 +21,7 @@
   } from "#lib/api.ts";
   import { pickDownloadHref, describeDownload } from "#lib/attachments.ts";
   import { recordQuestEvent } from "#lib/quests-store.ts";
+  import { homeworkKey } from "#lib/quests.ts";
   import HtmlRenderer from "#lib/components/HtmlRenderer.svelte";
   import TranslateButton from "#lib/components/TranslateButton.svelte";
   import Button from "#lib/components/Button.svelte";
@@ -197,6 +198,7 @@
   });
 
   onMount(() => {
+    recordQuestEvent("plan_checked");
     try {
       const saved = localStorage.getItem("calendar_overrides");
       if (saved) localOverrides = JSON.parse(saved);
@@ -365,7 +367,8 @@
     try {
       await toggleCalendarEventDone(app);
       app.Afgerond = !app.Afgerond;
-      if (app.Afgerond) recordQuestEvent("homework_done");
+      if (app.Afgerond)
+        recordQuestEvent("homework_done", 1, homeworkKey(app.Id));
       appointments = [...appointments];
     } catch (e) {
       error = `Huiswerk bijwerken mislukt: ${e}`;

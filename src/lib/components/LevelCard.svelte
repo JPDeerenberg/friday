@@ -9,6 +9,7 @@
   import { personId, userSettings, currentPage } from "#lib/stores.ts";
   import { gradeRevealState } from "#lib/grade-reveal.ts";
   import { loadCurrentYearGrades } from "#lib/current-year-grades.ts";
+  import { quests, seedCardXpOnce } from "#lib/quests-store.ts";
   import {
     buildCards,
     levelInfo,
@@ -30,10 +31,17 @@
   ]);
   const opened = $derived(new Set($gradeRevealState.opened));
   const season = seasonOf(null);
-  const xp = $derived(seasonXp(cards, opened, season));
+  const gradeXp = $derived(seasonXp(cards, opened, season));
+  const xp = $derived($quests.xp);
   const li = $derived(levelInfo(xp));
   const career = $derived(careerInfo($gradeRevealState.tally.xp));
   const hidden = $derived(cards.filter((c) => !opened.has(c.id)).length);
+
+  // Migration: cards opened before the unified wallet existed are folded into
+  // the season XP once. `cardXpCredited` prevents double counting later cards.
+  $effect(() => {
+    if (!loading && cards.length > 0) seedCardXpOnce(gradeXp);
+  });
 
   $effect(() => {
     const pid = $personId;
@@ -54,7 +62,7 @@
   type="button"
   class="lvl"
   onclick={() => currentPage.set("grades")}
-  aria-label="Level {li.level}, {li.title}. {xp} XP dit seizoen. Open je kaarten."
+  aria-label="Level {li.level}, {li.title}. {xp} XP dit seizoen, {gradeXp} uit cijfers. Open je kaarten."
 >
   <span class="badge" aria-hidden="true">{loading ? "…" : li.level}</span>
   <span class="body">

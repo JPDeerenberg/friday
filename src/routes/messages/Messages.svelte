@@ -15,6 +15,7 @@
   import { resumedAt, userSettings } from "#lib/stores.ts";
   import { clearAiPageContext, setAiPageContext } from "#lib/ai-context.ts";
   import { onMount, untrack } from "svelte";
+  import { recordQuestEvent } from "#lib/quests-store.ts";
   import { get } from "svelte/store";
   import { slide, fade } from "svelte/transition";
   import Button from "#lib/components/Button.svelte";
@@ -105,6 +106,7 @@
   let downloadingAttachment = $state<number | null>(null);
 
   onMount(async () => {
+    recordQuestEvent("messages_checked");
     try {
       folders = await cacheGet(
         "messages_folders",

@@ -21,6 +21,7 @@
   import { displayTeacherName } from "#lib/teachers.ts";
   import TranslateButton from "#lib/components/TranslateButton.svelte";
   import { recordQuestEvent } from "#lib/quests-store.ts";
+  import { homeworkKey } from "#lib/quests.ts";
   import { clearAiPageContext, setAiPageContext } from "#lib/ai-context.ts";
   import { onMount, tick, untrack } from "svelte";
   import { fade, fly, slide, scale } from "svelte/transition";
@@ -606,7 +607,8 @@
 
       await toggleCalendarEventDone(target);
       target.Afgerond = !target.Afgerond;
-      if (target.Afgerond) recordQuestEvent("homework_done");
+      if (target.Afgerond)
+        recordQuestEvent("homework_done", 1, homeworkKey(target.Id));
       appointments = [...appointments];
       if (selectedAppointment?.Id === target.Id) {
         selectedAppointment = {

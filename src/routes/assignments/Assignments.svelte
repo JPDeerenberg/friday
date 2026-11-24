@@ -40,6 +40,7 @@
     type HandInFile,
   } from "#lib/assignments.ts";
   import { onMount, untrack } from "svelte";
+  import { recordQuestEvent } from "#lib/quests-store.ts";
   import { fade, fly } from "svelte/transition";
   import RichTextEditor from "#lib/components/RichTextEditor.svelte";
   import TranslateButton from "#lib/components/TranslateButton.svelte";
@@ -110,6 +111,7 @@
   let detailToken = 0;
 
   onMount(async () => {
+    recordQuestEvent("assignments_checked");
     const mq = window.matchMedia("(max-width: 767px)");
     isMobile = mq.matches;
     mq.addEventListener("change", (e) => (isMobile = e.matches));

@@ -33,7 +33,7 @@
     >
       <span class="ico"><Icon name="target" size={16} /></span>
       <span class="text">Missie voltooid: {visible.text}</span>
-      {#if visible.awarded > 0}<b>+{visible.awarded} MP</b>{/if}
+      {#if visible.awarded > 0}<b>+{visible.awarded} XP</b>{/if}
     </div>
   {/key}
 {/if}
